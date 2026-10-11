@@ -27,7 +27,11 @@ function MnemonMainPanel({ seat, controller }: { seat: MnemonNativeSidebarSeat; 
     controller.open()
     return () => { controller.close(); detach() }
   }, [seat, controller])
-  return <div ref={parent} className={css.nativeWorkspace} data-dsh-mnemon-main-seat />
+  // The top clearance this seat keeps is the window's title bar on DSH Desktop; marking it
+  // lets the window move from there, as from DSH's own pages.
+  return <div ref={parent} className={css.nativeWorkspace} data-dsh-mnemon-main-seat>
+    <div className={css.windowDragBand} data-window-drag aria-hidden="true" />
+  </div>
 }
 
 /** Use the published panel contract, with a fallback for replacement layouts. */

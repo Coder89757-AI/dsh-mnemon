@@ -45,6 +45,11 @@ interface MnemonWorkbenchProps {
   surface?: MnemonDisplayMode
   /** Sidebar retains its subtree while hidden; refresh View when reopened. */
   active?: boolean
+  /**
+   * The header is the top edge of the window, as in DSH's main column. DSH Desktop then
+   * moves the window by it, like its own page headers, while its controls stay clickable.
+   */
+  titleBar?: boolean
   t?: MnemonTranslate
   locale?: string
   onClose?: () => void
@@ -542,7 +547,7 @@ export function MnemonWorkbench(props: MnemonWorkbenchProps): JSX.Element {
   return <I18nContext.Provider value={t}><LocaleContext.Provider value={props.locale ?? 'zh'}><MnemonWorkspace {...props} /></LocaleContext.Provider></I18nContext.Provider>
 }
 
-function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, workspaceSelection, surface = 'sidebar', active = true, onClose, configuration, componentChanges, sourcePageDirectory = EMPTY_SOURCE_PAGE_DIRECTORY, renderSlot }: MnemonWorkbenchProps): JSX.Element {
+function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, workspaceSelection, surface = 'sidebar', active = true, titleBar = false, onClose, configuration, componentChanges, sourcePageDirectory = EMPTY_SOURCE_PAGE_DIRECTORY, renderSlot }: MnemonWorkbenchProps): JSX.Element {
   const t = useT()
   const locale = useLocale()
   const configurationSeat = configuration ?? NO_ACTION_SEAT
@@ -893,7 +898,7 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
 
   return (
     <main className={appearanceClass(css.shell, sidebarCss.shell)} data-dsh-plugin="dsh-mnemon" data-dsh-part="mnemon-view" data-mnemon-surface={surface}>
-      <header className={appearanceClass(css.masthead, sidebarCss.masthead)}>
+      <header className={appearanceClass(css.masthead, sidebarCss.masthead)} data-window-drag={titleBar || undefined}>
         {onClose !== undefined && <button type="button" className={appearanceClass(css.ghostButton, css.backButton)} onClick={onClose} aria-label={t('header.backToConversation')}><IconChevronLeftOutline14 size={14} /><span>{t('header.backToConversation')}</span></button>}
         <div className={appearanceClass(css.brand, sidebarCss.brand)}>
           <h1>{t('tab.label')}</h1>
