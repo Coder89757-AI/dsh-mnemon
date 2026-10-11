@@ -157,7 +157,7 @@ GitHub 登录凭据保存在 DSH 凭据存储的 `dsh-mnemon/github` 键下；�
 
 凭据不进入载荷、配置文件与日志：
 
-- 令牌每次操作时按以下顺序解析：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中的令牌，最后是 GitHub 登录写入 DSH 凭据存储的凭据。它不会写入载荷，也不会出现在错误信息里。
+- 令牌每次操作时按以下顺序解析：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中的令牌，最后是 GitHub 登录写入 DSH 凭据存储的凭据。它不会写入载荷，也不会出现在错误信息里。保存的令牌只属于保存它时的主机：把仓库换到另一个主机时，除非同时提供新令牌，旧令牌会被丢弃。
 - 状态与配置响应只描述凭据（`hasToken`、`credentialSource`、`credentialLogin`），不回传其值。失败会以 `details.reason` 带上类别，页面据此用自己的语言说明。
 - 远端不可达或没有凭据时仍会在本地提交，并说明推送为什么没有完成，不会丢失数据；远端恢复后再同步一次即可。
 

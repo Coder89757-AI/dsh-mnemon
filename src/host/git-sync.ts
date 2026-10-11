@@ -108,6 +108,17 @@ export function gitEnvironment(environment: NodeJS.ProcessEnv = process.env): No
   return sanitized
 }
 
+/** The host an HTTPS address hands a token to; any other address takes none. */
+function tokenHost(repoUrl: string | undefined): string | undefined {
+  if (repoUrl === undefined) return undefined
+  try {
+    const url = new URL(repoUrl)
+    return url.protocol === 'https:' ? url.host.toLowerCase() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Whether a repository address is HTTPS on github.com, the only host a GitHub grant is for. */
 export function isGitHubHttps(repoUrl: string): boolean {
   try {
@@ -669,6 +680,12 @@ export class MnemonGitSync {
   async configure(patch: unknown): Promise<MnemonSyncConfigView> {
     const previous = this.store.read()
     const next = this.store.patch(patch)
+    // A saved token authenticates the host it was saved for. Moving the repository to
+    // another host forgets it unless a new token comes with the move, so a token never
+    // reaches a host it was not meant for.
+    const fields = record(patch)
+    if (next.token !== undefined && previous.repoUrl !== undefined && fields !== undefined && !('token' in fields)
+      && tokenHost(previous.repoUrl) !== tokenHost(next.repoUrl)) delete next.token
     this.store.write(next)
     // When memory last travelled is a fact about one repository; another one starts with none.
     if (previous.repoUrl !== next.repoUrl) rmSync(this.lastRunPath(), { force: true })

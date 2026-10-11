@@ -793,6 +793,18 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(preview.files).toMatchObject({ changed: 0, added: 0, removed: 0 })
   })
 
+  it('forgets a saved token when the repository moves to another host', async () => {
+    const machineA = await machine('sync-token-host')
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-for-example' })).toMatchObject({ hasToken: true, credentialSource: 'token' })
+    // Another repository on the same host keeps it.
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/other.git' })).toMatchObject({ hasToken: true })
+    // Another host does not receive it.
+    expect(await machineA.sync.configure({ repoUrl: 'https://github.com/me/memory.git' })).toMatchObject({ hasToken: false, credentialSource: 'none' })
+    expect(readFileSync(join(machineA.root, 'state', 'sync-git.json'), 'utf8')).not.toContain('token-for-example')
+    // A token that comes with the move is the one kept.
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-again' })).toMatchObject({ hasToken: true })
+  })
+
   it('initializes the mirror without the option Git 2.28 introduced', async () => {
     const calls: string[][] = []
     const recording: ProcessRunner = async (command, args, options) => {

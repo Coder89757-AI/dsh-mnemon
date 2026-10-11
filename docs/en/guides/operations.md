@@ -157,7 +157,7 @@ The GitHub grant is kept in DSH's credentials store under the key `dsh-mnemon/gi
 
 Credentials stay out of the payload, the configuration file and the logs:
 
-- The token is resolved per operation, in this order: the `MNEMON_SYNC_GIT_TOKEN` environment variable, the token in `state/sync-git.json` (mode `0600`), then the grant GitHub sign-in wrote into DSH's credentials store. It is never written into the payload or printed in an error message.
+- The token is resolved per operation, in this order: the `MNEMON_SYNC_GIT_TOKEN` environment variable, the token in `state/sync-git.json` (mode `0600`), then the grant GitHub sign-in wrote into DSH's credentials store. It is never written into the payload or printed in an error message. A saved token belongs to the host it was saved for: moving the repository to another host forgets it unless a new token comes with the move.
 - Status and configuration responses describe the credential (`hasToken`, `credentialSource`, `credentialLogin`), never its value. A failure carries its kind as `details.reason`, so the page states it in its own language.
 - An unreachable remote, or a push without credentials, still commits locally and reports why the push did not finish; nothing is lost. Sync again once the remote answers.
 

@@ -343,6 +343,15 @@ function RepositoryEditor(props: RepositoryEditorProps): JSX.Element {
   </div>
 }
 
+/** Whether two HTTPS addresses name the same host, the one a saved token was saved for. */
+function sameHost(left: string, right: string): boolean {
+  try {
+    return new URL(left.trim()).host.toLowerCase() === new URL(right.trim()).host.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 /** The address form: a repository URL, and a token where the address is HTTPS. */
 function AddressConnect({ client, status, disabled, cancellable, t, onCancel, onConnected }: RepositoryEditorProps): JSX.Element {
   const saved = status.config.repoUrl ?? ''
@@ -353,7 +362,8 @@ function AddressConnect({ client, status, disabled, cancellable, t, onCancel, on
   const problem = repositoryProblem(url)
   const https = transportOf(url) === 'https'
   const environment = status.config.credentialSource === 'environment'
-  const storedToken = status.config.credentialSource === 'token'
+  // A saved token belongs to the host it was saved for; another host starts without one.
+  const storedToken = status.config.credentialSource === 'token' && sameHost(url, saved)
   const changed = url.trim() !== saved || token.trim() !== ''
   const ready = url.trim() !== '' && problem === undefined && changed
 
