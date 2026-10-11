@@ -36,7 +36,7 @@ importers:
         specifier: 0.5.7
         version: link:plugins/dsh-mnemon-provider-openviking
       dsh-mnemon-provider-retaindb:
-        specifier: 0.5.5
+        specifier: 0.5.6
         version: link:plugins/dsh-mnemon-provider-retaindb
       dsh-mnemon-provider-supermemory:
         specifier: 0.5.5
