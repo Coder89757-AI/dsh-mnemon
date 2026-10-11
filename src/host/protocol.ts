@@ -653,6 +653,15 @@ export interface MnemonMachineIdentity {
   createdAt: string
 }
 
+/**
+ * Where an installation's name comes from: the host name of the computer it runs on,
+ * which the name then follows, or a name a person typed, which stays as given.
+ */
+export type MnemonMachineLabelSource = 'hostname' | 'custom'
+
+/** The longest name an installation carries; a host name past it is shortened. */
+export const MNEMON_MACHINE_LABEL_MAX = 120
+
 /** Which machine wrote one runtime entry, so a merge can tell two installations apart. */
 export interface MnemonEntryOrigin {
   machine: string
@@ -921,6 +930,11 @@ export interface MnemonSyncStatus {
    * runs, and a disabled block writes nothing.
    */
   machine?: MnemonMachineIdentity
+  /**
+   * How `machine.label` is chosen, with the host name a host-name label follows.
+   * Present with `machine`; it describes this computer and is never published.
+   */
+  machineLabel?: { source: MnemonMachineLabelSource; hostname: string }
   lastCommit?: MnemonSyncCommit
   /** The last sync or merge this installation finished. */
   lastRun?: MnemonSyncLastRun

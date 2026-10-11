@@ -8,6 +8,7 @@ import {
   MNEMON_SYNC_TOKEN_ENV,
   type ClientConnectionHandle,
   type MnemonSyncGitHubRepository,
+  type MnemonMachineLabelSource,
   type MnemonSyncGitHubStatus,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
@@ -20,7 +21,7 @@ import { SettingRow, SettingSelect, ToggleRow, type SettingOption } from './sett
 import { SyncCompareDialog, SyncConfirmDialog, SyncHistoryDialog } from './MnemonSyncDialogs.tsx'
 import {
   AUTO_SYNC_CHOICES, DEFAULT_AUTHOR, authorModeOf, branchValid, credentialText, directoryValid, emailValid, failureText,
-  intervalLabel, issueText, onGitHub, reasonOf, repositoryName, repositoryNameValid, repositoryProblem, transportOf, when,
+  intervalLabel, issueText, machineNameValid, onGitHub, reasonOf, repositoryName, repositoryNameValid, repositoryProblem, transportOf, when,
   type AuthorMode,
 } from './sync-view.ts'
 
@@ -673,8 +674,9 @@ function RepositoryPicker({ client, login, current, disabled, creating, t, onCho
 }
 
 /**
- * Where on the branch the memory goes and whose name its commits carry. Each field
- * shows the value in use; the author is an explicit choice between the channel's
+ * What this computer is called, where on the branch the memory goes and whose name
+ * its commits carry. Each field shows the value in use; the computer's name is the
+ * host name or a typed one, and the author an explicit choice between the channel's
  * own identity, this computer's Git identity, and a typed one.
  */
 function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: MnemonClient; status: MnemonSyncStatus; disabled: boolean; t: MnemonTranslate; onSaved: () => Promise<void> }): JSX.Element {
@@ -686,9 +688,16 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
   const [mode, setMode] = useState<AuthorMode>(savedMode)
   const [name, setName] = useState(savedMode === 'custom' ? config.authorName : '')
   const [email, setEmail] = useState(savedMode === 'custom' ? config.authorEmail : '')
+  // This computer's name: its host name, which it then follows, or one typed here.
+  const savedLabel = status.machine?.label ?? ''
+  const savedSource: MnemonMachineLabelSource = status.machineLabel?.source ?? 'hostname'
+  const hostname = status.machineLabel?.hostname ?? savedLabel
+  const [nameSource, setNameSource] = useState<MnemonMachineLabelSource>(savedSource)
+  const [machineName, setMachineName] = useState(savedSource === 'custom' ? savedLabel : '')
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const radio = useId()
+  const nameRadio = useId()
 
   // The saved values seed the form again whenever the Host reports new ones.
   useEffect(() => {
@@ -697,6 +706,9 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
     setMode(next)
     setName(next === 'custom' ? config.authorName : ''); setEmail(next === 'custom' ? config.authorEmail : '')
   }, [config.branch, config.subdir, config.authorName, config.authorEmail])
+  useEffect(() => {
+    setNameSource(savedSource); setMachineName(savedSource === 'custom' ? savedLabel : '')
+  }, [savedSource, savedLabel])
 
   const author = mode === 'default'
     ? { authorName: MNEMON_SYNC_DEFAULT_AUTHOR_NAME, authorEmail: MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL }
@@ -709,14 +721,21 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
   const customOk = mode !== 'custom' || !authorChanged || (name.trim() !== '' && emailValid(email))
   const normalizedSubdir = subdir.trim().replaceAll('\\', '/').split('/').filter(part => part !== '').join('/') + '/'
   const moved = branch.trim() !== config.branch || normalizedSubdir !== config.subdir
-  const changed = moved || author.authorName !== config.authorName || author.authorEmail !== config.authorEmail
-  const ready = changed && branchOk && subdirOk && customOk
+  const nameOk = nameSource === 'hostname' || machineNameValid(machineName)
+  const renamed = nameSource !== savedSource || (nameSource === 'custom' && machineName.trim() !== savedLabel)
+  const changed = moved || renamed || author.authorName !== config.authorName || author.authorEmail !== config.authorEmail
+  const ready = changed && branchOk && subdirOk && customOk && nameOk
+  // The name a version will carry once this form is saved, as history will show it.
+  const shownName = nameSource === 'hostname' ? hostname : machineName.trim()
 
   const save = async (): Promise<void> => {
     if (!ready || busy) return
     setBusy(true); setFeedback(null)
     try {
-      await client.configureSync({ branch: branch.trim(), subdir: subdir.trim(), ...author })
+      await client.configureSync({
+        branch: branch.trim(), subdir: subdir.trim(), ...author,
+        ...(renamed ? { machineLabel: nameSource === 'hostname' ? null : machineName.trim() } : {}),
+      })
       setFeedback({ tone: 'success', text: t('config.syncAdvancedSaved') })
       void onSaved()
     } catch (reason) {
@@ -727,10 +746,30 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
   return <div className={css.syncAdvanced}>
     <button type="button" className={css.syncDisclosure} aria-expanded={open} onClick={() => setOpen(value => !value)}>
       <span>{t('config.syncAdvanced')}</span>
-      <small>{[config.branch, config.subdir, savedMode === 'default' ? t('config.syncAuthorDefault') : savedMode === 'machine' ? t('config.syncAuthorMachine') : config.authorName || config.authorEmail || t('config.syncAuthorCustom')].join(' · ')}</small>
+      <small>{[savedLabel, config.branch, config.subdir, savedMode === 'default' ? t('config.syncAuthorDefault') : savedMode === 'machine' ? t('config.syncAuthorMachine') : config.authorName || config.authorEmail || t('config.syncAuthorCustom')].filter(part => part !== '').join(' · ')}</small>
       <IconChevronDownOutlineRegular className={css.providerChevron} size={14} />
     </button>
     {open && <div className={css.editor}>
+      {status.machine !== undefined && <div className={css.syncChoice}>
+        <span className={css.syncFieldLabel} id={nameRadio + '-label'}>{t('config.syncMachineName')}</span>
+        <div className={css.inlineChoices} role="radiogroup" aria-labelledby={nameRadio + '-label'}>
+          {(['hostname', 'custom'] as const).map(value => <label key={value}>
+            <input type="radio" name={nameRadio} value={value} checked={nameSource === value} disabled={disabled || busy} onChange={() => setNameSource(value)} />
+            <span>{value === 'hostname' ? t('config.syncMachineHostname') : t('config.syncMachineCustom')}</span>
+          </label>)}
+        </div>
+        {nameSource === 'custom' && <div className={css.fieldGrid}>
+          <label>{t('config.syncMachineNameLabel')}
+            <input type="text" value={machineName} aria-label={t('config.syncMachineName')} disabled={disabled || busy}
+              aria-invalid={machineName.trim() === '' || nameOk ? undefined : true} autoComplete="off" spellCheck={false}
+              onChange={event => setMachineName(event.target.value)} />
+            {machineName.trim() !== '' && !nameOk && <small className={css.error}>{t('config.syncMachineNameInvalid')}</small>}
+          </label>
+        </div>}
+        {(nameSource === 'hostname' || nameOk) && <p className={css.editorNote}>
+          {nameSource === 'hostname' ? t('config.syncMachineHostnameNote', { name: shownName }) : t('config.syncMachineCustomNote', { name: shownName })}
+        </p>}
+      </div>}
       <div className={css.fieldGrid}>
         <label>{t('config.syncBranch')}
           <input type="text" value={branch} aria-label={t('config.syncBranch')} disabled={disabled || busy} aria-invalid={branchOk ? undefined : true}
@@ -743,7 +782,7 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
           <small>{subdirOk ? t('config.syncDefaultValue', { value: MNEMON_SYNC_DEFAULT_SUBDIR }) : t('config.syncSubdirInvalid')}</small>
         </label>
       </div>
-      <div className={css.syncAuthor}>
+      <div className={css.syncChoice}>
         <span className={css.syncFieldLabel} id={radio + '-label'}>{t('config.syncAuthor')}</span>
         <div className={css.inlineChoices} role="radiogroup" aria-labelledby={radio + '-label'}>
           {(['default', 'machine', 'custom'] as const).map(value => <label key={value}>
@@ -766,7 +805,9 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
       </div>
       <div className={css.memoryConfigFooter}>
         <div className={css.configFeedback} aria-live="polite">
-          {feedback !== null ? <FeedbackLine value={feedback} /> : moved && branchOk && subdirOk ? <span className={css.editorNote}>{t('config.syncAdvancedNote')}</span> : null}
+          {feedback !== null ? <FeedbackLine value={feedback} />
+            : moved && branchOk && subdirOk ? <span className={css.editorNote}>{t('config.syncAdvancedNote')}</span>
+              : renamed && nameOk ? <span className={css.editorNote}>{t('config.syncMachineRenameNote')}</span> : null}
         </div>
         <div>
           <Button variant="primary" size="sm" disabled={disabled || !ready || busy} onClick={() => void save()}>{busy ? t('config.syncSaving') : t('config.syncSave')}</Button>

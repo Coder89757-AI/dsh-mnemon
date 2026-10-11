@@ -513,8 +513,8 @@ details[open] > summary .providerChevron { transform: rotate(180deg); }
 .syncDisclosure[aria-expanded='true'] .providerChevron { transform: rotate(180deg); }
 .syncDisclosure:focus-visible { border-radius: var(--dsw-radius-md); outline: none; box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); }
 .editor > .inlineChoices { align-self: flex-start; }
-.syncAuthor { display: grid; min-width: 0; justify-items: start; gap: 8px; }
-.syncAuthor > .fieldGrid { width: 100%; }
+.syncChoice { display: grid; min-width: 0; justify-items: start; gap: 8px; }
+.syncChoice > .fieldGrid { width: 100%; }
 .syncDialogBody { display: grid; min-width: 0; gap: 12px; }
 .syncDialogNote { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .syncDialogBody > .error,

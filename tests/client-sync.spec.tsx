@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MnemonSyncSection } from '../src/client/MnemonSyncSection.tsx'
-import { failureText, repositoryProblem, transportOf } from '../src/client/sync-view.ts'
+import { failureText, machineNameValid, repositoryProblem, transportOf } from '../src/client/sync-view.ts'
 import { translateEn, translateZh, type MnemonTranslate } from '../src/client/locales.ts'
 import type { ClientConnectionHandle } from '../src/host/dsh.ts'
 import type {
@@ -35,7 +35,12 @@ interface FakeHostOptions {
   disconnectFails?: boolean
   /** The branch holds more versions than the first page. */
   historyTruncated?: boolean
+  /** A name a person already gave this computer. */
+  machineName?: string
 }
+
+/** The host name the fake computer runs under. */
+const HOSTNAME = 'macbook-air.local'
 
 /** A Host that answers the sync channel from a little state the calls change. */
 function fakeHost(options: FakeHostOptions = {}) {
@@ -46,9 +51,12 @@ function fakeHost(options: FakeHostOptions = {}) {
     ...(options.repoUrl === undefined ? {} : { repoUrl: options.repoUrl }),
   }
   let github: MnemonSyncGitHubStatus = { available: false, signedIn: false, writable: false, ...options.github }
+  const machine = { id: 'machine-a', label: options.machineName ?? HOSTNAME, createdAt: '2026-08-01T00:00:00.000Z' }
+  let machineSource: 'hostname' | 'custom' = options.machineName === undefined ? 'hostname' : 'custom'
   const status = (): MnemonSyncStatus => ({
     enabled: true, configured: config.repoUrl !== undefined, config: { ...config },
     configPath: '/data/state/sync-git.json', mirrorPath: '/data/state/sync/git',
+    machine: { ...machine }, machineLabel: { source: machineSource, hostname: HOSTNAME },
     git: { available: true, required: '2.20', version: '2.50.1' },
     remote: options.remote ?? (config.repoUrl === undefined ? { reachable: false, branchExists: false } : { reachable: true, branchExists: true, commit: COMMIT }),
     ...(options.autoBackup === undefined ? {} : { autoBackup: options.autoBackup }),
@@ -94,6 +102,10 @@ function fakeHost(options: FakeHostOptions = {}) {
         for (const key of ['branch', 'subdir', 'authorName', 'authorEmail'] as const) if (key in payload) config[key] = String(payload[key])
         if ('autoBackupMinutes' in payload) config.autoBackupMinutes = Number(payload.autoBackupMinutes)
         if ('token' in payload) config.credentialSource = payload.token === null ? 'none' : 'token'
+        if ('machineLabel' in payload) {
+          machineSource = payload.machineLabel === null ? 'hostname' : 'custom'
+          machine.label = payload.machineLabel === null ? HOSTNAME : String(payload.machineLabel)
+        }
         return { ok: true as const, value: { ...config } }
       }
       case 'push': {
@@ -355,7 +367,7 @@ describe('Git sync section', () => {
     expect(save.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('分支'), { target: { value: 'memory-backup' } })
     expect(screen.getByText('保存后，下次同步写到新的分支或目录')).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: '自定义' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: '提交者' })).getByRole('radio', { name: '自定义' }))
     fireEvent.change(screen.getByLabelText('姓名'), { target: { value: 'Octo Cat' } })
     fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'not-an-email' } })
     expect(save.disabled).toBe(true)
@@ -468,6 +480,53 @@ describe('Git sync section after review', () => {
   })
 })
 
+describe('This computer\'s name', () => {
+  it('names this computer in the advanced settings, or goes back to its host name', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git' })
+    section(host.connection)
+    // The summary names the computer before anything opens.
+    const disclosure = await screen.findByRole('button', { name: /^高级设置/u })
+    expect(disclosure.textContent).toContain(HOSTNAME)
+    fireEvent.click(disclosure)
+    const naming = screen.getByRole('radiogroup', { name: '这台电脑的名称' })
+    expect((within(naming).getByRole('radio', { name: '主机名' }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText('使用主机名，备份历史里显示为“来自 ' + HOSTNAME + '”')).toBeTruthy()
+    const save = screen.getByRole('button', { name: '保存' }) as HTMLButtonElement
+
+    fireEvent.click(within(naming).getByRole('radio', { name: '自定义' }))
+    // An empty name is not a name, and one past the limit is refused as it is typed.
+    expect(save.disabled).toBe(true)
+    const field = screen.getByRole('textbox', { name: '这台电脑的名称' })
+    fireEvent.change(field, { target: { value: 'x'.repeat(121) } })
+    expect(screen.getByText('名称最多 120 个字符，且只能占一行')).toBeTruthy()
+    expect(save.disabled).toBe(true)
+    fireEvent.change(field, { target: { value: 'Studio' } })
+    expect(screen.getByText('备份历史里显示为“来自 Studio”')).toBeTruthy()
+    expect(screen.getByText('保存后，之后的同步使用新名称；已有的版本保留原来的名称')).toBeTruthy()
+    fireEvent.click(save)
+    await waitFor(() => expect(host.calls('configure')).toEqual([{ branch: 'mnemon-sync', subdir: 'mnemon/', authorName: 'dsh-mnemon sync', authorEmail: 'mnemon@localhost', machineLabel: 'Studio' }]))
+    // Once the Host reports the name, the summary follows it.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^高级设置/u }).textContent).toContain('Studio'))
+
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: '这台电脑的名称' })).getByRole('radio', { name: '主机名' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(host.calls('configure').at(-1)).toMatchObject({ machineLabel: null }))
+  })
+
+  it('opens on a name a person already chose and saves nothing until it changes', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', machineName: 'Studio' })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: /^高级设置/u }))
+    expect((within(screen.getByRole('radiogroup', { name: '这台电脑的名称' })).getByRole('radio', { name: '自定义' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('textbox', { name: '这台电脑的名称' }) as HTMLInputElement).value).toBe('Studio')
+    expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true)
+    // Changing only the branch sends no name: the one saved stays as it is.
+    fireEvent.change(screen.getByLabelText('分支'), { target: { value: 'memory-backup' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(host.calls('configure')).toEqual([{ branch: 'memory-backup', subdir: 'mnemon/', authorName: 'dsh-mnemon sync', authorEmail: 'mnemon@localhost' }]))
+  })
+})
+
 describe('Git sync view helpers', () => {
   it('tells the transports apart and checks addresses as the Host does', () => {
     expect(transportOf('https://github.com/o/r.git')).toBe('https')
@@ -477,6 +536,11 @@ describe('Git sync view helpers', () => {
     expect(repositoryProblem('C:\\memory\\repo.git')).toBeUndefined()
     expect(repositoryProblem('relative/path')).toBe('format')
     expect(repositoryProblem('ftp://host/repo')).toBe('format')
+    expect(machineNameValid('Studio')).toBe(true)
+    expect(machineNameValid('  ')).toBe(false)
+    expect(machineNameValid('two\nlines')).toBe(false)
+    expect(machineNameValid('x'.repeat(120))).toBe(true)
+    expect(machineNameValid('x'.repeat(121))).toBe(false)
   })
 
   it('keeps a failure it cannot name in its own words', () => {

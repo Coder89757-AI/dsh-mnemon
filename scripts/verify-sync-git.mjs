@@ -289,6 +289,16 @@ try {
   const reset = expectOk(await sync(a, 'configure', { branch: '', subdir: '' }), 'configure')
   check('an empty branch and directory fall back to the defaults',
     reset.branch === 'mnemon-sync' && reset.subdir === 'mnemon/', JSON.stringify(reset))
+  const named = expectOk(await sync(a, 'configure', { machineLabel: 'Acceptance A' }), 'configure')
+  const namedStatus = expectOk(await sync(a, 'status'), 'status')
+  check('a name given to this machine stays apart from the channel settings and reports its source',
+    named.repoUrl === origin && named.branch === 'mnemon-sync' && namedStatus.machine?.label === 'Acceptance A'
+    && namedStatus.machineLabel?.source === 'custom' && typeof namedStatus.machineLabel?.hostname === 'string'
+    && namedStatus.machineLabel.hostname !== '', JSON.stringify({ label: namedStatus.machine?.label, source: namedStatus.machineLabel?.source }))
+  const twoLines = await sync(a, 'configure', { branch: 'elsewhere', machineLabel: 'two\nlines' })
+  expectFailure(twoLines, /machine name/u, 'a two-line machine name')
+  check('a refused name changes nothing else the same request carried',
+    expectOk(await sync(a, 'status'), 'status').config.branch === 'mnemon-sync')
   const added = expectOk(await call(a, '/dsh-mnemon-write', 'runtime-memory', { action: 'add', target: 'memory', content: MARKER }), 'runtime-memory')
   check('the working memory accepted one entry through the write channel', added.success === true && added.entryCount === 1, JSON.stringify(added))
   expectOk(await call(a, '/dsh-mnemon-write', 'runtime-memory', { action: 'add', target: 'user', content: PROFILE }), 'runtime-memory user')
@@ -319,6 +329,8 @@ try {
   const publishedMemory = await git(['show', 'mnemon-sync:mnemon/payload/runtime/MEMORY.md'], origin)
   check('the published working memory carries the entry', publishedMemory.includes(MARKER))
   const manifest = JSON.parse(await git(['show', 'mnemon-sync:mnemon/manifest.json'], origin))
+  check('the published version carries the name this machine was given',
+    manifest.sync.machine?.label === 'Acceptance A', JSON.stringify(manifest.sync.machine?.label))
   check('the manifest declares the pack and its channel',
     manifest.format === 'mnemonpack' && manifest.version === 1 && manifest.scope === 'full'
     && manifest.sync.channel === 'git' && manifest.sync.branch === 'mnemon-sync' && manifest.sync.subdir === 'mnemon/'

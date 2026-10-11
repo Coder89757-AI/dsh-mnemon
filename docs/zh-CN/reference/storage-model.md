@@ -57,7 +57,7 @@ follow an exact cold reference when full text is required
 |   +-- <memory-space-id>/
 |       +-- mnemon.db
 +-- state/
-    +-- machine.json              # 本机标识，0600，不进入 Mnemon Pack
+    +-- machine.json              # 本机标识与名称，0600，不进入 Mnemon Pack
     +-- tombstones.json           # 本机已导出过的删除记录，不进入 Mnemon Pack
     +-- runtime-index.json        # 上次导出携带的 Runtime 条目，不进入 Mnemon Pack
     +-- review-ledger.json        # 待决策的整理建议，0600，不进入 Mnemon Pack
@@ -236,7 +236,7 @@ Mnemon Native 保留 `temporal`、`semantic`、`causal` 和 `entity` 关系；Hi
 | Mnemon Native 目录 | `data/.dsh-memory-bodies.json` + 磁盘 Store | Web 状态聚合 |
 | 第三方 Provider 连接 | `state/memory-providers.json` | 脱敏的 Provider 能力与状态 |
 | Git 同步配置 | `state/sync-git.json` | `state/sync/git` 镜像与所配置的远端分支 |
-| 机器标识 | `state/machine.json` | 导出包与同步状态中的 `machine` 字段 |
+| 机器标识 | `state/machine.json`：id、名称与 `labelSource`（`hostname` 跟随主机名，`custom` 为手动填写） | 导出包与同步状态中的 `machine` 字段 |
 | 跨机删除 | `state/tombstones.json` | `state/runtime-index.json`，后续导出以它作为比对基准 |
 | 整理建议 | `state/review-ledger.json` | 审查卡片；被接受的建议作用于各 Source，而不是账本本身 |
 | 长期记忆 | Mnemon `mnemon.db` 或远程 Provider | 图谱投影、跨 Provider 排名融合 |

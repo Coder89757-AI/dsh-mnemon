@@ -57,7 +57,7 @@ Use `global` for a common local root, `custom` for an explicitly agreed root, or
 |   +-- <memory-space-id>/
 |       +-- mnemon.db
 +-- state/
-    +-- machine.json              # this machine's identity; 0600; excluded from Mnemon Packs
+    +-- machine.json              # this machine's identity and name; 0600; excluded from Mnemon Packs
     +-- tombstones.json           # deletions this machine has already exported; excluded from Mnemon Packs
     +-- runtime-index.json        # the runtime entries the last export carried; excluded from Mnemon Packs
     +-- review-ledger.json        # reconciliation proposals awaiting a decision; 0600; excluded from Mnemon Packs
@@ -228,7 +228,7 @@ Mnemon Native preserves `temporal`, `semantic`, `causal`, and `entity` relations
 | Mnemon Native catalog | `data/.dsh-memory-bodies.json` + on-disk Stores | Web status aggregation |
 | Third-party connections | `state/memory-providers.json` | redacted provider capabilities and status |
 | Git sync configuration | `state/sync-git.json` | `state/sync/git` mirror; the configured remote branch |
-| Machine identity | `state/machine.json` | the `machine` field of an export and of a sync status |
+| Machine identity | `state/machine.json`: the id, the name, and `labelSource` (`hostname` follows the host name, `custom` was typed) | the `machine` field of an export and of a sync status |
 | Cross-machine deletions | `state/tombstones.json` | `state/runtime-index.json`, which is what a later export diffs against |
 | Reconciliation proposals | `state/review-ledger.json` | the review card; an accepted proposal is applied to the Sources, never to the ledger |
 | Long-term memory | Mnemon `mnemon.db` or remote provider | graph projection and cross-provider rank fusion |

@@ -8,7 +8,7 @@ import { MnemonPackManager } from '../src/host/pack.ts'
 import { createStorageRoot } from '../src/host/storage-root.ts'
 import { MnemonGitSync, gitEnvironment, remoteIssueOf } from '../src/host/git-sync.ts'
 import type { MnemonGitHubAuth } from '../src/host/github-auth.ts'
-import { MnemonMachineStore } from '../src/host/machine-identity.ts'
+import { MnemonMachineStore, defaultMachineLabel } from '../src/host/machine-identity.ts'
 import { runProcess, type ProcessRunner } from '../src/host/process.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 
@@ -505,6 +505,33 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(status.machine).toEqual({ id: stored.id, label: stored.label, createdAt: stored.createdAt })
     expect(stored.id).toMatch(/^[0-9a-f-]{36}$/u)
     expect(stored.label.length).toBeGreaterThan(0)
+  })
+
+  it('publishes the name a person gives this machine, and goes back to the host name', async () => {
+    const origin = await repository('sync-machine-name-remote')
+    const machineA = await machine('sync-machine-name-a', origin)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'memory', content: 'Named machine note', importance: 'normal' }, { confirmed: true })
+
+    // The name is kept with the identity; the channel settings stay as they were.
+    expect((await machineA.sync.configure({ machineLabel: 'Studio' })).repoUrl).toBe(origin)
+    const status = await machineA.sync.status()
+    expect(status.machine?.label).toBe('Studio')
+    expect(status.machineLabel).toEqual({ source: 'custom', hostname: defaultMachineLabel() })
+    const first = await machineA.sync.push({ message: 'Publish as Studio' })
+    expect((await machineA.sync.backups()).commits[0]).toMatchObject({ commit: first.commit, machine: { label: 'Studio' } })
+
+    // A refused name changes nothing else the same request carried.
+    await expect(machineA.sync.configure({ branch: 'elsewhere', machineLabel: 'two\nlines' })).rejects.toThrow(/machine name/u)
+    const unchanged = await machineA.sync.status()
+    expect(unchanged.config.branch).toBe('mnemon-sync')
+    expect(unchanged.machine?.label).toBe('Studio')
+
+    // Back to the host name: the next sync records the new name in a version of its own.
+    await machineA.sync.configure({ machineLabel: null })
+    expect((await machineA.sync.status()).machineLabel?.source).toBe('hostname')
+    const second = await machineA.sync.push({ message: 'Publish under the host name' })
+    expect(second.committed).toBe(true)
+    expect((await machineA.sync.backups()).commits[0]).toMatchObject({ commit: second.commit, machine: { label: defaultMachineLabel() } })
   })
 
   it('drives Git with an environment that cannot relocate the repository', async () => {

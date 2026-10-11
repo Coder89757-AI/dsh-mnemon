@@ -1,4 +1,5 @@
 import {
+  MNEMON_MACHINE_LABEL_MAX,
   MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL,
   MNEMON_SYNC_DEFAULT_AUTHOR_NAME,
   MNEMON_SYNC_TOKEN_ENV,
@@ -75,6 +76,12 @@ export function directoryValid(value: string): boolean {
 export function emailValid(value: string): boolean {
   const email = value.trim()
   return email.length <= 320 && /^[^\s<>@]+@[^\s<>@]+$/u.test(email)
+}
+
+/** A name for this computer, as the Host stores one: one line, at most the shared limit. */
+export function machineNameValid(value: string): boolean {
+  const name = value.trim()
+  return name !== '' && name.length <= MNEMON_MACHINE_LABEL_MAX && !/[\p{Cc}\u2028\u2029]/u.test(name)
 }
 
 /** A GitHub repository name, as GitHub accepts one. */

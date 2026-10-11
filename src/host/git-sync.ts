@@ -22,7 +22,7 @@ import { RUNTIME_MEMORY_LIMITS, type RuntimeMemoryLimits } from 'dsh-mnemon-sour
 import { MNEMON_PACK_COMPONENTS, MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL, MNEMON_SYNC_DEFAULT_AUTHOR_NAME, MNEMON_SYNC_TOKEN_ENV } from './protocol.ts'
 import { MnemonGitHubAuth } from './github-auth.ts'
 import { MnemonSyncError } from './sync-error.ts'
-import { MnemonMachineStore } from './machine-identity.ts'
+import { MnemonMachineStore, defaultMachineLabel, machineLabel } from './machine-identity.ts'
 import type { StorageRoot } from './storage-root.ts'
 import { MnemonSyncSettingsStore, type MnemonSyncSettings } from './sync-config.ts'
 
@@ -665,6 +665,7 @@ export class MnemonGitSync {
     const commit = existsSync(this.store.mirror()) && git.available ? await this.lastCommit(signal) : undefined
     const autoBackup = this.autoBackupView?.()
     const lastRun = repoUrl === undefined ? undefined : this.lastRun()
+    const machine = this.machine.current()
     return {
       enabled: true,
       configured: repoUrl !== undefined,
@@ -673,7 +674,8 @@ export class MnemonGitSync {
       mirrorPath: this.store.mirror(),
       git,
       remote,
-      machine: this.machine.read(),
+      machine: machine.identity,
+      machineLabel: { source: machine.source, hostname: defaultMachineLabel() },
       ...(commit === undefined ? {} : { lastCommit: commit }),
       ...(lastRun === undefined ? {} : { lastRun }),
       ...(autoBackup === undefined ? {} : { autoBackup }),
@@ -682,14 +684,20 @@ export class MnemonGitSync {
 
   async configure(patch: unknown): Promise<MnemonSyncConfigView> {
     const previous = this.store.read()
-    const next = this.store.patch(patch)
+    const fields = record(patch)
+    // This machine's name belongs to its identity, not to the channel settings, so it is
+    // taken out of the patch and checked before anything is written.
+    const { machineLabel: name, ...settings }: Record<string, unknown> = fields ?? {}
+    const naming = fields !== undefined && 'machineLabel' in fields
+    if (naming && name !== null && name !== '') machineLabel(name)
+    const next = this.store.patch(fields === undefined ? patch : settings)
     // A saved token authenticates the host it was saved for. Moving the repository to
     // another host forgets it unless a new token comes with the move, so a token never
     // reaches a host it was not meant for.
-    const fields = record(patch)
     if (next.token !== undefined && previous.repoUrl !== undefined && fields !== undefined && !('token' in fields)
       && tokenHost(previous.repoUrl) !== tokenHost(next.repoUrl)) delete next.token
     this.store.write(next)
+    if (naming) this.machine.rename(name)
     // When memory last travelled is a fact about one repository; another one starts with none.
     if (previous.repoUrl !== next.repoUrl) rmSync(this.lastRunPath(), { force: true })
     return this.credentialView(next)
