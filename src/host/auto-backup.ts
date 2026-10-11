@@ -1,4 +1,4 @@
-import type { MnemonSyncAutoBackup } from './protocol.ts'
+import type { MnemonSyncAutoBackup, MnemonSyncFailureReason } from './protocol.ts'
 import type { LiveMnemonRuntime } from './runtime.ts'
 
 /** The one failure that is not worth reporting: the reader is already working. */
@@ -31,6 +31,7 @@ export class MnemonAutoBackupScheduler {
   private lastAt: string | undefined
   private lastAttemptAt: number | undefined
   private lastError: string | undefined
+  private lastFailure: MnemonSyncFailureReason | undefined
   private lastCommit: string | undefined
   private lastPushed: boolean | undefined
 
@@ -70,6 +71,7 @@ export class MnemonAutoBackupScheduler {
       // stopped timer never advertises a time it will not keep.
       ...(this.lastAttemptAt === undefined || !available ? {} : { nextAt: new Date(this.lastAttemptAt + minutes * MINUTE_MS).toISOString() }),
       ...(this.lastError === undefined ? {} : { lastError: this.lastError }),
+      ...(this.lastError === undefined || this.lastFailure === undefined ? {} : { lastFailure: this.lastFailure }),
       ...(this.lastCommit === undefined ? {} : { lastCommit: this.lastCommit }),
       ...(this.lastPushed === undefined ? {} : { lastPushed: this.lastPushed }),
     }
@@ -120,6 +122,7 @@ export class MnemonAutoBackupScheduler {
     this.controller = controller
     try {
       const settings = sync.settings().read()
+      this.lastFailure = undefined
       if (settings.repoUrl === undefined) {
         // Nothing to publish to yet. The timer keeps running, so configuring a
         // repository later needs no second visit to the settings page.
@@ -136,11 +139,14 @@ export class MnemonAutoBackupScheduler {
         // A payload the branch already holds is not a failure, so the reason is
         // only kept when a commit that should have travelled did not.
         this.lastError = result.pushed ? undefined : result.committed ? result.reason : undefined
+        if (this.lastError !== undefined) this.lastFailure = result.failure
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (!this.stopped && !message.includes(BUSY_MESSAGE)) {
+      const reason = error instanceof Error ? (error as { reason?: unknown }).reason : undefined
+      if (!this.stopped && reason !== 'busy' && !message.includes(BUSY_MESSAGE)) {
         this.lastError = message
+        this.lastFailure = typeof reason === 'string' ? reason as MnemonSyncFailureReason : undefined
         console.warn('dsh-mnemon: automatic Git backup failed', error)
       }
     } finally {

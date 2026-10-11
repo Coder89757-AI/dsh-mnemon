@@ -85,7 +85,10 @@ function requestedLimit(value: unknown): number | undefined {
 }
 function success(value: unknown): RpcResult<unknown> { return { ok: true, value } }
 function failure(error: unknown): RpcResult<unknown> {
-  return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} } }
+  // A named failure, such as a sync remote that refused the credentials, carries its
+  // reason so the page can state it in its own language; the message stays as written.
+  const reason = error instanceof Error ? (error as { reason?: unknown }).reason : undefined
+  return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: typeof reason === 'string' ? { reason } : {} } }
 }
 function badRequest(message: string): RpcResult<unknown> {
   return { ok: false, error: { code: 'bad-request', message, details: { issues: [] } } }

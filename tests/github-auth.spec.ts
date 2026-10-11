@@ -346,7 +346,9 @@ describe('GitHub sign-in for the sync channel', () => {
       { name: 'memory', fullName: 'octocat/memory', url: 'https://github.com/octocat/memory.git', private: true, defaultBranch: 'main', owner: 'octocat', push: true },
       { name: 'notes', fullName: 'octocat/notes', url: 'https://github.com/octocat/notes.git', private: false, defaultBranch: 'trunk', owner: 'octocat', push: false },
     ])
-    expect(calls[0]?.url).toBe('https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member')
+    expect(calls[0]?.url).toBe('https://api.github.com/user/repos?per_page=100&page=1&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member')
+    // A page shorter than a full one is the last, so no second page is asked for.
+    expect(calls.filter(call => call.url.includes('/user/repos')).length).toBe(1)
     expect(calls[0]?.init.headers).toMatchObject({ authorization: 'Bearer gho_token', 'x-github-api-version': '2022-11-28' })
   })
 

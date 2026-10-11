@@ -116,7 +116,8 @@ export interface MemorySourceManagementResult {
 export type RpcError =
   | { code: 'bad-request'; message: string; details: { issues: JsonValue[] } }
   | { code: 'settings-rejected'; message: string; details: { ns: string } }
-  | { code: 'internal'; message: string; details: Record<string, never> }
+  /** `reason` names a failure the page can state in its own language, such as a sync remote refusing credentials. */
+  | { code: 'internal'; message: string; details: Record<string, never> | { reason: string } }
 
 export type RpcResult<T = JsonValue> =
   | { ok: true; value: T }
@@ -850,11 +851,52 @@ export interface MnemonSyncGitStatus {
   issue?: string
 }
 
+/**
+ * Why a remote could not be read, as a code the settings page names in its own
+ * language: credentials missing or refused, an address that leads nowhere, a
+ * network that does not reach the host, or a host that did not answer in time.
+ */
+export type MnemonSyncRemoteIssue = 'auth' | 'not-found' | 'network' | 'timeout' | 'unknown'
+
+/**
+ * Why a sync operation did not run or did not finish. The message beside it is
+ * Git's or the Host's own words; the reason is what a page can translate and act
+ * on, so an operator reads "sign in or add a token" rather than a Git trace.
+ */
+export type MnemonSyncFailureReason =
+  | 'busy'
+  | 'no-repository'
+  | 'git-missing'
+  | 'remote-empty'
+  | 'remote-auth'
+  | 'remote-not-found'
+  | 'remote-network'
+  | 'remote-timeout'
+  | 'push-rejected'
+  | 'github-unauthorized'
+
 export interface MnemonSyncRemoteStatus {
   reachable: boolean
   branchExists: boolean
   commit?: string
   error?: string
+  /** What kind of failure `error` is, when the remote could not be read. */
+  issue?: MnemonSyncRemoteIssue
+}
+
+/**
+ * The last sync this installation finished, kept on disk so a restart still
+ * says when memory last travelled. `sync` merged the branch and published the
+ * result; `merge` only merged the branch here.
+ */
+export interface MnemonSyncLastRun {
+  at: string
+  kind: 'sync' | 'merge'
+  commit: string
+  /** Whether the commit reached the remote; a merge never publishes. */
+  pushed: boolean
+  /** Remote runtime entries the merge wrote here. */
+  added?: number
 }
 
 export interface MnemonSyncCommit {
@@ -880,6 +922,8 @@ export interface MnemonSyncStatus {
    */
   machine?: MnemonMachineIdentity
   lastCommit?: MnemonSyncCommit
+  /** The last sync or merge this installation finished. */
+  lastRun?: MnemonSyncLastRun
   /** The background cadence this Host keeps; absent when no timer runs for this runtime. */
   autoBackup?: MnemonSyncAutoBackup
 }
@@ -898,6 +942,8 @@ export interface MnemonSyncAutoBackup {
   nextAt?: string
   /** Why the last automatic run failed, when it did. */
   lastError?: string
+  /** The kind of failure `lastError` is, when the Host could tell. */
+  lastFailure?: MnemonSyncFailureReason
   /** The commit the last automatic run recorded. */
   lastCommit?: string
   /** Whether the last automatic run reached the branch. */
@@ -950,9 +996,13 @@ export interface MnemonSyncPushResult {
     summary: MnemonPackComponentSummary[]
     /** Entries the merge dropped because a tombstone removed them. */
     tombstones: number
+    /** What the merge wrote into this machine's runtime memory. */
+    runtime?: MnemonRuntimeMergeReport
   }
   /** Why the branch was not published, when it was not. */
   reason?: string
+  /** The kind of failure `reason` describes, when the Host could tell. */
+  failure?: MnemonSyncFailureReason
   /** What folding the mirror's loose objects into a pack recovered, when it ran. */
   compaction?: MnemonSyncCompaction
 }

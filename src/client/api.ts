@@ -93,7 +93,11 @@ export class MnemonClient {
 
   private async call<T>(channel: string, endpoint: string, payload: unknown): Promise<T> {
     const response = await callMnemonRpc(this.connection, channel, endpoint, payload)
-    if (!response.ok) throw new Error(response.error.message)
+    if (!response.ok) {
+      // A failure the Host could name keeps that name, so the page can translate it.
+      const reason = (response.error.details as { reason?: unknown } | undefined)?.reason
+      throw Object.assign(new Error(response.error.message), typeof reason === 'string' ? { reason } : {})
+    }
     return response.value as T
   }
 
