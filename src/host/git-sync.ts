@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { zipSync, unzipSync, type Unzipped } from 'fflate'
 import type { ResolvedConfig } from './config.ts'
@@ -14,20 +14,45 @@ import type {
   MnemonPackComponent, MnemonPackImportMode, MnemonPackManifest, MnemonSyncBackup, MnemonSyncBackupList,
   MnemonSyncComponentDelta, MnemonSyncConfigView, MnemonSyncCredentialSource, MnemonSyncDiff, MnemonSyncDiffConflict,
   MnemonSyncDiffEntry,
-  MnemonSyncAutoBackup, MnemonSyncCompaction, MnemonSyncFileDelta, MnemonSyncGitStatus, MnemonSyncPreview,
-  MnemonSyncPullResult, MnemonSyncPushResult,
+  MnemonSyncAutoBackup, MnemonSyncCompaction, MnemonSyncFailureReason, MnemonSyncFileDelta, MnemonSyncGitStatus,
+  MnemonSyncLastRun, MnemonSyncPreview, MnemonSyncPullResult, MnemonSyncPushResult, MnemonSyncRemoteIssue,
   MnemonMachineIdentity, MnemonSyncRemoteStatus, MnemonSyncStatus, MnemonTombstone, MnemonTombstoneFile,
 } from './protocol.ts'
 import { RUNTIME_MEMORY_LIMITS, type RuntimeMemoryLimits } from 'dsh-mnemon-source-runtime/contracts'
-import { MNEMON_PACK_COMPONENTS, MNEMON_SYNC_TOKEN_ENV } from './protocol.ts'
+import { MNEMON_PACK_COMPONENTS, MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL, MNEMON_SYNC_DEFAULT_AUTHOR_NAME, MNEMON_SYNC_TOKEN_ENV } from './protocol.ts'
 import { MnemonGitHubAuth } from './github-auth.ts'
-import { MnemonMachineStore } from './machine-identity.ts'
+import { MnemonSyncError } from './sync-error.ts'
+import { MnemonMachineStore, defaultMachineLabel, machineLabel } from './machine-identity.ts'
 import type { StorageRoot } from './storage-root.ts'
 import { MnemonSyncSettingsStore, type MnemonSyncSettings } from './sync-config.ts'
+
+export { MnemonSyncError }
 
 /** The oldest Git the channel drives: `archive`, `ls-remote`, `-C`, and `credential` all predate it. */
 export const MNEMON_SYNC_MINIMUM_GIT = '2.20'
 export const MNEMON_SYNC_GIT_TIMEOUT_MS = 120_000
+/**
+ * How long the settings page waits to learn whether the remote answers. A page
+ * that opens should not hang on a host that drops packets, and anything slower
+ * than this is reported as a timeout rather than awaited.
+ */
+export const MNEMON_SYNC_STATUS_TIMEOUT_MS = 20_000
+/** A push Git refused because the branch moved is folded in and tried once more. */
+const PUSH_ATTEMPTS = 2
+/**
+ * No sync runs this long, so a lock older than this is abandoned whoever holds it.
+ * It also covers a process id that a restart handed to an unrelated process.
+ */
+const STALE_LOCK_MS = 60 * 60_000
+const LOCK_OWNER = 'owner.json'
+/**
+ * A lock without an owner record was taken by a version that kept none, and may
+ * still be in use by it; it is taken over only once no such run could still last.
+ */
+const OWNERLESS_LOCK_MS = 15 * 60_000
+/** The mirror's own Git config names the repository it was filled from. */
+const ORIGIN_KEY = 'mnemon.origin'
+const LAST_RUN_FILE = 'last-run.json'
 
 const GIT_LABEL = 'git'
 const MANIFEST = 'manifest.json'
@@ -86,6 +111,17 @@ export function gitEnvironment(environment: NodeJS.ProcessEnv = process.env): No
   return sanitized
 }
 
+/** The host an HTTPS address hands a token to; any other address takes none. */
+function tokenHost(repoUrl: string | undefined): string | undefined {
+  if (repoUrl === undefined) return undefined
+  try {
+    const url = new URL(repoUrl)
+    return url.protocol === 'https:' ? url.host.toLowerCase() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Whether a repository address is HTTPS on github.com, the only host a GitHub grant is for. */
 export function isGitHubHttps(repoUrl: string): boolean {
   try {
@@ -96,6 +132,41 @@ export function isGitHubHttps(repoUrl: string): boolean {
   }
 }
 
+/**
+ * What kind of failure one Git error describes. Git words these differently per
+ * transport and per host, so the patterns are the phrases each transport uses:
+ * a refused or missing credential, an address that leads nowhere (GitHub answers
+ * "not found" for a private repository it will not show without credentials), a
+ * network that does not reach the host, and a host that never answered.
+ */
+export function remoteIssueOf(message: string): MnemonSyncRemoteIssue {
+  const text = message.toLowerCase()
+  if (/did not respond within|timed out|timeout was reached/u.test(text)) return 'timeout'
+  if (/authentication failed|could not read (username|password)|terminal prompts disabled|permission denied|invalid username or password|bad credentials|returned error: 40[13]|host key verification failed|access denied|denied to /u.test(text)) return 'auth'
+  if (/repository not found|not found|does not appear to be a git repository|no such file or directory|does not exist|returned error: 404/u.test(text)) return 'not-found'
+  if (/could not resolve|failed to connect|couldn't connect|connection (refused|reset|closed|timed out)|network is unreachable|no route to host|unable to access|ssl|tls|proxy|empty reply/u.test(text)) return 'network'
+  return 'unknown'
+}
+
+const REMOTE_FAILURE: Record<MnemonSyncRemoteIssue, MnemonSyncFailureReason | undefined> = {
+  auth: 'remote-auth',
+  'not-found': 'remote-not-found',
+  network: 'remote-network',
+  timeout: 'remote-timeout',
+  unknown: undefined,
+}
+
+/** One failed remote command as the error a caller reports: named when it can be. */
+function remoteFailure(message: string): Error {
+  const reason = REMOTE_FAILURE[remoteIssueOf(message)]
+  return reason === undefined ? new Error(message) : new MnemonSyncError(reason, message)
+}
+
+/** Whether Git refused a push because the branch moved on since this run read it. */
+function rejectedPush(output: string): boolean {
+  return /\[rejected\]|fetch first|non-fast-forward/iu.test(output)
+}
+
 interface GitOptions {
   cwd?: string | undefined
   signal?: AbortSignal | undefined
@@ -103,6 +174,8 @@ interface GitOptions {
   authenticated?: boolean | undefined
   /** Raised for the one command that legitimately prints a whole payload file back out of a commit. */
   maxOutputBytes?: number | undefined
+  /** Shortened for the status probe, which a page waits on. */
+  timeoutMs?: number | undefined
 }
 
 /**
@@ -293,7 +366,7 @@ function parseJson(bytes: Uint8Array, label: string): unknown {
   }
 }
 
-/** The four numbers `git count-objects -v` reports about this mirror. */
+/** The four numbers `git count-objects -v` reports about this mirror, the sizes in bytes. */
 interface ObjectCount {
   loose: number
   bytes: number
@@ -312,7 +385,8 @@ function objectCount(output: string): ObjectCount | undefined {
   const packed = /^in-pack:\s*(\d+)$/mu.exec(output)
   const packedBytes = /^size-pack:\s*(\d+)$/mu.exec(output)
   if (loose === null || bytes === null || packed === null || packedBytes === null) return undefined
-  return { loose: Number(loose[1]), bytes: Number(bytes[1]), packed: Number(packed[1]), packedBytes: Number(packedBytes[1]) }
+  // Git states both sizes in KiB.
+  return { loose: Number(loose[1]), bytes: Number(bytes[1]) * 1024, packed: Number(packed[1]), packedBytes: Number(packedBytes[1]) * 1024 }
 }
 
 /** How many commits one page asks for: the caller's window, clamped to what one listing should carry. */
@@ -590,6 +664,8 @@ export class MnemonGitSync {
         : { reachable: false, branchExists: false, error: git.issue ?? 'Git is not available on this Host' }
     const commit = existsSync(this.store.mirror()) && git.available ? await this.lastCommit(signal) : undefined
     const autoBackup = this.autoBackupView?.()
+    const lastRun = repoUrl === undefined ? undefined : this.lastRun()
+    const machine = this.machine.current()
     return {
       enabled: true,
       configured: repoUrl !== undefined,
@@ -598,15 +674,32 @@ export class MnemonGitSync {
       mirrorPath: this.store.mirror(),
       git,
       remote,
-      machine: this.machine.read(),
+      machine: machine.identity,
+      machineLabel: { source: machine.source, hostname: defaultMachineLabel() },
       ...(commit === undefined ? {} : { lastCommit: commit }),
+      ...(lastRun === undefined ? {} : { lastRun }),
       ...(autoBackup === undefined ? {} : { autoBackup }),
     }
   }
 
   async configure(patch: unknown): Promise<MnemonSyncConfigView> {
-    const next = this.store.patch(patch)
+    const previous = this.store.read()
+    const fields = record(patch)
+    // This machine's name belongs to its identity, not to the channel settings, so it is
+    // taken out of the patch and checked before anything is written.
+    const { machineLabel: name, ...settings }: Record<string, unknown> = fields ?? {}
+    const naming = fields !== undefined && 'machineLabel' in fields
+    if (naming && name !== null && name !== '') machineLabel(name)
+    const next = this.store.patch(fields === undefined ? patch : settings)
+    // A saved token authenticates the host it was saved for. Moving the repository to
+    // another host forgets it unless a new token comes with the move, so a token never
+    // reaches a host it was not meant for.
+    if (next.token !== undefined && previous.repoUrl !== undefined && fields !== undefined && !('token' in fields)
+      && tokenHost(previous.repoUrl) !== tokenHost(next.repoUrl)) delete next.token
     this.store.write(next)
+    if (naming) this.machine.rename(name)
+    // When memory last travelled is a fact about one repository; another one starts with none.
+    if (previous.repoUrl !== next.repoUrl) rmSync(this.lastRunPath(), { force: true })
     return this.credentialView(next)
   }
 
@@ -621,79 +714,152 @@ export class MnemonGitSync {
     await this.requireGit(input.signal)
     const message = commitMessage(input.message, this.now())
     return this.lock(async () => {
-      const prepared = await this.ensureMirror(settings, input.signal)
-      // The deletions this machine made since its last export have to be recorded before
-      // the branch is folded in: the merge would otherwise restore an entry this machine
-      // deleted, and the export that follows would report no removal at all.
-      await this.packs.recordDeletions()
-      const remote = await this.readRemote(settings, input.signal)
-      let merged: MnemonSyncPushResult['merged']
-      if (remote !== undefined) {
-        // The branch's own removals are what make the fold-in a merge rather than an
-        // import: an entry another machine deleted stays deleted here, and the ledger
-        // that says so travels in the extension rather than in the payload.
-        const imported = await this.packs.importPack(
-          Buffer.from(remote.archive).toString('base64'),
-          { mode: 'merge', tombstones: { version: 1, tombstones: remote.tombstones } },
-        )
-        merged = {
-          commit: remote.commit,
-          ...(remote.machine === undefined ? {} : { machine: { id: remote.machine.id, label: remote.machine.label } }),
-          components: imported.components, summary: imported.summary,
-          tombstones: remote.tombstones.length,
-        }
+      // Another machine can publish between this run's fetch and its push, and Git then
+      // refuses the push. Folding the branch in again is exactly what the first attempt
+      // did, so it is repeated once before the refusal is reported.
+      let result = await this.pushOnce(settings, message, input.signal)
+      let added = result.merged?.runtime?.added ?? 0
+      let held = result.merged?.runtime?.held ?? 0
+      for (let attempt = 1; attempt < PUSH_ATTEMPTS && result.failure === 'push-rejected'; attempt += 1) {
+        result = await this.pushOnce(settings, message, input.signal)
+        added += result.merged?.runtime?.added ?? 0
+        held = result.merged?.runtime?.held ?? held
       }
-      // Stamping records which entries this machine wrote, and advances its own ledger
-      // of what it deleted. Neither belongs in the payload, so the archive stays exactly
-      // what the ZIP path produces and any version can still open it.
-      const exported = await this.packs.exportPack('full', { stamp: true })
-      const entries = unpack(Buffer.from(exported.base64, 'base64'))
-      const extension: MnemonSyncRemoteExtension = {
-        channel: 'git', branch: settings.branch, subdir: settings.subdir, pushedAt: exported.manifest.exportedAt,
-        machine: this.machine.read(), tombstones: this.packs.tombstones().tombstones,
+      // What this sync brought in is what every attempt merged, not only the last one.
+      if (result.merged !== undefined && (added > 0 || result.merged.runtime !== undefined)) {
+        result = { ...result, merged: { ...result.merged, runtime: { added, held } } }
       }
-      entries[MANIFEST] = new TextEncoder().encode(JSON.stringify({ ...exported.manifest, [SYNC_EXTENSION]: extension }, null, 2) + '\n')
-      const before = readFiles(this.payloadRoot(settings.subdir))
-      // A payload the branch already holds is left untouched: the work tree
-      // stays clean, so Git records no second commit for the same bytes.
-      if (prepared.tip === undefined || !holdsPayload(before, entries)) this.writePayload(settings.subdir, entries)
-      const staged = await this.git(['add', '--all', '--', settings.subdir], { cwd: this.store.mirror(), signal: input.signal })
-      if (staged.exitCode !== 0) throw new Error('git add failed: ' + tail(staged.stderr || staged.stdout))
-      const changed = await this.git(['status', '--porcelain', '--', settings.subdir], { cwd: this.store.mirror(), signal: input.signal })
-      const committed = changed.stdout.trim() !== ''
-      if (committed) {
-        // An author the user cleared is not passed at all: Git then records the
-        // commit with the identity this machine already has, which is what an
-        // optional field promises.
-        const identity = [
-          ...(settings.authorName === '' ? [] : ['-c', 'user.name=' + settings.authorName]),
-          ...(settings.authorEmail === '' ? [] : ['-c', 'user.email=' + settings.authorEmail]),
-        ]
-        const result = await this.git(
-          [...identity, 'commit', '--quiet', '-m', message, '--', settings.subdir],
-          { cwd: this.store.mirror(), signal: input.signal },
-        )
-        if (result.exitCode !== 0) throw new Error('git commit failed: ' + tail(result.stderr || result.stdout))
+      // A branch that already held this payload is in sync as much as a published one.
+      if (result.pushed || !result.committed) {
+        this.recordRun({
+          kind: 'sync', commit: result.commit, pushed: result.pushed,
+          ...(result.merged?.runtime === undefined ? {} : { added: result.merged.runtime.added }),
+        })
       }
-      const head = await this.head(input.signal)
-      const published = committed
-        ? await this.publish(settings, await this.credential(settings), input.signal)
-        : { pushed: false, reason: prepared.tip === undefined ? 'nothing to publish' : 'the branch already holds this payload' }
-      // Collecting the loose objects the new commit just wrote happens after the
-      // branch has been updated, so a slow repack can never hold a publish back.
-      const compaction = await this.compact(input.signal)
-      const summary = exported.manifest.summary.map(entry => ({ ...entry, changed: componentChanged(before, entries, entry.component) }))
-      return {
-        repoUrl: settings.repoUrl, branch: settings.branch, subdir: settings.subdir,
-        commit: head, committed, message,
-        files: Object.keys(entries).length,
-        bytes: Object.values(entries).reduce((total, bytes) => total + bytes.byteLength, 0),
-        summary, pushed: published.pushed,
-        ...(merged === undefined ? {} : { merged }),
-        ...(published.reason === undefined ? {} : { reason: published.reason }),
-        ...(compaction === undefined ? {} : { compaction }),
-      }
+      return result
     })
+  }
+
+  private async pushOnce(settings: MnemonSyncSettings & { repoUrl: string }, message: string, signal?: AbortSignal): Promise<MnemonSyncPushResult> {
+    const prepared = await this.ensureMirror(settings, signal)
+    // The deletions this machine made since its last export have to be recorded before
+    // the branch is folded in: the merge would otherwise restore an entry this machine
+    // deleted, and the export that follows would report no removal at all.
+    await this.packs.recordDeletions()
+    const remote = await this.readPrepared(settings, prepared)
+    let merged: MnemonSyncPushResult['merged']
+    if (remote !== undefined) {
+      // The branch's own removals are what make the fold-in a merge rather than an
+      // import: an entry another machine deleted stays deleted here, and the ledger
+      // that says so travels in the extension rather than in the payload.
+      const imported = await this.packs.importPack(
+        Buffer.from(remote.archive).toString('base64'),
+        { mode: 'merge', tombstones: { version: 1, tombstones: remote.tombstones } },
+      )
+      merged = {
+        commit: remote.commit,
+        ...(remote.machine === undefined ? {} : { machine: { id: remote.machine.id, label: remote.machine.label } }),
+        components: imported.components, summary: imported.summary,
+        tombstones: remote.tombstones.length,
+        ...(imported.runtime === undefined ? {} : { runtime: imported.runtime }),
+      }
+    }
+    // Stamping records which entries this machine wrote, and advances its own ledger
+    // of what it deleted. Neither belongs in the payload, so the archive stays exactly
+    // what the ZIP path produces and any version can still open it.
+    const exported = await this.packs.exportPack('full', { stamp: true })
+    const entries = unpack(Buffer.from(exported.base64, 'base64'))
+    const extension: MnemonSyncRemoteExtension = {
+      channel: 'git', branch: settings.branch, subdir: settings.subdir, pushedAt: exported.manifest.exportedAt,
+      machine: this.machine.read(), tombstones: this.packs.tombstones().tombstones,
+    }
+    entries[MANIFEST] = new TextEncoder().encode(JSON.stringify({ ...exported.manifest, [SYNC_EXTENSION]: extension }, null, 2) + '\n')
+    const before = readFiles(this.payloadRoot(settings.subdir))
+    // A payload the branch already holds is left untouched: the work tree
+    // stays clean, so Git records no second commit for the same bytes.
+    if (prepared.tip === undefined || !holdsPayload(before, entries)) this.writePayload(settings.subdir, entries)
+    const staged = await this.git(['add', '--all', '--', settings.subdir], { cwd: this.store.mirror(), signal })
+    if (staged.exitCode !== 0) throw new Error('git add failed: ' + tail(staged.stderr || staged.stdout))
+    const changed = await this.git(['status', '--porcelain', '--', settings.subdir], { cwd: this.store.mirror(), signal })
+    const committed = changed.stdout.trim() !== ''
+    if (committed) {
+      const identity = await this.commitIdentity(settings, signal)
+      const result = await this.git(
+        [...identity, 'commit', '--quiet', '-m', message, '--', settings.subdir],
+        { cwd: this.store.mirror(), signal },
+      )
+      if (result.exitCode !== 0) throw new Error('git commit failed: ' + tail(result.stderr || result.stdout))
+    }
+    const head = await this.head(signal)
+    const published: { pushed: boolean; reason?: string; failure?: MnemonSyncFailureReason } = committed
+      ? await this.publish(settings, await this.credential(settings), signal)
+      : { pushed: false, reason: prepared.tip === undefined ? 'nothing to publish' : 'the branch already holds this payload' }
+    // Collecting the loose objects the new commit just wrote happens after the
+    // branch has been updated, so a slow repack can never hold a publish back.
+    const compaction = await this.compact(signal)
+    const summary = exported.manifest.summary.map(entry => ({ ...entry, changed: componentChanged(before, entries, entry.component) }))
+    return {
+      repoUrl: settings.repoUrl, branch: settings.branch, subdir: settings.subdir,
+      commit: head, committed, message,
+      files: Object.keys(entries).length,
+      bytes: Object.values(entries).reduce((total, bytes) => total + bytes.byteLength, 0),
+      summary, pushed: published.pushed,
+      ...(merged === undefined ? {} : { merged }),
+      ...(published.reason === undefined ? {} : { reason: published.reason }),
+      ...(published.failure === undefined ? {} : { failure: published.failure }),
+      ...(compaction === undefined ? {} : { compaction }),
+    }
+  }
+
+  /**
+   * The identity a sync commit is recorded under: the one configured here, else the
+   * Git identity this machine has. A machine without one gets the channel's own
+   * rather than a failed commit, and rather than the account and host names Git
+   * would otherwise guess and publish.
+   */
+  private async commitIdentity(settings: MnemonSyncSettings, signal?: AbortSignal): Promise<string[]> {
+    const name = settings.authorName !== '' ? settings.authorName : await this.configured('user.name', signal) ?? MNEMON_SYNC_DEFAULT_AUTHOR_NAME
+    const email = settings.authorEmail !== '' ? settings.authorEmail : await this.configured('user.email', signal) ?? MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL
+    return ['-c', 'user.name=' + name, '-c', 'user.email=' + email]
+  }
+
+  /** One Git setting as this machine resolves it, or nothing when no config sets it. */
+  private async configured(key: string, signal?: AbortSignal): Promise<string | undefined> {
+    const result = await this.git(['config', '--get', key], { cwd: this.store.mirror(), signal })
+    const value = result.exitCode === 0 ? result.stdout.trim() : ''
+    return value === '' ? undefined : value
+  }
+
+  /** When memory last travelled through this channel, or nothing when it never did. */
+  private lastRun(): MnemonSyncLastRun | undefined {
+    try {
+      const value = record(JSON.parse(readFileSync(this.lastRunPath(), 'utf8')) as unknown)
+      if (value === undefined || typeof value.at !== 'string' || typeof value.commit !== 'string') return undefined
+      if (value.kind !== 'sync' && value.kind !== 'merge') return undefined
+      return {
+        at: value.at, kind: value.kind, commit: value.commit, pushed: value.pushed === true,
+        ...(typeof value.added === 'number' && Number.isInteger(value.added) && value.added >= 0 ? { added: value.added } : {}),
+      }
+    } catch {
+      return undefined
+    }
+  }
+
+  private lastRunPath(): string {
+    return join(this.store.directory(), 'sync', LAST_RUN_FILE)
+  }
+
+  /** Remember one finished run. Bookkeeping never fails the run it describes. */
+  private recordRun(run: Omit<MnemonSyncLastRun, 'at'>): void {
+    const path = this.lastRunPath()
+    const temporary = path + '.' + String(process.pid) + '.tmp'
+    try {
+      mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
+      writeFileSync(temporary, JSON.stringify({ at: this.now().toISOString(), ...run }, null, 2) + '\n', { mode: 0o600 })
+      renameSync(temporary, path)
+    } catch {
+      rmSync(temporary, { force: true })
+    }
   }
 
   /** Read the remote payload and report what it would change, without importing anything. */
@@ -703,7 +869,7 @@ export class MnemonGitSync {
     const exported = await this.packs.exportPack('full')
     return this.lock(async () => {
       const remote = await this.readRemote(settings, signal)
-      if (remote === undefined) throw new Error(this.absentPayload(settings))
+      if (remote === undefined) throw this.absentPayload(settings)
       const local = unpack(Buffer.from(exported.base64, 'base64'))
       const components = MNEMON_PACK_COMPONENTS.map((component): MnemonSyncComponentDelta => {
         const published = remote.manifest.summary.find(entry => entry.component === component)
@@ -765,7 +931,7 @@ export class MnemonGitSync {
     const exported = await this.packs.exportPack('full')
     return this.lock(async () => {
       const remote = await this.readRemote(settings, signal)
-      if (remote === undefined) throw new Error(this.absentPayload(settings))
+      if (remote === undefined) throw this.absentPayload(settings)
       const local = unpack(Buffer.from(exported.base64, 'base64'))
       const limits = this.runtimeLimits()
       const mine = runtimeOf(local, limits, 'the local')
@@ -843,11 +1009,15 @@ export class MnemonGitSync {
     }
     return this.lock(async () => {
       const remote = await this.readRemote(settings, input.signal)
-      if (remote === undefined) throw new Error(this.absentPayload(settings))
+      if (remote === undefined) throw this.absentPayload(settings)
       const imported = await this.packs.importPack(
         Buffer.from(remote.archive).toString('base64'),
         { ...options, tombstones: { version: 1, tombstones: remote.tombstones } },
       )
+      this.recordRun({
+        kind: 'merge', commit: remote.commit, pushed: false,
+        ...(imported.runtime === undefined ? {} : { added: imported.runtime.added }),
+      })
       return {
         imported: true, mode: imported.mode,
         repoUrl: settings.repoUrl, branch: settings.branch, subdir: settings.subdir,
@@ -859,14 +1029,14 @@ export class MnemonGitSync {
     })
   }
 
-  private absentPayload(settings: MnemonSyncSettings & { repoUrl: string }): string {
-    return 'the branch ' + settings.branch + ' holds no Mnemon payload at ' + settings.subdir + ' yet; push one first'
+  private absentPayload(settings: MnemonSyncSettings & { repoUrl: string }): Error {
+    return new MnemonSyncError('remote-empty', 'the branch ' + settings.branch + ' holds no Mnemon payload at ' + settings.subdir + ' yet; push one first')
   }
 
   private requireRepository(): MnemonSyncSettings & { repoUrl: string } {
     const settings = this.store.read()
     if (settings.repoUrl === undefined) {
-      throw new Error('no sync repository is configured; set repoUrl in ' + this.store.path() + ' first')
+      throw new MnemonSyncError('no-repository', 'no sync repository is configured; set repoUrl in ' + this.store.path() + ' first')
     }
     return { ...settings, repoUrl: settings.repoUrl }
   }
@@ -889,23 +1059,37 @@ export class MnemonGitSync {
 
   private async requireGit(signal?: AbortSignal): Promise<void> {
     const status = await this.gitStatus(signal)
-    if (!status.available) throw new Error('Git is not available on this Host: ' + (status.issue ?? 'unknown reason'))
+    if (!status.available) throw new MnemonSyncError('git-missing', 'Git is not available on this Host: ' + (status.issue ?? 'unknown reason'))
   }
 
   private async remoteStatus(settings: MnemonSyncSettings & { repoUrl: string }, signal?: AbortSignal): Promise<MnemonSyncRemoteStatus> {
     const credential = await this.credential(settings)
     try {
-      const tip = await this.lsRemote(settings, credential, signal)
+      const tip = await this.lsRemote(settings, credential, signal, MNEMON_SYNC_STATUS_TIMEOUT_MS)
       return tip === undefined ? { reachable: true, branchExists: false } : { reachable: true, branchExists: true, commit: tip }
     } catch (error) {
-      return { reachable: false, branchExists: false, error: this.mask(error instanceof Error ? error.message : String(error), credential) }
+      const message = this.mask(error instanceof Error ? error.message : String(error), credential)
+      return { reachable: false, branchExists: false, error: message, issue: remoteIssueOf(message) }
     }
   }
 
-  private async lsRemote(settings: MnemonSyncSettings & { repoUrl: string }, credential: SyncCredential, signal?: AbortSignal): Promise<string | undefined> {
+  /**
+   * The branch tip the remote holds, or nothing when it holds no such branch. A
+   * remote that cannot be read fails with the kind of failure it was, the token
+   * masked, so the page can say "sign in" rather than print Git's trace.
+   */
+  private async lsRemote(settings: MnemonSyncSettings & { repoUrl: string }, credential: SyncCredential, signal?: AbortSignal, timeoutMs?: number): Promise<string | undefined> {
     const reference = 'refs/heads/' + settings.branch
-    const result = await this.git(['ls-remote', '--heads', settings.repoUrl, reference], { signal, token: credential.token, authenticated: true })
-    if (result.exitCode !== 0) throw new Error(tail(result.stderr || result.stdout) || 'git ls-remote failed')
+    let result: { stdout: string; stderr: string; exitCode: number | null }
+    try {
+      result = await this.git(['ls-remote', '--heads', settings.repoUrl, reference], {
+        signal, token: credential.token, authenticated: true, ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      })
+    } catch (error) {
+      if (signal?.aborted === true) throw error
+      throw remoteFailure(this.mask(error instanceof Error ? error.message : String(error), credential))
+    }
+    if (result.exitCode !== 0) throw remoteFailure(this.mask(tail(result.stderr || result.stdout) || 'git ls-remote failed', credential))
     for (const line of result.stdout.split('\n')) {
       const [commit, name] = line.trim().split(/\s+/u)
       if (name === reference && commit !== undefined) return commit
@@ -998,10 +1182,20 @@ export class MnemonGitSync {
     const credential = await this.credential(settings)
     const mirror = this.store.mirror()
     mkdirSync(this.store.directory(), { recursive: true, mode: 0o700 })
+    // A mirror belongs to the repository it was filled from. One filled from another
+    // address still holds that repository's history, which a first push to an empty
+    // branch would publish there, so it is rebuilt rather than reused.
+    if (existsSync(join(mirror, '.git'))) {
+      const origin = await this.git(['config', '--get', ORIGIN_KEY], { cwd: mirror, signal })
+      if (origin.exitCode !== 0 || origin.stdout.trim() !== settings.repoUrl) rmSync(mirror, { recursive: true, force: true })
+    }
     if (!existsSync(join(mirror, '.git'))) {
       rmSync(mirror, { recursive: true, force: true })
-      const initialized = await this.git(['init', '--quiet', '--initial-branch=' + settings.branch, mirror], { signal })
+      // `--initial-branch` needs Git 2.28; HEAD is pointed at the branch just below instead.
+      const initialized = await this.git(['init', '--quiet', mirror], { signal })
       if (initialized.exitCode !== 0) throw new Error('git init failed: ' + tail(initialized.stderr || initialized.stdout))
+      const marked = await this.git(['config', ORIGIN_KEY, settings.repoUrl], { cwd: mirror, signal })
+      if (marked.exitCode !== 0) throw new Error('git config failed: ' + tail(marked.stderr || marked.stdout))
     }
     const current = await this.git(['symbolic-ref', '--quiet', 'HEAD'], { cwd: mirror, signal })
     if (current.exitCode !== 0 || current.stdout.trim() !== 'refs/heads/' + settings.branch) {
@@ -1010,15 +1204,33 @@ export class MnemonGitSync {
     }
     // The branch is the source of truth, so an unreachable remote fails here rather than at push time.
     const tip = await this.lsRemote(settings, credential, signal)
-    if (tip === undefined) return {}
+    if (tip === undefined) {
+      await this.startHistory(settings.branch, signal)
+      return {}
+    }
     const fetched = await this.git(
       ['fetch', '--no-tags', '--quiet', settings.repoUrl, 'refs/heads/' + settings.branch],
       { cwd: mirror, signal, token: credential.token, authenticated: true },
     )
-    if (fetched.exitCode !== 0) throw new Error('git fetch failed: ' + this.mask(tail(fetched.stderr || fetched.stdout), credential))
+    if (fetched.exitCode !== 0) throw remoteFailure('git fetch failed: ' + this.mask(tail(fetched.stderr || fetched.stdout), credential))
     const reset = await this.git(['reset', '--hard', '--quiet', 'FETCH_HEAD'], { cwd: mirror, signal })
     if (reset.exitCode !== 0) throw new Error('git reset failed: ' + tail(reset.stderr || reset.stdout))
     return { tip }
+  }
+
+  /**
+   * Point the mirror at a branch the remote does not hold. The next commit starts a
+   * history of its own: continuing the one this mirror kept, from a branch the remote
+   * has since deleted, would publish every earlier payload all over again.
+   */
+  private async startHistory(branch: string, signal?: AbortSignal): Promise<void> {
+    const mirror = this.store.mirror()
+    // Deleting a branch the mirror never had is not a failure worth reporting.
+    await this.git(['update-ref', '-d', 'refs/heads/' + branch], { cwd: mirror, signal })
+    const emptied = await this.git(['read-tree', '--empty'], { cwd: mirror, signal })
+    if (emptied.exitCode !== 0) throw new Error('git read-tree failed: ' + tail(emptied.stderr || emptied.stdout))
+    const cleaned = await this.git(['clean', '-fdxq'], { cwd: mirror, signal })
+    if (cleaned.exitCode !== 0) throw new Error('git clean failed: ' + tail(cleaned.stderr || cleaned.stdout))
   }
 
   /**
@@ -1058,15 +1270,27 @@ export class MnemonGitSync {
     }
   }
 
-  private async publish(settings: MnemonSyncSettings & { repoUrl: string }, credential: SyncCredential, signal?: AbortSignal): Promise<{ pushed: boolean; reason?: string }> {
+  private async publish(settings: MnemonSyncSettings & { repoUrl: string }, credential: SyncCredential, signal?: AbortSignal): Promise<{ pushed: boolean; reason?: string; failure?: MnemonSyncFailureReason }> {
     const reference = 'refs/heads/' + settings.branch + ':refs/heads/' + settings.branch
-    const result = await this.git(['push', '--porcelain', settings.repoUrl, reference], { cwd: this.store.mirror(), signal, token: credential.token, authenticated: true })
-    if (result.exitCode === 0) return { pushed: true }
-    const reason = this.mask(tail(result.stderr || result.stdout), credential)
-    if (credential.token === undefined) {
-      return { pushed: false, reason: 'the commit stays local because no token is available: ' + (reason || 'git push failed') }
+    let result: { stdout: string; stderr: string; exitCode: number | null }
+    try {
+      result = await this.git(['push', '--porcelain', settings.repoUrl, reference], { cwd: this.store.mirror(), signal, token: credential.token, authenticated: true })
+    } catch (error) {
+      if (signal?.aborted === true) throw error
+      const reason = this.mask(error instanceof Error ? error.message : String(error), credential)
+      const failure = REMOTE_FAILURE[remoteIssueOf(reason)]
+      return { pushed: false, reason, ...(failure === undefined ? {} : { failure }) }
     }
-    return { pushed: false, reason: reason || 'git push failed' }
+    if (result.exitCode === 0) return { pushed: true }
+    // The porcelain report of a refused ref is on stdout; Git's summary of it is on stderr.
+    const output = this.mask(result.stdout + '\n' + result.stderr, credential)
+    const reason = this.mask(tail(result.stderr || result.stdout), credential) || 'git push failed'
+    const failure = rejectedPush(output) ? 'push-rejected' : REMOTE_FAILURE[remoteIssueOf(output)]
+    return {
+      pushed: false,
+      reason: credential.token === undefined && failure !== 'push-rejected' ? 'the commit stays local because no token is available: ' + reason : reason,
+      ...(failure === undefined ? {} : { failure }),
+    }
   }
 
   /**
@@ -1113,9 +1337,13 @@ export class MnemonGitSync {
     }
   }
 
-  /** Validate the remote payload and rebuild the exact pack archive the ZIP path would have produced. */
+  /** Refresh the mirror, then read the payload the branch holds. */
   private async readRemote(settings: MnemonSyncSettings & { repoUrl: string }, signal?: AbortSignal): Promise<RemotePayload | undefined> {
-    const prepared = await this.ensureMirror(settings, signal)
+    return this.readPrepared(settings, await this.ensureMirror(settings, signal))
+  }
+
+  /** Validate the payload a refreshed mirror holds and rebuild the exact pack archive the ZIP path would have produced. */
+  private async readPrepared(settings: MnemonSyncSettings & { repoUrl: string }, prepared: { tip?: string }): Promise<RemotePayload | undefined> {
     if (prepared.tip === undefined) return undefined
     const files = readFiles(this.payloadRoot(settings.subdir))
     const manifestBytes = files[MANIFEST]
@@ -1166,14 +1394,38 @@ export class MnemonGitSync {
   private async lock<T>(operation: () => Promise<T>): Promise<T> {
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
     mkdirSync(this.store.directory(), { recursive: true, mode: 0o700 })
-    return withDirectoryLock(join(this.store.directory(), '.sync.lock'), operation)
+    return withDirectoryLock(join(this.store.directory(), '.sync.lock'), async () => {
+      this.sweepCredentials()
+      return operation()
+    })
+  }
+
+  /**
+   * Remove the one-command credential files a Host that stopped mid-command left
+   * behind. Each holds a token, so one whose process is gone is deleted rather
+   * than kept until the next restart of that process id.
+   */
+  private sweepCredentials(): void {
+    let names: string[]
+    try {
+      names = readdirSync(this.store.directory())
+    } catch {
+      return
+    }
+    for (const name of names) {
+      const match = /^\.credentials\.(\d+)\.\d+\.tmp$/u.exec(name)
+      if (match === null) continue
+      const pid = Number(match[1])
+      if (pid === process.pid || processAlive(pid)) continue
+      rmSync(join(this.store.directory(), name), { force: true })
+    }
   }
 
   private async git(args: string[], options: GitOptions): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
     const prepared = this.credentials(args, options)
     try {
       const result = await this.run(GIT_LABEL, prepared.args, {
-        timeoutMs: MNEMON_SYNC_GIT_TIMEOUT_MS,
+        timeoutMs: options.timeoutMs ?? MNEMON_SYNC_GIT_TIMEOUT_MS,
         env: gitEnvironment(),
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -1207,21 +1459,65 @@ export class MnemonGitSync {
   }
 }
 
+/**
+ * How the payload files differ. The manifest and the checksum inventory describe a
+ * payload rather than hold memory, and the manifest's export time differs on every
+ * read, so counting them would report a difference where every component agrees.
+ */
 function compareFiles(published: Record<string, Uint8Array>, local: Record<string, Uint8Array>): MnemonSyncFileDelta {
   let changed = 0
   let added = 0
   let removed = 0
-  for (const path of new Set([...Object.keys(published), ...Object.keys(local)])) {
+  const paths = new Set([...Object.keys(published), ...Object.keys(local)].filter(path => path !== MANIFEST && path !== CHECKSUMS))
+  for (const path of paths) {
     const remote = published[path]
     const mine = local[path]
     if (remote === undefined) added += 1
     else if (mine === undefined) removed += 1
     else if (sha256Hex(remote) !== sha256Hex(mine)) changed += 1
   }
-  return { total: new Set([...Object.keys(published), ...Object.keys(local)]).size, changed, added, removed }
+  return { total: paths.size, changed, added, removed }
 }
 
-/** A single-writer lock for one storage root's sync work; the pack locks cover the shared data. */
+/** Whether a process of this machine still runs; one the Host may not signal is assumed alive. */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Whether a lock was left by an operation that can no longer release it: its owner
+ * process is gone, or it is older than any sync takes. The age also covers a
+ * process id that a restart handed to an unrelated process.
+ */
+function abandoned(path: string, now: number): boolean {
+  let age: number
+  try {
+    age = now - statSync(path).mtimeMs
+  } catch {
+    return false
+  }
+  if (age > STALE_LOCK_MS) return true
+  try {
+    const owner = record(JSON.parse(readFileSync(join(path, LOCK_OWNER), 'utf8')) as unknown)
+    const pid = owner?.pid
+    return typeof pid === 'number' && Number.isInteger(pid) && pid > 0 && pid !== process.pid && !processAlive(pid)
+  } catch {
+    // The owner record is written right after the directory: a lock without one is
+    // either still being taken or left by a version that kept no record.
+    return age > OWNERLESS_LOCK_MS
+  }
+}
+
+/**
+ * A single-writer lock for one storage root's sync work; the pack locks cover the
+ * shared data. The lock records its owner, so a Host that stopped mid-operation
+ * does not leave every later sync refused until someone deletes the directory.
+ */
 async function withDirectoryLock<T>(path: string, operation: () => Promise<T>): Promise<T> {
   const deadline = Date.now() + LOCK_TIMEOUT_MS
   let held = false
@@ -1230,10 +1526,27 @@ async function withDirectoryLock<T>(path: string, operation: () => Promise<T>): 
       mkdirSync(path, { recursive: false, mode: 0o700 })
       held = true
     } catch {
+      if (abandoned(path, Date.now())) {
+        // Moving the lock aside is atomic, so of two waiters that found it abandoned only
+        // one takes it over; the other finds it gone, or taken again, and keeps waiting.
+        const aside = path + '.abandoned.' + String(process.pid) + '.' + String(Date.now())
+        try {
+          if (abandoned(path, Date.now())) renameSync(path, aside)
+        } catch {
+          continue
+        }
+        rmSync(aside, { recursive: true, force: true })
+        continue
+      }
       await new Promise<void>(resolveReady => setTimeout(resolveReady, 25))
     }
   }
-  if (!held) throw new Error('another Mnemon sync operation is still running')
+  if (!held) throw new MnemonSyncError('busy', 'another Mnemon sync operation is still running')
+  try {
+    writeFileSync(join(path, LOCK_OWNER), JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + '\n', { mode: 0o600 })
+  } catch {
+    // The lock still holds without its record; only its recovery falls back to the age.
+  }
   try {
     return await operation()
   } finally {

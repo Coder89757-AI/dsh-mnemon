@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -6,9 +6,9 @@ import { unzipSync } from 'fflate'
 import { resolveConfig } from '../src/host/config.ts'
 import { MnemonPackManager } from '../src/host/pack.ts'
 import { createStorageRoot } from '../src/host/storage-root.ts'
-import { MnemonGitSync, gitEnvironment } from '../src/host/git-sync.ts'
+import { MnemonGitSync, gitEnvironment, remoteIssueOf } from '../src/host/git-sync.ts'
 import type { MnemonGitHubAuth } from '../src/host/github-auth.ts'
-import { MnemonMachineStore } from '../src/host/machine-identity.ts'
+import { MnemonMachineStore, defaultMachineLabel } from '../src/host/machine-identity.ts'
 import { runProcess, type ProcessRunner } from '../src/host/process.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 
@@ -65,7 +65,7 @@ function identityOf(root: string): { id: string; label: string } {
 }
 
 /** One machine: a storage root, its pack manager and the sync channel over it. */
-async function machine(label: string, repository?: string, clock: () => Date = now) {
+async function machine(label: string, repository?: string, clock: () => Date = now, run?: ProcessRunner) {
   const root = temporary(label)
   const workspace = temporary(label + '-workspace')
   // Git sync is opt-in, so the suite switches it on exactly where the product does.
@@ -74,10 +74,30 @@ async function machine(label: string, repository?: string, clock: () => Date = n
   const sources = await sourceFixture({ dataDir: root, workspace })
   releases.push(sources.dispose)
   const packs = new MnemonPackManager(runner, config, undefined, clock)
-  const sync = new MnemonGitSync(runner, config, packs, undefined, clock)
+  const sync = new MnemonGitSync(runner, config, packs, run, clock)
   if (repository !== undefined) sync.configure({ repoUrl: repository })
   return { root, workspace, runner, config, packs, sync, sources }
 }
+
+/** Run with these environment variables set, or removed where the value is undefined. */
+async function withEnvironment(values: Record<string, string | undefined>, run: () => Promise<void>): Promise<void> {
+  const saved = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]))
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+  try {
+    await run()
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
+
+/** A process id no system hands out, as a Host that stopped long ago left it. */
+const GONE_PID = 2 ** 22 + 12_345
 
 /**
  * Run with the Git identity of a machine that has one configured. Git reads the same
@@ -487,6 +507,33 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(stored.label.length).toBeGreaterThan(0)
   })
 
+  it('publishes the name a person gives this machine, and goes back to the host name', async () => {
+    const origin = await repository('sync-machine-name-remote')
+    const machineA = await machine('sync-machine-name-a', origin)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'memory', content: 'Named machine note', importance: 'normal' }, { confirmed: true })
+
+    // The name is kept with the identity; the channel settings stay as they were.
+    expect((await machineA.sync.configure({ machineLabel: 'Studio' })).repoUrl).toBe(origin)
+    const status = await machineA.sync.status()
+    expect(status.machine?.label).toBe('Studio')
+    expect(status.machineLabel).toEqual({ source: 'custom', hostname: defaultMachineLabel() })
+    const first = await machineA.sync.push({ message: 'Publish as Studio' })
+    expect((await machineA.sync.backups()).commits[0]).toMatchObject({ commit: first.commit, machine: { label: 'Studio' } })
+
+    // A refused name changes nothing else the same request carried.
+    await expect(machineA.sync.configure({ branch: 'elsewhere', machineLabel: 'two\nlines' })).rejects.toThrow(/machine name/u)
+    const unchanged = await machineA.sync.status()
+    expect(unchanged.config.branch).toBe('mnemon-sync')
+    expect(unchanged.machine?.label).toBe('Studio')
+
+    // Back to the host name: the next sync records the new name in a version of its own.
+    await machineA.sync.configure({ machineLabel: null })
+    expect((await machineA.sync.status()).machineLabel?.source).toBe('hostname')
+    const second = await machineA.sync.push({ message: 'Publish under the host name' })
+    expect(second.committed).toBe(true)
+    expect((await machineA.sync.backups()).commits[0]).toMatchObject({ commit: second.commit, machine: { label: defaultMachineLabel() } })
+  })
+
   it('drives Git with an environment that cannot relocate the repository', async () => {
     // The harness shims export GIT_DIR for their own PATH bookkeeping; Git reads
     // the same variable as the repository location, so a push launched from such
@@ -538,18 +585,29 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
 
   it('refuses a payload directory that a symbolic link in the mirror leads out of it', async () => {
     const origin = await repository('sync-link-remote')
+    // The branch exists, so the mirror is brought to its tip rather than started afresh,
+    // which would clear everything the branch does not hold, the link included.
+    await (await machine('sync-link-other', origin)).sync.push({ message: 'Existing branch' })
     const machineA = await machine('sync-link', origin)
     await machineA.sync.configure({ subdir: 'nested/mnemon/' })
     const outside = temporary('sync-link-outside')
     writeFileSync(join(outside, 'canary.txt'), 'outside the mirror\n')
-    // A mirror an older build checked out, with a link where a payload parent should be.
+    // A mirror of this very repository, with a link where a payload parent should be.
     const mirror = join(machineA.root, 'state', 'sync', 'git')
     mkdirSync(mirror, { recursive: true })
     await git(['init', '--quiet', mirror])
+    await git(['config', 'mnemon.origin', origin], mirror)
     symlinkSync(outside, join(mirror, 'nested'))
 
     await expect(machineA.sync.push({ message: 'Through a link' })).rejects.toThrow('crosses a symbolic link')
     expect(readFileSync(join(outside, 'canary.txt'), 'utf8')).toBe('outside the mirror\n')
+    expect(readdirSync(outside)).toEqual(['canary.txt'])
+
+    // A mirror that names no repository, as an older build left it, is rebuilt rather
+    // than trusted, and the link goes with it without following it.
+    await git(['config', '--unset', 'mnemon.origin'], mirror)
+    await expect(machineA.sync.push({ message: 'Into a rebuilt mirror' })).resolves.toMatchObject({ pushed: true })
+    expect(lstatSync(join(mirror, 'nested')).isSymbolicLink()).toBe(false)
     expect(readdirSync(outside)).toEqual(['canary.txt'])
   })
 
@@ -633,6 +691,192 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(pushed).toMatchObject({ branch: 'memory/user', subdir: 'nested/mnemon/' })
     expect(await git(['show', 'memory/user:nested/mnemon/manifest.json'], origin)).toContain('"mnemonpack"')
     expect((await git(['branch', '--list'], origin)).trim()).toBe('memory/user')
+  })
+
+  it('starts a new history in another repository instead of publishing the old one there', async () => {
+    const first = await repository('sync-switch-first')
+    const second = await repository('sync-switch-second')
+    const machineA = await machine('sync-switch', first)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Written for the first repository', importance: 'normal' }, { confirmed: true })
+    await machineA.sync.push({ message: 'First repository' })
+
+    await machineA.sync.configure({ repoUrl: second })
+    const pushed = await machineA.sync.push({ message: 'Second repository' })
+    expect(pushed).toMatchObject({ committed: true, pushed: true })
+    // The second repository holds one root commit; the first one's history stays where it was.
+    expect((await git(['rev-list', '--count', 'mnemon-sync'], second)).trim()).toBe('1')
+    expect((await git(['log', '--format=%s', 'mnemon-sync'], second)).trim()).toBe('Second repository')
+  })
+
+  it('starts over when the remote branch was deleted, rather than publishing what it held', async () => {
+    const origin = await repository('sync-deleted-remote')
+    const machineA = await machine('sync-deleted', origin)
+    await machineA.sync.push({ message: 'Before the deletion' })
+    await git(['update-ref', '-d', 'refs/heads/mnemon-sync'], origin)
+
+    const pushed = await machineA.sync.push({ message: 'After the deletion' })
+    expect(pushed).toMatchObject({ committed: true, pushed: true })
+    expect((await git(['log', '--format=%s', 'mnemon-sync'], origin)).trim()).toBe('After the deletion')
+  })
+
+  it('folds in a branch that moved during the push and publishes again', async () => {
+    const origin = await repository('sync-race-remote')
+    const machineB = await machine('sync-race-b', origin)
+    await machineB.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'B wrote this first', importance: 'normal' }, { confirmed: true })
+    await machineB.sync.push({ message: 'B first' })
+
+    // Machine A's Git pushes only after B published again, as a machine racing it would.
+    let raced = false
+    const racing: ProcessRunner = async (command, args, options) => {
+      if (!raced && args.includes('push')) {
+        raced = true
+        await machineB.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'B wrote this during the race', importance: 'normal' }, { confirmed: true })
+        await machineB.sync.push({ message: 'B during the race' })
+      }
+      return runProcess(command, args, options)
+    }
+    const machineA = await machine('sync-race-a', origin, now, racing)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'A wrote this', importance: 'normal' }, { confirmed: true })
+    const pushed = await machineA.sync.push({ message: 'A after the race' })
+
+    expect(raced).toBe(true)
+    expect(pushed).toMatchObject({ committed: true, pushed: true })
+    expect(pushed.failure).toBeUndefined()
+    // Both attempts merged one of B's entries, and the answer counts both.
+    expect(pushed.merged?.runtime?.added).toBe(2)
+    const published = await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)
+    expect(published).toContain('B wrote this during the race')
+    expect(published).toContain('A wrote this')
+  })
+
+  it('takes over a lock its owner left behind and removes the token files it left', async () => {
+    const origin = await repository('sync-stale-remote')
+    const machineA = await machine('sync-stale', origin)
+    const state = join(machineA.root, 'state')
+    // A Host that stopped mid-push: its lock and its one-command credential file remain.
+    mkdirSync(join(state, '.sync.lock'), { recursive: true })
+    writeFileSync(join(state, '.sync.lock', 'owner.json'), JSON.stringify({ pid: GONE_PID, startedAt: '2026-08-14T11:00:00.000Z' }))
+    const stale = join(state, '.credentials.' + String(GONE_PID) + '.1.tmp')
+    const live = join(state, '.credentials.' + String(process.pid) + '.99.tmp')
+    writeFileSync(stale, 'https://x-access-token:stale@example.com\n')
+    writeFileSync(live, 'in use\n')
+
+    await expect(machineA.sync.push({ message: 'After a stale lock' })).resolves.toMatchObject({ pushed: true })
+    expect(existsSync(join(state, '.sync.lock'))).toBe(false)
+    expect(existsSync(stale)).toBe(false)
+    // A file this very process may still be using is left alone.
+    expect(existsSync(live)).toBe(true)
+
+    // A lock an older build left without an owner record is taken over once no run could still hold it.
+    mkdirSync(join(state, '.sync.lock'))
+    const past = new Date(Date.now() - 20 * 60_000)
+    utimesSync(join(state, '.sync.lock'), past, past)
+    await expect(machineA.sync.push({ message: 'After an ownerless lock' })).resolves.toMatchObject({ committed: false })
+  })
+
+  it('names what kept a remote out of reach', async () => {
+    const machineA = await machine('sync-missing', join(temporary('sync-missing-parent'), 'absent.git'))
+    const status = await machineA.sync.status()
+    expect(status.remote).toMatchObject({ reachable: false, issue: 'not-found' })
+    await expect(machineA.sync.push({ message: 'Nowhere' })).rejects.toMatchObject({ reason: 'remote-not-found' })
+    await expect(machineA.sync.preview()).rejects.toMatchObject({ reason: 'remote-not-found' })
+  })
+
+  it('commits under the channel identity on a machine that has none', async () => {
+    const empty = join(temporary('sync-no-identity-config'), 'gitconfig')
+    writeFileSync(empty, '')
+    await withEnvironment({
+      GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: '1', EMAIL: undefined,
+      GIT_AUTHOR_NAME: undefined, GIT_AUTHOR_EMAIL: undefined, GIT_COMMITTER_NAME: undefined, GIT_COMMITTER_EMAIL: undefined,
+    }, async () => {
+      const origin = await repository('sync-no-identity-remote')
+      const machineA = await machine('sync-no-identity', origin)
+      await machineA.sync.configure({ authorName: '', authorEmail: '' })
+      const pushed = await machineA.sync.push({ message: 'No identity here' })
+      expect(pushed).toMatchObject({ committed: true, pushed: true })
+      expect(await git(['log', '-1', '--format=%an <%ae>', 'mnemon-sync'], origin)).toBe('dsh-mnemon sync <mnemon@localhost>\n')
+    })
+  })
+
+  it('remembers the last sync and forgets it for another repository', async () => {
+    const origin = await repository('sync-last-run-remote')
+    const machineA = await machine('sync-last-run', origin)
+    expect((await machineA.sync.status()).lastRun).toBeUndefined()
+
+    const pushed = await machineA.sync.push({ message: 'Remembered' })
+    expect((await machineA.sync.status()).lastRun).toEqual({ at: now().toISOString(), kind: 'sync', commit: pushed.commit, pushed: true })
+    await machineA.sync.pull()
+    expect((await machineA.sync.status()).lastRun).toMatchObject({ kind: 'merge', commit: pushed.commit, pushed: false, added: 0 })
+
+    await machineA.sync.configure({ repoUrl: await repository('sync-last-run-other') })
+    expect((await machineA.sync.status()).lastRun).toBeUndefined()
+  })
+
+  it('counts payload files, not the manifest a read stamps anew', async () => {
+    const origin = await repository('sync-preview-files-remote')
+    const machineA = await machine('sync-preview-files', origin, tickingClock().now)
+    await machineA.sync.push({ message: 'Published' })
+
+    const preview = await machineA.sync.preview()
+    expect(preview.components.every(component => !component.changed)).toBe(true)
+    expect(preview.files).toMatchObject({ changed: 0, added: 0, removed: 0 })
+  })
+
+  it('forgets a saved token when the repository moves to another host', async () => {
+    const machineA = await machine('sync-token-host')
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-for-example' })).toMatchObject({ hasToken: true, credentialSource: 'token' })
+    // Another repository on the same host keeps it.
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/other.git' })).toMatchObject({ hasToken: true })
+    // Another host does not receive it.
+    expect(await machineA.sync.configure({ repoUrl: 'https://github.com/me/memory.git' })).toMatchObject({ hasToken: false, credentialSource: 'none' })
+    expect(readFileSync(join(machineA.root, 'state', 'sync-git.json'), 'utf8')).not.toContain('token-for-example')
+    // A token that comes with the move is the one kept.
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-again' })).toMatchObject({ hasToken: true })
+  })
+
+  it('gives the status probe 20 seconds and an operation the full Git timeout', async () => {
+    const timeouts: Array<{ command: string; timeoutMs: number }> = []
+    const recording: ProcessRunner = async (command, args, options) => {
+      const name = ['ls-remote', 'push', 'fetch'].find(candidate => args.includes(candidate))
+      if (name !== undefined) timeouts.push({ command: name, timeoutMs: options.timeoutMs })
+      return runProcess(command, args, options)
+    }
+    const origin = await repository('sync-timeout-remote')
+    const machineA = await machine('sync-timeout', origin, now, recording)
+    await machineA.sync.status()
+    expect(timeouts).toEqual([{ command: 'ls-remote', timeoutMs: 20_000 }])
+    timeouts.length = 0
+    await machineA.sync.push({ message: 'Timed' })
+    expect(timeouts.every(entry => entry.timeoutMs === 120_000)).toBe(true)
+    expect(timeouts.map(entry => entry.command)).toContain('push')
+  })
+
+  it('initializes the mirror without the option Git 2.28 introduced', async () => {
+    const calls: string[][] = []
+    const recording: ProcessRunner = async (command, args, options) => {
+      calls.push([...args])
+      return runProcess(command, args, options)
+    }
+    const origin = await repository('sync-init-remote')
+    const machineA = await machine('sync-init', origin, now, recording)
+    await machineA.sync.push({ message: 'Initialized' })
+
+    const init = calls.find(args => args.includes('init'))
+    expect(init).toBeDefined()
+    expect(init?.some(argument => argument.startsWith('--initial-branch'))).toBe(false)
+    expect((await git(['branch', '--list'], origin)).trim()).toBe('mnemon-sync')
+  })
+})
+
+describe('Mnemon Git sync failures', () => {
+  it('states the failure kinds Git reports in its own words', () => {
+    expect(remoteIssueOf("fatal: '/x.git' does not appear to be a git repository")).toBe('not-found')
+    expect(remoteIssueOf("remote: Repository not found.\nfatal: repository 'https://github.com/o/r.git/' not found")).toBe('not-found')
+    expect(remoteIssueOf("fatal: could not read Username for 'https://github.com': terminal prompts disabled")).toBe('auth')
+    expect(remoteIssueOf('git@github.com: Permission denied (publickey).')).toBe('auth')
+    expect(remoteIssueOf("fatal: unable to access 'https://example.invalid/x.git/': Could not resolve host: example.invalid")).toBe('network')
+    expect(remoteIssueOf('git did not respond within 20000ms')).toBe('timeout')
+    expect(remoteIssueOf('fatal: something else entirely')).toBe('unknown')
   })
 })
 

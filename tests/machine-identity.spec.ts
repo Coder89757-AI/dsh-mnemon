@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MNEMON_MACHINE_DIRECTORY, MNEMON_MACHINE_FILE, MnemonMachineStore, defaultMachineLabel } from "../src/host/machine-identity.ts"
+import { MNEMON_MACHINE_LABEL_MAX } from "../src/host/protocol.ts"
 
 const directories: string[] = []
 
@@ -30,7 +31,7 @@ describe('Mnemon machine identity', () => {
 
     const path = join(root, MNEMON_MACHINE_DIRECTORY, MNEMON_MACHINE_FILE)
     expect(existsSync(path)).toBe(true)
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, ...first })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, ...first, labelSource: 'hostname' })
 
     expect(store(root).read()).toEqual(first)
     expect(store(root).read().id).toBe(first.id)
@@ -51,8 +52,57 @@ describe('Mnemon machine identity', () => {
       const identity = store(root).read()
       expect(identity.id).not.toBe('a')
       expect(identity.label.length).toBeGreaterThan(0)
-      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, ...identity })
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, ...identity, labelSource: 'hostname' })
     }
+  })
+
+  it('follows the host name until a person names the machine', () => {
+    const root = temporary()
+    const path = join(root, MNEMON_MACHINE_DIRECTORY, MNEMON_MACHINE_FILE)
+    mkdirSync(dirname(path), { recursive: true })
+    // The record was written while the computer had another host name.
+    writeFileSync(path, JSON.stringify({ version: 1, id: 'kept-id', label: 'old-host', createdAt: '2026-10-01T00:00:00.000Z', labelSource: 'hostname' }))
+
+    expect(store(root).current()).toEqual({ identity: { id: 'kept-id', label: defaultMachineLabel(), createdAt: '2026-10-01T00:00:00.000Z' }, source: 'hostname' })
+    expect(JSON.parse(readFileSync(path, 'utf8')).label).toBe(defaultMachineLabel())
+  })
+
+  it('keeps a typed name for every reader and goes back to the host name on request', () => {
+    const root = temporary()
+    const first = store(root).read()
+    const named = store(root).rename('  Studio  ')
+    expect(named).toEqual({ identity: { ...first, label: 'Studio' }, source: 'custom' })
+    // Another store over the same directory, as the pack manager holds, sees the name at once.
+    expect(store(root).read()).toEqual({ ...first, label: 'Studio' })
+    expect(JSON.parse(readFileSync(join(root, MNEMON_MACHINE_DIRECTORY, MNEMON_MACHINE_FILE), 'utf8')).labelSource).toBe('custom')
+
+    expect(store(root).rename(null)).toEqual({ identity: { ...first, label: defaultMachineLabel() }, source: 'hostname' })
+    expect(store(root).rename('')).toEqual({ identity: { ...first, label: defaultMachineLabel() }, source: 'hostname' })
+    expect(store(root).read().id).toBe(first.id)
+  })
+
+  it('reads a record from an earlier version by its label', () => {
+    const root = temporary()
+    const path = join(root, MNEMON_MACHINE_DIRECTORY, MNEMON_MACHINE_FILE)
+    mkdirSync(dirname(path), { recursive: true })
+    // Earlier versions always used the host name; a label that is still the host name keeps following it.
+    writeFileSync(path, JSON.stringify({ version: 1, id: 'a', label: defaultMachineLabel(), createdAt: 'c' }))
+    expect(store(root).current().source).toBe('hostname')
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, id: 'a', label: defaultMachineLabel(), createdAt: 'c', labelSource: 'hostname' })
+    // Any other label was set by hand, and a hand-set name stays.
+    writeFileSync(path, JSON.stringify({ version: 1, id: 'b', label: 'MacBook', createdAt: 'c' }))
+    expect(store(root).current()).toEqual({ identity: { id: 'b', label: 'MacBook', createdAt: 'c' }, source: 'custom' })
+    expect(JSON.parse(readFileSync(path, 'utf8')).labelSource).toBe('custom')
+  })
+
+  it('refuses a name that is blank, too long or more than one line, and keeps the old one', () => {
+    const root = temporary()
+    const named = store(root).rename('Laptop').identity
+    for (const bad of ['   ', 'x'.repeat(MNEMON_MACHINE_LABEL_MAX + 1), 'two\nlines', 'tab\tbed', 42, {}]) {
+      expect(() => store(root).rename(bad)).toThrow(/machine name/u)
+    }
+    expect(store(root).rename('x'.repeat(MNEMON_MACHINE_LABEL_MAX)).identity.label).toHaveLength(MNEMON_MACHINE_LABEL_MAX)
+    expect(store(root).read().id).toBe(named.id)
   })
 
   it('reads the identity from the effective data directory the runner reports', () => {

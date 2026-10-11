@@ -16,6 +16,7 @@
  */
 import { createGitHubTransport, describeTransportError, type MnemonGitHubFetch } from './github-transport.ts'
 import type { MnemonSyncGitHubPoll, MnemonSyncGitHubRepository, MnemonSyncGitHubRepositoryList, MnemonSyncGitHubStatus } from './protocol.ts'
+import { MnemonSyncError } from './sync-error.ts'
 
 export const MNEMON_GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code'
 export const MNEMON_GITHUB_ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token'
@@ -36,6 +37,8 @@ export const MNEMON_GITHUB_SLOW_DOWN_MS = 5_000
 export const MNEMON_GITHUB_MAX_INTERVAL_MS = 60_000
 export const MNEMON_GITHUB_FLOW_LIMIT_MS = 3_600_000
 export const MNEMON_GITHUB_REPOSITORY_PAGE = 100
+/** How many pages of repositories the picker reads; the newest-updated come first. */
+export const MNEMON_GITHUB_REPOSITORY_PAGES = 5
 export const MNEMON_GITHUB_USER_AGENT = 'dsh-mnemon-sync'
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 const REPOSITORY_NAME = /^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u
@@ -87,7 +90,10 @@ function codeOf(body: unknown): string | undefined {
 
 function failure(action: string, status: number, body: unknown): Error {
   const code = codeOf(body)
-  return new Error(code === undefined ? action + ' failed with HTTP ' + String(status) : action + ' failed: ' + code)
+  const message = code === undefined ? action + ' failed with HTTP ' + String(status) : action + ' failed: ' + code
+  // A grant GitHub no longer honours (revoked, expired, or the app's access withdrawn)
+  // is answered with 401; the page then offers a new sign-in instead of a raw code.
+  return status === 401 ? new MnemonSyncError('github-unauthorized', message) : new Error(message)
 }
 
 /** Read one grant out of a stored record, refusing anything else. */
@@ -352,14 +358,19 @@ export class MnemonGitHubAuth {
   /** The repositories the account may write to, most recently pushed first. */
   async repositories(signal?: AbortSignal): Promise<MnemonSyncGitHubRepositoryList> {
     const token = await this.requireToken()
-    const url = MNEMON_GITHUB_API_BASE + '/user/repos?per_page=' + String(MNEMON_GITHUB_REPOSITORY_PAGE) + '&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member'
-    const { status, body } = await this.ask(url, { headers: this.authorization(token), ...(signal === undefined ? {} : { signal }) }, 'listing GitHub repositories')
-    if (status !== 200) throw failure('listing GitHub repositories', status, body)
-    if (!Array.isArray(body)) throw new Error('the GitHub repository answer was not a list')
     const repositories: MnemonSyncGitHubRepository[] = []
-    for (const entry of body) {
-      const repository = repositoryOf(entry)
-      if (repository !== undefined) repositories.push(repository)
+    // An account past one page still finds a repository it updated less recently;
+    // a page shorter than a full one is the last.
+    for (let page = 1; page <= MNEMON_GITHUB_REPOSITORY_PAGES; page += 1) {
+      const url = MNEMON_GITHUB_API_BASE + '/user/repos?per_page=' + String(MNEMON_GITHUB_REPOSITORY_PAGE) + '&page=' + String(page) + '&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member'
+      const { status, body } = await this.ask(url, { headers: this.authorization(token), ...(signal === undefined ? {} : { signal }) }, 'listing GitHub repositories')
+      if (status !== 200) throw failure('listing GitHub repositories', status, body)
+      if (!Array.isArray(body)) throw new Error('the GitHub repository answer was not a list')
+      for (const entry of body) {
+        const repository = repositoryOf(entry)
+        if (repository !== undefined && !repositories.some(known => known.fullName === repository.fullName)) repositories.push(repository)
+      }
+      if (body.length < MNEMON_GITHUB_REPOSITORY_PAGE) break
     }
     const login = (await this.account(token, signal)) ?? ''
     return { login, repositories }
