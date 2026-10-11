@@ -27,6 +27,8 @@ interface FakeHostOptions {
   repositories?: MnemonSyncGitHubRepository[] | 'unauthorized'
   push?: Partial<MnemonSyncPushResult> | { reason: string; message: string }
   diff?: Partial<MnemonSyncDiff>
+  /** The branch holds no backup yet, so reading it fails with that reason. */
+  emptyRemote?: boolean
 }
 
 /** A Host that answers the sync channel from a little state the calls change. */
@@ -94,8 +96,10 @@ function fakeHost(options: FakeHostOptions = {}) {
         }
         return { ok: true as const, value: { repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', commit: COMMIT, committed: true, message: 'Mnemon sync', files: 7, bytes: 1_500, summary: [], pushed: true, ...push } }
       }
-      case 'preview': return { ok: true as const, value: preview }
-      case 'diff': return { ok: true as const, value: diff }
+      case 'preview':
+      case 'diff':
+        if (options.emptyRemote === true) return { ok: false as const, error: { code: 'internal', message: 'the branch mnemon-sync holds no Mnemon payload at mnemon/ yet; push one first', details: { reason: 'remote-empty' } } }
+        return { ok: true as const, value: endpoint === 'preview' ? preview : diff }
       case 'pull': return { ok: true as const, value: { imported: true, mode: 'merge', repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', commit: COMMIT, manifest: preview.manifest, targetRoot: '/data', components: ['runtime'], summary: [], runtime: { added: 1, held: 0 } } }
       case 'backups': return { ok: true as const, value: { repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', truncated: false, commits: [
         { commit: COMMIT, message: 'Mnemon sync 2026-08-14T12:00:00Z', committedAt: '2026-08-14T12:00:00.000Z', machine: { id: 'machine-b', label: 'Laptop B', createdAt: '2026-08-01T00:00:00.000Z' }, components: [{ component: 'runtime', files: 3, bytes: 10, items: 4 }] },
@@ -217,6 +221,17 @@ describe('Git sync section', () => {
     expect(host.calls('push')).toEqual([])
   })
 
+  it('offers the first sync from Check remote when the branch holds no backup yet', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', emptyRemote: true })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '检查远端' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('仓库里还没有备份，先同步一次')).toBeTruthy()
+    expect((within(dialog).getByRole('button', { name: '只合并到本机' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: '立即同步' }))
+    await waitFor(() => expect(host.calls('push')).toEqual([{ confirmed: true }]))
+  })
+
   it('lists backups by time and computer, keeping only messages a person wrote', async () => {
     const host = fakeHost({ repoUrl: '/srv/memory.git' })
     section(host.connection)
@@ -230,7 +245,8 @@ describe('Git sync section', () => {
   })
 
   it('signs in with GitHub in one click, then connects a private repository without a stored token', async () => {
-    const open = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const opened = { opener: window } as unknown as Window
+    const open = vi.spyOn(window, 'open').mockReturnValue(opened)
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const host = fakeHost({ github: { available: true, writable: true }, repositories: [repository('octocat/memory', true), repository('octocat/site', false), repository('team/shared', true, false)] })
@@ -241,8 +257,12 @@ describe('Git sync section', () => {
     expect(await screen.findByText('ABCD-1234')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '复制并打开 GitHub' }))
-    await waitFor(() => expect(open).toHaveBeenCalledWith('https://github.com/login/device', '_blank', 'noopener,noreferrer'))
+    await waitFor(() => expect(open).toHaveBeenCalledWith('https://github.com/login/device', '_blank'))
     expect(await screen.findByText('已复制，在打开的页面中粘贴即可；完成后会自动继续')).toBeTruthy()
+    // The opened page keeps no handle on this one, and nothing claims the browser blocked it.
+    expect(opened.opener).toBeNull()
+    expect(writeText).toHaveBeenCalledWith('ABCD-1234')
+    expect(screen.queryByText(/浏览器没有打开新页面/u)).toBeNull()
 
     expect(await screen.findByText('已登录 @octocat', undefined, { timeout: 4_000 })).toBeTruthy()
     const list = await screen.findByRole('list', { name: '仓库' })
@@ -308,9 +328,9 @@ describe('Git sync section', () => {
     section(host.connection)
     fireEvent.click(await screen.findByRole('button', { name: '断开' }))
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('之后不再同步到 /srv/memory.git。本机记忆和仓库里的内容都不会删除；保存的访问令牌会一并移除。')).toBeTruthy()
+    expect(within(dialog).getByText('之后不再同步到 /srv/memory.git，自动同步也会关闭。本机记忆和仓库里的内容都不会删除；保存的访问令牌会一并移除。')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: '断开' }))
-    await waitFor(() => expect(host.calls('configure')).toEqual([{ repoUrl: null, token: null }]))
+    await waitFor(() => expect(host.calls('configure')).toEqual([{ repoUrl: null, token: null, autoBackupMinutes: 0 }]))
     expect(await screen.findByText('已断开仓库。')).toBeTruthy()
     expect(screen.getByLabelText('仓库地址')).toBeTruthy()
   })

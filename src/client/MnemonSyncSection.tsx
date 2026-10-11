@@ -172,8 +172,8 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
     if (client === null || busy !== null) return
     setBusy('disconnect'); setRepositoryFeedback(null); setSyncFeedback(null)
     try {
-      // The token belonged to that repository, so it goes with it.
-      await client.configureSync({ repoUrl: null, token: null })
+      // The token belonged to that repository, and the timer synced to it, so both go with it.
+      await client.configureSync({ repoUrl: null, token: null, autoBackupMinutes: 0 })
       setDialog(null); setEditing(false)
       setRepositoryFeedback({ tone: 'success', text: t('config.syncDisconnected') })
       await readStatus()
@@ -471,15 +471,19 @@ function GitHubConnect(props: RepositoryEditorProps & { github: MnemonSyncGitHub
     await start()
   }
 
-  /** One click copies the code and opens the page it is typed into. */
+  /**
+   * One click copies the code and opens the page it is typed into. The copy starts
+   * first, while this page still has focus, and the page opens within the same click,
+   * so neither the clipboard nor a popup blocker refuses it.
+   */
   const copyAndOpen = async (): Promise<void> => {
     if (flow === undefined) return
-    const opened = window.open(flow.verificationUri, '_blank', 'noopener,noreferrer')
-    try {
-      setCopied(await writeClipboard(flow.userCode))
-    } catch {
-      setCopied(false)
-    }
+    const copying = writeClipboard(flow.userCode).catch(() => false)
+    // `noopener` would make `open` answer null even when the page did open, so the
+    // opener is cut afterwards and null keeps meaning that the browser blocked it.
+    const opened = window.open(flow.verificationUri, '_blank')
+    if (opened !== null) opened.opener = null
+    setCopied(await copying)
     if (opened === null) setFailed(t('config.syncGitHubOpenBlocked', { url: flow.verificationUri }))
   }
 

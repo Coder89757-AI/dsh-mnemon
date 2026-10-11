@@ -115,16 +115,19 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
   const [difference, setDifference] = useState<MnemonSyncDiff | null>(null)
   const [busy, setBusy] = useState<'read' | 'merge' | 'revive' | 'sync' | null>('read')
   const [failed, setFailed] = useState<string | null>(null)
+  // A branch that holds no backup yet is not a dead end: the first sync is what creates it.
+  const [empty, setEmpty] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [showConflicts, setShowConflicts] = useState(false)
 
   const read = useCallback(async (): Promise<void> => {
-    setBusy('read'); setFailed(null)
+    setBusy('read'); setFailed(null); setEmpty(false)
     try {
       const [nextPreview, nextDifference] = await Promise.all([client.previewSync(), client.syncDiff()])
       setPreview(nextPreview); setDifference(nextDifference)
     } catch (reason) {
       setPreview(null); setDifference(null)
+      setEmpty(reasonOf(reason) === 'remote-empty')
       setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl))
     } finally { setBusy(null) }
   }, [client, repoUrl, t])
@@ -177,7 +180,7 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
     footer={<>
       <Button variant="outline" size="sm" disabled={busy !== null || !writable || !ready || !anything} onClick={() => void merge(false)}>
         {busy === 'merge' ? t('config.syncMerging') : t('config.syncMergeOnly')}</Button>
-      <Button variant="primary" size="sm" disabled={busy !== null || !writable || !ready} onClick={() => void sync()}>
+      <Button variant="primary" size="sm" disabled={busy !== null || !writable || !(ready || empty)} onClick={() => void sync()}>
         {busy === 'sync' ? t('config.syncNowRunning') : t('config.syncNow')}</Button>
     </>}>
     <div className={css.syncDialogBody}>
