@@ -274,6 +274,9 @@ try {
     fresh.enabled === true && fresh.configured === false && fresh.git.available === true && fresh.git.required === '2.20'
     && fresh.remote.reachable === false && fresh.remote.branchExists === false, JSON.stringify(fresh))
   check('the configuration path lives inside the storage root', fresh.configPath === join(data.a, 'state', 'sync-git.json'), fresh.configPath)
+  const unconfiguredPush = await sync(a, 'push', { confirmed: true })
+  expectFailure(unconfiguredPush, /no sync repository is configured/u, 'a push without a repository')
+  check('a push without a repository says so by name through DSH', unconfiguredPush.error.details?.reason === 'no-repository', JSON.stringify(unconfiguredPush.error))
   const defaults = expectOk(await sync(a, 'configure', { repoUrl: origin }), 'configure')
   check('a repository alone is enough: branch, directory and author keep their defaults',
     defaults.repoUrl === origin && defaults.branch === 'mnemon-sync' && defaults.subdir === 'mnemon/'
@@ -428,9 +431,11 @@ try {
   check('an unreachable remote is reported without leaking the token',
     unreachable.remote.reachable === false && typeof unreachable.remote.error === 'string'
     && unreachable.remote.error.includes(TOKEN) === false, unreachable.remote.error)
+  check('the unreachable remote is named a network failure', unreachable.remote.issue === 'network', JSON.stringify(unreachable.remote))
   const failedPush = await sync(a, 'push', { confirmed: true })
   expectFailure(failedPush, /./u, 'push to an unreachable remote')
   check('a failed push never echoes the token', failedPush.error.message.includes(TOKEN) === false, failedPush.error.message)
+  check('a failed push carries the kind of failure through DSH', failedPush.error.details?.reason === 'remote-network', JSON.stringify(failedPush.error))
   check('the token never reaches the mirror',
     (await readFile(join(data.a, 'state', 'sync', 'git', '.git', 'config'), 'utf8')).includes(TOKEN) === false)
 
