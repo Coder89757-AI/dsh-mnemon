@@ -56,6 +56,8 @@ interface MnemonWorkspaceHostProps {
   sessionId?: string | undefined
   cwd?: string
   active?: boolean
+  /** The page fills DSH's main column, so its header is the window's top edge. */
+  titleBar?: boolean
   renderSlot?: PropsRenderSlots<typeof MNEMON_SOURCE_PAGE_SLOT | typeof MNEMON_COMPONENT_STATUS_SLOT>['renderSlot']
 }
 
@@ -126,6 +128,7 @@ export function MnemonWorkspaceHost(props: MnemonWorkspaceHostProps): JSX.Elemen
     {...(resolvedSelectedId === undefined ? {} : { workspaceId: resolvedSelectedId })}
     workspaceSelection={selection}
     active={props.active ?? true}
+    titleBar={props.titleBar === true}
     t={props.t}
     locale={locale.active}
     sourcePageDirectory={props.sourcePageDirectory}
@@ -218,7 +221,7 @@ export function MnemonSidebarWorkspaceHost(props: MnemonWorkspaceHostProps & { c
   return <>
     {betterSidebarView}
     {nativeSidebar?.target !== undefined && nativeSidebar.available && createPortal(<section data-dsh-mnemon-view className={css.nativeWorkspace} hidden={!state.open} aria-label={props.t('tab.label')}>
-      <MnemonWorkspaceHost {...props} active={state.open} />
+      <MnemonWorkspaceHost {...props} active={state.open} titleBar />
     </section>, nativeSidebar.target)}
     {!nativeSidebar?.available && bounds !== undefined && <section data-dsh-mnemon-view hidden={!state.open} className={css.workspacePanel} style={{ ...bounds, display: state.open ? undefined : 'none' }} aria-label={props.t('tab.label')}>
       <MnemonWorkspaceHost {...props} active={state.open} />

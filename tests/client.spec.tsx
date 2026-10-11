@@ -455,6 +455,19 @@ describe('MnemonWorkbench', () => {
     expect(screen.queryByRole('button', { name: '前往配置' })).toBeNull()
   })
 
+  it('marks the header as the window\'s drag area only where the page is the window\'s top edge', async () => {
+    const { connection } = createConnection({ layerSwitches: { runtime: true, documents: true, 'memory-spaces': true } })
+    const top = render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" titleBar />)
+    await screen.findByText('已连接')
+    // DSH Desktop moves the window by [data-window-drag]; its controls stay clickable there.
+    expect(top.container.querySelector('[data-dsh-part="mnemon-view"] > header')?.hasAttribute('data-window-drag')).toBe(true)
+    top.unmount()
+
+    const embedded = render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
+    await screen.findByText('已连接')
+    expect(embedded.container.querySelector('[data-dsh-part="mnemon-view"] > header')?.hasAttribute('data-window-drag')).toBe(false)
+  })
+
   it('keeps the tab of a layer whose component is off and says why', async () => {
     const { connection, call } = createConnection({ layerSwitches: { runtime: true, documents: true, 'memory-spaces': true }, componentsOff: ['documents'] })
     const configuration = new MnemonActionSeat()
