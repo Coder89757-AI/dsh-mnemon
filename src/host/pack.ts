@@ -795,6 +795,9 @@ function mergeDocuments(root: string, pack: ParsedPack): { index: DocumentIndex;
   for (const source of incoming.index.documents) {
     const existing = ids.get(source.id)
     if (existing !== undefined && existing.contentHash === source.contentHash) continue
+    // A divergent document is kept beside the local one under a new id. Merging the same
+    // pack again, as a retried sync does, finds that copy and does not make a second one.
+    if (existing !== undefined && current.index.documents.some(document => document.contentHash === source.contentHash)) continue
     let document = source
     let bytes = incoming.files.get(source.id)!
     if (existing !== undefined) {
@@ -820,7 +823,10 @@ function mergeRegistry(root: string, pack: ParsedPack): { registry: BodyRegistry
     const sourceDb = incoming.databases.get(source.id)!
     if (ids.has(source.id)) {
       const currentDb = current.databases.get(source.id)!
-      if (sha256(currentDb) === sha256(sourceDb)) continue
+      const incomingHash = sha256(sourceDb)
+      if (sha256(currentDb) === incomingHash) continue
+      // The divergent space is kept under a new id; one such copy is enough.
+      if ([...current.databases.values()].some(database => sha256(database) === incomingHash)) continue
       const id = randomUUID()
       body = { ...source, id, updatedAt: new Date().toISOString() }
     }

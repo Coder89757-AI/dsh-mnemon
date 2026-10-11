@@ -715,6 +715,8 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(raced).toBe(true)
     expect(pushed).toMatchObject({ committed: true, pushed: true })
     expect(pushed.failure).toBeUndefined()
+    // Both attempts merged one of B's entries, and the answer counts both.
+    expect(pushed.merged?.runtime?.added).toBe(2)
     const published = await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)
     expect(published).toContain('B wrote this during the race')
     expect(published).toContain('A wrote this')
@@ -738,9 +740,9 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     // A file this very process may still be using is left alone.
     expect(existsSync(live)).toBe(true)
 
-    // A lock an older build left without an owner record is taken over once it is not new.
+    // A lock an older build left without an owner record is taken over once no run could still hold it.
     mkdirSync(join(state, '.sync.lock'))
-    const past = new Date(Date.now() - 5 * 60_000)
+    const past = new Date(Date.now() - 20 * 60_000)
     utimesSync(join(state, '.sync.lock'), past, past)
     await expect(machineA.sync.push({ message: 'After an ownerless lock' })).resolves.toMatchObject({ committed: false })
   })
@@ -803,6 +805,23 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(readFileSync(join(machineA.root, 'state', 'sync-git.json'), 'utf8')).not.toContain('token-for-example')
     // A token that comes with the move is the one kept.
     expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-again' })).toMatchObject({ hasToken: true })
+  })
+
+  it('gives the status probe 20 seconds and an operation the full Git timeout', async () => {
+    const timeouts: Array<{ command: string; timeoutMs: number }> = []
+    const recording: ProcessRunner = async (command, args, options) => {
+      const name = ['ls-remote', 'push', 'fetch'].find(candidate => args.includes(candidate))
+      if (name !== undefined) timeouts.push({ command: name, timeoutMs: options.timeoutMs })
+      return runProcess(command, args, options)
+    }
+    const origin = await repository('sync-timeout-remote')
+    const machineA = await machine('sync-timeout', origin, now, recording)
+    await machineA.sync.status()
+    expect(timeouts).toEqual([{ command: 'ls-remote', timeoutMs: 20_000 }])
+    timeouts.length = 0
+    await machineA.sync.push({ message: 'Timed' })
+    expect(timeouts.every(entry => entry.timeoutMs === 120_000)).toBe(true)
+    expect(timeouts.map(entry => entry.command)).toContain('push')
   })
 
   it('initializes the mirror without the option Git 2.28 introduced', async () => {

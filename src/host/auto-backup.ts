@@ -122,15 +122,16 @@ export class MnemonAutoBackupScheduler {
     this.controller = controller
     try {
       const settings = sync.settings().read()
-      this.lastFailure = undefined
       if (settings.repoUrl === undefined) {
         // Nothing to publish to yet. The timer keeps running, so configuring a
         // repository later needs no second visit to the settings page.
         this.lastError = undefined
+        this.lastFailure = undefined
       } else if (!this.runtime.config.writeEnabled) {
         // A Host that cannot write says so, and the message matches what the RPC
         // layer refuses with, so the page never shows two names for one fact.
         this.lastError = 'dsh-mnemon is configured read-only'
+        this.lastFailure = undefined
       } else {
         const result = await sync.push({ signal: controller.signal })
         this.lastAt = this.now().toISOString()
@@ -139,7 +140,9 @@ export class MnemonAutoBackupScheduler {
         // A payload the branch already holds is not a failure, so the reason is
         // only kept when a commit that should have travelled did not.
         this.lastError = result.pushed ? undefined : result.committed ? result.reason : undefined
-        if (this.lastError !== undefined) this.lastFailure = result.failure
+        // The error and its kind always change together, so a translated reason never
+        // stands beside the words of another failure.
+        this.lastFailure = this.lastError === undefined ? undefined : result.failure
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

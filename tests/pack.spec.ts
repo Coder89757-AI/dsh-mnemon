@@ -280,6 +280,11 @@ describe('Mnemon Pack', () => {
     expect(runtime.entries).toHaveLength(1)
     const documents = JSON.parse(readFileSync(join(target.root, 'documents', 'index.json'), 'utf8')) as { documents: unknown[] }
     expect(documents.documents).toHaveLength(2)
+
+    // Merging the same pack again, as a retried sync does, keeps the one copy it made.
+    await target.manager.importPack(exported.base64, { mode: 'merge' })
+    expect((JSON.parse(readFileSync(join(target.root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: unknown[] }).bodies).toHaveLength(2)
+    expect((JSON.parse(readFileSync(join(target.root, 'documents', 'index.json'), 'utf8')) as { documents: unknown[] }).documents).toHaveLength(2)
   })
 
   it('imports only the requested component from a complete Pack', async () => {

@@ -54,14 +54,19 @@ export function SyncHistoryDialog({ client, repoUrl, t, onClose }: SyncDialogPro
   const [history, setHistory] = useState<MnemonSyncBackupList | null>(null)
   const [busy, setBusy] = useState(true)
   const [failed, setFailed] = useState<string | null>(null)
+  // The Host reads a bounded window of the branch; a page that adds nothing is its end.
+  const [capped, setCapped] = useState(false)
 
   const load = useCallback(async (limit?: number): Promise<void> => {
     setBusy(true); setFailed(null)
     try {
       const page = await client.syncBackups(limit)
-      setHistory(current => current === null || limit === undefined
-        ? page
-        : { ...page, commits: [...current.commits, ...page.commits.filter(commit => !current.commits.some(held => held.commit === commit.commit))] })
+      setHistory(current => {
+        if (current === null || limit === undefined) return page
+        const fresh = page.commits.filter(commit => !current.commits.some(held => held.commit === commit.commit))
+        if (fresh.length === 0) setCapped(true)
+        return { ...page, commits: [...current.commits, ...fresh] }
+      })
     } catch (reason) {
       setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl))
     } finally { setBusy(false) }
@@ -86,7 +91,8 @@ export function SyncHistoryDialog({ client, repoUrl, t, onClose }: SyncDialogPro
           {!AUTOMATIC_MESSAGE.test(commit.message) && commit.message.trim() !== '' && <small className={css.syncHistoryMessage}>{commit.message}</small>}
         </li>)}
       </ol>}
-      {history?.truncated === true && <div className={css.rowActions}>
+      {capped && history !== null && <p className={css.syncDialogNote}>{t('config.syncHistoryCapped', { count: history.commits.length })}</p>}
+      {history?.truncated === true && !capped && <div className={css.rowActions}>
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void load(history.commits.length + HISTORY_PAGE)}>
           {busy ? t('config.syncHistoryLoading') : t('config.syncHistoryMore')}</Button>
       </div>}
@@ -97,8 +103,8 @@ export function SyncHistoryDialog({ client, repoUrl, t, onClose }: SyncDialogPro
 interface SyncCompareDialogProps extends SyncDialogProps {
   /** Whether this Host accepts writes; reading the comparison never needs them. */
   writable: boolean
-  /** Runs the same sync the row's button runs, and reports whether it finished. */
-  onSync: () => Promise<boolean>
+  /** Runs the same sync the row's button runs; answers why it did not finish, or null. */
+  onSync: () => Promise<string | null>
   /** Something here was written, so the section reads its status again. */
   onChanged: () => void
 }
@@ -123,7 +129,10 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
   const read = useCallback(async (): Promise<void> => {
     setBusy('read'); setFailed(null); setEmpty(false)
     try {
-      const [nextPreview, nextDifference] = await Promise.all([client.previewSync(), client.syncDiff()])
+      // Both reads take the channel's lock, so they run one after the other: the second
+      // would otherwise wait on the first and could give up while it fetches.
+      const nextPreview = await client.previewSync()
+      const nextDifference = await client.syncDiff()
       setPreview(nextPreview); setDifference(nextDifference)
     } catch (reason) {
       setPreview(null); setDifference(null)
@@ -151,10 +160,12 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
   const sync = async (): Promise<void> => {
     if (busy !== null) return
     setBusy('sync'); setFailed(null); setNotice(null)
-    const finished = await onSync()
+    const failure = await onSync()
     setBusy(null)
-    if (finished) onClose()
-    else await read()
+    if (failure === null) { onClose(); return }
+    // The row's own line sits behind this dialog, so the failure is said here too.
+    await read()
+    setFailed(failure)
   }
 
   const goToReview = (): void => {
@@ -165,20 +176,25 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
 
   const conflicts = difference?.conflicts ?? []
   const conflicted = new Set(conflicts.flatMap(conflict => [conflict.target + '\u0000' + conflict.local.content, conflict.target + '\u0000' + conflict.remote.content]))
-  const remoteOnly = difference === null ? 0 : difference.remoteOnly.filter(entry => !conflicted.has(entry.target + '\u0000' + entry.content)).length
-  const localOnly = difference === null ? 0 : difference.localOnly.filter(entry => !conflicted.has(entry.target + '\u0000' + entry.content)).length
   const heldBack = difference?.heldBack ?? 0
   const removals = difference?.remoteTombstones.length ?? 0
+  // Each entry is counted once, in the kind a merge treats it as: the branch's entries this
+  // computer deleted stay out of "only on the remote", and the entries the branch's removals
+  // will take away stay out of "only here"; both are said apart below.
+  const remoteOnly = difference === null ? 0 : Math.max(difference.remoteOnly.filter(entry => !conflicted.has(entry.target + '\u0000' + entry.content)).length - heldBack, 0)
+  const localOnly = difference === null ? 0 : Math.max(difference.localOnly.filter(entry => !conflicted.has(entry.target + '\u0000' + entry.content)).length - removals, 0)
   const differs = (component: MnemonPackComponent): boolean => preview?.components.find(entry => entry.component === component)?.changed === true
-  const runtimeDiffers = remoteOnly + localOnly + conflicts.length + removals > 0 || differs('runtime')
-  const anything = runtimeDiffers || differs('documents') || differs('memory-spaces')
+  const runtimeDiffers = remoteOnly + localOnly + conflicts.length > 0
+  const anything = runtimeDiffers || removals + heldBack > 0 || differs('documents') || differs('memory-spaces')
+  // A merge writes something only where the branch brings an entry, a wording or a removal in.
+  const mergeable = remoteOnly + conflicts.length + removals > 0 || differs('documents') || differs('memory-spaces')
   const ready = preview !== null && difference !== null
   const machine = difference?.remote.machine === undefined ? t('config.syncHistoryUnknownMachine') : difference.remote.machine.label.trim() || difference.remote.machine.id
 
   return <MnemonDialog title={t('config.syncCompareTitle')} closeLabel={t('common.close')} wide busy={busy !== null && busy !== 'read'}
     contentReady={ready || failed !== null} onClose={onClose}
     footer={<>
-      <Button variant="outline" size="sm" disabled={busy !== null || !writable || !ready || !anything} onClick={() => void merge(false)}>
+      <Button variant="outline" size="sm" disabled={busy !== null || !writable || !ready || !mergeable} onClick={() => void merge(false)}>
         {busy === 'merge' ? t('config.syncMerging') : t('config.syncMergeOnly')}</Button>
       <Button variant="primary" size="sm" disabled={busy !== null || !writable || !(ready || empty)} onClick={() => void sync()}>
         {busy === 'sync' ? t('config.syncNowRunning') : t('config.syncNow')}</Button>
@@ -231,12 +247,15 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
 }
 
 /** A short question before an action whose consequence is easy to miss. */
-export function SyncConfirmDialog(props: { title: string; body: string; confirm: string; busy?: boolean; t: MnemonTranslate; onConfirm: () => void; onClose: () => void }): JSX.Element {
+export function SyncConfirmDialog(props: { title: string; body: string; confirm: string; busy?: boolean; error?: string | null; t: MnemonTranslate; onConfirm: () => void; onClose: () => void }): JSX.Element {
   return <MnemonDialog title={props.title} closeLabel={props.t('common.close')} busy={props.busy === true} onClose={props.onClose}
     footer={<>
       <Button variant="outline" size="sm" disabled={props.busy === true} onClick={props.onClose}>{props.t('common.cancel')}</Button>
       <Button variant="primary" size="sm" disabled={props.busy === true} onClick={props.onConfirm}>{props.confirm}</Button>
     </>}>
-    <p className={css.syncDialogNote}>{props.body}</p>
+    <div className={css.syncDialogBody}>
+      <p className={css.syncDialogNote}>{props.body}</p>
+      {props.error !== undefined && props.error !== null && <p className={css.error} role="alert">{props.error}</p>}
+    </div>
   </MnemonDialog>
 }

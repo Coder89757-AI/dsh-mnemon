@@ -40,13 +40,16 @@ export const MNEMON_SYNC_STATUS_TIMEOUT_MS = 20_000
 /** A push Git refused because the branch moved is folded in and tried once more. */
 const PUSH_ATTEMPTS = 2
 /**
- * A lock whose owner left no readable record is treated as abandoned after this
- * long. A live owner is asked directly; this only covers a record that is gone.
+ * No sync runs this long, so a lock older than this is abandoned whoever holds it.
+ * It also covers a process id that a restart handed to an unrelated process.
  */
 const STALE_LOCK_MS = 60 * 60_000
 const LOCK_OWNER = 'owner.json'
-/** A lock with no owner record that is older than this was not taken a moment ago. */
-const OWNERLESS_LOCK_MS = 60_000
+/**
+ * A lock without an owner record was taken by a version that kept none, and may
+ * still be in use by it; it is taken over only once no such run could still last.
+ */
+const OWNERLESS_LOCK_MS = 15 * 60_000
 /** The mirror's own Git config names the repository it was filled from. */
 const ORIGIN_KEY = 'mnemon.origin'
 const LAST_RUN_FILE = 'last-run.json'
@@ -707,8 +710,16 @@ export class MnemonGitSync {
       // refuses the push. Folding the branch in again is exactly what the first attempt
       // did, so it is repeated once before the refusal is reported.
       let result = await this.pushOnce(settings, message, input.signal)
+      let added = result.merged?.runtime?.added ?? 0
+      let held = result.merged?.runtime?.held ?? 0
       for (let attempt = 1; attempt < PUSH_ATTEMPTS && result.failure === 'push-rejected'; attempt += 1) {
         result = await this.pushOnce(settings, message, input.signal)
+        added += result.merged?.runtime?.added ?? 0
+        held = result.merged?.runtime?.held ?? held
+      }
+      // What this sync brought in is what every attempt merged, not only the last one.
+      if (result.merged !== undefined && (added > 0 || result.merged.runtime !== undefined)) {
+        result = { ...result, merged: { ...result.merged, runtime: { added, held } } }
       }
       // A branch that already held this payload is in sync as much as a published one.
       if (result.pushed || !result.committed) {
@@ -1406,7 +1417,7 @@ export class MnemonGitSync {
     const prepared = this.credentials(args, options)
     try {
       const result = await this.run(GIT_LABEL, prepared.args, {
-        timeoutMs: MNEMON_SYNC_GIT_TIMEOUT_MS,
+        timeoutMs: options.timeoutMs ?? MNEMON_SYNC_GIT_TIMEOUT_MS,
         env: gitEnvironment(),
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -1508,7 +1519,15 @@ async function withDirectoryLock<T>(path: string, operation: () => Promise<T>): 
       held = true
     } catch {
       if (abandoned(path, Date.now())) {
-        rmSync(path, { recursive: true, force: true })
+        // Moving the lock aside is atomic, so of two waiters that found it abandoned only
+        // one takes it over; the other finds it gone, or taken again, and keeps waiting.
+        const aside = path + '.abandoned.' + String(process.pid) + '.' + String(Date.now())
+        try {
+          if (abandoned(path, Date.now())) renameSync(path, aside)
+        } catch {
+          continue
+        }
+        rmSync(aside, { recursive: true, force: true })
         continue
       }
       await new Promise<void>(resolveReady => setTimeout(resolveReady, 25))

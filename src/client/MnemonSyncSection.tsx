@@ -79,6 +79,7 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
   const [repositoryFeedback, setRepositoryFeedback] = useState<Feedback | null>(null)
   const [autoFeedback, setAutoFeedback] = useState<Feedback | null>(null)
   const [dialog, setDialog] = useState<'compare' | 'history' | 'disconnect' | null>(null)
+  const [disconnectFailed, setDisconnectFailed] = useState<string | null>(null)
   // The way the editor opens: the state line can ask for the GitHub sign-in directly.
   const [editMode, setEditMode] = useState<'github' | 'address' | undefined>(undefined)
 
@@ -139,20 +140,26 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
   const editable = !disabled && client !== null
   const gitReady = status?.git.available === true
 
-  /** The one primary action: merge the repository here, then publish the result. */
-  const sync = async (): Promise<boolean> => {
-    if (client === null || busy !== null || repoUrl === undefined) return false
+  /**
+   * The one primary action: merge the repository here, then publish the result.
+   * Answers why it did not finish, or null when it did, for a caller that shows it elsewhere.
+   */
+  const sync = async (): Promise<string | null> => {
+    if (client === null || busy !== null || repoUrl === undefined) return null
     setBusy('sync'); setSyncFeedback(null)
-    let finished = false
+    let failure: string | null = null
     try {
       const result = await client.pushSync()
-      setSyncFeedback(syncResult(t, result, repoUrl))
-      finished = result.pushed || !result.committed
+      const feedback = syncResult(t, result, repoUrl)
+      setSyncFeedback(feedback)
+      if (feedback.tone === 'error') failure = feedback.text
     } catch (reason) {
-      setSyncFeedback({ tone: 'error', text: t('config.syncFailed', { error: failureText(t, reasonOf(reason), message(reason), repoUrl) }) })
+      failure = t('config.syncFailed', { error: failureText(t, reasonOf(reason), message(reason), repoUrl) })
+      setSyncFeedback({ tone: 'error', text: failure })
     } finally { setBusy(null) }
-    await readStatus()
-    return finished
+    // The state line follows on its own; the buttons do not wait for it.
+    void readStatus()
+    return failure
   }
 
   const setAutoSync = async (minutes: number): Promise<void> => {
@@ -162,7 +169,7 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
       const next = await client.configureSync({ autoBackupMinutes: minutes })
       setStatus(current => current === null ? current : { ...current, config: next })
       // The selector already shows the interval, and the hint when the next run is due.
-      await readStatus()
+      void readStatus()
     } catch (reason) {
       setAutoFeedback({ tone: 'error', text: message(reason) })
     } finally { setBusy(null) }
@@ -170,15 +177,16 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
 
   const disconnect = async (): Promise<void> => {
     if (client === null || busy !== null) return
-    setBusy('disconnect'); setRepositoryFeedback(null); setSyncFeedback(null)
+    setBusy('disconnect'); setRepositoryFeedback(null); setSyncFeedback(null); setDisconnectFailed(null)
     try {
       // The token belonged to that repository, and the timer synced to it, so both go with it.
       await client.configureSync({ repoUrl: null, token: null, autoBackupMinutes: 0 })
       setDialog(null); setEditing(false)
       setRepositoryFeedback({ tone: 'success', text: t('config.syncDisconnected') })
-      await readStatus()
+      void readStatus()
     } catch (reason) {
-      setRepositoryFeedback({ tone: 'error', text: message(reason) })
+      // The dialog is still open over the row, so the failure is said inside it.
+      setDisconnectFailed(message(reason))
     } finally { setBusy(null) }
   }
 
@@ -233,7 +241,8 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
           : <div className={css.syncConnect}>
             <SettingRow title={t('config.syncRepository')} titleId="mnemon-sync-repository-title" hint={<>{t('config.syncRepositoryHint')}<FeedbackLine value={repositoryFeedback} /></>} />
             <RepositoryEditor client={client} status={status} github={github} disabled={!editable} cancellable={connected} initialMode={editMode}
-              t={t} onGitHub={setGithub} onReadGitHub={readGitHub} onCancel={() => setEditing(false)} onConnected={connectedTo} />
+              t={t} onGitHub={setGithub} onReadGitHub={readGitHub} onRefresh={readStatus}
+              onCancel={() => { setEditing(false); void readStatus() }} onConnected={connectedTo} />
           </div>}
         {connected && !editing && <>
           <SettingRow title={t('config.syncRowTitle')} titleId="mnemon-sync-now-title" hint={<>{syncHint}<FeedbackLine value={syncFeedback} /></>}>
@@ -257,7 +266,7 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
     {client !== null && repoUrl !== undefined && dialog === 'history' && <SyncHistoryDialog client={client} repoUrl={repoUrl} t={t} onClose={() => setDialog(null)} />}
     {repoUrl !== undefined && dialog === 'disconnect' && <SyncConfirmDialog title={t('config.syncDisconnectTitle')}
       body={t('config.syncDisconnectBody', { repository: repositoryName(repoUrl) })} confirm={t('config.syncDisconnect')}
-      busy={busy === 'disconnect'} t={t} onConfirm={() => void disconnect()} onClose={() => setDialog(null)} />}
+      busy={busy === 'disconnect'} error={disconnectFailed} t={t} onConfirm={() => void disconnect()} onClose={() => { setDialog(null); setDisconnectFailed(null) }} />}
   </div>
 }
 
@@ -286,7 +295,7 @@ function RepositoryState({ status, checking, t, onRecheck, onFix }: { status: Mn
           dot: credential === undefined && transportOf(url) === 'https' ? 'warning' as const : 'done' as const,
           text: [
             remote.branchExists ? t('config.syncStateConnected') : t('config.syncStateNewBranch', { branch: status.config.branch }),
-            ...(credential !== undefined ? [credential] : transportOf(url) === 'https' ? [t('config.syncNoCredential')] : []),
+            ...(credential !== undefined ? [credential] : transportOf(url) === 'https' ? [onGitHub(url) ? t('config.syncNoCredential') : t('config.syncNoCredentialToken')] : []),
           ].join(' · '),
         }
   return <span className={css.syncRepositoryState}>
@@ -294,7 +303,8 @@ function RepositoryState({ status, checking, t, onRecheck, onFix }: { status: Mn
     <span className={css.syncStateLine} data-tone={state.dot}>
       <StateDot state={state.dot} />
       <span>{state.text}</span>
-      {!checking && onFix !== undefined && remote.issue === 'auth' && transportOf(url) === 'https' && status.git.available
+      {/* GitHub also answers "not found" for a repository the credentials cannot reach. */}
+      {!checking && onFix !== undefined && (remote.issue === 'auth' || remote.issue === 'not-found') && transportOf(url) === 'https' && status.git.available
         && <button type="button" className={css.syncInlineAction} onClick={onFix}>{t('config.syncFixCredentials')}</button>}
       {!checking && <button type="button" className={css.syncInlineAction} onClick={onRecheck}>{t('config.syncRecheck')}</button>}
     </span>
@@ -313,6 +323,8 @@ interface RepositoryEditorProps {
   t: MnemonTranslate
   onGitHub: (status: MnemonSyncGitHubStatus | null) => void
   onReadGitHub: () => Promise<void>
+  /** Read the Host's state again after a change the editor made on its own. */
+  onRefresh: () => Promise<void>
   onCancel: () => void
   onConnected: () => Promise<void>
 }
@@ -353,12 +365,13 @@ function sameHost(left: string, right: string): boolean {
 }
 
 /** The address form: a repository URL, and a token where the address is HTTPS. */
-function AddressConnect({ client, status, disabled, cancellable, t, onCancel, onConnected }: RepositoryEditorProps): JSX.Element {
+function AddressConnect({ client, status, disabled, cancellable, t, onRefresh, onCancel, onConnected }: RepositoryEditorProps): JSX.Element {
   const saved = status.config.repoUrl ?? ''
   const [url, setUrl] = useState(saved)
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState<'connect' | 'token' | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const tokenId = useId()
   const problem = repositoryProblem(url)
   const https = transportOf(url) === 'https'
   const environment = status.config.credentialSource === 'environment'
@@ -386,6 +399,7 @@ function AddressConnect({ client, status, disabled, cancellable, t, onCancel, on
     try {
       await client.configureSync({ token: null })
       setFeedback({ tone: 'success', text: t('config.syncTokenRemoved') })
+      void onRefresh()
     } catch (reason) {
       setFeedback({ tone: 'error', text: message(reason) })
     } finally { setBusy(null) }
@@ -398,14 +412,17 @@ function AddressConnect({ client, status, disabled, cancellable, t, onCancel, on
           aria-invalid={problem === undefined ? undefined : true} autoComplete="off" spellCheck={false} autoCapitalize="none" autoCorrect="off"
           onChange={event => setUrl(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void connect() }} />
       </label>
-      {https && <label>
-        <span className={css.syncFieldLabel}>{t('config.syncToken')}
+      {https && <div className={css.syncFieldBox}>
+        {/* The caption labels the input alone; Remove sits beside it, outside the label, so a
+            click meant to focus the field never removes the saved token. */}
+        <span className={css.syncFieldLabel}>
+          <label htmlFor={tokenId}>{t('config.syncToken')}</label>
           {storedToken && <button type="button" className={css.syncInlineAction} disabled={disabled || busy !== null} onClick={() => void removeToken()}>{t('config.syncTokenRemove')}</button>}
         </span>
-        <input type="password" value={token} aria-label={t('config.syncToken')} disabled={disabled || busy !== null || environment}
+        <input id={tokenId} type="password" value={token} aria-label={t('config.syncToken')} disabled={disabled || busy !== null || environment}
           placeholder={environment ? t('config.syncTokenEnvironment', { env: MNEMON_SYNC_TOKEN_ENV }) : storedToken ? t('config.syncTokenSaved') : t('config.syncTokenOptional')}
           autoComplete="new-password" spellCheck={false} onChange={event => setToken(event.target.value)} />
-      </label>}
+      </div>}
     </div>
     {problem !== undefined && <p className={css.error}>{problem === 'credentials' ? t('config.syncRepoUrlCredentials') : t('config.syncRepoUrlInvalid')}</p>}
     {https && problem === undefined && <p className={css.editorNote}>{t('config.syncTokenHint')}</p>}
@@ -495,6 +512,7 @@ function GitHubConnect(props: RepositoryEditorProps & { github: MnemonSyncGitHub
         try {
           const answer = await client.githubPoll()
           if (!active) return
+          setFailed(null)
           if (answer.status === 'pending') {
             if (answer.intervalMs !== undefined) setPollMs(answer.intervalMs)
             setPollTick(current => current + 1)
@@ -506,7 +524,8 @@ function GitHubConnect(props: RepositoryEditorProps & { github: MnemonSyncGitHub
           else if (answer.status === 'denied') setFailed(t('config.syncGitHubDenied'))
           else if (answer.status === 'error') setFailed(t('config.syncGitHubFailed', { error: answer.message ?? '' }))
         } catch (reason) {
-          if (active) setFailed(message(reason))
+          // One failed call is not the end of the sign-in: say so and ask again on the same cadence.
+          if (active) { setFailed(message(reason)); setPollTick(current => current + 1) }
         }
       })()
     }, Math.max(pollMs, 1_000))
@@ -604,7 +623,8 @@ function RepositoryPicker({ client, login, current, disabled, creating, t, onCho
 
   const needle = query.trim().toLowerCase()
   const matches = (repositories ?? []).filter(repository => needle === '' || repository.fullName.toLowerCase().includes(needle))
-  const exact = (repositories ?? []).some(repository => repository.name.toLowerCase() === needle)
+  // A name is taken only under the account it would be created in; another owner's repository of that name is not.
+  const exact = (repositories ?? []).some(repository => repository.name.toLowerCase() === needle && (login === undefined || repository.owner.toLowerCase() === login.toLowerCase()))
   const creatable = needle !== '' && !exact && repositoryNameValid(query) && !query.includes('/')
 
   const pick = (repository: MnemonSyncGitHubRepository): void => {
@@ -683,7 +703,10 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
     : mode === 'machine' ? { authorName: '', authorEmail: '' } : { authorName: name.trim(), authorEmail: email.trim() }
   const branchOk = branchValid(branch)
   const subdirOk = directoryValid(subdir)
-  const customOk = mode !== 'custom' || (name.trim() !== '' && emailValid(email))
+  // A saved author kept as it is never blocks another change, even one an older version
+  // stored with a single field; a typed custom author needs both.
+  const authorChanged = author.authorName !== config.authorName || author.authorEmail !== config.authorEmail
+  const customOk = mode !== 'custom' || !authorChanged || (name.trim() !== '' && emailValid(email))
   const normalizedSubdir = subdir.trim().replaceAll('\\', '/').split('/').filter(part => part !== '').join('/') + '/'
   const moved = branch.trim() !== config.branch || normalizedSubdir !== config.subdir
   const changed = moved || author.authorName !== config.authorName || author.authorEmail !== config.authorEmail
@@ -695,7 +718,7 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
     try {
       await client.configureSync({ branch: branch.trim(), subdir: subdir.trim(), ...author })
       setFeedback({ tone: 'success', text: t('config.syncAdvancedSaved') })
-      await onSaved()
+      void onSaved()
     } catch (reason) {
       setFeedback({ tone: 'error', text: message(reason) })
     } finally { setBusy(false) }
@@ -704,7 +727,7 @@ function AdvancedSettings({ client, status, disabled, t, onSaved }: { client: Mn
   return <div className={css.syncAdvanced}>
     <button type="button" className={css.syncDisclosure} aria-expanded={open} onClick={() => setOpen(value => !value)}>
       <span>{t('config.syncAdvanced')}</span>
-      <small>{[config.branch, config.subdir, savedMode === 'default' ? t('config.syncAuthorDefault') : savedMode === 'machine' ? t('config.syncAuthorMachine') : config.authorName].join(' · ')}</small>
+      <small>{[config.branch, config.subdir, savedMode === 'default' ? t('config.syncAuthorDefault') : savedMode === 'machine' ? t('config.syncAuthorMachine') : config.authorName || config.authorEmail || t('config.syncAuthorCustom')].join(' · ')}</small>
       <IconChevronDownOutlineRegular className={css.providerChevron} size={14} />
     </button>
     {open && <div className={css.editor}>

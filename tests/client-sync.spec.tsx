@@ -29,6 +29,12 @@ interface FakeHostOptions {
   diff?: Partial<MnemonSyncDiff>
   /** The branch holds no backup yet, so reading it fails with that reason. */
   emptyRemote?: boolean
+  /** A saved author an older version wrote, possibly with a single field. */
+  author?: { name: string; email: string }
+  /** Disconnecting fails, as a locked settings file would make it. */
+  disconnectFails?: boolean
+  /** The branch holds more versions than the first page. */
+  historyTruncated?: boolean
 }
 
 /** A Host that answers the sync channel from a little state the calls change. */
@@ -36,7 +42,7 @@ function fakeHost(options: FakeHostOptions = {}) {
   const config: MnemonSyncConfigView = {
     enabled: true, branch: 'mnemon-sync', subdir: 'mnemon/', hasToken: false,
     credentialSource: options.credentialSource ?? 'none',
-    authorName: 'dsh-mnemon sync', authorEmail: 'mnemon@localhost', autoBackupMinutes: options.autoBackupMinutes ?? 0,
+    authorName: options.author?.name ?? 'dsh-mnemon sync', authorEmail: options.author?.email ?? 'mnemon@localhost', autoBackupMinutes: options.autoBackupMinutes ?? 0,
     ...(options.repoUrl === undefined ? {} : { repoUrl: options.repoUrl }),
   }
   let github: MnemonSyncGitHubStatus = { available: false, signedIn: false, writable: false, ...options.github }
@@ -80,6 +86,7 @@ function fakeHost(options: FakeHostOptions = {}) {
       case 'status': return { ok: true as const, value: status() }
       case 'github-status': return { ok: true as const, value: github }
       case 'configure': {
+        if (options.disconnectFails === true && payload.repoUrl === null) return { ok: false as const, error: { code: 'internal', message: 'sync configuration could not be written' } }
         if ('repoUrl' in payload) {
           if (payload.repoUrl === null) delete config.repoUrl
           else config.repoUrl = String(payload.repoUrl)
@@ -101,7 +108,7 @@ function fakeHost(options: FakeHostOptions = {}) {
         if (options.emptyRemote === true) return { ok: false as const, error: { code: 'internal', message: 'the branch mnemon-sync holds no Mnemon payload at mnemon/ yet; push one first', details: { reason: 'remote-empty' } } }
         return { ok: true as const, value: endpoint === 'preview' ? preview : diff }
       case 'pull': return { ok: true as const, value: { imported: true, mode: 'merge', repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', commit: COMMIT, manifest: preview.manifest, targetRoot: '/data', components: ['runtime'], summary: [], runtime: { added: 1, held: 0 } } }
-      case 'backups': return { ok: true as const, value: { repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', truncated: false, commits: [
+      case 'backups': return { ok: true as const, value: { repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', truncated: options.historyTruncated === true, commits: [
         { commit: COMMIT, message: 'Mnemon sync 2026-08-14T12:00:00Z', committedAt: '2026-08-14T12:00:00.000Z', machine: { id: 'machine-b', label: 'Laptop B', createdAt: '2026-08-01T00:00:00.000Z' }, components: [{ component: 'runtime', files: 3, bytes: 10, items: 4 }] },
         { commit: '1234567890abcdef1234567890abcdef12345678', message: 'Before the trip', committedAt: '2026-08-13T09:00:00.000Z', components: [] },
       ] } }
@@ -320,6 +327,11 @@ describe('Git sync section', () => {
   it('warns that pushing an HTTPS repository needs credentials before the first push fails', async () => {
     const host = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git' })
     section(host.connection)
+    // Another host takes a token; only github.com takes the sign-in.
+    expect(await screen.findByText('已连接 · 推送需要访问令牌')).toBeTruthy()
+    cleanup()
+    const github = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git' })
+    section(github.connection)
     expect(await screen.findByText('已连接 · 推送需要 GitHub 登录或访问令牌')).toBeTruthy()
   })
 
@@ -372,6 +384,87 @@ describe('Git sync section', () => {
     expect(await screen.findByRole('button', { name: 'Sync now' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Check remote' })).toBeTruthy()
     expect(screen.getByText('Connected')).toBeTruthy()
+  })
+})
+
+describe('Git sync section after review', () => {
+  it('never removes a saved token when its caption is clicked', async () => {
+    const host = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', credentialSource: 'token' })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '更改' }))
+    const caption = await screen.findByText('访问令牌', { selector: 'label' })
+    fireEvent.click(caption)
+    expect(host.calls('configure')).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: '移除' }))
+    await waitFor(() => expect(host.calls('configure')).toEqual([{ token: null }]))
+  })
+
+  it('counts each entry once, in the kind a merge treats it as', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', diff: {
+      localOnly: [], conflicts: [], heldBack: 1,
+      remoteOnly: [{ target: 'memory', content: 'Deleted here earlier', importance: 'normal' }],
+    } })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '检查远端' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('远端有 1 条记忆是本机以前删掉的，同步不会把它们加回。')).toBeTruthy()
+    // Documents are the same and memory spaces differ in the fake preview, so a merge still has work.
+    expect(within(dialog).getAllByText('一致').length).toBeGreaterThan(0)
+    expect(within(dialog).queryByText(/远端独有 1 条/u)).toBeNull()
+  })
+
+  it('says inside the comparison why a sync started there did not finish', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', push: { pushed: false, committed: true, reason: '! [rejected]', failure: 'push-rejected' } })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '检查远端' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('远端独有 1 条 · 本机独有 0 条 · 1 处写法不同')
+    fireEvent.click(within(dialog).getByRole('button', { name: '立即同步' }))
+    expect(await within(dialog).findByText('已在本机提交，但推送没有完成：同步时仓库又被其他设备更新了，请再同步一次')).toBeTruthy()
+  })
+
+  it('says inside the dialog when a disconnect fails', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', disconnectFails: true })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '断开' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: '断开' }))
+    expect(await within(dialog).findByText('sync configuration could not be written')).toBeTruthy()
+  })
+
+  it('asks a host other than GitHub for a token, not a GitHub sign-in', async () => {
+    const host = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', remote: { reachable: false, branchExists: false, issue: 'auth', error: 'Authentication failed' } })
+    section(host.connection)
+    expect(await screen.findByText('需要凭据，请填写访问令牌')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '设置凭据' })).toBeTruthy()
+  })
+
+  it('creates a repository whose name only another owner uses', async () => {
+    const host = fakeHost({ github: { available: true, writable: true, signedIn: true, login: 'octocat' }, repositories: [repository('team/memory', true)] })
+    section(host.connection)
+    fireEvent.change(await screen.findByPlaceholderText('搜索仓库，或输入新仓库名'), { target: { value: 'memory' } })
+    expect(await screen.findByRole('button', { name: /新建私有仓库 octocat\/memory/u })).toBeTruthy()
+  })
+
+  it('stops offering earlier versions once the Host has no more to give', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', historyTruncated: true })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '查看' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('button', { name: '读取更早的版本' }))
+    expect(await within(dialog).findByText('这里只列出最近的 2 个版本')).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: '读取更早的版本' })).toBeNull()
+  })
+
+  it('keeps an author an older version saved with one field from blocking other changes', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', author: { name: '', email: 'me@example.com' } })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: /^高级设置/u }))
+    fireEvent.change(screen.getByLabelText('分支'), { target: { value: 'memory-backup' } })
+    const save = screen.getByRole('button', { name: '保存' }) as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    fireEvent.click(save)
+    await waitFor(() => expect(host.calls('configure')).toEqual([{ branch: 'memory-backup', subdir: 'mnemon/', authorName: '', authorEmail: 'me@example.com' }]))
   })
 })
 

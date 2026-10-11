@@ -122,7 +122,9 @@ export function issueText(t: MnemonTranslate, issue: MnemonSyncRemoteIssue | und
   const transport = transportOf(url)
   switch (issue) {
     case 'auth':
-      return transport === 'https' ? t('config.syncIssueAuthHttps') : transport === 'ssh' ? t('config.syncIssueAuthSsh') : t('config.syncIssueAuth')
+      // A GitHub sign-in is offered to github.com alone; any other HTTPS host takes a token.
+      if (transport === 'https') return onGitHub(url) ? t('config.syncIssueAuthHttps') : t('config.syncIssueAuthToken')
+      return transport === 'ssh' ? t('config.syncIssueAuthSsh') : t('config.syncIssueAuth')
     case 'not-found':
       return onGitHub(url) ? t('config.syncIssueNotFoundGitHub') : t('config.syncIssueNotFound')
     case 'network': return t('config.syncIssueNetwork')
