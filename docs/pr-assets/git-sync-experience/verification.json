@@ -8,9 +8,10 @@
       "415a7441": "docs(sync): describe the rebuilt Git sync block and what the channel guarantees",
       "78769ec6": "fix(sync): keep a saved token on the host it was saved for",
       "fcea8525": "fix(sync): open GitHub reliably, sync from an empty branch, stop the timer on disconnect",
-      "95bd46c4": "fix(sync): follow the review of the rebuilt Git sync block"
+      "95bd46c4": "fix(sync): follow the review of the rebuilt Git sync block",
+      "8a73ab09": "feat(sync): name this computer by its host name or a custom name"
     },
-    "verified": "95bd46c4 for the tests, pnpm verify, verify:plugins, the end-to-end runs and the after screens; the commit after it adds only this folder and its index row"
+    "verified": "8a73ab09 for the tests, pnpm verify, verify:plugins, the end-to-end runs and the after screens; the commit after it adds only this folder and its index row. The 16 cases that fail on main and the review follow-up were established on 95bd46c4, which 8a73ab09 extends without touching those paths"
   },
   "environment": {
     "os": "macOS 15.6 arm64",
@@ -48,39 +49,42 @@
         "tests/sync-rpc.spec.ts: Mnemon Git sync over RPC refuses to publish or import without confirmation and never echoes the token"
       ]
     },
-    "page": "tests/client-sync.spec.tsx 28 passed (fake Host; 8 of them for the review findings); tests/client-memory-enhancements.spec.tsx 10 passed, the switch silent while off; tests/client-presentation.spec.ts 5 passed with the refreshed copy fingerprints",
-    "root": "pnpm run test:root on the 95bd46c4 tree: 132 files passed, 2 skipped; 1,873 tests passed, 6 skipped",
+    "page": "tests/client-sync.spec.tsx 30 passed (fake Host; 8 for the review findings, 2 for the computer's name); tests/client-memory-enhancements.spec.tsx 10 passed, the switch silent while off; tests/client-presentation.spec.ts 5 passed with the refreshed copy fingerprints",
+    "root": "pnpm run test:root on the 8a73ab09 tree: 132 files passed, 2 skipped; 1,880 tests passed, 6 skipped",
     "typecheck": "tsc -p tsconfig.json --noEmit clean",
     "endToEnd": {
-      "script": "scripts/verify-sync-git.mjs on the 95bd46c4 build: two DSH Web instances over disposable homes drive the sync, settings, review and pack endpoints over loopback HTTP with the browser's envelopes and publish to a real bare repository",
-      "0.1.7-rc.2": "61 of 61 checks passed",
-      "0.2.0-rc.2": "61 of 61 checks passed (MNEMON_E2E_DSH)",
-      "0.2.1-alpha.2": "61 of 61 checks passed (MNEMON_E2E_DSH)"
+      "script": "scripts/verify-sync-git.mjs on the 8a73ab09 build: two DSH Web instances over disposable homes drive the sync, settings, review and pack endpoints over loopback HTTP with the browser's envelopes and publish to a real bare repository",
+      "0.1.7-rc.2": "64 of 64 checks passed",
+      "0.2.0-rc.2": "64 of 64 checks passed (MNEMON_E2E_DSH)",
+      "0.2.1-alpha.2": "64 of 64 checks passed (MNEMON_E2E_DSH)",
+      "computerName": "three of the 64: a name given through configure stays apart from the channel settings and is reported with its source; a two-line name is refused and the branch in the same request stays; the published manifest carries the name"
     },
-    "repositoryVerify": "pnpm verify on a clean checkout of 95bd46c4 (pnpm 11.25.0, frozen lockfile, pinned DSH 0.1.7-rc.2): docs, typecheck, deterministic build (49 files), workspace builds, typechecks and tests, 132 root test files passed and 2 skipped (1,873 tests passed, 6 skipped), Headless (37 tools, 8 Mnemon tools), package contents 59 files, 443,614 packed and 1,901,793 unpacked bytes",
-    "verifyPlugins": "17 independent plugin repositories and 18 packed artifacts verified, real DSH activation of the packed plugins included",
-    "verifyDocs": "scripts/verify-docs.mjs on the tree with this folder: 3,525 local links and 188 Markdown anchors verified; tests/docs.spec.mjs 13 passed"
+    "repositoryVerify": "pnpm verify on a clean checkout of 8a73ab09 (pnpm 11.25.0, frozen lockfile, pinned DSH 0.1.7-rc.2): docs, typecheck, deterministic build (49 files), workspace builds, typechecks and tests, 132 root test files passed and 2 skipped (1,880 tests passed, 6 skipped), Headless (37 tools, 8 Mnemon tools), package contents 59 files, 445,314 packed and 1,910,270 unpacked bytes",
+    "verifyPlugins": "17 independent plugin repositories and 18 packed artifacts verified on 8a73ab09, real DSH activation of the packed plugins included",
+    "verifyDocs": "scripts/verify-docs.mjs on the tree with this folder: 3,525 local links and 188 Markdown anchors verified; tests/docs.spec.mjs 13 passed",
+    "computerName": "tests/machine-identity.spec.ts 8 passed (4 new: following the host name, a custom name every store sees, records from earlier versions, refused names); tests/git-sync.spec.ts 'publishes the name a person gives this machine, and goes back to the host name'"
   },
   "webui": {
     "host": "DSH 0.2.0-rc.2",
     "connect": "address https://git.example.com/demo/memory.git with a token on Studio, then on MacBook: state line 已连接 · 使用访问令牌",
     "addressCheck": "github.com/demo/memory refused before sending (after-address-invalid.jpg)",
-    "compare": "与远端比较 | 远端版本来自 Studio · 16:43 | 运行时记忆 | 远端独有 1 条 · 本机独有 1 条 · 1 处写法不同 | 项目档案 | 一致 | 记忆空间 | 一致 | 1 个主题两边写法不同：同步会保留两种写法，之后可以用“记忆整理”合并。 | 收起 | 去记忆整理 | 本机 | 用户喜欢简洁的中文回答，尽量短。 | 远端 | Studio：用户喜欢简洁的中文回答。 | 只合并到本机 | 立即同步",
+    "compare": "与远端比较 | 远端版本来自 Studio · 18:00 | 运行时记忆 | 远端独有 1 条 · 本机独有 1 条 · 1 处写法不同 | 项目档案 | 一致 | 记忆空间 | 一致 | 1 个主题两边写法不同：同步会保留两种写法，之后可以用“记忆整理”合并。 | 收起 | 去记忆整理 | 本机 | 用户喜欢简洁的中文回答，尽量短。 | 远端 | Studio：用户喜欢简洁的中文回答。 | 只合并到本机 | 立即同步",
     "sync": [
-      "上次同步：16:44",
-      "已同步：合并了 2 条远端记忆，推送了 5f07b4f0。"
+      "上次同步：18:00",
+      "已同步：合并了 2 条远端记忆，推送了 80c96554。"
     ],
-    "history": "备份历史 | 每次同步都在仓库里留下一个版本 | 16:44 | 来自 MacBook | 5f07b4f0 | 运行时记忆 4 条 · 项目档案 0 份 · 记忆空间 0 个 | 16:43 | 来自 Studio | 8fb4f5e1 | 运行时记忆 2 条 · 项目档案 0 份 · 记忆空间 0 个",
+    "history": "备份历史 | 每次同步都在仓库里留下一个版本 | 18:00 | 来自 MacBook | 80c96554 | 运行时记忆 4 条 · 项目档案 0 份 · 记忆空间 0 个 | 18:00 | 来自 Studio | 8c9bb8ed | 运行时记忆 2 条 · 项目档案 0 份 · 记忆空间 0 个",
     "failure": "repository moved to https://github.com/demo-org/private-memory.git without a token (the saved one was for git.example.com and is dropped): github.com/demo-org/private-memory | 需要凭据，请用 GitHub 登录或填写访问令牌 | 设置凭据 | 重新检查",
     "english": {
-      "compare": "Compare with the remote | The remote version is from MacBook · 04:44 PM | Runtime Memory | 4 only on the remote · 1 only here | Project Documents | Same | Memory Spaces | Same | Merge here only | Sync now",
+      "compare": "Compare with the remote | The remote version is from MacBook · 06:00 PM | Runtime Memory | 4 only on the remote · 1 only here | Project Documents | Same | Memory Spaces | Same | Merge here only | Sync now",
       "sync": [
-        "Last synced 04:45 PM",
-        "Synced: merged 4 remote memories and pushed eebcb6bc."
+        "Last synced 06:01 PM",
+        "Synced: merged 4 remote memories and pushed fdf26f9d."
       ]
     },
     "consoleErrors": 0,
-    "phone": "390x844 on the 95bd46c4 build: the connected block, the advanced form, the address and GitHub editors and the comparison dialog leave no element past the viewport and no horizontal page scroll"
+    "phone": "390x844 on the 95bd46c4 build: the connected block, the advanced form, the address and GitHub editors and the comparison dialog leave no element past the viewport and no horizontal page scroll",
+    "computerName": "Advanced on MacBook: This computer's name with Host name and Custom, Custom selected for the fixture's name MacBook, and the note 备份历史里显示为“来自 MacBook”; the disclosure summary reads MacBook · mnemon-sync · mnemon/ · 默认. The fixtures name their computers in state/machine.json, so the screens never show the real host name"
   },
   "review": {
     "scope": "an independent review agent read the first five commits against main; 95bd46c4 fixes every finding",
@@ -110,7 +114,7 @@
     "after-compare.jpg": "Check remote on MacBook: runtime 1 only on the remote, 1 only here, 1 written differently, shown; Merge here only and Sync now",
     "after-synced.jpg": "after Sync now from the comparison: last synced, merged 2 remote memories, pushed",
     "after-history.jpg": "two versions by time and computer, with what each component held",
-    "after-advanced.jpg": "branch, directory and the author choice; demo@ refused as it is typed",
+    "after-advanced.jpg": "this computer's name (Custom, MacBook), branch, directory and the author choice; demo@ refused as it is typed",
     "after-error.jpg": "github.com repository without credentials: the reason in words, Set credentials, and the failed sync said the same way",
     "after-disconnect.jpg": "the confirmation: automatic sync turns off, nothing is deleted, the saved token goes",
     "after-en-compare.jpg": "English, Laptop: 4 only on the remote, 1 only here",

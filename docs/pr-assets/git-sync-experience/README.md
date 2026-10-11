@@ -4,7 +4,7 @@
 
 Git sync shipped in v0.5.26 with every control in one long form: the operations above the configuration they needed, an automatic backup before a repository existed, four address fields with three hints under the token, a preview bar and a dialog for the same reading, two buttons that ran the same merge, and Git's own error text. This change rebuilds the block around what a person does: connect a repository, sync, check what a sync would change, and only then the advanced choices. Running it also turned up edge cases in the Host, the worst of which published one repository's history into another.
 
-Baseline: `main` `1a6ff881` (v0.5.27). This change: the branch `claude/git-sync-ux`, commits `e2ff299e` (Host), `6700da70` (page), `415a7441` (docs), `78769ec6` (token host), `fcea8525` (opening GitHub, the first sync to an empty branch, the timer on disconnect) and `95bd46c4` (the review follow-up below). The runs took place on 2026-10-11 (Asia/Shanghai):
+Baseline: `main` `1a6ff881` (v0.5.27). This change: the branch `claude/git-sync-ux`, commits `e2ff299e` (Host), `6700da70` (page), `415a7441` (docs), `78769ec6` (token host), `fcea8525` (opening GitHub, the first sync to an empty branch, the timer on disconnect), `95bd46c4` (the review follow-up below) and `8a73ab09` (this computer's name). The runs took place on 2026-10-11 (Asia/Shanghai):
 - macOS 15.6 arm64, Node 24.19.0, Git 2.50.1;
 - headless Chrome 154 at 1280×1000, light, zh-CN and en-US;
 - DSH 0.2.0-rc.2 (npm `latest` and `next`) for the WebUI, plus 0.2.1-alpha.2 and the pinned 0.1.7-rc.2 for the end-to-end channel checks;
@@ -22,6 +22,7 @@ Baseline: `main` `1a6ff881` (v0.5.27). This change: the branch `claude/git-sync-
 | Automatic sync | A native `<select>` that saved at once among fields that waited for Save | The DSH selector, with when it runs next or why it last failed |
 | History | Opened by both Backups and Check remote, and stuck on "读取中…" when opened by Check remote | Its own dialog: time, computer, what each component held, and a message only where a person wrote one |
 | Advanced | Branch, directory and author always visible; an author field showing the default identity whose hint said "empty uses this computer's Git identity" | Behind a disclosure; each field shows the value in use, and the author is an explicit choice: Default, This computer's Git, Custom |
+| Computer name | History and Check remote named each computer by the host name its identity was minted with, fixed in `state/machine.json` and changeable only by editing that file | **This computer's name** under Advanced: **Host name** follows the current host name, **Custom** keeps a typed one; the next sync publishes it, and earlier versions keep theirs |
 | Leaving | No way to remove a repository; a "Clear token" checkbox applied on Save | **Disconnect**, confirmed, deleting nothing here or in the repository and turning automatic sync off; **Remove** beside a saved token |
 | Memory reconciliation | A standing three-paragraph "运行规则" block | Gone; each consequence is said where it applies |
 
@@ -36,7 +37,7 @@ Baseline: `main` `1a6ff881` (v0.5.27). This change: the branch `claude/git-sync-
 
 | An address the Host would refuse | Backup history | Advanced | Disconnect |
 |---|---|---|---|
-| ![The address form refuses github.com/demo/memory before sending it](./after-address-invalid.jpg) | ![Versions by time and computer, with what each component held](./after-history.jpg) | ![Branch, directory and the author choice, with an email checked as it is typed](./after-advanced.jpg) | ![Disconnect asks first and says nothing is deleted](./after-disconnect.jpg) |
+| ![The address form refuses github.com/demo/memory before sending it](./after-address-invalid.jpg) | ![Versions by time and computer, with what each component held](./after-history.jpg) | ![This computer's name, branch, directory and the author choice, with an email checked as it is typed](./after-advanced.jpg) | ![Disconnect asks first and says nothing is deleted](./after-disconnect.jpg) |
 
 | English: after a sync | English: Check remote |
 |---|---|
@@ -84,8 +85,9 @@ An independent review of the first five commits found the following; `95bd46c4` 
 ## Tests
 
 - Host: with `main`'s Host sources under this branch's tests, 16 cases fail, and all pass here: 13 in `tests/git-sync.spec.ts`, and one each in `tests/pack.spec.ts` (the second merge), `tests/github-auth.spec.ts` (paging) and `tests/sync-rpc.spec.ts` (the reasons through the RPC handler). The list is in [verification.json](./verification.json).
-- Page: `tests/client-sync.spec.tsx` (28 cases) drives the section against a fake Host: address checks, the token field, sync results, named failures, the comparison without writes and its first sync, history, the GitHub sign-in in one click, the public repository confirmation, creation, an expired grant, the credentials shortcut, disconnect, the advanced form and English, plus one case for each page finding of the review. `tests/client-memory-enhancements.spec.tsx` keeps the switch silent while off.
-- End to end: `scripts/verify-sync-git.mjs` with two DSH instances and a real bare repository passes all 61 checks on DSH 0.1.7-rc.2, 0.2.0-rc.2 and 0.2.1-alpha.2.
+- This computer's name: `tests/machine-identity.spec.ts` (following the host name, a custom name every reader sees, records from earlier versions, refused names) and one case in `tests/git-sync.spec.ts` (the name in status, a refused name changing nothing else, the published name, back to the host name).
+- Page: `tests/client-sync.spec.tsx` (30 cases) drives the section against a fake Host: address checks, the token field, sync results, named failures, the comparison without writes and its first sync, history, the GitHub sign-in in one click, the public repository confirmation, creation, an expired grant, the credentials shortcut, disconnect, the advanced form and English, plus one case for each page finding of the review and two for the computer's name. `tests/client-memory-enhancements.spec.tsx` keeps the switch silent while off.
+- End to end: `scripts/verify-sync-git.mjs` with two DSH instances and a real bare repository passes all 64 checks on DSH 0.1.7-rc.2, 0.2.0-rc.2 and 0.2.1-alpha.2, three of them for the computer's name.
 - `pnpm verify` and `verify:plugins`: see [verification.json](./verification.json).
 
 ## Limits
