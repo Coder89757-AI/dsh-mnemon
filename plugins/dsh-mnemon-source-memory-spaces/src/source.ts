@@ -277,6 +277,8 @@ async function manageMemorySpaces(service: MemorySpacesService, request: MemoryS
       input.deactivateSources !== false, request.signal,
     ))
     case 'reload': service.memorySpaces.reload(); return managementResult(service, { reloaded: true })
+    // Namespaces a Provider gained since its settings were saved, mounted inactive (#373).
+    case 'provider-rediscover': return managementResult(service, await service.rediscoverProviders(input.trigger === 'startup' ? 'startup' : 'manual', request.signal))
     case 'body-delete': return managementResult(service, await service.deleteSpace(text(input.memoryBodyId, 'memoryBodyId', 300)!, request.signal))
     default: throw new Error(`unsupported Memory Spaces management mutation operation: ${request.operation}`)
   }

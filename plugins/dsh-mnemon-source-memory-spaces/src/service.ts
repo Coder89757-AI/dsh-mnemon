@@ -44,6 +44,8 @@ import {
   type MemorySpaceStats,
   type MemorySpaceMetadataSample,
   type MemorySpaceMetadataUpdate,
+  type MemorySpaceRediscovery,
+  type MemorySpaceRediscoveryResult,
   type MemorySpaceView,
   type MemoryGraphEdge,
   type MemoryGraphNode,
@@ -107,6 +109,29 @@ function stringArray(value: JsonValue | undefined): string[] | undefined {
 const ENTITY_SELECTION_STATUS_REUSE_MS = 10_000
 /** How long an index that statistics cannot check is reused; a write through this Source still drops it. */
 const ENTITY_INDEX_UNCHECKED_REUSE_MS = 10_000
+
+/** How long one Provider may take to list its namespaces when they are asked for again. */
+export const MEMORY_SPACES_REDISCOVERY_PROVIDER_TIMEOUT_MS = 30_000
+
+/**
+ * Rediscovery per data directory, shared by every generation in this process: the pass now
+ * running, which a second request joins, and the last one, which the Memory Spaces page shows.
+ */
+const rediscoveries = new Map<string, { running?: Promise<MemorySpaceRediscovery>; last?: MemorySpaceRediscovery }>()
+
+/** Settle with `work`, or reject once `signal` aborts, whichever comes first. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    // Nobody waits for `work` now, however it ends.
+    work.catch(() => {})
+    return Promise.reject(signal.reason)
+  }
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
 
 interface EntityIndexRead {
   byBody: Map<string, SpaceEntityIndex>
@@ -465,7 +490,13 @@ export class MemorySpacesService {
       activeCount: items.filter(body => body.active && body.providerEnabled !== false).length,
       directory: this.memorySpaces.directory,
       generatedAt: new Date().toISOString(),
+      rediscovery: this.rediscoveryState(),
     }
+  }
+
+  private rediscoveryState(): NonNullable<MemorySpaceCatalog['rediscovery']> {
+    const entry = rediscoveries.get(this.memorySpaces.providerRegistryPath)
+    return { running: entry?.running !== undefined, ...(entry?.last === undefined ? {} : { last: entry.last }) }
   }
 
   /** Stable, secret-free checkpoint for the projected Memory Space authority. */
@@ -1329,6 +1360,68 @@ export class MemorySpacesService {
     if (provider?.discover === undefined) throw new Error(`${this.providerCatalog.descriptor(providerId).label} does not support Memory Space discovery`)
     const discovered = await provider.discover(connection, signal)
     return this.memorySpaces.syncProviderService(providerId, connection, discovered)
+  }
+
+  /**
+   * Ask every enabled Provider service again for its namespaces, as saving its settings does, and
+   * mount the ones this directory has never held, inactive (#373). Nothing mounted changes and a
+   * namespace a person disconnected stays disconnected. Providers are asked side by side, each
+   * for at most 30 seconds; one that cannot answer keeps its spaces and says why. A pass already
+   * running for this directory, at start-up or from the page, is joined rather than run twice; a
+   * request that joined one its starter then stopped asks again, unless it was stopped itself.
+   */
+  async rediscoverProviders(trigger: MemorySpaceRediscovery['trigger'], signal?: AbortSignal, providerTimeoutMs = MEMORY_SPACES_REDISCOVERY_PROVIDER_TIMEOUT_MS): Promise<MemorySpaceRediscovery> {
+    this.assertWritable()
+    const key = this.memorySpaces.providerRegistryPath
+    const entry = rediscoveries.get(key) ?? {}
+    rediscoveries.set(key, entry)
+    const joined = entry.running
+    if (joined !== undefined) {
+      try {
+        return await (signal === undefined ? joined : untilAborted(joined, signal))
+      } catch {
+        signal?.throwIfAborted()
+        const next = entry.running
+        if (next !== undefined && next !== joined) return await (signal === undefined ? next : untilAborted(next, signal))
+      }
+    }
+    const running = this.runRediscovery(trigger, signal, providerTimeoutMs)
+    entry.running = running
+    try {
+      const outcome = await running
+      entry.last = outcome
+      return outcome
+    } finally {
+      if (entry.running === running) delete entry.running
+    }
+  }
+
+  private async runRediscovery(trigger: MemorySpaceRediscovery['trigger'], signal: AbortSignal | undefined, providerTimeoutMs: number): Promise<MemorySpaceRediscovery> {
+    const services = this.memorySpaces.providerServices().items.filter(item => item.enabled && !this.isNativeProvider(item.providerId))
+    const results = await Promise.all(services.map(async (item): Promise<MemorySpaceRediscoveryResult | undefined> => {
+      const provider = this.providers.get(item.providerId)
+      if (provider?.discover === undefined) return undefined
+      const label = this.providerCatalog.descriptor(item.providerId).label
+      const timeout = AbortSignal.timeout(providerTimeoutMs)
+      const bounded = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+      try {
+        const connection = this.memorySpaces.resolveProviderService(item.providerId, {})
+        const discovered = await untilAborted(provider.discover(connection, bounded), bounded)
+        // A pass cut short writes nothing more.
+        signal?.throwIfAborted()
+        const mounted = this.memorySpaces.mountDiscovered(item.providerId, connection, discovered)
+        return { providerId: item.providerId, label, found: discovered.length, added: mounted.added.map(body => ({ id: body.id, name: body.name })), disconnected: mounted.disconnected }
+      } catch (error) {
+        signal?.throwIfAborted()
+        const failure = { providerId: item.providerId, label, found: 0, added: [], disconnected: 0 }
+        if (timeout.aborted) {
+          const limit = providerTimeoutMs < 1_000 ? `${providerTimeoutMs} ms` : `${Math.round(providerTimeoutMs / 1_000)} seconds`
+          return { ...failure, timedOut: true, error: `did not answer within ${limit}` }
+        }
+        return { ...failure, error: error instanceof Error ? error.message : String(error) }
+      }
+    }))
+    return { at: new Date().toISOString(), trigger, results: results.filter((result): result is MemorySpaceRediscoveryResult => result !== undefined) }
   }
 
   updateSpace(id: string, request: UpdateMemorySpaceRequest): MemorySpace {

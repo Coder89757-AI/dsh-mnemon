@@ -41,6 +41,15 @@ The Host exposes only capabilities an adapter can honor. UI actions and Agent to
 
 **Memory providers**, on Memory Spaces' page (open **Plugins → dsh-mnemon** and select Memory Spaces), owns reusable provider service configuration. Enabling or saving a provider performs authoritative discovery and synchronizes every visible provider-native namespace into the Memory Space directory—for example banks, projects, workspaces, users, or container tags. Provider titles and descriptions become the local routing metadata. **Memory Spaces → Overview** controls DSH activation and shows the synchronized instance scope. The Host merges both layers immediately before calling an adapter. Secrets stay in `<storageRoot>/state/memory-providers.json` with mode `0600`; the WebUI represents configured secrets only as a mask, and entering a new value replaces the saved secret.
 
+**Namespaces created later.** A namespace created on the Provider side after its settings were saved is found without saving them again. A little after the Host starts serving a data directory, it asks every enabled Provider once more; **Rediscover** on **Memory Spaces → Overview** asks again on demand. Rediscovery only adds:
+
+- A namespace seen for the first time is mounted inactive, so recall reads it only once you switch it on.
+- Every mounted space keeps its activation, title, description and settings, and a namespace a mounted space already reads is not added again. A space made by hand counts when it names the same bank, workspace, user, tag, memory URI or folder, whatever its other settings, such as a recall budget or a single peer.
+- A namespace you disconnected, discovered or made by hand, stays disconnected; saving the Provider's settings brings every reported namespace back, as before.
+- A Provider that fails, or does not answer within 30 seconds, keeps its spaces, and the page says why.
+
+The start-up pass runs once per data directory per Host process. It does not run for a read-only deployment, or while the Memory Spaces layer is off or its `maintenance` participation is not `automatic`. Honcho and OpenViking list their first 100 namespaces.
+
 DSH workspace mode does not rewrite every provider namespace. Mnemon Native follows the workspace automatically. Holographic and ByteRover default to workspace-local paths but allow explicit path overrides. Remote providers continue to use the URI, workspace, user, bank, project, or container configured on the Memory Space; switching DSH workspaces never rewrites those identities implicitly.
 
 ## Manual and smart placement

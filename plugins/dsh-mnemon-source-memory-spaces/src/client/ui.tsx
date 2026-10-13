@@ -33,6 +33,7 @@ export function memorySpacesPageClient(management: MnemonSourceManagementClient)
     updateBody: (memoryBodyId, request) => typeof request.active === 'boolean' && Object.keys(request).every(key => key === 'active') && client.canAssist('activation')
       ? client.assist('activation', { memoryBodyId, active: request.active }, true) : client.mutate('body-update', input({ memoryBodyId, ...request }), true),
     deleteBody: memoryBodyId => client.mutate('body-delete', { memoryBodyId }, true),
+    rediscoverBodies: () => client.mutate('provider-rediscover', { trigger: 'manual' }, true),
     agentSearch: request => client.assist('agent-search', input(request), false),
     supervise: (content, idempotencyKey) => client.assist('supervise', input({ content, idempotencyKey }), true),
     maintainBodyMetadata: memoryBodyIds => client.assist('body-metadata-maintain', { memoryBodyIds }, true),
