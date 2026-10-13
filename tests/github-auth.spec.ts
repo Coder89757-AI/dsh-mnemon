@@ -32,7 +32,8 @@ function port(state: Partial<PortState> = {}): { state: PortState; port: MnemonG
   }
 }
 
-interface Answer { status: number; body: unknown }
+/** A JSON body, or a raw one with its own content type, as GitHub or a proxy might send it. */
+interface Answer { status: number; body?: unknown; raw?: string; type?: string }
 
 function answering(...answers: Answer[]): { calls: { url: string; init: RequestInit }[]; request: typeof fetch } {
   const calls: { url: string; init: RequestInit }[] = []
@@ -41,7 +42,8 @@ function answering(...answers: Answer[]): { calls: { url: string; init: RequestI
     calls.push({ url: String(input), init: init ?? {} })
     const answer = queue.shift()
     if (answer === undefined) throw new Error('unexpected request: ' + String(input))
-    return new Response(answer.body === undefined ? '' : JSON.stringify(answer.body), { status: answer.status })
+    if (answer.raw !== undefined) return new Response(answer.raw, { status: answer.status, headers: answer.type === undefined ? {} : { 'content-type': answer.type } })
+    return new Response(answer.body === undefined ? '' : JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json; charset=utf-8' } })
   }) as unknown as typeof fetch
   return { calls, request }
 }
@@ -131,6 +133,75 @@ describe('GitHub sign-in for the sync channel', () => {
     await expect(refused.auth.start()).rejects.toThrow('the GitHub device code request failed: rate_limited')
     const bare = auth({ answers: [{ status: 500, body: { secret: 'gho_leak' } }] })
     await expect(bare.auth.start()).rejects.toThrow('the GitHub device code request failed with HTTP 500')
+  })
+
+  it('signs in from form-encoded answers, which GitHub sends when the JSON accept header was dropped (#369)', async () => {
+    let clock = 0
+    const fake = port()
+    const form = 'application/x-www-form-urlencoded; charset=utf-8'
+    const { auth: target, calls } = auth({
+      port: fake.port,
+      now: () => clock,
+      answers: [
+        { status: 200, type: form, raw: 'device_code=device-1&user_code=2654-9D74&verification_uri=https%3A%2F%2Fgithub.com%2Flogin%2Fdevice&expires_in=899&interval=7' },
+        { status: 200, type: form, raw: 'error=authorization_pending&error_description=The+authorization+request+is+still+pending.' },
+        { status: 200, type: form, raw: 'access_token=gho_token&scope=repo%2Cgist&token_type=bearer' },
+        { status: 200, body: { login: 'octocat' } },
+      ],
+    })
+    const status = await target.start()
+    expect(status.flow).toMatchObject({ userCode: '2654-9D74', verificationUri: 'https://github.com/login/device', intervalMs: 7_000 })
+    expect(Date.parse(String(status.flow?.expiresAt))).toBe(899_000)
+    // The request still asks for JSON; the form is what came back anyway.
+    expect((calls[0]?.init.headers as Record<string, string>).accept).toBe('application/json')
+    clock += 7_000
+    expect(await target.poll()).toEqual({ status: 'pending', intervalMs: 7_000 })
+    clock += 7_000
+    expect(await target.poll()).toEqual({ status: 'success', login: 'octocat' })
+    expect(fake.state.writes[0]).toMatchObject({ accessToken: 'gho_token', login: 'octocat', scopes: ['repo', 'gist'] })
+  })
+
+  it('says what an unusable device code answer looked like without repeating any of its values', async () => {
+    const page = auth({ answers: [{ status: 200, type: 'text/html; charset=utf-8', raw: '<!doctype html><title>Proxy login</title>' }] })
+    await expect(page.auth.start()).rejects.toThrow('the GitHub device code answer was incomplete (HTTP 200, content-type text/html; charset=utf-8, fields: none)')
+    const partial = auth({ answers: [{ status: 200, body: { device_code: 'device-secret', interval: 5 } }] })
+    const error = await partial.auth.start().then(() => new Error('started'), (reason: unknown) => reason as Error)
+    expect(error.message).toBe('the GitHub device code answer was incomplete (HTTP 200, content-type application/json; charset=utf-8, fields: device_code, interval)')
+    // A body that only claims to be a form reads as keys that hold its text; those are counted, not named.
+    const form = 'application/x-www-form-urlencoded'
+    for (const raw of ['device_code: device-secret\nuser_code: 2654-9D74', '{"device_code":"device-secret","user_code":"2654-9D74",}']) {
+      const mislabelled = auth({ answers: [{ status: 200, type: form, raw }] })
+      const refused = await mislabelled.auth.start().then(() => new Error('started'), (reason: unknown) => reason as Error)
+      expect(refused.message).toBe('the GitHub device code answer was incomplete (HTTP 200, content-type ' + form + ', fields: 1 other)')
+    }
+    const mixed = auth({ answers: [{ status: 200, type: form, raw: 'device_code=device-secret&user code=2654-9D74' }] })
+    await expect(mixed.auth.start()).rejects.toThrow('(HTTP 200, content-type ' + form + ', fields: device_code, 1 other)')
+  })
+
+  it('reads a form-encoded refusal whatever the case or parameters of its content type', async () => {
+    const refused = auth({ answers: [{
+      status: 400,
+      type: 'Application/X-WWW-Form-Urlencoded;Charset=UTF-8',
+      raw: 'error=device_flow_disabled&error_description=Device+Flow+must+be+explicitly+enabled+for+this+App',
+    }] })
+    await expect(refused.auth.start()).rejects.toThrow('the GitHub device code request failed: device_flow_disabled')
+  })
+
+  it('keeps the cadence and the lifetime GitHub sends inside what the flow can wait for', async () => {
+    const cases: Array<{ answer: Answer; intervalMs: number; expiresInMs: number }> = [
+      { answer: { status: 200, body: { ...DEVICE_CODE, interval: 100_000_000, expires_in: 0 } }, intervalMs: MNEMON_GITHUB_MAX_INTERVAL_MS, expiresInMs: 900_000 },
+      { answer: { status: 200, body: { ...DEVICE_CODE, interval: 0, expires_in: 10 ** 9 } }, intervalMs: 5_000, expiresInMs: 3_600_000 },
+      {
+        answer: { status: 200, type: 'application/x-www-form-urlencoded', raw: 'device_code=d&user_code=u&verification_uri=https%3A%2F%2Fgithub.com%2Flogin%2Fdevice&interval=' + '9'.repeat(400) + '&expires_in=-5' },
+        intervalMs: 5_000,
+        expiresInMs: 900_000,
+      },
+    ]
+    for (const { answer, intervalMs, expiresInMs } of cases) {
+      const flow = (await auth({ now: () => 0, answers: [answer] }).auth.start()).flow
+      expect(flow?.intervalMs).toBe(intervalMs)
+      expect(Date.parse(String(flow?.expiresAt))).toBe(expiresInMs)
+    }
   })
 
   it('does not start a second flow while one is pending or the account is signed in', async () => {

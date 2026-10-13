@@ -280,6 +280,16 @@ function headerRecord(headers: HeadersInit | undefined): Record<string, string> 
   return { ...(headers as Record<string, string>) }
 }
 
+/**
+ * What a tunnelled request read back, as a `fetch` answer: the status, the text and its
+ * content type, which is all this channel uses. The type says how to read a body that
+ * is not JSON, such as the form GitHub's sign-in answers with when no JSON was asked for.
+ */
+export function tunnelAnswer(status: number, type: string | undefined, text: string): Response {
+  const body = status === 204 || status === 205 || status === 304 ? null : text
+  return new Response(body, { status, ...(type === undefined ? {} : { headers: { 'content-type': type } }) })
+}
+
 /** The request one tunnel performs, as a `fetch`-shaped answer. */
 function tunnelRequest(agent: TunnelAgent, url: string, init: RequestInit): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
@@ -295,10 +305,8 @@ function tunnelRequest(agent: TunnelAgent, url: string, init: RequestInit): Prom
       response.on('data', (chunk: Buffer) => { chunks.push(chunk) })
       response.once('error', reject)
       response.once('end', () => {
-        const status = response.statusCode ?? 502
-        const text = Buffer.concat(chunks).toString('utf8')
-        // Only the status and the text are read back, which is all this channel uses.
-        resolve(new Response(status === 204 || status === 205 || status === 304 ? null : text, { status }))
+        const type = response.headers['content-type']
+        resolve(tunnelAnswer(response.statusCode ?? 502, type, Buffer.concat(chunks).toString('utf8')))
       })
     })
     if (typeof init.body === 'string') request.write(init.body)
