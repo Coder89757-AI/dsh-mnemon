@@ -119,6 +119,29 @@ async function withGitIdentity(name: string, email: string, run: () => Promise<v
   }
 }
 
+interface DocumentEntry { id: string; title: string; status: string; revision: number; relativePath: string; archiveSummary?: string }
+
+/** The Project Documents a storage root holds, as its index lists them. */
+function documentsOf(root: string): DocumentEntry[] {
+  return (JSON.parse(readFileSync(join(root, 'documents', 'index.json'), 'utf8')) as { documents: DocumentEntry[] }).documents
+}
+
+/** One document's Markdown as a storage root holds it. */
+function textOf(root: string, id: string): string {
+  return readFileSync(join(root, documentsOf(root).find(document => document.id === id)!.relativePath), 'utf8')
+}
+
+/** What a storage root last agreed on with its branch, as an older dsh-mnemon never records. */
+function agreementOf(root: string): string {
+  return join(root, 'state', 'sync', 'base.json')
+}
+
+/** Edit one document as its Source would, after reading what changed underneath it. */
+async function editDocument(machine: { sources: { documents: { read: (operation: string) => Promise<unknown>; mutate: (operation: string, input: never, options: { confirmed: true }) => Promise<unknown> } } }, id: string, content: string): Promise<void> {
+  await machine.sources.documents.read('snapshot')
+  await machine.sources.documents.mutate('mutate', { action: 'update', id, content } as never, { confirmed: true })
+}
+
 async function repository(label: string): Promise<string> {
   const directory = join(temporary(label), 'sync.git')
   await git(['init', '--bare', '--quiet', directory])
@@ -494,6 +517,376 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     const published = await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)
     expect(published).toContain('Prefer concise answers')
     expect(published).toContain('Prefers table output')
+  })
+
+  it('keeps one Project Document on a machine that edits it between syncs', async () => {
+    const origin = await repository('sync-document-solo-remote')
+    const machineA = await machine('sync-document-solo', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+    await machineA.sync.push({ message: 'Version 1' })
+    const id = documentsOf(machineA.root)[0]!.id
+    for (const version of [2, 3]) {
+      await editDocument(machineA, id, '# Release plan\n\nVersion ' + String(version))
+      // Every push folds the branch in first, and the branch holds the previous version.
+      await machineA.sync.push({ message: 'Version ' + String(version) })
+    }
+    expect(documentsOf(machineA.root).map(document => [document.title, document.revision])).toEqual([['Release plan', 3]])
+    const published = JSON.parse(await git(['show', 'mnemon-sync:mnemon/payload/documents/index.json'], origin)) as { documents: unknown[] }
+    expect(published.documents).toHaveLength(1)
+  })
+
+  it('brings an edit made on one machine to the same document on the other', async () => {
+    const origin = await repository('sync-document-edit-remote')
+    const machineA = await machine('sync-document-edit-a', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+    await machineA.sync.push({ message: 'From A' })
+    const machineB = await machine('sync-document-edit-b', origin)
+    await machineB.sync.push({ message: 'From B' })
+    const id = documentsOf(machineB.root)[0]!.id
+    for (const version of [2, 3]) {
+      await editDocument(machineA, id, '# Release plan\n\nVersion ' + String(version))
+      await machineA.sync.push({ message: 'Version ' + String(version) })
+      await machineB.sync.pull()
+      // The document B held is the one that changed, not a copy beside it.
+      expect(documentsOf(machineB.root).map(document => [document.id, document.revision])).toEqual([[id, version]])
+      expect(readFileSync(join(machineB.root, documentsOf(machineB.root)[0]!.relativePath), 'utf8')).toContain('Version ' + String(version))
+      await machineB.sync.push({ message: 'B folds in' })
+      expect(documentsOf(machineA.root)).toHaveLength(1)
+    }
+  })
+
+  it('keeps one copy of a document both machines changed since they last agreed, and both end alike', async () => {
+    const origin = await repository('sync-document-both-remote')
+    const machineA = await machine('sync-document-both-a', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+    await machineA.sync.push({ message: 'From A' })
+    const machineB = await machine('sync-document-both-b', origin)
+    await machineB.sync.push({ message: 'From B' })
+    const id = documentsOf(machineA.root)[0]!.id
+    await editDocument(machineA, id, '# Release plan\n\nA wants a canary first')
+    await editDocument(machineB, id, '# Release plan\n\nB wants a staged rollout')
+    await machineA.sync.push({ message: 'A edits' })
+    await machineB.sync.push({ message: 'B edits' })
+    for (let round = 0; round < 2; round += 1) {
+      await machineA.sync.push({ message: 'A again' })
+      await machineB.sync.push({ message: 'B again' })
+    }
+    const contents = (root: string) => documentsOf(root).map(document => readFileSync(join(root, document.relativePath), 'utf8').match(/(A wants|B wants)[^\n]*/u)?.[0]).sort()
+    // Neither edit is lost: one of them is the document, the other its single copy, on both machines.
+    expect(contents(machineA.root)).toEqual(['A wants a canary first', 'B wants a staged rollout'])
+    expect(documentsOf(machineA.root).map(document => document.id).sort()).toEqual(documentsOf(machineB.root).map(document => document.id).sort())
+    expect(contents(machineB.root)).toEqual(contents(machineA.root))
+  })
+
+  describe('Project Documents when a sync does not go as planned', () => {
+    const create = (target: Awaited<ReturnType<typeof machine>>, title = 'Release plan') =>
+      target.sources.documents.mutate('mutate', { action: 'create', title, content: '# ' + title + '\n\nVersion 1' }, { confirmed: true })
+
+    /** A machine whose pushes Git refuses while `refusing` says so, as a 403 does. */
+    function refusal() {
+      const state = { refusing: false, always: false }
+      const run: ProcessRunner = async (command, args, options) => {
+        if (state.refusing && args.includes('push')) {
+          if (!state.always) state.refusing = false
+          return { stdout: '', stderr: 'fatal: unable to access the remote: The requested URL returned error: 403', exitCode: 128 }
+        }
+        return runProcess(command, args, options)
+      }
+      return { state, run }
+    }
+
+    /** A takes B's version 2 in, but cannot publish the result. */
+    async function unpublishedMerge(label: string) {
+      const origin = await repository(label + '-remote')
+      const refused = refusal()
+      const machineA = await machine(label + '-a', origin, now, refused.run)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine(label + '-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineB, id, '# Release plan\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B, version 2' })
+      refused.state.refusing = true
+      const result = await machineA.sync.push({ message: 'A, refused' })
+      expect(result.pushed).toBe(false)
+      expect(documentsOf(machineA.root).map(document => document.id)).toEqual([id])
+      expect(textOf(machineA.root, id)).toContain('Version 2 from B')
+      return { machineA, machineB, id }
+    }
+
+    const alike = (machines: Array<Awaited<ReturnType<typeof machine>>>, id: string, text: string) => {
+      for (const target of machines) {
+        expect(documentsOf(target.root).map(document => document.id)).toEqual([id])
+        expect(textOf(target.root, id)).toContain(text)
+      }
+    }
+
+    it('takes the newest version on the retry after another machine published meanwhile', async () => {
+      const origin = await repository('sync-document-race-remote')
+      let machineB: Awaited<ReturnType<typeof machine>> | undefined
+      let id = ''
+      let race = false
+      const racing: ProcessRunner = async (command, args, options) => {
+        if (race && args.includes('push')) {
+          race = false
+          await editDocument(machineB!, id, '# Release plan\n\nVersion 3 from B')
+          await machineB!.sync.push({ message: 'B, during the race' })
+        }
+        return runProcess(command, args, options)
+      }
+      const machineA = await machine('sync-document-race-a', origin, now, racing)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      machineB = await machine('sync-document-race-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineB, id, '# Release plan\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B, version 2' })
+      race = true
+      const result = await machineA.sync.push({ message: 'A, raced' })
+      expect(race).toBe(false)
+      expect(result.failure).toBeUndefined()
+      await machineB.sync.push({ message: 'B again' })
+      alike([machineA, machineB], id, 'Version 3 from B')
+    })
+
+    it('catches up with the branch after a merge it could not publish', async () => {
+      const { machineA, machineB, id } = await unpublishedMerge('sync-document-catch-up')
+      await editDocument(machineB, id, '# Release plan\n\nVersion 3 from B')
+      await machineB.sync.push({ message: 'B, version 3' })
+      await machineA.sync.push({ message: 'A again' })
+      await machineB.sync.push({ message: 'B again' })
+      alike([machineA, machineB], id, 'Version 3 from B')
+    })
+
+    it('adds no copy for an edit made on top of a merge it could not publish', async () => {
+      const { machineA, machineB, id } = await unpublishedMerge('sync-document-edit-after')
+      await editDocument(machineA, id, '# Release plan\n\nVersion 3 from A, on top of version 2')
+      await machineA.sync.push({ message: 'A publishes its edit' })
+      await machineB.sync.push({ message: 'B again' })
+      alike([machineA, machineB], id, 'Version 3 from A, on top of version 2')
+    })
+
+    it('adds no copy on a machine that can read the branch but never publish to it', async () => {
+      const origin = await repository('sync-document-read-only-remote')
+      const machineB = await machine('sync-document-read-only-b', origin)
+      await create(machineB)
+      await machineB.sync.push({ message: 'From B' })
+      const refused = refusal()
+      const machineA = await machine('sync-document-read-only-a', origin, now, refused.run)
+      await machineA.sync.push({ message: 'A joins' })
+      refused.state.refusing = true
+      refused.state.always = true
+      const id = documentsOf(machineB.root)[0]!.id
+      for (const version of [2, 3, 4]) {
+        await editDocument(machineB, id, '# Release plan\n\nVersion ' + String(version))
+        await machineB.sync.push({ message: 'B, version ' + String(version) })
+        expect((await machineA.sync.push({ message: 'A' })).pushed).toBe(false)
+        alike([machineA], id, 'Version ' + String(version))
+      }
+    })
+
+    it('keeps its own version when the branch is published again from an older history', async () => {
+      const origin = await repository('sync-document-recreated-remote')
+      const machineA = await machine('sync-document-recreated-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-recreated-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2, only on A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      // The branch is deleted, and B, which never saw version 2, publishes again first.
+      await git(['update-ref', '-d', 'refs/heads/mnemon-sync'], origin)
+      await machineB.sync.push({ message: 'B starts the branch again' })
+      await machineA.sync.push({ message: 'A again' })
+      expect(textOf(machineA.root, id)).toContain('Version 2, only on A')
+      // B's older version is kept beside it, as a merge without an agreement keeps it.
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
+
+    it('keeps the newer version when the other machine runs a dsh-mnemon that records no agreement', async () => {
+      const origin = await repository('sync-document-older-remote')
+      const machineA = await machine('sync-document-older-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-older-b', origin)
+      const older = async (message: string) => {
+        rmSync(agreementOf(machineB.root), { force: true })
+        await machineB.sync.push({ message })
+        rmSync(agreementOf(machineB.root), { force: true })
+      }
+      await older('B joins')
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      // B keeps version 1 under the same id and version 2 as a copy, and publishes both.
+      await older('B, as before this change')
+      await machineA.sync.push({ message: 'A again' })
+      expect(textOf(machineA.root, id)).toContain('Version 2 from A')
+    })
+
+    it('keeps a rename and an archive made on one machine when the other changed the text', async () => {
+      const origin = await repository('sync-document-metadata-remote')
+      const machineA = await machine('sync-document-metadata-a', origin)
+      await create(machineA, 'Plan')
+      await create(machineA, 'Notes')
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-metadata-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const [plan, notes] = documentsOf(machineA.root)
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('mutate', { action: 'update', id: plan!.id, title: 'Plan, renamed on A' } as never, { confirmed: true })
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('archive', { id: notes!.id, summary: 'Archived on A' } as never, { confirmed: true })
+      await editDocument(machineB, plan!.id, '# Plan\n\nVersion 2 from B')
+      await editDocument(machineB, notes!.id, '# Notes\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B edits both' })
+      await machineA.sync.push({ message: 'A again' })
+      const byId = new Map(documentsOf(machineA.root).map(document => [document.id, document]))
+      expect(byId.get(plan!.id)?.title).toBe('Plan, renamed on A')
+      expect(byId.get(notes!.id)).toMatchObject({ status: 'archived', archiveSummary: 'Archived on A' })
+      // B's two texts are kept beside them.
+      expect(byId.size).toBe(4)
+    })
+
+    it('brings a title changed on one machine to the other', async () => {
+      const origin = await repository('sync-document-title-remote')
+      const machineA = await machine('sync-document-title-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-title-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('mutate', { action: 'update', id, title: 'Release plan, renamed on A' } as never, { confirmed: true })
+      await machineA.sync.push({ message: 'A renames it' })
+      await machineB.sync.push({ message: 'B again' })
+      expect(documentsOf(machineB.root).map(document => [document.id, document.title])).toEqual([[id, 'Release plan, renamed on A']])
+    })
+
+    it('agrees with the branch after Merge here only, so an edit published later adds no copy', async () => {
+      const origin = await repository('sync-document-pull-remote')
+      const machineA = await machine('sync-document-pull-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-pull-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      await machineB.sync.pull()
+      await editDocument(machineB, id, '# Release plan\n\nVersion 3 from B, after the merge')
+      await machineB.sync.push({ message: 'B publishes' })
+      await machineA.sync.push({ message: 'A again' })
+      alike([machineA, machineB], id, 'Version 3 from B, after the merge')
+    })
+
+    it('leaves the agreement as it was when a merge takes runtime memory only', async () => {
+      const origin = await repository('sync-document-runtime-remote')
+      const machineA = await machine('sync-document-runtime-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-runtime-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const agreed = readFileSync(agreementOf(machineB.root), 'utf8')
+      await editDocument(machineA, documentsOf(machineA.root)[0]!.id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      await machineB.sync.pull({ components: ['runtime'] })
+      expect(readFileSync(agreementOf(machineB.root), 'utf8')).toBe(agreed)
+    })
+
+    it('starts without an agreement it cannot read, and keeps one through a disconnect', async () => {
+      const origin = await repository('sync-document-unreadable-remote')
+      const machineA = await machine('sync-document-unreadable-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      writeFileSync(agreementOf(machineA.root), 'not an agreement')
+      expect((await machineA.sync.push({ message: 'A again' })).failure).toBeUndefined()
+      const id = documentsOf(machineA.root)[0]!.id
+      expect(JSON.parse(readFileSync(agreementOf(machineA.root), 'utf8'))).toMatchObject({ version: 1, documents: { [id]: expect.any(String) } })
+      // Disconnected, edited, connected to the same repository again: the edit travels, with no copy.
+      await machineA.sync.configure({ repoUrl: null })
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2, edited while disconnected')
+      await machineA.sync.configure({ repoUrl: origin })
+      await machineA.sync.push({ message: 'A reconnected' })
+      alike([machineA], id, 'Version 2, edited while disconnected')
+    })
+
+    it('keeps both versions when two machines changed a document at different revisions, and both end alike', async () => {
+      const origin = await repository('sync-document-revisions-remote')
+      const machineA = await machine('sync-document-revisions-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-revisions-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nA, first edit')
+      await editDocument(machineA, id, '# Release plan\n\nA, second edit')
+      await editDocument(machineB, id, '# Release plan\n\nB, one edit')
+      for (const round of [1, 2]) {
+        await machineA.sync.push({ message: 'A, round ' + String(round) })
+        await machineB.sync.push({ message: 'B, round ' + String(round) })
+      }
+      const texts = (target: Awaited<ReturnType<typeof machine>>) => documentsOf(target.root).map(document => textOf(target.root, document.id).match(/(A, second edit|B, one edit)/u)?.[0]).sort()
+      expect(texts(machineA)).toEqual(['A, second edit', 'B, one edit'])
+      expect(texts(machineB)).toEqual(texts(machineA))
+      expect(documentsOf(machineB.root).map(document => document.id).sort()).toEqual(documentsOf(machineA.root).map(document => document.id).sort())
+    })
+
+    it('keeps an archive and a rename two machines made to the same text', async () => {
+      const origin = await repository('sync-document-both-meta-remote')
+      const machineA = await machine('sync-document-both-meta-a', origin)
+      await create(machineA, 'Plan')
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-both-meta-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('archive', { id, summary: 'Archived on A' } as never, { confirmed: true })
+      await machineB.sources.documents.read('snapshot')
+      await machineB.sources.documents.mutate('mutate', { action: 'update', id, title: 'Plan, renamed on B' } as never, { confirmed: true })
+      for (const round of [1, 2]) {
+        await machineA.sync.push({ message: 'A, round ' + String(round) })
+        await machineB.sync.push({ message: 'B, round ' + String(round) })
+      }
+      for (const target of [machineA, machineB]) {
+        const states = documentsOf(target.root).map(document => [document.title, document.status, document.archiveSummary ?? ''].join(' | ')).sort()
+        expect(states).toEqual(['Plan | archived | Archived on A', 'Plan, renamed on B | active | '])
+      }
+    })
+
+    it('brings an archive made on one machine to the other', async () => {
+      const origin = await repository('sync-document-archive-remote')
+      const machineA = await machine('sync-document-archive-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-archive-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('archive', { id, summary: 'Shipped' } as never, { confirmed: true })
+      await machineA.sync.push({ message: 'A archives it' })
+      await machineB.sync.push({ message: 'B again' })
+      expect(documentsOf(machineB.root).map(document => [document.id, document.status, document.archiveSummary])).toEqual([[id, 'archived', 'Shipped']])
+    })
+
+    it('never uses what it agreed on with another branch', async () => {
+      const origin = await repository('sync-document-branch-remote')
+      const machineA = await machine('sync-document-branch-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sync.configure({ branch: 'mnemon-sync-other' })
+      await machineA.sync.push({ message: 'A on another branch' })
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2')
+      await machineA.sync.configure({ branch: 'mnemon-sync' })
+      await machineA.sync.push({ message: 'A back on the first branch' })
+      // The first sync back has no agreement for this branch, so the branch's version is kept beside the edit.
+      expect(textOf(machineA.root, id)).toContain('Version 2')
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
   })
 
   it('reports the identity of this machine on every status', async () => {

@@ -6,7 +6,7 @@ import type { ResolvedConfig } from './config.ts'
 import { runProcess, type ProcessRunner } from './process.ts'
 import {
   MnemonPackManager, MNEMON_PACK_MAX_EXPANDED_BYTES, RUNTIME_MEMORIES_PATH,
-  entryKey, parseMachineIdentity, parseManifest as parseManifestJson, parseRuntime, parseTombstones,
+  documentVersions, entryKey, parseMachineIdentity, parseManifest as parseManifestJson, parseRuntime, parseTombstones,
   tombstoneCovers, tombstoneKey,
   type RuntimeFile, type StoredRuntimeEntry,
 } from './pack.ts'
@@ -53,6 +53,9 @@ const OWNERLESS_LOCK_MS = 15 * 60_000
 /** The mirror's own Git config names the repository it was filled from. */
 const ORIGIN_KEY = 'mnemon.origin'
 const LAST_RUN_FILE = 'last-run.json'
+/** What this machine and the branch last agreed on: each document's version, by id, and the commit it was agreed at. */
+const BASE_FILE = 'base.json'
+const AGREED_COMMIT = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u
 
 const GIT_LABEL = 'git'
 const MANIFEST = 'manifest.json'
@@ -699,6 +702,8 @@ export class MnemonGitSync {
     this.store.write(next)
     if (naming) this.machine.rename(name)
     // When memory last travelled is a fact about one repository; another one starts with none.
+    // What the documents last agreed on stays: it names its repository, branch and commit, so
+    // another repository never uses it, and reconnecting to this one picks it up again.
     if (previous.repoUrl !== next.repoUrl) rmSync(this.lastRunPath(), { force: true })
     return this.credentialView(next)
   }
@@ -751,11 +756,16 @@ export class MnemonGitSync {
     if (remote !== undefined) {
       // The branch's own removals are what make the fold-in a merge rather than an
       // import: an entry another machine deleted stays deleted here, and the ledger
-      // that says so travels in the extension rather than in the payload.
+      // that says so travels in the extension rather than in the payload. What both
+      // last agreed on tells an older document from one both sides changed.
+      const base = await this.agreedDocuments(settings, remote.commit, signal)
       const imported = await this.packs.importPack(
         Buffer.from(remote.archive).toString('base64'),
-        { mode: 'merge', tombstones: { version: 1, tombstones: remote.tombstones } },
+        { mode: 'merge', tombstones: { version: 1, tombstones: remote.tombstones }, ...(base === undefined ? {} : { documentsBase: base }) },
       )
+      // This machine has now seen every document the branch holds, whether or not the
+      // publish below succeeds: a retry, or the next sync, compares against these.
+      if (imported.components.includes('documents')) this.agree(settings, remote.files, remote.commit)
       merged = {
         commit: remote.commit,
         ...(remote.machine === undefined ? {} : { machine: { id: remote.machine.id, label: remote.machine.label } }),
@@ -794,6 +804,8 @@ export class MnemonGitSync {
     const published: { pushed: boolean; reason?: string; failure?: MnemonSyncFailureReason } = committed
       ? await this.publish(settings, await this.credential(settings), signal)
       : { pushed: false, reason: prepared.tip === undefined ? 'nothing to publish' : 'the branch already holds this payload' }
+    // The branch now holds what this machine holds, so both agree on every document in it.
+    if (published.pushed || (!committed && prepared.tip !== undefined)) this.agree(settings, entries, head)
     // Collecting the loose objects the new commit just wrote happens after the
     // branch has been updated, so a slow repack can never hold a publish back.
     const compaction = await this.compact(signal)
@@ -847,6 +859,55 @@ export class MnemonGitSync {
 
   private lastRunPath(): string {
     return join(this.store.directory(), 'sync', LAST_RUN_FILE)
+  }
+
+  private basePath(): string {
+    return join(this.store.directory(), 'sync', BASE_FILE)
+  }
+
+  /** The repository, branch and directory one agreement belongs to. */
+  private agreementScope(settings: MnemonSyncSettings & { repoUrl: string }): string {
+    return sha256Hex(new TextEncoder().encode(JSON.stringify([settings.repoUrl, settings.branch, settings.subdir])))
+  }
+
+  /**
+   * Each document's version as this machine and the branch last agreed on it, after the last
+   * merge or publish, when that still describes the branch at `tip`: the same repository,
+   * branch and directory, agreed at a commit `tip` descends from. A branch deleted and published
+   * again from another history has none, nor has the first sync, and a merge then keeps a copy
+   * of every document that differs, as before.
+   */
+  private async agreedDocuments(settings: MnemonSyncSettings & { repoUrl: string }, tip: string, signal?: AbortSignal): Promise<Record<string, string> | undefined> {
+    let value: Record<string, unknown> | undefined
+    try {
+      value = record(JSON.parse(readFileSync(this.basePath(), 'utf8')) as unknown)
+    } catch {
+      return undefined
+    }
+    if (value?.version !== 1 || value.scope !== this.agreementScope(settings)) return undefined
+    const documents = record(value.documents)
+    if (typeof value.commit !== 'string' || !AGREED_COMMIT.test(value.commit) || documents === undefined) return undefined
+    const ancestry = await this.git(['merge-base', '--is-ancestor', value.commit, tip], { cwd: this.store.mirror(), signal })
+    if (ancestry.exitCode !== 0) return undefined
+    return Object.fromEntries(Object.entries(documents).filter(([, version]) => typeof version === 'string' && /^[a-f0-9]{64}$/u.test(version))) as Record<string, string>
+  }
+
+  /** Remember what this machine and the branch at `commit` now agree on. Bookkeeping never fails the run it follows. */
+  private agree(settings: MnemonSyncSettings & { repoUrl: string }, files: Record<string, Uint8Array>, commit: string): void {
+    const path = this.basePath()
+    const temporary = path + '.' + String(process.pid) + '.tmp'
+    try {
+      const documents = documentVersions(files)
+      if (documents === undefined || !AGREED_COMMIT.test(commit)) {
+        rmSync(path, { force: true })
+        return
+      }
+      mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
+      writeFileSync(temporary, JSON.stringify({ version: 1, scope: this.agreementScope(settings), commit, documents }, null, 2) + '\n', { mode: 0o600 })
+      renameSync(temporary, path)
+    } catch {
+      rmSync(temporary, { force: true })
+    }
   }
 
   /** Remember one finished run. Bookkeeping never fails the run it describes. */
@@ -1010,10 +1071,13 @@ export class MnemonGitSync {
     return this.lock(async () => {
       const remote = await this.readRemote(settings, input.signal)
       if (remote === undefined) throw this.absentPayload(settings)
+      const base = await this.agreedDocuments(settings, remote.commit, input.signal)
       const imported = await this.packs.importPack(
         Buffer.from(remote.archive).toString('base64'),
-        { ...options, tombstones: { version: 1, tombstones: remote.tombstones } },
+        { ...options, tombstones: { version: 1, tombstones: remote.tombstones }, ...(base === undefined ? {} : { documentsBase: base }) },
       )
+      // This machine has now seen every document the branch holds.
+      if (imported.components.includes('documents')) this.agree(settings, remote.files, remote.commit)
       this.recordRun({
         kind: 'merge', commit: remote.commit, pushed: false,
         ...(imported.runtime === undefined ? {} : { added: imported.runtime.added }),
@@ -1215,7 +1279,9 @@ export class MnemonGitSync {
     if (fetched.exitCode !== 0) throw remoteFailure('git fetch failed: ' + this.mask(tail(fetched.stderr || fetched.stdout), credential))
     const reset = await this.git(['reset', '--hard', '--quiet', 'FETCH_HEAD'], { cwd: mirror, signal })
     if (reset.exitCode !== 0) throw new Error('git reset failed: ' + tail(reset.stderr || reset.stdout))
-    return { tip }
+    // The payload read next is the one fetched, which another machine can have moved on since
+    // `ls-remote` answered, so the commit reported for it is the one now checked out.
+    return { tip: await this.head(signal) }
   }
 
   /**

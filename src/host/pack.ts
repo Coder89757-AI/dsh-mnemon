@@ -788,26 +788,93 @@ function mergeTombstoneFiles(current: MnemonTombstoneFile, incoming: MnemonTombs
   return { version: 1, tombstones: [...byKey.values()].sort((left, right) => left.deletedAt < right.deletedAt ? -1 : left.deletedAt > right.deletedAt ? 1 : 0) }
 }
 
-function mergeDocuments(root: string, pack: ParsedPack): { index: DocumentIndex; files: Map<string, Uint8Array> } {
+/**
+ * One document's version as a sync agrees on it: every field but the time it was last read,
+ * which a read moves without changing the document. A title, an archive or a link is as much
+ * a part of it as the text.
+ */
+export function documentVersion(document: DocumentRecord): string {
+  const { lastAccessedAt: _read, ...fields } = document
+  return sha256(canonicalJson(fields))
+}
+
+/** JSON with every object's keys in order and unset ones left out, so the same record always hashes the same. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const fields = value as Record<string, unknown>
+    return `{${Object.keys(fields).filter(key => fields[key] !== undefined).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(fields[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+/** Whether two records say the same thing to a reader: the text, the title, the description and the archive. */
+function sameDocument(left: DocumentRecord, right: DocumentRecord): boolean {
+  return left.contentHash === right.contentHash && left.title === right.title && left.description === right.description
+    && left.status === right.status && (left.archiveSummary ?? '') === (right.archiveSummary ?? '')
+}
+
+/** Each document's version in one payload, by id, or nothing when the payload holds no valid Documents index. */
+export function documentVersions(files: Readonly<Record<string, Uint8Array>>): Record<string, string> | undefined {
+  const bytes = files['payload/documents/index.json']
+  if (bytes === undefined) return undefined
+  try {
+    return Object.fromEntries(parseDocumentIndex(json(bytes, 'payload/documents/index.json')).documents.map(document => [document.id, documentVersion(document)]))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * `base` is each document's version as this machine and the branch last agreed on it, which
+ * only a sync channel knows, and it decides only for a document both hold. One the branch did
+ * not change since then keeps this machine's version, edited or not. One only the branch
+ * changed is the newer version of the same document and replaces the one here, unless its
+ * revision is lower than this machine's, as an older dsh-mnemon can publish; that one is kept
+ * beside it, as a merge without `base` keeps every document whose text differs.
+ */
+function mergeDocuments(root: string, pack: ParsedPack, base?: Readonly<Record<string, string>>): { index: DocumentIndex; files: Map<string, Uint8Array> } {
   const current = readCurrentDocuments(root)
   const incoming = archiveDocuments(pack)
   const ids = new Map(current.index.documents.map(document => [document.id, document]))
-  for (const source of incoming.index.documents) {
-    const existing = ids.get(source.id)
-    if (existing !== undefined && existing.contentHash === source.contentHash) continue
-    // A divergent document is kept beside the local one under a new id. Merging the same
-    // pack again, as a retried sync does, finds that copy and does not make a second one.
-    if (existing !== undefined && current.index.documents.some(document => document.contentHash === source.contentHash)) continue
-    let document = source
-    let bytes = incoming.files.get(source.id)!
-    if (existing !== undefined) {
-      const remapped = remapDocument(source, bytes, randomUUID())
-      document = remapped.document
-      bytes = remapped.bytes
-    }
+  const add = (document: DocumentRecord, bytes: Uint8Array): void => {
     current.index.documents.push(document)
     current.files.set(document.id, bytes)
     ids.set(document.id, document)
+  }
+  // A divergent document is kept beside the local one under a new id.
+  const copy = (source: DocumentRecord): void => {
+    const remapped = remapDocument(source, incoming.files.get(source.id)!, randomUUID())
+    add(remapped.document, remapped.bytes)
+  }
+  for (const source of incoming.index.documents) {
+    const existing = ids.get(source.id)
+    const agreed = existing !== undefined && base !== undefined && Object.hasOwn(base, source.id) ? base[source.id] : undefined
+    if (existing !== undefined && agreed !== undefined) {
+      if (documentVersion(source) === agreed) continue
+      const at = current.index.documents.indexOf(existing)
+      if (documentVersion(existing) !== agreed) {
+        // Both sides changed it. This machine's version keeps the id, at a revision above both, so
+        // the other machine takes it as the newer one; the branch's version is kept beside it once,
+        // even when only its title, description or archive differs.
+        const kept = { ...existing, revision: Math.max(existing.revision, source.revision) + 1 }
+        current.index.documents[at] = kept
+        ids.set(source.id, kept)
+        if (!current.index.documents.some(document => sameDocument(document, source))) copy(source)
+        continue
+      }
+      if (source.revision >= existing.revision) {
+        current.index.documents[at] = source
+        current.files.set(source.id, incoming.files.get(source.id)!)
+        ids.set(source.id, source)
+        continue
+      }
+    }
+    if (existing !== undefined && existing.contentHash === source.contentHash) continue
+    // Merging the same pack again, as a retried sync does, finds that copy and does not make a second one.
+    if (existing !== undefined && current.index.documents.some(document => document.contentHash === source.contentHash)) continue
+    if (existing !== undefined) copy(source)
+    else add(source, incoming.files.get(source.id)!)
   }
   const activeBytes = current.index.documents.filter(document => document.status === 'active').reduce((sum, document) => sum + document.sizeBytes, 0)
   if (activeBytes > DOCUMENTS_ACTIVE_LIMIT_BYTES) throw new Error(`merged Documents exceed the ${DOCUMENTS_ACTIVE_LIMIT_BYTES} byte active limit`)
@@ -862,7 +929,7 @@ function reconcilePersistedStore(root: string): void {
   }
 }
 
-function stageImport(root: string, pack: ParsedPack, components: MnemonPackComponent[], mode: MnemonPackImportMode, runtimeLimits: RuntimeMemoryLimits, options: { revive?: boolean; tombstones?: MnemonTombstoneFile } = {}): { staging: string; report: RuntimeMergeReport | undefined; revived: MnemonTombstone[] } {
+function stageImport(root: string, pack: ParsedPack, components: MnemonPackComponent[], mode: MnemonPackImportMode, runtimeLimits: RuntimeMemoryLimits, options: { revive?: boolean; tombstones?: MnemonTombstoneFile; documentsBase?: Readonly<Record<string, string>> } = {}): { staging: string; report: RuntimeMergeReport | undefined; revived: MnemonTombstone[] } {
   const staging = join(root, `.dsh-pack-stage-${randomUUID()}`)
   mkdirSync(staging, { recursive: true, mode: 0o700 })
   try {
@@ -894,7 +961,7 @@ function stageImport(root: string, pack: ParsedPack, components: MnemonPackCompo
       keepRuntimeArchive(root, join(staging, 'runtime'))
     }
     if (components.includes('documents')) {
-      const documents = mode === 'merge' ? mergeDocuments(root, pack) : archiveDocuments(pack)
+      const documents = mode === 'merge' ? mergeDocuments(root, pack, options.documentsBase) : archiveDocuments(pack)
       writeDocuments(join(staging, 'documents'), documents.index, documents.files)
     }
     if (components.includes('memory-spaces')) {
@@ -1094,7 +1161,11 @@ export class MnemonPackManager {
     }
   }
 
-  async importPack(base64: string, options: { mode: MnemonPackImportMode; components?: MnemonPackComponent[]; revive?: boolean; tombstones?: MnemonTombstoneFile }): Promise<MnemonPackImportResult> {
+  /**
+   * `documentsBase` is each document's version, by id, as a sync channel last agreed on it with
+   * the branch; a merge uses it to tell an older version from a divergent one. A ZIP import has none.
+   */
+  async importPack(base64: string, options: { mode: MnemonPackImportMode; components?: MnemonPackComponent[]; revive?: boolean; tombstones?: MnemonTombstoneFile; documentsBase?: Readonly<Record<string, string>> }): Promise<MnemonPackImportResult> {
     const pack = parseArchive(base64, this.runtimeLimits)
     if (options.mode !== 'merge' && options.mode !== 'replace') throw new Error('Pack import mode must be merge or replace')
     // The ledger arrives over the sync channel, so it is checked the same way a Pack is: a
