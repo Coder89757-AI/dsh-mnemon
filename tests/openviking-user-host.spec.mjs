@@ -43,7 +43,9 @@ describe('OpenViking user-key configuration in a composed Host', () => {
     expect(work).toBeDefined()
     expect(personal).toBeDefined()
     const receipt = await spaces.mutate('remember', { memoryBodyId: work.id, content: 'Synthetic work-only memory.', category: 'fact' })
-    expect(receipt).toMatchObject({ action: 'stored' })
+    expect(receipt).toMatchObject({ action: 'stored', tagsApplied: true })
+    // The tag call is a data request too: same key, no identity headers (checked below for every request).
+    expect([...backend.files.values()].map(file => file.tags)).toEqual([['source=mnemon', 'category=fact', 'importance=3']])
     expect((await spaces.read('search', { query: 'work-only', memoryBodyIds: [work.id] })).results).toHaveLength(1)
     expect((await spaces.read('search', { query: 'work-only', memoryBodyIds: [personal.id] })).results).toHaveLength(0)
     await expect(spaces.mutate('provider-service-update', { providerId: 'work-cloud', settings: { ...settings, discoveryUser: 'bob' }, enabled: true })).rejects.toThrow('cannot access')

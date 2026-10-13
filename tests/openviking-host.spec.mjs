@@ -58,6 +58,8 @@ describe('OpenViking writes through composed Host and Sources', () => {
       .toMatchObject({ results: [{ id: receipt.id, content, memoryBodyId: f.work.id }] })
     expect(await f.spaces.read('search', { query: 'work release canary', memoryBodyIds: [f.personal.id] })).toMatchObject({ results: [] })
     expect([...f.backend.files.values()].map(file => file.account)).toEqual(['work'])
+    // The content API takes the memory alone (OpenViking 0.4.16 refuses tags there); the tags follow in their own call.
+    expect([...f.backend.files.values()].map(file => file.tags)).toEqual([['source=mnemon', 'category=decision', 'importance=3']])
     expect((await f.spaces.read('body-directory')).items.find(item => item.id === f.work.id).active).toBe(true)
     expect((await f.spaces.read('body-directory')).items.find(item => item.id === f.personal.id).active).toBe(f.personal.active)
     expect((await f.graph.source('runtime').read('snapshot')).entries).toEqual([])
