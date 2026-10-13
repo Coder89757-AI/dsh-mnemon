@@ -167,6 +167,45 @@ describe('standalone OpenViking data plane', () => {
     expect(uris.map(uri => uri.split('/').at(-2))).toEqual(['preferences', 'experiences', 'entities', 'events', 'experiences', 'entities'])
   })
 
+  it('leaves out a memory the server lists but can no longer read, and says so', async () => {
+    // The index still lists a file that is gone, as a write the server refused or a removal elsewhere can leave it.
+    const gone = 'viking://user/team/memories/entities/gone.md'
+    const kept = 'viking://user/team/memories/entities/kept.md'
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      const parsed = new URL(String(url))
+      if (parsed.pathname === '/api/v1/search/find') return ok({ memories: [{ uri: gone, score: 0.9 }, { uri: kept, score: 0.8 }] })
+      if (parsed.pathname === '/api/v1/fs/ls') return ok([{ uri: gone, isDir: false }, { uri: kept, isDir: false }])
+      if (parsed.searchParams.get('uri') === gone) return new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND', message: `File not found: ${gone}` } }), { status: 404 })
+      return ok('The memory that is still there.')
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+
+    await expect(provider.search(body, { query: 'memory', limit: 5 })).resolves.toEqual({
+      results: [expect.objectContaining({ id: kept, content: 'The memory that is still there.' })],
+      hint: expect.stringMatching(/^1 OpenViking result could not be read and was left out/u),
+    })
+    expect((await provider.list(body, { limit: 10 })).map(item => [item.id, item.content])).toEqual([[kept, 'The memory that is still there.']])
+    expect((await provider.graph(body)).nodes.map(node => node.id)).toEqual([kept])
+  })
+
+  it('reports why when no listed memory can be read, and stops a cancelled read', async () => {
+    const uri = 'viking://user/team/memories/entities/only.md'
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const parsed = new URL(String(url))
+      if (parsed.pathname === '/api/v1/search/find') return ok({ memories: [{ uri, score: 0.9 }] })
+      if (parsed.pathname === '/api/v1/fs/ls') return ok([{ uri, isDir: false }])
+      if (init?.signal?.aborted === true) throw init.signal.reason
+      return new Response(JSON.stringify({ status: 'error', error: { message: 'Synthetic read failure' } }), { status: 500 })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    // A server that answers no read is not an empty space.
+    await expect(provider.search(body, { query: 'memory', limit: 5 })).rejects.toThrow('Synthetic read failure')
+    await expect(provider.list(body, { limit: 10 })).rejects.toThrow('Synthetic read failure')
+    const controller = new AbortController()
+    controller.abort(new Error('turn cancelled'))
+    await expect(provider.search(body, { query: 'memory', limit: 5 }, controller.signal)).rejects.toThrow('turn cancelled')
+  })
+
   it('forgets only an exact non-generated memory file inside the configured root', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => ok({ uri: 'viking://user/team/memories/preferences/style.md', estimated_deleted_count: 1 }))
     const { body, provider } = await bodyAndRegistry(fetchMock)
