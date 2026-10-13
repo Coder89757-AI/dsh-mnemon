@@ -214,9 +214,20 @@ function parseEntryOrigin(value: unknown): MnemonEntryOrigin | undefined {
   return { machine: origin.machine, label: origin.label, at: origin.at }
 }
 
+/**
+ * Whole groups of four from the base64 alphabet, padded with at most two `=` at the end. The
+ * length check and one character class keep this a flat loop at any size. A pattern that repeats
+ * a four-character group keeps a backtracking entry per group, and V8 threw "Maximum call stack
+ * size exceeded" once a payload passed about 4.5 MB (#368). The `u` flag stays off: under it,
+ * V8 13 (Node 24) does the same for a class over a string holding a character above U+00FF.
+ */
+function isBase64(value: string): boolean {
+  return value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value)
+}
+
 function decodeArchive(base64: string): Buffer {
   if (typeof base64 !== 'string' || base64 === '' || base64.length > Math.ceil(MNEMON_PACK_MAX_ARCHIVE_BYTES / 3) * 4 + 4) throw new Error('Mnemon Pack archive is empty or too large')
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(base64)) throw new Error('Mnemon Pack payload is not valid base64')
+  if (!isBase64(base64)) throw new Error('Mnemon Pack payload is not valid base64')
   const bytes = Buffer.from(base64, 'base64')
   if (bytes.length === 0 || bytes.length > MNEMON_PACK_MAX_ARCHIVE_BYTES) throw new Error('Mnemon Pack archive is empty or too large')
   return bytes

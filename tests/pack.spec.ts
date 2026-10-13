@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -203,6 +203,27 @@ describe('Mnemon Pack', () => {
     expect(archive.includes(Buffer.from('must-not-enter-pack'))).toBe(false)
     expect(Object.keys(files).some(path => path.includes('memory-providers'))).toBe(false)
     expect(existsSync(registryPath)).toBe(true)
+  })
+
+  it('reads and imports a payload of several megabytes without overflowing the stack (#368)', async () => {
+    const source = await fixture('pack-large-source', 42)
+    // An incompressible Memory Space, so the archive's base64 is well past the 4.5 MB the old check failed at.
+    writeFileSync(join(source.root, 'data', 'project', 'mnemon.db'), Buffer.concat([sqlite(42), randomBytes(5 * 1024 * 1024)]))
+    const exported = await source.manager.exportPack('memory-spaces')
+    expect(exported.base64.length).toBeGreaterThan(6 * 1024 * 1024)
+    expect(() => source.manager.inspectPack(exported.base64)).not.toThrow()
+
+    const target = await fixture('pack-large-target', 43, 'other')
+    await target.manager.importPack(exported.base64, { mode: 'merge' })
+    expect(readFileSync(join(target.root, 'data', 'project', 'mnemon.db')).length).toBe(4096 + 5 * 1024 * 1024)
+
+    // Still strict: padding in the middle or a length that is not a whole group is refused.
+    expect(() => source.manager.inspectPack(exported.base64.slice(0, 100) + '=' + exported.base64.slice(101))).toThrow('base64')
+    expect(() => source.manager.inspectPack(exported.base64.slice(0, -1))).toThrow('base64')
+    // The largest payload the transport allows passes the check and fails only as a ZIP, and a
+    // string holding a character above U+00FF is refused as base64 rather than by the stack.
+    expect(() => source.manager.inspectPack('A'.repeat(64 * 1024 * 1024))).toThrow('invalid zip data')
+    expect(() => source.manager.inspectPack('A'.repeat(9 * 1024 * 1024 - 1) + '中')).toThrow('base64')
   })
 
   it('rejects checksum tampering, unsafe paths, and malformed transport data', async () => {
