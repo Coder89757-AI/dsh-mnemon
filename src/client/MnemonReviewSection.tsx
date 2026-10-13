@@ -13,6 +13,8 @@ export interface MnemonReviewSectionProps {
   sessionId?: string
   workspaceId?: string
   disabled: boolean
+  /** A plan was applied, in full or in part, and wrote memory. */
+  onApplied?: () => void
   t: MnemonTranslate
 }
 
@@ -156,7 +158,9 @@ export function MnemonReviewSection(props: MnemonReviewSectionProps): JSX.Elemen
   const apply = (entry: MnemonReviewEntry): void => {
     const selection = selectionOf(entry)
     if (selection.length === 0) { setComplaint(t('review.noSelection')); return }
-    submit(entry.id, api => api.applyReview(entry.id, selection).then(result => {
+    // A plan stops at the first operation that fails and keeps the ones that ran, so
+    // the memory views read again whether or not it finished.
+    submit(entry.id, api => api.applyReview(entry.id, selection).finally(() => props.onApplied?.()).then(result => {
       setNotice(t('review.applied', { count: result.applied }))
       // What ran is what the ledger now records; the ledger is re-read, so the plan keeps
       // only the positions still left to decide.

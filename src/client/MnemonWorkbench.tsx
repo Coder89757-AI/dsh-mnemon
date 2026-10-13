@@ -55,7 +55,7 @@ interface MnemonWorkbenchProps {
   onClose?: () => void
   /** Opens the dsh-mnemon page under DSH Plugins, where the configuration lives, while that page offers navigation. */
   configuration?: MnemonActionSeat
-  /** Moves when a component is switched through DSH's plugin manager. */
+  /** Moves when a component is switched through DSH's plugin manager, or memory changes on the configuration page. */
   componentChanges?: MnemonChangeSignal
   sourcePageDirectory?: MemorySourcePageDirectory
   renderSlot?: PropsRenderSlots<typeof MNEMON_SOURCE_PAGE_SLOT | typeof MNEMON_COMPONENT_STATUS_SLOT>['renderSlot']
@@ -765,7 +765,9 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   // The configuration lives on another page: re-read when the Sidebar
   // reopens the workspace and when a component is switched elsewhere. A
   // component switch or a Provider saved under Plugins also reloads the open
-  // page, so Memory Spaces lists the Providers a new space can use.
+  // page, so Memory Spaces lists the Providers a new space can use, and so
+  // does a sync, a merge, an import or an applied plan there, so the page
+  // shows the memory it brought in.
   const shown = useRef(active)
   useEffect(() => {
     if (active && !shown.current) refreshAll()

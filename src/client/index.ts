@@ -102,8 +102,9 @@ function enabledOf(value: unknown, key: 'turnBar' | 'saveAction'): boolean {
 
 /**
  * What one surface offers or tells another: the configuration page under
- * Plugins, the workspace in its placement, and component changes made through
- * DSH's plugin manager, which Mnemon's own reads cannot see.
+ * Plugins, the workspace in its placement, and changes the workspace cannot
+ * see by itself: components switched through DSH's plugin manager, and memory
+ * a sync, a merge, an import or an applied plan on the configuration page wrote.
  */
 interface MnemonSeats {
   configuration: MnemonActionSeat

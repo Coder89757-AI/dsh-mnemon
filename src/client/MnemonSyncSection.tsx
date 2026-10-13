@@ -52,6 +52,8 @@ interface MnemonSyncSectionProps {
   enabled: boolean
   /** Saves the switch's choice; the storage section above owns the stored value. */
   onEnabled: (enabled: boolean) => void
+  /** A sync or a merge ran, and may have brought memory in from the repository. */
+  onMerged?: () => void
   t: MnemonTranslate
 }
 
@@ -67,7 +69,7 @@ interface MnemonSyncSectionProps {
  * the result, so it is the one primary action. "Check remote" reads what a sync
  * would change and writes nothing until a button in it is pressed.
  */
-export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled, enabled, onEnabled, t }: MnemonSyncSectionProps): JSX.Element {
+export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled, enabled, onEnabled, onMerged, t }: MnemonSyncSectionProps): JSX.Element {
   const client = useMemo(() => connection === undefined ? null : new MnemonClient(connection, sessionId, workspaceId), [connection, sessionId, workspaceId])
   const [status, setStatus] = useState<MnemonSyncStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -158,6 +160,9 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
       failure = t('config.syncFailed', { error: failureText(t, reasonOf(reason), message(reason), repoUrl) })
       setSyncFeedback({ tone: 'error', text: failure })
     } finally { setBusy(null) }
+    // The branch is folded in before anything is published, so even a sync that did not
+    // finish can have changed memory here.
+    onMerged?.()
     // The state line follows on its own; the buttons do not wait for it.
     void readStatus()
     return failure
@@ -263,7 +268,7 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
       </>}
     </div>}
     {client !== null && repoUrl !== undefined && dialog === 'compare' && <SyncCompareDialog client={client} repoUrl={repoUrl} writable={editable} t={t}
-      onClose={() => setDialog(null)} onSync={sync} onChanged={() => void readStatus()} />}
+      onClose={() => setDialog(null)} onSync={sync} onChanged={() => { onMerged?.(); void readStatus() }} />}
     {client !== null && repoUrl !== undefined && dialog === 'history' && <SyncHistoryDialog client={client} repoUrl={repoUrl} t={t} onClose={() => setDialog(null)} />}
     {repoUrl !== undefined && dialog === 'disconnect' && <SyncConfirmDialog title={t('config.syncDisconnectTitle')}
       body={t('config.syncDisconnectBody', { repository: repositoryName(repoUrl) })} confirm={t('config.syncDisconnect')}

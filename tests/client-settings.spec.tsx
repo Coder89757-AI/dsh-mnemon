@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MnemonSettingsCard } from '../src/client/MnemonSettingsCard.tsx'
+import { MnemonChangeSignal } from '../src/client/change-signal.ts'
 import { MnemonComponentListSeat } from '../src/client/component-list-seat.ts'
 import { MEMORY_SPACES_PACKAGE, MemorySpacesSettings, RUNTIME_PACKAGE, RuntimeSettings, THREE_TIER_PACKAGE, ThreeTierSettings } from '../src/client/component-settings.tsx'
 import { translateEn, translateZh, type MnemonTranslate } from '../src/client/locales.ts'
@@ -1242,7 +1243,9 @@ describe('MnemonSettingsCard', () => {
     })
     const connection = { rpc: { call }, isLoopback: true } as ClientConnectionHandle
 
-    render(<MnemonSettingsCard scope={scope} connection={connection} />)
+    // The memory views read this signal; an import moves it, so they show what came in.
+    const changes = new MnemonChangeSignal(0)
+    render(<MnemonSettingsCard scope={scope} connection={connection} componentChanges={changes} />)
     await waitFor(() => expect(screen.getByTitle('/active/.mnemon')).toBeTruthy())
 
     const file = new File(['pack'], 'backup.zip', { type: 'application/zip' })
@@ -1250,12 +1253,41 @@ describe('MnemonSettingsCard', () => {
     await waitFor(() => expect(screen.getByText('backup.zip')).toBeTruthy())
     expect(screen.getByText(/校验通过 · 3 个组件 · 4 项/)).toBeTruthy()
     expect(screen.queryByRole('checkbox', { name: /Documents/ })).toBeNull()
+    // Checking a ZIP writes nothing.
+    expect(changes.getSnapshot()).toBe(0)
 
     fireEvent.click(screen.getByRole('button', { name: '安全导入' }))
     await waitFor(() => expect(call).toHaveBeenCalledWith('/dsh-mnemon-pack', 'import', {
       base64: 'cGFjaw==',
     }))
     expect(screen.getByText('已将 ZIP 安全合并到 /active/.mnemon。')).toBeTruthy()
+    await waitFor(() => expect(changes.getSnapshot()).toBe(1))
+    // The page reads its own data again too, and keeps saying what the import did.
+    await waitFor(() => expect(call.mock.calls.filter(([, endpoint]) => endpoint === 'target')).toHaveLength(2))
+    expect(screen.getByText('已将 ZIP 安全合并到 /active/.mnemon。')).toBeTruthy()
+  })
+
+  it('tells the memory views after an import that reports a failure, since it can have merged first', async () => {
+    const scope = settingsScope({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const })
+    const call = vi.fn(async (_channel: string, endpoint: string) => {
+      if (endpoint === 'target') return { ok: true as const, value: { root: '/active/.mnemon', scope: 'global' } }
+      if (endpoint === 'inspect') return { ok: true as const, value: {
+        fileName: 'backup.zip', archiveBytes: 4, expandedBytes: 2048, targetRoot: '/active/.mnemon', targetScope: 'global',
+        occupied: { runtime: true, documents: true, 'memory-spaces': true },
+        manifest: { format: 'mnemonpack', version: 1, scope: 'full', exportedAt: '2026-08-14T12:00:00.000Z', source: { plugin: 'dsh-mnemon', pluginVersion: '0.1.0' },
+          components: ['memory-spaces'], summary: [{ component: 'memory-spaces', files: 2, bytes: 748, items: 1 }] },
+      } }
+      // The Host merged the archive, then reading Memory Spaces again failed.
+      if (endpoint === 'import') return { ok: false as const, error: { code: 'internal', message: 'memory spaces reload failed' } }
+      throw new Error(`unexpected endpoint ${endpoint}`)
+    })
+    const changes = new MnemonChangeSignal(0)
+    render(<MnemonSettingsCard scope={scope} connection={{ rpc: { call }, isLoopback: true } as ClientConnectionHandle} componentChanges={changes} />)
+    await waitFor(() => expect(screen.getByTitle('/active/.mnemon')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('选择 Mnemon 备份 ZIP'), { target: { files: [new File(['pack'], 'backup.zip', { type: 'application/zip' })] } })
+    fireEvent.click(await screen.findByRole('button', { name: '安全导入' }))
+    expect(await screen.findByText(/memory spaces reload failed/u)).toBeTruthy()
+    await waitFor(() => expect(changes.getSnapshot()).toBe(1))
   })
 })
 

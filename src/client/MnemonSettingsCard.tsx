@@ -44,8 +44,11 @@ export interface MnemonSettingsCardProps {
   t?: MnemonTranslate
   /** Active DSH locale id for installed Strategies that bring their own text. */
   language?: string
-  /** Moves when a component is switched through DSH's plugin manager, for example on the Plugins page below. */
-  componentChanges?: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot'>
+  /**
+   * Moves when a component is switched through DSH's plugin manager, for example on the Plugins page below.
+   * This page moves it too after a sync, a merge, an import or an applied plan, so the memory views read memory again.
+   */
+  componentChanges?: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot' | 'bump'>
   /** The settings components contribute to their pages; without it a page shows what their declarations give. */
   componentSettings?: ComponentSettingsSource
   /** Show one component's page alone, by its package name, as DSH's row page for that component. */
@@ -54,7 +57,7 @@ export interface MnemonSettingsCardProps {
   componentList?: Pick<MnemonComponentListSeat, 'subscribe' | 'getSnapshot'>
 }
 
-const NO_CHANGE_SIGNAL: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => 0 }
+const NO_CHANGE_SIGNAL: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot' | 'bump'> = { subscribe: () => () => {}, getSnapshot: () => 0, bump: () => {} }
 const NO_COMPONENT_LIST: Pick<MnemonComponentListSeat, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => undefined }
 
 /**
@@ -169,7 +172,8 @@ export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractio
 
         <MnemonStorageSection scope={scope} value={coreSnapshot.value} user={coreUser} disabled={coreDisabled} dashboard={view.state.dashboard} target={target}
           {...(connection === undefined ? {} : { connection })} {...(sessionId === undefined ? {} : { sessionId })} {...(workspaceId === undefined ? {} : { workspaceId })}
-          language={language} t={t} onOpen={entry => pages.open(entry.entryId, 'configuration')} onSaved={() => setTargetRevision(revision => revision + 1)} />
+          language={language} t={t} onOpen={entry => pages.open(entry.entryId, 'configuration')} onSaved={() => setTargetRevision(revision => revision + 1)}
+          onDataChanged={componentChanges.bump} />
 
         <section className={css.section} aria-labelledby="mnemon-interface-heading">
           <div className={css.sectionHeading}><h2 id="mnemon-interface-heading">{t('config.interfaceTitle')}</h2></div>
