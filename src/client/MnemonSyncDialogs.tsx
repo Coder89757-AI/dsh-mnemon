@@ -105,7 +105,7 @@ interface SyncCompareDialogProps extends SyncDialogProps {
   writable: boolean
   /** Runs the same sync the row's button runs; answers why it did not finish, or null. */
   onSync: () => Promise<string | null>
-  /** Something here was written, so the section reads its status again. */
+  /** A merge ran here and may have written, so the section reads its status again. */
   onChanged: () => void
 }
 
@@ -146,15 +146,20 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
   const merge = async (revive: boolean): Promise<void> => {
     if (busy !== null) return
     setBusy(revive ? 'revive' : 'merge'); setFailed(null); setNotice(null)
+    let failure: string | null = null
     try {
       const result = await client.pullSync(undefined, revive)
       const added = result.runtime?.added ?? 0
       setNotice(revive ? t('config.syncCompareRevived', { count: added }) : added > 0 ? t('config.syncMergedCount', { count: added }) : t('config.syncMerged', { commit: result.commit.slice(0, 8) }))
-      onChanged()
     } catch (reason) {
-      setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl))
+      failure = failureText(t, reasonOf(reason), message(reason), repoUrl)
     } finally { setBusy(null) }
+    // A merge that failed can have written already: the Host reads Memory Spaces again
+    // after the write, and that read can fail on its own.
+    onChanged()
+    // Reading the comparison again clears this dialog's line, so a failure is said after it.
     await read()
+    if (failure !== null) setFailed(failure)
   }
 
   const sync = async (): Promise<void> => {
