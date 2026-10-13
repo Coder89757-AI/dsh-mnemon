@@ -10,6 +10,7 @@ import { createStorageRoot } from '../src/host/storage-root.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import { RUNTIME_ENTRY_DELIMITER } from 'dsh-mnemon-source-runtime/contracts'
+import { sqlite as nodeSqlite, writeSpace, type SpaceInsight } from './helpers/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []
@@ -50,6 +51,34 @@ async function fixture(label: string, seed: number, bodyId = 'project') {
   }, null, 2)}\n`)
   writeFileSync(join(root, 'active'), `${bodyId}\n`)
   return { root, workspace, ...created, manager: new MnemonPackManager(created.runner, created.config, undefined, now) }
+}
+
+/** Replace a fixture's Memory Spaces with real databases, as Mnemon writes them. */
+function spaces(root: string, bodies: Array<{ id: string; name: string; insights: SpaceInsight[]; reads?: number }>): void {
+  const data = join(root, 'data')
+  rmSync(data, { recursive: true, force: true })
+  mkdirSync(data, { recursive: true })
+  for (const body of bodies) {
+    mkdirSync(join(data, body.id), { recursive: true })
+    writeSpace(join(data, body.id, 'mnemon.db'), { insights: body.insights, ...(body.reads === undefined ? {} : { reads: body.reads }) })
+  }
+  const at = '2026-10-05T08:37:12.218Z'
+  writeFileSync(join(data, '.dsh-memory-bodies.json'), `${JSON.stringify({
+    version: 1, bodies: bodies.map(body => ({ id: body.id, name: body.name, description: '', active: true, createdAt: at, updatedAt: at })),
+  }, null, 2)}\n`)
+}
+
+function registryOf(root: string): Array<{ id: string; name: string }> {
+  return (JSON.parse(readFileSync(join(root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: Array<{ id: string; name: string }> }).bodies
+}
+
+/** Two memories as both machines first held them; `reads` bumps the counters a recall writes. */
+function memories(reads = 0, extra: SpaceInsight[] = []): SpaceInsight[] {
+  return [
+    { id: 'i-1', content: 'The gateway routes by model family', accessCount: reads * 3, accessedAt: reads === 0 ? null : '2026-10-1' + String(reads % 10) + 'T04:11:13Z' },
+    { id: 'i-2', content: 'Accounts warm up for a week before routing', accessCount: reads, accessedAt: reads === 0 ? null : '2026-10-1' + String(reads % 10) + 'T04:11:41Z' },
+    ...extra,
+  ]
 }
 
 afterEach(async () => {
@@ -217,6 +246,132 @@ describe('Mnemon Pack', () => {
     const unsafe = Buffer.from(zipSync({ '../escape': strToU8('x') })).toString('base64')
     expect(() => source.manager.inspectPack(unsafe)).toThrow('unsafe Pack entry path')
     expect(() => source.manager.inspectPack('not-base64')).toThrow('base64')
+  })
+
+  describe.skipIf(nodeSqlite === undefined)('Memory Spaces synced between two machines (#370)', () => {
+    /** The memories a space's database holds, by id. */
+    const held = (root: string, id: string): string[] => {
+      const database = new nodeSqlite!.DatabaseSync(join(root, 'data', id, 'mnemon.db'))
+      try {
+        return (database.prepare('SELECT id FROM insights ORDER BY id').all() as Array<{ id: string }>).map(row => row.id)
+      } finally {
+        database.close()
+      }
+    }
+
+    it('keeps one space however many syncs bring back a space the other machine only read', async () => {
+      const source = await fixture('pack-reads-source', 60)
+      const target = await fixture('pack-reads-target', 61)
+      spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories() }])
+      spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(2), reads: 2 }])
+      const local = readFileSync(join(target.root, 'data', 'gateway', 'mnemon.db'))
+      for (let round = 1; round <= 3; round += 1) {
+        // The source recalls between syncs, as the reporter's machines did: 2, then 4, then 8 spaces before.
+        spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round * 5), reads: round }])
+        await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(target.root).map(body => body.id)).toEqual(['gateway'])
+      }
+      // This machine's own copy stays, read counts included.
+      expect(readFileSync(join(target.root, 'data', 'gateway', 'mnemon.db')).equals(local)).toBe(true)
+    })
+
+    it('takes in what the other machine only added, and keeps its own version when that is the newer one', async () => {
+      const writer = await fixture('pack-writer', 66)
+      const reader = await fixture('pack-reader', 67)
+      spaces(writer.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories() }])
+      spaces(reader.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories() }])
+      const learned: SpaceInsight[] = []
+      for (let round = 1; round <= 3; round += 1) {
+        // One machine remembers something each round, the other only recalls: before, both gained a space a round.
+        learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
+        spaces(writer.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round }])
+        const written = readFileSync(join(writer.root, 'data', 'gateway', 'mnemon.db'))
+        await reader.manager.importPack((await writer.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(reader.root).map(body => body.id)).toEqual(['gateway'])
+        expect(held(reader.root, 'gateway')).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)].sort())
+        spaces(reader.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round + 4, learned), reads: 1 }])
+        await writer.manager.importPack((await reader.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(writer.root).map(body => body.id)).toEqual(['gateway'])
+        expect(readFileSync(join(writer.root, 'data', 'gateway', 'mnemon.db')).equals(written)).toBe(true)
+      }
+      // An older version that comes back adds nothing either.
+      spaces(reader.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(9), reads: 2 }])
+      await writer.manager.importPack((await reader.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+      expect(registryOf(writer.root).map(body => body.id)).toEqual(['gateway'])
+      expect(held(writer.root, 'gateway')).toHaveLength(5)
+    })
+
+    it('merges a space both machines added to into one, round after round', async () => {
+      const left = await fixture('pack-both-left', 62)
+      const right = await fixture('pack-both-right', 63)
+      // What each machine holds, by id: both start from the same two memories and learn one each round.
+      const contents = new Map(memories().map(insight => [insight.id, insight.content]))
+      const write = (root: string, ids: string[], reads: number) => {
+        spaces(root, [{ id: 'gateway', name: 'AI Gateway routing', reads, insights: ids.map(id => ({ id, content: contents.get(id)!, accessCount: reads })) }])
+      }
+      let leftIds = ['i-1', 'i-2']
+      let rightIds = ['i-1', 'i-2']
+      for (let round = 1; round <= 3; round += 1) {
+        for (const [side, ids] of [['left', leftIds], ['right', rightIds]] as const) {
+          const id = side + '-' + String(round)
+          contents.set(id, 'Learned on the ' + side + ' machine in round ' + String(round))
+          ids.push(id)
+        }
+        write(left.root, leftIds, round)
+        write(right.root, rightIds, round + 3)
+        await right.manager.importPack((await left.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        await left.manager.importPack((await right.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        for (const machine of [left, right]) expect(registryOf(machine.root).map(body => body.id)).toEqual(['gateway'])
+        leftIds = held(left.root, 'gateway')
+        rightIds = held(right.root, 'gateway')
+        expect(leftIds).toEqual([...contents.keys()].sort())
+        expect(rightIds).toEqual(leftIds)
+      }
+    })
+
+    it('keeps one copy of a space whose memory was forgotten on one side, and moves that copy on as the other side writes', async () => {
+      const source = await fixture('pack-forgotten-source', 68)
+      const target = await fixture('pack-forgotten-target', 69)
+      // This machine forgot i-2, as Mnemon's forget does; the other machine still holds it and keeps learning.
+      spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: [memories()[0]!, { ...memories()[1]!, deletedAt: '2026-10-13T01:00:00Z', updatedAt: '2026-10-13T01:00:00Z' }] }])
+      const learned: SpaceInsight[] = []
+      for (let round = 1; round <= 3; round += 1) {
+        learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
+        spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round }])
+        await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        const bodies = registryOf(target.root)
+        expect(bodies).toHaveLength(2)
+        expect(bodies.map(body => body.name)).toEqual(['AI Gateway routing', 'AI Gateway routing'])
+        // The forgotten memory stays forgotten here; the copy holds the other machine's version, as it grows.
+        expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2'])
+        expect(held(target.root, bodies.find(body => body.id !== 'gateway')!.id)).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)])
+      }
+    })
+
+    it('does not add again a copy held under another id or name, and keeps different spaces apart', async () => {
+      const source = await fixture('pack-copies-source', 64)
+      const target = await fixture('pack-copies-target', 65)
+      const edited = { ...memories()[1]!, content: 'Accounts warm up for two weeks before routing', updatedAt: '2026-10-13T01:00:00Z' }
+      // This machine edited i-2, holds the other machine's version as a copy it has since renamed,
+      // and an empty space of each of two names.
+      spaces(target.root, [
+        { id: 'gateway', name: 'AI Gateway routing', insights: [memories(1)[0]!, edited] },
+        { id: 'copy-here', name: 'AI Gateway routing, the other one', insights: memories(2, [{ id: 'i-3', content: 'Only one machine learned this' }]) },
+        { id: 'ideas', name: 'Ideas', insights: [] },
+        { id: 'drafts-here', name: 'Drafts', insights: [] },
+      ])
+      // The other machine's version of the space is the copy held here; its own copy of it has another id.
+      spaces(source.root, [
+        { id: 'gateway', name: 'AI Gateway routing', insights: memories(4, [{ id: 'i-3', content: 'Only one machine learned this' }]) },
+        { id: 'copy-there', name: 'AI Gateway routing', insights: [memories(7)[0]!, edited], reads: 3 },
+        { id: 'notes', name: 'Notes', insights: [] },
+        { id: 'drafts-there', name: 'Drafts', insights: [] },
+      ])
+      await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+      // Nothing new arrived but Notes: an empty space of another name is still a space of its own.
+      expect(registryOf(target.root).map(body => body.id).sort()).toEqual(['copy-here', 'drafts-here', 'gateway', 'ideas', 'notes'])
+      expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2'])
+    })
   })
 
   it('keeps a valid branch scope and origin through an import and drops malformed ones', async () => {
