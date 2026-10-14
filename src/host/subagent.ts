@@ -17,7 +17,7 @@ import type { ComposableMemoryTurn } from '../core/turns.ts'
 import { idleReviewBlockReason, reviewLayerPolicy, startGuardedReview, type ReviewToolHost } from './review-tools.ts'
 import { reviewCheckpoint } from './review-checkpoint.ts'
 import { startWithContinuationTurns } from './continuation-turn.ts'
-import { startSubagent, type SubagentStartAgents } from './subagent-start.ts'
+import { childComposition, startSubagent, type SubagentStartAgents } from './subagent-start.ts'
 import type { IdleReviewFailure } from './protocol.ts'
 
 export type { SubagentCounters } from "./protocol.ts"
@@ -2009,7 +2009,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
         maxDepth: 1,
         toolFilter: { allow: [...tools, resultToolName] },
         persona: completionPersona,
-      }))
+      }, host))
       run = operation === 'review'
         ? await startGuardedReview(this.resultRuntime, parent, [...tools, resultToolName], start, child => { reviewChildId = child.id }, reviewLayerPolicy())
         : await start()
@@ -2083,8 +2083,8 @@ This is the only completion channel for this run. Do not finish with a plain-tex
   private provider(preferred: 'spawn' | 'fork'): string {
     const names = this.subagents.list()
     const compatible = (name: string): boolean => {
-      const capabilities = this.subagents.getProvider(name)?.capabilities
-      return capabilities?.toolFilter === true && capabilities.persona === true && capabilities.depthLimit === true
+      const provider = this.subagents.getProvider(name)
+      return provider?.capabilities.depthLimit === true && childComposition(this.subagents, provider) !== undefined
     }
     if (preferred === 'fork') {
       const fork = this.subagents.getProvider('fork')

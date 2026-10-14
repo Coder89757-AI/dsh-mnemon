@@ -160,6 +160,28 @@ function activations(structured: unknown, stopReason = 'completed', providers = 
   return { value, startActivation, dispose }
 }
 
+/**
+ * DSH 0.2.1-alpha.3: no provider takes a persona or tool filter, and a child joins its parent's composition.
+ * Its spawn and fork providers prepare local activations; `local: false` stands for one that runs children elsewhere.
+ */
+function onDsh021Alpha3(host: { value: HostSubagentsService }, providers = ['spawn'], local = true) {
+  vi.mocked(host.value.getProvider).mockImplementation((name: string) => providers.includes(name)
+    ? { capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true }, inheritsParentContext: name === 'fork', ...(local ? { prepareContinuable: () => {} } : {}) } as never
+    : undefined)
+}
+
+/** A child as DSH 0.2.1-alpha.3 publishes it, recording what is registered in its own scope. */
+function composableChild(id: string) {
+  const sections: Array<{ name: string; order: number; text: string }> = []
+  const restrictions: Array<{ allow?: string[]; deny?: string[] }> = []
+  const guard = vi.fn(() => () => {})
+  const child = { ...parent('subagent'), id, ctx: {
+    systemPrompt: { section: (section: { name: string; order: number; text: string }) => { sections.push(section) }, getSectionOrder: () => 0 },
+    tools: { guard, restrict: (filter: { allow?: string[]; deny?: string[] }) => { restrictions.push(filter) } },
+  } } as unknown as HostAgent
+  return { child, sections, restrictions, guard }
+}
+
 function resultArguments(request: { persona?: string }, result: unknown) {
   const requestId = request.persona?.match(/requestId `([^`]+)`/u)?.[1]
   if (requestId === undefined) throw new Error('Missing delegated result capability')
@@ -2780,6 +2802,78 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(host.startActivation).toHaveBeenCalledWith(expect.objectContaining({ provider: 'fork', label: 'Mnemon idle checkpoint review', delivery: 'caller' }))
     expect(host.dispose).toHaveBeenCalledOnce()
     expect(coordinator.snapshot()).toMatchObject({ reviews: 1, failures: 0 })
+  })
+
+  it('compacts USER.md on DSH 0.2.1-alpha.3 with the persona and tools registered in the child\'s own scope', async () => {
+    const registry = toolRegistry()
+    const composed = composableChild('child-run-1')
+    const host = activations({
+      summary: 'Merged two compatible profile preferences locally.',
+      action: 'compacted',
+      compactedEntries: [{ content: 'User prefers concise Chinese release notes with blockers first.', importance: 'critical', sourceIndexes: [1, 2] }],
+    }, 'completed', ['spawn'], spec => registry.publish(composed.child, spec.request.parent), () => registry.unpublish('child-run-1'))
+    onDsh021Alpha3(host)
+    const plan = maintenancePlan('user', [
+      { content: 'User prefers concise Chinese release notes.', importance: 'critical' },
+      { content: 'User wants blockers listed first in release notes.', importance: 'normal' },
+    ])
+    plan.pending = { content: 'User prefers direct answers.', importance: 'normal' }
+    const runtime = {
+      mutate: vi.fn().mockRejectedValueOnce(capacityError('user', plan.used, plan.projected, plan.limit)),
+      planMaintenance: vi.fn(async () => plan),
+      compactAndMutate: vi.fn(async () => ({ success: true, message: 'Entry added.', target: 'user', entryCount: 2, usage: { used: 180, limit: 4_096 }, added: plan.pending!.content })),
+    } as unknown as RuntimeOperations
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(runtime), registry.value)
+
+    await expect(coordinator.runtime(parent(), { action: 'add', target: 'user', content: 'User prefers direct answers.' }, new AbortController().signal)).resolves.toMatchObject({
+      maintenance: { kind: 'local-compaction', runId: 'child-run-1', provider: 'spawn' },
+    })
+    const request = host.startActivation.mock.calls[0]![0].request
+    expect(request).toMatchObject({ maxDepth: 1, agentOptions: { maxTokens: 8_192 } })
+    expect(request).not.toHaveProperty('toolFilter')
+    expect(request).not.toHaveProperty('persona')
+    expect(composed.restrictions).toEqual([{ allow: ['mnemon_subagent_result'] }])
+    expect(composed.sections).toEqual([{ name: 'deployment:persona-prefix', order: 0, text: expect.stringContaining('local USER.md compactor') }])
+    expect(composed.sections[0]!.text).toMatch(/requestId `[^`]+`/u)
+    expect(host.dispose).toHaveBeenCalledOnce()
+    expect(coordinator.snapshot()).toMatchObject({ compactions: 1, failures: 0 })
+  })
+
+  it('reviews a checkpoint through a DSH 0.2.1-alpha.3 fork that carries both the review guard and its own composition', async () => {
+    const registry = toolRegistry()
+    const composed = composableChild('child-run-1')
+    const host = activations({ summary: 'No mutation needed.', action: 'skipped', memoryBodyIds: [] }, 'completed', ['spawn', 'fork'],
+      spec => registry.publish(composed.child, spec.request.parent), () => registry.unpublish('child-run-1'))
+    onDsh021Alpha3(host, ['spawn', 'fork'])
+    const runtime = runtimeSource()
+    runtime.config.idleReview.provider = 'fork'
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtime, registry.value)
+
+    await expect(coordinator.review(parent(), new AbortController().signal)).resolves.toMatchObject({ delegated: true, provider: 'fork', action: 'skipped' })
+    expect(host.startActivation).toHaveBeenCalledWith(expect.objectContaining({ provider: 'fork', label: 'Mnemon idle checkpoint review', delivery: 'caller' }))
+    expect(host.startActivation.mock.calls[0]![0].request).not.toHaveProperty('toolFilter')
+    expect(composed.guard).toHaveBeenCalledOnce()
+    expect(composed.restrictions).toEqual([{ allow: expect.arrayContaining(['mnemon_document_search', 'mnemon_document_create', 'mnemon_subagent_result']) }])
+    expect(composed.sections).toHaveLength(1)
+    expect(coordinator.snapshot()).toMatchObject({ reviews: 1, failures: 0 })
+  })
+
+  it('starts no memory subagent through a DSH 0.2.1-alpha.3 provider that runs children elsewhere', async () => {
+    const host = activations({ summary: 'unused' })
+    onDsh021Alpha3(host, ['spawn'], false)
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), toolRegistry().value)
+
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting')
+    expect(host.startActivation).not.toHaveBeenCalled()
+  })
+
+  it('selects no provider on a DSH whose providers decline a persona and tool filter', async () => {
+    const host = activations({ summary: 'unused' })
+    vi.mocked(host.value.getProvider).mockImplementation(() => ({ capabilities: { outputSchema: true, depthLimit: true, toolFilter: false, persona: false } }) as never)
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), toolRegistry().value)
+
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting')
+    expect(host.startActivation).not.toHaveBeenCalled()
   })
 
   it('reports the bounded error of a failed activation child found in the Agent registry (#356)', async () => {

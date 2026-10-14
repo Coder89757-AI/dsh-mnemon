@@ -57,6 +57,7 @@ it('compacts a full USER.md through a memory subagent and keeps the parent conve
   const parentRequests: Array<GenerateOptions['messages']> = []
   const children: Agent[] = []
   const writes: ToolExecutionResult[] = []
+  const childTools: string[][] = []
   let parentCalls = 0
   try {
     await ctx.plugin(LlmRuntime)
@@ -75,6 +76,7 @@ it('compacts a full USER.md through a memory subagent and keeps the parent conve
         const content = [...profile, pending][parentCalls++]
         return content === undefined ? 'Saved your preferences.' : { name: 'mnemon_runtime_memory', args: { action: 'add', target: 'user', content } }
       }
+      childTools.push((options.tools ?? []).map(tool => tool.name))
       const system = options.system ?? JSON.stringify(options.messages.filter(message => message.role === 'system'))
       const terminal = system.match(/Completion protocol: call `([^`]+)`/u)?.[1]
       const requestId = system.match(/requestId `([^`]+)`/u)?.[1]
@@ -101,6 +103,9 @@ it('compacts a full USER.md through a memory subagent and keeps the parent conve
 
     expect(writes.map(write => write.isError)).toEqual([false, false, false])
     expect(children).toHaveLength(1)
+    // The child sees only its result tool and Mnemon's instructions, never the parent's memory tools; from
+    // DSH 0.2.1-alpha.3 Mnemon registers both in the child's own scope.
+    expect(childTools).toEqual([['mnemon_subagent_result']])
     const child = children[0]!
     await vi.waitFor(() => expect(ctx.agents.get(child.id)).toBeUndefined(), { timeout: 5_000 })
     const snapshot = JSON.stringify(await f.graph.source('runtime').read('snapshot'))

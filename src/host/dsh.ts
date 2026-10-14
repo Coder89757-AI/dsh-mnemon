@@ -160,6 +160,13 @@ export interface HostAgentContext {
     guard?(guard: (execution: ToolExecution) => string | undefined): unknown
     /** Public presentation-agnostic lookup in the exact Agent scope. */
     get?(name: string, scope?: HostAgent): unknown
+    /** Hides the tools this Agent inherits outside the filter and refuses to run them. */
+    restrict?(filter: { allow?: string[]; deny?: string[] }): unknown
+  }
+  /** DSH's prompt registry; a section registered here applies to this Agent alone and shadows a global one of the same name. */
+  systemPrompt?: {
+    section?(section: { name: string; order: number; text: string }): unknown
+    getSectionOrder?(name: string): number
   }
   /**
    * `options` is optional and forwarded verbatim to the host. `prepend`
@@ -236,7 +243,10 @@ export interface HostSubagentRun {
 
 export interface HostSubagentProvider {
   inheritsParentContext?: boolean
-  capabilities: { outputSchema: boolean; depthLimit: boolean; toolFilter: boolean; persona: boolean }
+  /** DSH 0.2.1-alpha.3 dropped `toolFilter` and `persona` from every provider, as from the start request. */
+  capabilities: { outputSchema: boolean; depthLimit: boolean; toolFilter?: boolean; persona?: boolean }
+  /** Present on a provider whose children DSH creates in this process, such as spawn and fork, from DSH 0.2.1-alpha.2. */
+  prepareContinuable?: unknown
 }
 
 export interface HostSubagentStartRequest {
@@ -247,6 +257,7 @@ export interface HostSubagentStartRequest {
   agentOptions?: { provider?: string; model?: string; maxTokens?: number }
   outputSchema?: Record<string, unknown>
   maxDepth?: number
+  /** The child's tools and its persona; DSH takes them in the request up to 0.2.1-alpha.2 (see subagent-start.ts). */
   toolFilter?: { allow?: string[]; deny?: string[] }
   persona?: string
 }
