@@ -72,6 +72,13 @@ button.readSourceCard:hover { background: var(--mn-hover); }
 .bodyCard:not([data-healthy]) .bodyHealth { color: var(--mn-danger); }
 .bodyCard[data-status-loading] .bodyHealth { color: var(--mn-faint); }
 .mnemonDefaultBadge { width: fit-content; padding: 1px 8px; border-radius: 999px; color: var(--mn-accent); background: color-mix(in srgb, var(--mn-accent) 10%, transparent); font-size: 11px; font-weight: 500; line-height: 17px; white-space: nowrap; }
+.newSpaceBadge { width: fit-content; padding: 1px 8px; border-radius: 999px; color: var(--mn-accent); background: color-mix(in srgb, var(--mn-accent) 10%, transparent); font-size: 11px; font-weight: 500; line-height: 17px; white-space: nowrap; }
+/* What asking the Providers again found: one row, as a write receipt reads. */
+.rediscoveryNotice { display: flex; min-width: 0; align-items: flex-start; gap: 8px 12px; margin: 0 0 12px; padding: 10px 12px; border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-module-platform); }
+.rediscoveryNotice > div { display: grid; flex: 1 1 auto; min-width: 0; gap: 2px; }
+.rediscoveryNotice p { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.rediscoveryNotice p[data-failed] { color: var(--mn-danger); }
+.rediscoveryNotice > button { flex: none; }
 /* DSH Tag, neutral tone: the Provider is a fact, not a status. */
 .providerBadge { display: inline-flex; width: fit-content; max-width: 100%; flex: 0 0 auto; align-items: center; justify-content: center; padding: 1px 8px; overflow: hidden; border-radius: 999px; color: var(--mn-muted); background: var(--mn-fill); font-size: 11px; font-weight: 500; line-height: 17px; text-align: center; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap; }
 

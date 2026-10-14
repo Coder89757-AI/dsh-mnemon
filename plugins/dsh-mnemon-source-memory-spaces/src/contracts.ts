@@ -372,6 +372,31 @@ export interface MemorySpaceCatalog {
   generatedAt: string
   /** Present only when body-directory receives a supported writeScope request. Older Sources omit it. */
   writeScope?: MemorySpaceWriteScope
+  /** Provider namespaces asked for again in this process: whether a pass is running, and the last one. Older Sources omit it. */
+  rediscovery?: { running: boolean; last?: MemorySpaceRediscovery }
+}
+
+/** What one Provider answered when its namespaces were asked for again. */
+export interface MemorySpaceRediscoveryResult {
+  providerId: MemoryProviderId
+  label: string
+  /** Namespaces the Provider reported. */
+  found: number
+  /** Spaces mounted for namespaces this directory had never held. They start inactive. */
+  added: Array<{ id: string; name: string }>
+  /** Reported namespaces a person disconnected here; they stay disconnected. */
+  disconnected: number
+  /** Why the Provider could not be asked, as it said. Its spaces stay as they were. */
+  error?: string
+  /** The Provider said nothing within the time it was given. */
+  timedOut?: boolean
+}
+
+/** One pass over every enabled Provider service, when the Host starts or from the Memory Spaces page. */
+export interface MemorySpaceRediscovery {
+  at: string
+  trigger: 'startup' | 'manual'
+  results: MemorySpaceRediscoveryResult[]
 }
 
 export interface MemoryGraphNode extends Insight {

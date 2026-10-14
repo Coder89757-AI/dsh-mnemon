@@ -41,7 +41,16 @@ Host 只暴露适配器能够兑现的能力；UI 与 Agent 工具不会伪造�
 | ByteRover | 默认随工作区，可由目录覆盖 | `cliPath`、`apiKey`、`defaultDirectory` | `workingDirectory` |
 | Supermemory | 保持 Provider 全局作用域 | `endpoint`、`apiKey` | `containerTag`、`searchMode` |
 
-“记忆空间”页面（在**插件 → 可组合记忆**中点击“记忆空间”）的“记忆 Provider”只保存 Provider 服务配置，不创建记忆空间；同一范围内该 Provider 的所有记忆空间复用它。“**记忆空间 → 概览**”负责创建、编辑、启停与删除记忆空间，并只呈现 workspace、user、bank、container、target URI 等实例范围。Host 在调用适配器前合并两层配置。Secret 保存在 `<storageRoot>/state/memory-providers.json`，权限为 `0600`；WebUI 只以掩码表示已配置的 Secret，输入新值即可替换。
+“记忆空间”页面（在**插件 → 可组合记忆**中点击“记忆空间”）的“记忆 Provider”保存 Provider 服务配置，同一范围内该 Provider 的所有记忆空间复用它。启用或保存 Provider 时会进行权威发现，把它可见的命名空间（bank、project、workspace、user 或 container tag 等）同步进记忆空间目录，Provider 提供的标题与描述成为本地路由元数据。“**记忆空间 → 概览**”负责创建、编辑、启停与删除记忆空间，并只呈现 workspace、user、bank、container、target URI 等实例范围。Host 在调用适配器前合并两层配置。Secret 保存在 `<storageRoot>/state/memory-providers.json`，权限为 `0600`；WebUI 只以掩码表示已配置的 Secret，输入新值即可替换。
+
+**之后新建的命名空间。** 设置保存之后才在 Provider 端新建的命名空间，无需再次保存设置也能找到。Host 开始服务一个数据目录后不久，会再询问一次每个已启用的 Provider；**记忆空间 → 概览**中的**重新发现**可以随时再问。重新发现只做添加：
+
+- 第一次见到的命名空间以未激活状态挂载，只有你打开开关后才参与召回。
+- 已挂载的空间保持原有的激活状态、名称、描述与设置；已挂载空间已经读取的命名空间不会再添加。手动创建的空间只要指向同一个 bank、workspace、user、tag、记忆 URI 或目录，就算作该命名空间，其余设置（如召回预算或单个 peer）不同也一样。
+- 你断开过的命名空间（无论是发现的还是手动创建的）保持断开；重新保存该 Provider 的设置会像以前一样恢复它报告的全部命名空间。
+- 出错或 30 秒内没有响应的 Provider 保留原有空间，页面会说明原因。
+
+启动时的发现在每个 Host 进程中对每个数据目录只运行一次；只读部署、记忆空间层关闭，或其 `maintenance` 参与方式不是 `automatic` 时不运行。Honcho 与 OpenViking 只列出前 100 个命名空间。
 
 DSH 的“工作区”模式不会统一重写所有 Provider 命名空间。Mnemon Native 自动随工作区切换；Holographic 与 ByteRover 默认使用工作区下的本地路径，但允许显式路径覆盖；其余远程 Provider 继续使用记忆空间中配置的 URI、workspace、user、bank、project 或 container，切换 DSH 工作区不会隐式改写这些身份。
 

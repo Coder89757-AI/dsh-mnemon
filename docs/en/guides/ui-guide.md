@@ -135,6 +135,7 @@ Each space declares what its Provider can really supply. Mnemon Native gives typ
 - **Create Memory Space** always lets you pick the Provider, with ready Providers first; turn more on from [Memory Spaces' page](#memory-spaces-page).
 - **Provider for new spaces** matters only when a task Agent creates a space. **Fixed Provider** always creates it on the Provider you choose; **Smart selection rules** let the Host enforce data and capability rules first, then the task Agent chooses among the eligible Providers. Existing spaces are still chosen by name and description.
 - **Tidy names and descriptions** samples each selected active space and gives it to an independent task Agent for a title and description. Each space runs on its own; a failure stays on its card.
+- **Rediscover** asks every enabled third-party Provider again for namespaces created on its side since its settings were saved. The Host also asks once, a little after it starts. A new space shows **New** and stays inactive until you switch it on. A line above the cards says what was found and which Provider could not finish, until you dismiss it; a page opened while the Host is asking shows it when the Host is done. A space you disconnected stays disconnected.
 
 #### Recall
 
