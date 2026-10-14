@@ -100,7 +100,12 @@ export async function apply(ctx, config) {
       // Use the manager's real profile reconciliation; no watcher is needed in
       // this deterministic single-operation fixture.
       if (Manager) {
-        context.provide('hmr', { runExclusive: operation => operation() })
+        context.provide('hmr', {
+          runExclusive: operation => operation(),
+          // From DSH 0.2.1-alpha.3 the manager applies a change through HMR, which recomposes the profile;
+          // with no changed module to replace, that is app-boot's recomposition. Earlier managers recompose themselves.
+          reconcileProfile: async requiredIds => ({ pending: [], ...await app.recomposeProfile(ctx, patches(), 'dsh', { requiredIds }) }),
+        })
         await context.plugin(Manager).await()
       }
     }, pathToFileURL(join(profileDir, 'package.json')).href)

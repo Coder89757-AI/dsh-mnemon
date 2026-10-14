@@ -74,7 +74,8 @@ it('runs guarded Team review against the published DSH cohort (issue 275)', asyn
         await f.mount(light, { instanceId: 'light' })
         await f.mount(capture, { instanceId: 'capture' })
         for (const plugin of [llm.default, session.default]) await ctx.plugin(plugin)
-        await ctx.plugin(persistence.default, { root: join(f.root, 'sessions'), compression: 'none' })
+        // DSH 0.2.1-alpha.3 exports the plugin itself rather than a default class.
+        await ctx.plugin(persistence.default ?? persistence, { root: join(f.root, 'sessions'), compression: 'none' })
         await ctx.plugin(projection.default)
         await ctx.plugin(query.default, { path: ':memory:', openAt: 'never' })
         await ctx.plugin(prompt.default)
