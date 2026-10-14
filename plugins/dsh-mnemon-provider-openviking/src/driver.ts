@@ -218,7 +218,11 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
           ...(score === undefined ? {} : { score }),
         }]
       }).slice(0, request.limit)
-    return { results: await Promise.all(matches.map(async item => ({ ...item, content: await this.readContent(body, item.id, signal) }))) }
+    const { read, skipped } = await this.readAll(body, matches, signal)
+    return {
+      results: read,
+      ...(skipped === 0 ? {} : { hint: `${skipped} OpenViking ${skipped === 1 ? 'result' : 'results'} could not be read and ${skipped === 1 ? 'was' : 'were'} left out; the server's index can list a file it no longer holds.` }),
+    }
   }
 
   async graph(body: MemorySpace, signal?: AbortSignal): Promise<MemoryGraphSnapshot> {
@@ -243,18 +247,33 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
       const uri = string(item?.uri)
       return item === undefined || uri === undefined || item.isDir === true || !isMemoryFile(uri, memoryRoot) ? [] : [{ item, uri }]
     }).slice(0, limit)
-    return Promise.all(files.map(async ({ item, uri }): Promise<Insight> => {
-      const content = await this.readContent(body, uri, signal)
+    const { read } = await this.readAll(body, files.map(({ item, uri }) => ({ id: uri, item })), signal)
+    return read.map(({ item, id, content }): Insight => {
       const createdAt = string(item.modTime)
       return {
-        id: uri,
-        externalUri: uri,
+        id,
+        externalUri: id,
         content,
-        category: categoryFromUri(uri),
+        category: categoryFromUri(id),
         source: 'external',
         ...(createdAt === undefined ? {} : { createdAt }),
       }
-    }))
+    })
+  }
+
+  /**
+   * Each listed memory with its full content, leaving out one the server cannot read: its index
+   * can still list a file it no longer holds. When none can be read, the first failure is the
+   * answer, so a server that cannot be reached is never shown as an empty space, and a cancelled
+   * turn stops at once.
+   */
+  private async readAll<T extends { id: string }>(body: MemorySpace, items: readonly T[], signal?: AbortSignal): Promise<{ read: Array<T & { content: string }>; skipped: number }> {
+    const settled = await Promise.allSettled(items.map(async item => ({ ...item, content: await this.readContent(body, item.id, signal) })))
+    signal?.throwIfAborted()
+    const read = settled.flatMap(outcome => outcome.status === 'fulfilled' ? [outcome.value] : [])
+    const failed = settled.find(outcome => outcome.status === 'rejected')
+    if (read.length === 0 && failed !== undefined) throw failed.reason
+    return { read, skipped: settled.length - read.length }
   }
 
   async remember(body: MemorySpace, request: RememberRequest, signal?: AbortSignal): Promise<JsonValue> {
