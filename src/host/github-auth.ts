@@ -12,7 +12,9 @@
  * process-wide dispatcher, then one retry through a proxy discovered from the
  * environment or from this machine's own settings, so a network that reaches
  * GitHub only through a proxy still signs in. Failures report GitHub's error
- * code, the HTTP status and the transport reason only, never a response body.
+ * code, the HTTP status and the transport reason, and a device code answer that
+ * cannot be used adds its content type and field names; never a value from a
+ * response body.
  */
 import { createGitHubTransport, describeTransportError, type MnemonGitHubFetch } from './github-transport.ts'
 import type { MnemonSyncGitHubPoll, MnemonSyncGitHubRepository, MnemonSyncGitHubRepositoryList, MnemonSyncGitHubStatus } from './protocol.ts'
@@ -86,6 +88,26 @@ function text(value: unknown): string | undefined {
 function codeOf(body: unknown): string | undefined {
   const fields = record(body)
   return text(fields?.error) ?? text(fields?.message)
+}
+
+/** A positive count GitHub sends as a JSON number, or as a string in a form-encoded answer. */
+function count(value: unknown): number | undefined {
+  const number = typeof value === 'string' && /^\d{1,9}$/u.test(value) ? Number(value) : value
+  return typeof number === 'number' && Number.isFinite(number) && number > 0 ? number : undefined
+}
+
+/** A key that reads as a field name; anything else in a body that only claimed to be a form could hold a value. */
+const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/u
+
+/**
+ * What an answer GitHub sent looked like, without any of its values: those can be a
+ * device code or a token. Enough to tell a proxy's HTML page from a reply that lost a field.
+ */
+function shapeOf(answer: { status: number; type?: string | undefined; body: unknown }): string {
+  const keys = Object.keys(record(answer.body) ?? {})
+  const names = keys.filter(key => FIELD_NAME.test(key)).slice(0, 8)
+  const listed = keys.length > names.length ? [...names, String(keys.length - names.length) + ' other'] : names
+  return 'HTTP ' + String(answer.status) + ', content-type ' + (answer.type ?? 'none') + ', fields: ' + (listed.length === 0 ? 'none' : listed.join(', '))
 }
 
 function failure(action: string, status: number, body: unknown): Error {
@@ -224,7 +246,7 @@ export class MnemonGitHubAuth {
     const current = this.liveFlow()
     if (current !== undefined) return this.status()
     if ((await this.grant()) !== undefined) return this.status()
-    let answer: { status: number; body: unknown }
+    let answer: { status: number; type?: string; body: unknown }
     try {
       answer = await this.json(MNEMON_GITHUB_DEVICE_CODE_URL, {
         method: 'POST',
@@ -241,17 +263,18 @@ export class MnemonGitHubAuth {
     const userCode = text(fields?.user_code)
     const verificationUri = text(fields?.verification_uri)
     if (deviceCode === undefined || userCode === undefined || verificationUri === undefined) {
-      throw new Error('the GitHub device code answer was incomplete')
+      throw new Error('the GitHub device code answer was incomplete (' + shapeOf(answer) + ')')
     }
-    const expiresIn = typeof fields?.expires_in === 'number' ? fields.expires_in : 900
-    const interval = typeof fields?.interval === 'number' ? fields.interval : MNEMON_GITHUB_DEFAULT_INTERVAL_MS / 1000
+    const expiresIn = count(fields?.expires_in) ?? 900
+    // The cadence stays inside the range `slow_down` moves it in, so the page's timer always fires.
+    const intervalMs = Math.min(Math.max((count(fields?.interval) ?? MNEMON_GITHUB_DEFAULT_INTERVAL_MS / 1000) * 1000, 1000), MNEMON_GITHUB_MAX_INTERVAL_MS)
     this.flow = {
       deviceCode,
       userCode,
       verificationUri,
       expiresAt: this.now() + Math.min(expiresIn * 1000, MNEMON_GITHUB_FLOW_LIMIT_MS),
-      intervalMs: Math.max(interval * 1000, 1000),
-      nextPollAt: this.now() + Math.max(interval * 1000, 1000),
+      intervalMs,
+      nextPollAt: this.now() + intervalMs,
     }
     return this.status()
   }
@@ -416,7 +439,7 @@ export class MnemonGitHubAuth {
     headers?: Record<string, string>
     body?: string
     signal?: AbortSignal
-  }): Promise<{ status: number; body: unknown }> {
+  }): Promise<{ status: number; type?: string; body: unknown }> {
     const controller = new AbortController()
     const timeout = setTimeout(() => { controller.abort() }, MNEMON_GITHUB_REQUEST_TIMEOUT_MS)
     const signal = options.signal === undefined ? controller.signal : AbortSignal.any([options.signal, controller.signal])
@@ -428,13 +451,17 @@ export class MnemonGitHubAuth {
         signal,
       })
       const raw = await response.text()
+      const type = response.headers.get('content-type') ?? undefined
       let body: unknown
       try {
         body = raw === '' ? undefined : JSON.parse(raw)
       } catch {
-        body = undefined
+        // GitHub's OAuth endpoints answer form-encoded unless `accept: application/json`
+        // reaches them, and a layer that rebuilds the request's headers - another plugin
+        // patching `fetch` - can drop it. The fields are the same either way (#369).
+        body = /^application\/x-www-form-urlencoded\b/iu.test(type ?? '') ? Object.fromEntries(new URLSearchParams(raw)) : undefined
       }
-      return { status: response.status, body }
+      return { status: response.status, ...(type === undefined ? {} : { type }), body }
     } finally {
       clearTimeout(timeout)
     }
