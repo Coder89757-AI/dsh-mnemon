@@ -6,6 +6,7 @@ For an existing installation, start with [Compatibility and upgrades](../referen
 
 ## v0.5
 
+- [v0.5.29: Git Sync, Provider and Pack Fixes](./v0.5.29.md)
 - [v0.5.28: Git Sync Usability and Reliability](./v0.5.28.md)
 - [v0.5.27: DSH 0.2.1-alpha.2 Support and Memory Sources Beside dshmarket](./v0.5.27.md)
 - [v0.5.26: Git Sync Across Machines and Memory Subagents on DSH 0.2.1](./v0.5.26.md)

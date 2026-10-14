@@ -39,6 +39,6 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 
 ## 最新变化
 
-[v0.5.28](./releases/v0.5.28.md) 改善 Git 同步设置与可靠性，支持 macOS Desktop 中拖动记忆系统窗口，并避免 RetainDB 回退时重复请求失败的写入。[v0.5.27](./releases/v0.5.27.md) 让记忆 Source 与 dshmarket 并存时正常工作，并完成对 DSH 0.2.1-alpha.2 的适配。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
+[v0.5.29](./releases/v0.5.29.md) 让 Git 同步不再使记忆空间成倍增加、能在机器间传递档案编辑，能找到设置保存之后新建的 Provider 命名空间，并修复大型记忆包、GitHub 登录、OpenViking 与 Hindsight 的边界问题。[v0.5.28](./releases/v0.5.28.md) 改善 Git 同步设置与可靠性，支持 macOS Desktop 中拖动记忆系统窗口，并避免 RetainDB 回退时重复请求失败的写入。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
 
 指南描述当前版本。截图与录屏来自 [v0.5.19 图集](../assets/webui-v0.5.19/README.md)，安装步骤来自[安装图集](../assets/install-v0.5.19/README.md)；带日期的 PR 记录只证明其标注的代码修订与环境。内部 Host RPC 不属于对外插件 SDK。
