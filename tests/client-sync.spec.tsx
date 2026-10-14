@@ -42,6 +42,8 @@ interface FakeHostOptions {
   historyTruncated?: boolean
   /** A name a person already gave this computer. */
   machineName?: string
+  /** Merging here fails, as it does when this computer cannot write its memory directory. */
+  pullFails?: string
 }
 
 /** The host name the fake computer runs under. */
@@ -124,7 +126,9 @@ function fakeHost(options: FakeHostOptions = {}) {
       case 'diff':
         if (options.emptyRemote === true) return { ok: false as const, error: { code: 'internal', message: 'the branch mnemon-sync holds no Mnemon payload at mnemon/ yet; push one first', details: { reason: 'remote-empty' } } }
         return { ok: true as const, value: endpoint === 'preview' ? preview : diff }
-      case 'pull': return { ok: true as const, value: { imported: true, mode: 'merge', repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', commit: COMMIT, manifest: preview.manifest, targetRoot: '/data', components: ['runtime'], summary: [], runtime: { added: 1, held: 0 } } }
+      case 'pull':
+        if (options.pullFails !== undefined) return { ok: false as const, error: { code: 'internal', message: options.pullFails } }
+        return { ok: true as const, value: { imported: true, mode: 'merge', repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', commit: COMMIT, manifest: preview.manifest, targetRoot: '/data', components: ['runtime'], summary: [], runtime: { added: 1, held: 0 } } }
       case 'backups': return { ok: true as const, value: { repoUrl: config.repoUrl, branch: 'mnemon-sync', subdir: 'mnemon/', truncated: options.historyTruncated === true, commits: [
         { commit: COMMIT, message: 'Mnemon sync 2026-08-14T12:00:00Z', committedAt: '2026-08-14T12:00:00.000Z', machine: { id: 'machine-b', label: 'Laptop B', createdAt: '2026-08-01T00:00:00.000Z' }, components: [{ component: 'runtime', files: 3, bytes: 10, items: 4 }] },
         { commit: '1234567890abcdef1234567890abcdef12345678', message: 'Before the trip', committedAt: '2026-08-13T09:00:00.000Z', components: [] },
@@ -439,6 +443,23 @@ describe('Git sync section after review', () => {
     await within(dialog).findByText('远端独有 1 条 · 本机独有 0 条 · 1 处写法不同')
     fireEvent.click(within(dialog).getByRole('button', { name: '立即同步' }))
     expect(await within(dialog).findByText('已在本机提交，但推送没有完成：同步时仓库又被其他设备更新了，请再同步一次')).toBeTruthy()
+  })
+
+  it('says inside the comparison why a merge did not finish', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', pullFails: "EACCES: permission denied, open '/data/runtime/.memories.lock'" })
+    section(host.connection)
+    await screen.findByRole('button', { name: '立即同步' })
+    fireEvent.click(screen.getByRole('button', { name: '检查远端' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('远端独有 1 条 · 本机独有 0 条 · 1 处写法不同')
+    const statusReads = host.calls('status').length
+    fireEvent.click(within(dialog).getByRole('button', { name: '只合并到本机' }))
+    // The comparison is read again after the merge, and the failure is still said.
+    await waitFor(() => expect(host.calls('diff')).toHaveLength(2))
+    expect(await within(dialog).findByText("EACCES: permission denied, open '/data/runtime/.memories.lock'")).toBeTruthy()
+    expect(within(dialog).queryByText(/已合并/u)).toBeNull()
+    // A merge can fail after it wrote, so the state line is read again as well.
+    await waitFor(() => expect(host.calls('status').length).toBeGreaterThan(statusReads))
   })
 
   it('says inside the dialog when a disconnect fails', async () => {
