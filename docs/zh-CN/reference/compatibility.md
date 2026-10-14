@@ -6,7 +6,7 @@ Starter 固定经过测试的官方插件组合。下表记录验证范围，不
 
 | 组件 | 基线 | 已验证的范围 |
 |---|---|---|
-| DSH | `0.2.0-rc.2`（npm `latest` 与 `next`）、`0.1.7-rc.2` | 两个受支持的宿主；`0.2.0-rc.1` 也可安装；`0.2.1-alpha.2`（npm `alpha`）通过了[下文](#dsh-02)所列的检查。0.1.7-rc.2 是锁定的开发基线：正式发布的契约、WebUI 与隔离 Headless 激活、profile 设置与旧设置恢复、Session V4 中的生产者专属消息、插件管理器激活以及 Agent Teams 审查矩阵。DSH 0.2 的验证范围见[下文](#dsh-02) |
+| DSH | `0.2.0-rc.2`（npm `latest` 与 `next`）、`0.1.7-rc.2` | 两个受支持的宿主；`0.2.0-rc.1` 也可安装；`0.2.1-alpha.2` 与 `0.2.1-alpha.3`（npm `alpha`）通过了[下文](#dsh-02)所列的检查。0.1.7-rc.2 是锁定的开发基线：正式发布的契约、WebUI 与隔离 Headless 激活、profile 设置与旧设置恢复、Session V4 中的生产者专属消息、插件管理器激活以及 Agent Teams 审查矩阵。DSH 0.2 的验证范围见[下文](#dsh-02) |
 | Node.js | `22.19`、`24` | 分别用于源码 CI 与打包制品 CI；开发要求 `^22.19.0 || >=24.0.0` |
 | Node.js 20 | 仅公开包入口导入 | 不代表 DSH Host 能在 Node 20 运行 |
 | Mnemon Native CLI | `0.2.9` | 显式启用的真实 CLI 与临时数据测试；CLI 需要另外安装 |
@@ -22,7 +22,7 @@ Root 的 DSH peer（`dsh-app-boot` 为可选）与记忆空间 Source 的 `dsh-c
 
 ## DSH 0.2
 
-DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查插件所有 `@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` peer 范围，预发布版本也参与比较。`^0.1.7-rc.2` 不包含 0.2.0，因此 dsh-mnemon 0.5.18 及更早的版本在 DSH 0.2 上安装时会被判为不兼容而拒绝，已安装的会在启动时停用。0.5.19 起，这些 peer 同时接受 `^0.2.0-rc.1`；`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的检查，覆盖 0.1.7-rc.2、0.2.0-rc.1、0.2.0-rc.2 与 0.2.1-alpha.2。
+DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查插件所有 `@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` peer 范围，预发布版本也参与比较。`^0.1.7-rc.2` 不包含 0.2.0，因此 dsh-mnemon 0.5.18 及更早的版本在 DSH 0.2 上安装时会被判为不兼容而拒绝，已安装的会在启动时停用。0.5.19 起，这些 peer 同时接受 `^0.2.0-rc.1`；`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的检查，覆盖 0.1.7-rc.2、0.2.0-rc.1、0.2.0-rc.2、0.2.1-alpha.2 与 0.2.1-alpha.3。
 
 **升级顺序。** 先在现有 DSH 中把 dsh-mnemon 更新到 0.5.19 或更新的版本，再升级 DSH。若先升级了 DSH，旧版本会被停用，记忆数据不受影响；更新插件后即可恢复。不要用 `allow-version` 为旧版本放行。
 
@@ -43,6 +43,16 @@ DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本�
 - 每一步之前，如果当前目录已不存在，它会把 Agent 退回会话的原始目录；原始目录也不存在时就停止该 Agent。因此工作区文件夹被删除或移动后，该工作区的后台记忆任务仍然以这个工作区为准（它操作的正是这个工作区的记忆），并在第一个仍存在的工作区或 DSH 的启动目录中运行。
 
 在已安装的 0.2.1-alpha.2 与 0.2.0-rc.2 上，根测试全部通过（六个真实宿主测试使用适配后的副本运行），启用与不启用可选策略的 Headless 以及 Starter 的激活契约也都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因已知的分组行列表问题失败。在 0.2.1-alpha.2 上还检查了 WebUI：从插件页及其配置，到对话记忆、存入记忆、空闲审查、USER.md 压缩、记忆系统各页面、ZIP 备份、Git 同步与远程管理。详情以及在已安装 DSH 上运行测试的配置见 [DSH 0.2.1-alpha.2 记录](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)。
+
+**0.2.1-alpha.3 上的记忆子 Agent。** DSH 0.2.1-alpha.3 启动子 Agent 时不再接受人设和工具过滤，它的 provider 也都不再提供这两项：子 Agent 要么沿用父 Agent 的工具与指令，要么使用为它指定的 Agent 预设。dsh-mnemon 0.5.29 及更早版本给每个记忆子 Agent 配上自己的指令，并只开放任务所需的工具，而且只接受能做到这两点的 provider，因此在 0.2.1-alpha.3 上所有委派的记忆任务都会在启动前失败，报 `dsh-mnemon requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting`（设为使用 fork 的空闲审查报的是 fork provider 的版本）。受影响的就是上文 0.2.1-alpha.2 一段列出的全部任务，外加 Git 同步的核对审查。
+
+0.5.29 之后的版本在 DSH 发布子 Agent 时、它的第一步之前，并且在其他插件看到它之前，把它的指令和工具清单注册在它自己的作用域里；DSH 自己恢复由旧版本记录了这两项的子 Agent 时，也是这样做的。子 Agent 因此仍然只看到记忆工具和结果工具。只有由 DSH 在本进程中创建子 Agent 的 provider（例如它的 spawn 与 fork）才会这样使用；其他 provider 在启动前就被拒绝，所以记忆任务不会带着对话的工具运行。在更早的 DSH 版本上，这两项仍随启动请求传入。
+
+还有一点不同。按上文所说从对话的子 Agent 列表续接的记忆任务，在 0.2.1-alpha.3 上会带着对话自己的工具和指令运行：DSH 只为日志里记录了这两项的子 Agent 恢复它们，而现在它不再记录。在 0.2.1-alpha.2 上这样的任务保留 Mnemon 的设置，在 0.2.0 上则无法续接。
+
+**在 0.2.1-alpha.3 上更新 dsh-mnemon。** 开启热重载时，DSH 0.2.1-alpha.3 不再覆盖安装 profile 中已有的插件；要换成另一个版本，只能先移除再安装。0.5.29 及更早版本的**检查版本 → 更新**请 DSH 安装新版本，会停在 `DSH could not install dsh-mnemon@<版本>: already-installed`。0.5.29 之后的版本此时改为对新版本运行 DSH 自己的 `dsh plugin add`：它持有 profile 的锁，使用 DSH 启动时的包管理器，并在安装任何东西之前拒绝 DSH peer 不包含当前 DSH 的版本。更新仍在重启后生效。DSH 没有提供这个命令时，错误信息会给出应在 DSH 停止时运行的 `dsh plugin` 命令。从 dsh-mnemon 内部移除它自己会让更新中途停止，安装失败还会让 profile 失去它。在更早的 DSH 版本上，更新仍由 DSH 的安装器完成。
+
+**已验证的范围（0.2.1-alpha.3）。** 在已安装的 0.2.1-alpha.3、0.2.1-alpha.2 与 0.2.0-rc.2 上，根测试全部通过（六个真实宿主测试使用适配后的副本运行），启用与不启用可选策略的 Headless、Starter 的激活契约以及 Git 同步的 64 项检查也都通过；`--check-declared-rows` 仍只在 0.2.0-rc.2 上失败。在 0.2.1-alpha.3 上还检查了 WebUI：插件页、存入记忆、空闲审查、USER.md 压缩、远程页面以及检查版本 → 更新（包括被 DSH 判为不兼容而拒绝的版本）。详情见 [DSH 0.2.1-alpha.3 记录](../../pr-assets/dsh-021-alpha3/README.zh-CN.md)。
 
 **首次安装时的宿主行为。**
 
