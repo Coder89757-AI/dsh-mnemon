@@ -24,6 +24,7 @@ import { RUNTIME_ENTRY_DELIMITER, RUNTIME_MEMORY_LIMITS, RUNTIME_MEMORY_VERSION,
 import { createStorageRoot, type StorageRoot } from './storage-root.ts'
 import { MNEMON_PACK_COMPONENTS, type MnemonEntryOrigin, type MnemonMachineIdentity, type MnemonPackComponent, type MnemonPackComponentSummary, type MnemonPackExport, type MnemonPackImportMode, type MnemonPackImportResult, type MnemonPackManifest, type MnemonPackPreview, type MnemonPackScope, type MnemonPackTarget, type MnemonRuntimeMergeReport, type MnemonTombstone, type MnemonTombstoneFile } from "./protocol.ts"
 import { MnemonMachineStore } from './machine-identity.ts'
+import { MemorySpaceIdentity } from './space-identity.ts'
 
 export type { MnemonPackComponent, MnemonPackComponentSummary, MnemonPackExport, MnemonPackImportMode, MnemonPackImportResult, MnemonPackManifest, MnemonPackPreview, MnemonPackScope } from "./protocol.ts"
 
@@ -829,23 +830,55 @@ function mergeRegistry(root: string, pack: ParsedPack): { registry: BodyRegistry
   const current = readCurrentRegistry(root)
   const incoming = archiveRegistry(pack)
   const ids = new Set(current.registry.bodies.map(body => body.id))
-  for (const source of incoming.registry.bodies) {
-    let body = source
-    const sourceDb = incoming.databases.get(source.id)!
-    if (ids.has(source.id)) {
-      const currentDb = current.databases.get(source.id)!
-      const incomingHash = sha256(sourceDb)
-      if (sha256(currentDb) === incomingHash) continue
-      // The divergent space is kept under a new id; one such copy is enough.
-      if ([...current.databases.values()].some(database => sha256(database) === incomingHash)) continue
-      const id = randomUUID()
-      body = { ...source, id, updatedAt: new Date().toISOString() }
+  // Spaces are compared by what they hold, not by their bytes: reading a space rewrites
+  // its read counters, so the same space never has the same bytes on two machines (#370).
+  const identity = new MemorySpaceIdentity(root)
+  try {
+    const covers = (outer: Uint8Array, inner: Uint8Array): boolean => identity.of(outer) === identity.of(inner) || identity.contains(outer, inner)
+    // Whether a space held here that `accept` admits already holds every memory of `database`.
+    const held = (database: Uint8Array, accept: (body: StoredBody) => boolean): boolean =>
+      current.registry.bodies.some(body => accept(body) && covers(current.databases.get(body.id)!, database))
+    const add = (body: StoredBody, database: Uint8Array): void => {
+      ids.add(body.id)
+      current.registry.bodies.push(body)
+      current.databases.set(body.id, database)
     }
-    ids.add(body.id)
-    current.registry.bodies.push(body)
-    current.databases.set(body.id, sourceDb)
+    for (const source of incoming.registry.bodies) {
+      const sourceDb = incoming.databases.get(source.id)!
+      if (ids.has(source.id)) {
+        const localDb = current.databases.get(source.id)!
+        // Read on both machines, or an older version of this machine's: nothing new arrives,
+        // and this machine's copy stays, read counts included.
+        if (covers(localDb, sourceDb)) continue
+        // The memories only the other machine holds join this machine's, which keeps its own rows,
+        // read counts and log: one space holding both, whichever side gained them.
+        const merged = identity.merge(localDb, sourceDb)
+        if (merged !== undefined) {
+          current.databases.set(source.id, merged)
+          continue
+        }
+        // A memory edited or forgotten on one side: the other version stays beside this one as a
+        // copy, once. A space here already holding it, whatever its name, takes its place, and a
+        // copy of the same name it only added to moves on with it.
+        if (held(sourceDb, body => body.id !== source.id)) continue
+        const copy = current.registry.bodies.find(body => body.id !== source.id && body.name === source.name
+          && identity.contains(sourceDb, current.databases.get(body.id)!))
+        const advanced = copy === undefined ? undefined : identity.merge(current.databases.get(copy.id)!, sourceDb)
+        if (copy !== undefined && advanced !== undefined) {
+          current.databases.set(copy.id, advanced)
+          continue
+        }
+        add({ ...source, id: randomUUID(), updatedAt: new Date().toISOString() }, sourceDb)
+      } else if (!held(sourceDb, body => body.name === source.name)) {
+        // A space new here, unless one of the same name already holds every memory in it:
+        // a copy an older version made, or the other machine's copy of a divergent space.
+        add(source, sourceDb)
+      }
+    }
+    return current
+  } finally {
+    identity.dispose()
   }
-  return current
 }
 
 function persistedStore(root: string): string {

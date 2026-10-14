@@ -103,7 +103,7 @@ The UI offers safe merge, not “overwrite everything”:
 
 - Runtime deduplicates by target and content.
 - Identical Document ID + hash is skipped; conflicting content receives a new ID.
-- Identical Memory Space ID + database is skipped; conflicting content receives a new ID.
+- Memory Spaces are compared by the memories and links they hold, never by the read counts a recall rewrites. A space with the same ID takes in the memories only the incoming version holds, so two machines that both added memories end with one space holding both; this machine's own rows, read counts, read log and schema stay as they are. When a memory differs on the two sides, edited or forgotten on one of them, the incoming version is kept beside this one under a new ID, once, and its later versions move that copy on instead of adding another. A space with a new ID is skipped when one of the same name here already holds all its memories. This reads the databases with `node:sqlite` (Node 22.13, 23.4 or later); earlier Node, a database it cannot read, one with a virtual table, or one of more than 500,000 rows is compared by its bytes.
 
 Import is governed by `writeEnabled` and is rejected in read-only deployments. A ZIP contains private memory—encrypt it, restrict access, and rehearse recovery. Provider credentials live in `state/memory-providers.json` with mode `0600`; they are excluded from ZIP. Saved credential values are not returned through management responses either. Protect the entire `state/` directory in the offline snapshot below if connections must be backed up.
 
@@ -143,7 +143,7 @@ Once connected, the row shows the repository, whether it answers and how it auth
 
 - **One repository per mirror.** The mirror names the repository it was filled from and is rebuilt for another one, and a branch the remote does not hold starts a new history. Switching to an empty repository, or syncing after the remote branch was deleted, never publishes earlier payloads there again.
 - **No machine overwrites another.** The branch is merged before every push, and a push Git refuses because another machine published meanwhile folds the branch in again and is tried once more. Only a second refusal is reported; syncing again resolves it.
-- **One copy per divergence.** A document or memory space that differs on the two sides is kept beside the local one under a new id. Merging the same version again, as a retried sync does, does not add a second copy.
+- **One copy per divergence.** A document that differs on the two sides is kept beside the local one under a new id, and merging the same version again, as a retried sync does, does not add a second copy. A memory space merges instead: the memories either side added join one space, and the read counts a recall writes never make a copy. Only a memory edited or forgotten on one side keeps the other version as one copy, which that side's later versions move on.
 - **No stuck lock.** The sync lock records its owner, so a Host that stopped mid-operation does not leave every later sync refused: a lock whose process is gone is taken over at once, one an older version left without a record after 15 minutes, and any lock after an hour. The one-command credential files such a Host left behind are removed.
 - **Git 2.20 or newer** is enough: the mirror is initialized without options later Git versions introduced.
 - **Merges are validated.** A merge reads the remote manifest and its SHA-256 inventory first; a manifest or checksum mismatch is a hard failure that imports nothing.
