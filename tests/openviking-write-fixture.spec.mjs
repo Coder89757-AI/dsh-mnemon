@@ -32,6 +32,20 @@ describe('OpenViking WebUI model fixture', () => {
     expect(model(root)).toContain('Host write receipt: stored')
   })
 
+  it('finishes the delegated writer with a failed receipt when the Provider throws', () => {
+    const events = []
+    const model = openVikingWriteModel(event => events.push(event))
+    const child = { tools, messages: [{ role: 'system', content: 'You are the supervised durable-memory writer.\nCompletion protocol: call `mnemon_subagent_result` with requestId `synthetic-capability`\nmatching this JSON schema:\n{"properties":{}}' }] }
+    model(child)
+    child.messages.push(toolResult(catalog))
+    model(child)
+    // What a Provider that throws leaves as the tool result: its error, not a receipt.
+    const error = 'Error: OpenViking write was not verified at viking://user/default/memories/experiences/canary.md; Invalid request parameters: body.tags: Extra inputs are not permitted'
+    child.messages.push({ role: 'tool', content: error })
+    expect(model(child)).toMatchObject({ name: 'mnemon_subagent_result', args: { requestId: 'synthetic-capability', result: { action: 'failed', summary: `Synthetic OpenViking Provider error: ${error}`, memoryBodyIds: [body.id] } } })
+    expect(events).toContainEqual({ event: 'provider-receipt', receipt: { action: 'failed', error } })
+  })
+
   it('refuses ambiguous default namespaces before issuing a write', () => {
     const model = openVikingWriteModel(() => {})
     expect(() => model({ tools, messages: [{ role: 'user', content: 'openviking-write-233' }, toolResult({ items: [body, { ...body, id: 'second-default' }] })] })).toThrow('Configure one')

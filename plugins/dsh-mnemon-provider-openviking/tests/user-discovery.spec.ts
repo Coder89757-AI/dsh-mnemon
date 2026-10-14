@@ -91,6 +91,7 @@ describe('OpenViking explicit user-key discovery', () => {
         return ok({ uri: written, content_updated: true, written_bytes: Buffer.byteLength(content), mode: 'create', context_type: 'memory', vector_status: 'complete', semantic_status: 'skipped' })
       }
       if (url.pathname.endsWith('/content/read')) return ok(content)
+      if (url.pathname.endsWith('/content/set_tags')) return ok({ uri: written, tags_updated: true })
       if (url.pathname.endsWith('/search/find')) return ok({ memories: [{ uri: written, score: 1 }] })
       if (init?.method === 'DELETE') return ok({ uri: written })
       return ok(written ? [{ uri: written, isDir: false }] : [])
@@ -98,7 +99,8 @@ describe('OpenViking explicit user-key discovery', () => {
     const { authority, body } = createMemorySpaceProviderFixture(descriptor, { ...service, user: 'alice', targetUri: root }, { dataDir: '/unused', instanceId: 'cloud' })
     const adapter = new OpenVikingProvider(authority, { fetch: fetchMock })
     expect(await adapter.status(body)).toEqual({ healthy: true })
-    expect(await adapter.remember(body, { content })).toMatchObject({ action: 'stored', id: written })
+    // tagsApplied is false if a header check in the mock threw during the tag call.
+    expect(await adapter.remember(body, { content })).toMatchObject({ action: 'stored', id: written, tagsApplied: true })
     expect((await adapter.list(body, {}))[0]?.content).toBe(content)
     expect((await adapter.search(body, { query: 'canary', limit: 5 })).results[0]?.content).toBe(content)
     expect(await adapter.forget(body, written)).toMatchObject({ action: 'deleted', id: written })

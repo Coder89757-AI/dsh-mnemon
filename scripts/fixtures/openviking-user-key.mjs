@@ -1,5 +1,6 @@
 // Deterministic user-key protocol fixture for issue 271, not a cloud account.
 import { createServer } from 'node:http'
+import { extraForbidden, TAG_FIELDS, WRITE_FIELDS } from './openviking-protocol.mjs'
 
 export function openVikingUserKeyFixture(identities) {
   const files = new Map()
@@ -19,7 +20,7 @@ export function openVikingUserKeyFixture(identities) {
     const key = value => `${identity?.account}:${value}`
     const send = (status, result) => {
       response.writeHead(status, { 'content-type': 'application/json' })
-      response.end(JSON.stringify(status === 200 ? { status: 'ok', result } : { status: 'error', error: { message: result } }))
+      response.end(JSON.stringify(status === 200 ? { status: 'ok', result } : { status: 'error', error: typeof result === 'string' ? { message: result } : result }))
     }
     // Credentials and request headers are deliberately omitted from evidence.
     requests.push({ method: request.method, path, account: identity?.account, user: identity?.user, identityHeaders, uri })
@@ -40,9 +41,19 @@ export function openVikingUserKeyFixture(identities) {
       return file ? send(200, file.content) : send(404, 'Synthetic memory is missing')
     }
     if (path === '/api/v1/content/write') {
+      const refusal = extraForbidden(body, WRITE_FIELDS)
+      if (refusal !== undefined) return send(400, refusal)
       if (body.mode !== 'create' || files.has(key(uri))) return send(409, 'Synthetic memory already exists')
       files.set(key(uri), { account: identity.account, uri, content: body.content })
       return send(200, { uri, content_updated: true, written_bytes: Buffer.byteLength(body.content), mode: 'create', context_type: 'memory', vector_status: 'complete', semantic_status: 'skipped' })
+    }
+    if (path === '/api/v1/content/set_tags') {
+      const refusal = extraForbidden(body, TAG_FIELDS)
+      if (refusal !== undefined) return send(400, refusal)
+      const file = files.get(key(uri))
+      if (!file) return send(404, 'Synthetic memory is missing')
+      file.tags = [...body.tags]
+      return send(200, { uri, tags_updated: true })
     }
     if (path === '/api/v1/fs' && request.method === 'DELETE') return send(200, { uri, estimated_deleted_count: Number(files.delete(key(uri))) })
     send(404, 'Synthetic route is unavailable')
