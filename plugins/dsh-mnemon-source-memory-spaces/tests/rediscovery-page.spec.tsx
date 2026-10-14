@@ -72,6 +72,11 @@ async function mounted(namespaces: Namespace[], behaviour: Upstream = {}) {
 
 const page = (management: Awaited<ReturnType<typeof mounted>>['management'], writable = true) =>
   render(<MemorySpacesSourcePage page="spaces" sourceTypeId="memory-spaces" sourceInstanceKey="source:spaces" sourceInstances={[]} locale="en" writable={writable} management={management} />)
+/**
+ * Each test renders the whole page. On a shared CI runner that installs every plugin on its own, one
+ * such test has taken 5.5 seconds where it takes 0.3 s locally; the default 5 s limit is too tight.
+ */
+const PAGE_TEST_TIMEOUT_MS = 15_000
 /** One card of the space directory, by the name it shows. */
 const card = (name: string) => [...document.querySelectorAll('article')].find(article => article.querySelector('strong')?.textContent === name)
 const shown = async (name: string, timeout?: number) => { await waitFor(() => expect(card(name)).toBeTruthy(), timeout === undefined ? undefined : { timeout }); return card(name)! }
@@ -100,7 +105,7 @@ describe('Rediscover on the Memory Spaces page (#373)', () => {
     } finally {
       await runner.dispose()
     }
-  })
+  }, PAGE_TEST_TIMEOUT_MS)
 
   it('shows what a pass the page did not start found, and why a Provider could not finish', async () => {
     const behaviour: Upstream = {}
@@ -116,7 +121,7 @@ describe('Rediscover on the Memory Spaces page (#373)', () => {
     } finally {
       await runner.dispose()
     }
-  })
+  }, PAGE_TEST_TIMEOUT_MS)
 
   it('follows a pass the Host is running when the page opens, and its switches keep working', async () => {
     let release!: () => void
@@ -147,7 +152,7 @@ describe('Rediscover on the Memory Spaces page (#373)', () => {
     } finally {
       await runner.dispose()
     }
-  }, 15_000)
+  }, PAGE_TEST_TIMEOUT_MS)
 
   it('offers no rediscovery on a read-only page', async () => {
     const { runner, management } = await mounted([{ externalId: 'alice', name: 'Alice' }])
@@ -158,5 +163,5 @@ describe('Rediscover on the Memory Spaces page (#373)', () => {
     } finally {
       await runner.dispose()
     }
-  })
+  }, PAGE_TEST_TIMEOUT_MS)
 })
