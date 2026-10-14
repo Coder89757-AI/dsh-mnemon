@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import { resolveConfig } from "../src/host/config.ts"
-import { MnemonPackManager, MNEMON_PACK_FORMAT, MNEMON_PACK_MIME } from "../src/host/pack.ts"
+import { MnemonPackManager, MNEMON_PACK_FORMAT, MNEMON_PACK_MIME, documentVersion } from "../src/host/pack.ts"
 import { createStorageRoot } from '../src/host/storage-root.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
@@ -439,6 +439,139 @@ describe('Mnemon Pack', () => {
     expect(readFileSync(join(target.root, 'active'), 'utf8')).toBe('source\n')
     expect(refreshed).toHaveBeenCalledWith(['runtime', 'documents', 'memory-spaces'])
     expect(readdirSync(target.root).some(name => name.startsWith('.dsh-pack-stage-') || name.startsWith('.dsh-pack-backup-'))).toBe(false)
+  })
+
+  describe('Project Documents merged against what a sync last agreed on', () => {
+    /** A machine with its own Documents Source to edit them, and its Pack manager. */
+    async function documents(label: string) {
+      const root = temporary(label)
+      const created = runner(root)
+      const sources = await sourceFixture({ dataDir: root, workspace: temporary(`${label}-workspace`) })
+      releases.push(sources.dispose)
+      return { root, sources, manager: new MnemonPackManager(created.runner, created.config, undefined, now) }
+    }
+    const indexOf = (root: string) => (JSON.parse(readFileSync(join(root, 'documents', 'index.json'), 'utf8')) as { documents: Array<Parameters<typeof documentVersion>[0]> }).documents
+    const textOf = (root: string, id: string) => readFileSync(join(root, indexOf(root).find(document => document.id === id)!.relativePath), 'utf8')
+    const edit = async (machine: Awaited<ReturnType<typeof documents>>, id: string, content: string) => {
+      await machine.sources.documents.read('snapshot')
+      await machine.sources.documents.mutate('mutate', { action: 'update', id, content }, { confirmed: true })
+    }
+
+    it('takes the branch version of a document only the branch changed, and keeps an edit made only here', async () => {
+      const here = await documents('pack-agreed-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-agreed-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await edit(there, first!.id, '# Release plan\n\nVersion 2 from there')
+      // Only the branch changed it: the document here moves on, no copy beside it.
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).map(document => [document.id, document.revision])).toEqual([[first!.id, 2]])
+      // Only this machine changed it: the branch's older version adds nothing.
+      await edit(there, first!.id, '# Release plan\n\nVersion 3 from there')
+      const branch = (await here.manager.exportPack('documents')).base64
+      const moved = { [first!.id]: documentVersion(indexOf(here.root)[0]!) }
+      await there.manager.importPack(branch, { mode: 'merge', documentsBase: moved })
+      expect(indexOf(there.root).map(document => [document.id, document.revision])).toEqual([[first!.id, 3]])
+    })
+
+    it('keeps one copy of a document both sides changed, as a merge without an agreement does', async () => {
+      const here = await documents('pack-both-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-both-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await edit(here, first!.id, '# Release plan\n\nHere')
+      await edit(there, first!.id, '# Release plan\n\nThere')
+      const branch = (await there.manager.exportPack('documents')).base64
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root)).toHaveLength(2)
+    })
+
+    it('brings back a document this machine no longer holds, as a merge without an agreement does', async () => {
+      const source = await documents('pack-removed-source')
+      await source.sources.documents.mutate('mutate', { action: 'create', title: 'Old notes', content: '# Old notes' }, { confirmed: true })
+      const [old] = indexOf(source.root)
+      const target = await documents('pack-removed-target')
+      await target.manager.importPack((await source.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: { [old!.id]: documentVersion(old!) } })
+      expect(indexOf(target.root).map(document => document.id)).toEqual([old!.id])
+    })
+
+    it('keeps both versions of a document both sides changed, this one at a revision above both', async () => {
+      const here = await documents('pack-both-revisions-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-both-revisions-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await edit(here, first!.id, '# Release plan\n\nHere, once')
+      await edit(here, first!.id, '# Release plan\n\nHere, twice')
+      await edit(there, first!.id, '# Release plan\n\nThere, once')
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: agreed })
+      const [mine, theirs] = indexOf(here.root)
+      // Revision 3 here and 2 there: this version moves above both, so the other machine takes it as the newer one.
+      expect([mine!.id, mine!.revision]).toEqual([first!.id, 4])
+      expect(textOf(here.root, first!.id)).toContain('Here, twice')
+      expect(textOf(here.root, theirs!.id)).toContain('There, once')
+    })
+
+    it('keeps an archive here and a rename there of the same text, one beside the other', async () => {
+      const here = await documents('pack-both-meta-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-both-meta-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await here.sources.documents.read('snapshot')
+      await here.sources.documents.mutate('archive', { id: first!.id, summary: 'Shipped' } as never, { confirmed: true })
+      await there.sources.documents.read('snapshot')
+      await there.sources.documents.mutate('mutate', { action: 'update', id: first!.id, title: 'Release plan, renamed there' }, { confirmed: true })
+      const branch = (await there.manager.exportPack('documents')).base64
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      // Merging the same version again, as a retried sync does, adds no second copy.
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).map(document => [document.id === first!.id, document.title, document.status, document.archiveSummary])).toEqual([
+        [true, 'Release plan', 'archived', 'Shipped'],
+        [false, 'Release plan, renamed there', 'active', undefined],
+      ])
+    })
+
+    it('takes a title only the branch changed, and keeps a rename made here beside a text the branch changed', async () => {
+      const here = await documents('pack-meta-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-meta-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await there.sources.documents.read('snapshot')
+      await there.sources.documents.mutate('mutate', { action: 'update', id: first!.id, title: 'Release plan, renamed there' }, { confirmed: true })
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).map(document => [document.id, document.title])).toEqual([[first!.id, 'Release plan, renamed there']])
+
+      // Now both sides changed it: here its title, there its text. Neither replaces the other.
+      const renamed = { [first!.id]: documentVersion(indexOf(here.root)[0]!) }
+      await here.sources.documents.read('snapshot')
+      await here.sources.documents.mutate('mutate', { action: 'update', id: first!.id, title: 'Release plan, renamed here' }, { confirmed: true })
+      await edit(there, first!.id, '# Release plan\n\nVersion 2 from there')
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: renamed })
+      expect(indexOf(here.root).map(document => [document.id === first!.id, document.title])).toEqual([[true, 'Release plan, renamed here'], [false, 'Release plan, renamed there']])
+      expect(textOf(here.root, first!.id)).toContain('Version 1')
+    })
+
+    it('never replaces a document with a lower revision from the branch, as an older dsh-mnemon republishes', async () => {
+      const here = await documents('pack-revision-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const older = (await here.manager.exportPack('documents')).base64
+      const [first] = indexOf(here.root)
+      await edit(here, first!.id, '# Release plan\n\nVersion 2')
+      const agreed = { [first!.id]: documentVersion(indexOf(here.root)[0]!) }
+      await here.manager.importPack(older, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).find(document => document.id === first!.id)?.revision).toBe(2)
+      expect(textOf(here.root, first!.id)).toContain('Version 2')
+    })
   })
 
   it('merges components without overwriting a divergent Memory Space id', async () => {
