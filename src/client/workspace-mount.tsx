@@ -50,7 +50,7 @@ interface MnemonWorkspaceHostProps {
   navigation?: MnemonWorkspaceNavigation
   /** Opens the dsh-mnemon page under DSH Plugins while that page offers navigation. */
   configuration?: MnemonActionSeat
-  /** Moves when a component is switched through DSH's plugin manager. */
+  /** Moves when a component is switched through DSH's plugin manager, or memory changes on the configuration page. */
   componentChanges?: MnemonChangeSignal
   t: MnemonTranslate
   sessionId?: string | undefined

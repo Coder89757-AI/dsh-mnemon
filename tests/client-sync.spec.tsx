@@ -1,14 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MnemonChangeSignal } from '../src/client/change-signal.ts'
+import { MnemonReviewSection } from '../src/client/MnemonReviewSection.tsx'
+import { MnemonSettingsCard } from '../src/client/MnemonSettingsCard.tsx'
 import { MnemonSyncSection } from '../src/client/MnemonSyncSection.tsx'
 import { failureText, machineNameValid, repositoryProblem, transportOf } from '../src/client/sync-view.ts'
 import { translateEn, translateZh, type MnemonTranslate } from '../src/client/locales.ts'
 import type { ClientConnectionHandle } from '../src/host/dsh.ts'
 import type {
   MnemonSyncConfigView, MnemonSyncDiff, MnemonSyncGitHubRepository, MnemonSyncGitHubStatus, MnemonSyncPreview,
-  MnemonSyncPushResult, MnemonSyncStatus,
+  MnemonReviewEntry, MnemonSyncPushResult, MnemonSyncStatus,
 } from '../src/host/protocol.ts'
+import { MNEMON_PACK_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL } from '../src/host/protocol.ts'
+import { settingsScope } from './helpers/settings-scope.ts'
 
 afterEach(() => {
   cleanup()
@@ -151,8 +156,9 @@ function fakeHost(options: FakeHostOptions = {}) {
   return { connection, call, calls, config }
 }
 
-function section(connection: ClientConnectionHandle, options: { enabled?: boolean; disabled?: boolean; t?: MnemonTranslate } = {}) {
-  return render(<MnemonSyncSection connection={connection} enabled={options.enabled ?? true} disabled={options.disabled ?? false} onEnabled={() => {}} t={options.t ?? translateZh} />)
+function section(connection: ClientConnectionHandle, options: { enabled?: boolean; disabled?: boolean; t?: MnemonTranslate; onMerged?: () => void } = {}) {
+  return render(<MnemonSyncSection connection={connection} enabled={options.enabled ?? true} disabled={options.disabled ?? false} onEnabled={() => {}}
+    {...(options.onMerged === undefined ? {} : { onMerged: options.onMerged })} t={options.t ?? translateZh} />)
 }
 
 const repository = (fullName: string, isPrivate: boolean, push = true): MnemonSyncGitHubRepository => ({
@@ -524,6 +530,124 @@ describe('This computer\'s name', () => {
     fireEvent.change(screen.getByLabelText('分支'), { target: { value: 'memory-backup' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(host.calls('configure')).toEqual([{ branch: 'memory-backup', subdir: 'mnemon/', authorName: 'dsh-mnemon sync', authorEmail: 'mnemon@localhost' }]))
+  })
+})
+
+/** A Host's review channel holding one plan, which the calls move from pending to applied. */
+function reviewHost(apply: 'ok' | 'stops' = 'ok') {
+  let entry: MnemonReviewEntry = {
+    id: 'plan-1', createdAt: '2026-08-14T12:00:00.000Z', updatedAt: '2026-08-14T12:00:00.000Z', status: 'pending',
+    title: 'Merge two notes', summary: 'Two notes say the same thing.', machine: { id: 'machine-a', label: HOSTNAME }, foreignMachines: [],
+    operations: [
+      { kind: 'runtime-add', target: 'memory', content: 'The project uses pnpm', importance: 'normal', reason: 'Only the branch held it.' },
+      { kind: 'runtime-remove', target: 'memory', oldText: 'The project uses npm', reason: 'The branch replaced it.' },
+    ],
+    opinions: [],
+  }
+  return vi.fn(async (_channel: string, endpoint: string) => {
+    switch (endpoint) {
+      case 'view': return { ok: true as const, value: { path: '/data/state/review.json', entries: [entry], pending: entry.status === 'pending' ? 1 : 0 } }
+      case 'decide': entry = { ...entry, status: 'accepted' }; return { ok: true as const, value: entry }
+      case 'apply':
+        // The Host runs the operations in order and keeps the ones that ran when one fails.
+        if (apply === 'stops') {
+          entry = { ...entry, appliedOperations: [0], failure: 'operation 2: the old text was not found' }
+          return { ok: false as const, error: { code: 'internal', message: 'operation 2: the old text was not found' } }
+        }
+        entry = { ...entry, appliedAt: '2026-08-14T12:05:00.000Z', appliedOperations: [0, 1] }
+        return { ok: true as const, value: { entry, applied: 2, failures: [] } }
+      default: throw new Error('unexpected endpoint ' + endpoint)
+    }
+  })
+}
+
+describe('Memory this page changed', () => {
+  it('tells the memory views after a sync and after a merge, never after a comparison alone', async () => {
+    const onMerged = vi.fn()
+    const host = fakeHost({ repoUrl: '/srv/memory.git' })
+    section(host.connection, { onMerged })
+    fireEvent.click(await screen.findByRole('button', { name: '立即同步' }))
+    await waitFor(() => expect(onMerged).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByRole('button', { name: '检查远端' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('远端独有 1 条 · 本机独有 0 条 · 1 处写法不同')
+    // Reading what a sync would change writes nothing here.
+    expect(onMerged).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(dialog).getByRole('button', { name: '只合并到本机' }))
+    expect(await within(dialog).findByText('已合并 1 条远端记忆。')).toBeTruthy()
+    expect(onMerged).toHaveBeenCalledTimes(2)
+  })
+
+  it('tells them after a sync that did not finish, since the branch was folded in first', async () => {
+    const onMerged = vi.fn()
+    const host = fakeHost({ repoUrl: '/srv/memory.git', push: { pushed: false, committed: true, reason: '! [rejected] (fetch first)', failure: 'push-rejected' } })
+    section(host.connection, { onMerged })
+    fireEvent.click(await screen.findByRole('button', { name: '立即同步' }))
+    expect(await screen.findByText('已在本机提交，但推送没有完成：同步时仓库又被其他设备更新了，请再同步一次')).toBeTruthy()
+    expect(onMerged).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells them after a reviewed plan ran, not when it is only accepted', async () => {
+    const onApplied = vi.fn()
+    render(<MnemonReviewSection connection={{ rpc: { call: reviewHost() }, isLoopback: true } as unknown as ClientConnectionHandle} disabled={false} onApplied={onApplied} t={translateZh} />)
+    fireEvent.click(await screen.findByRole('button', { name: '接受' }))
+    fireEvent.click(await screen.findByRole('button', { name: '执行' }))
+    expect(await screen.findByText('已执行 2 条改动。')).toBeTruthy()
+    expect(onApplied).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells them when a plan stops partway, since the operations before the failure ran', async () => {
+    const onApplied = vi.fn()
+    render(<MnemonReviewSection connection={{ rpc: { call: reviewHost('stops') }, isLoopback: true } as unknown as ClientConnectionHandle} disabled={false} onApplied={onApplied} t={translateZh} />)
+    fireEvent.click(await screen.findByRole('button', { name: '接受' }))
+    fireEvent.click(await screen.findByRole('button', { name: '执行' }))
+    expect(await screen.findByText(/operation 2: the old text was not found/u)).toBeTruthy()
+    expect(onApplied).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells them after a sync that failed, and once for a sync started in the comparison', async () => {
+    const onMerged = vi.fn()
+    const refused = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git', push: { reason: 'remote-auth', message: "fatal: could not read Username for 'https://github.com'" } })
+    section(refused.connection, { onMerged })
+    fireEvent.click(await screen.findByRole('button', { name: '立即同步' }))
+    expect(await screen.findByText('同步失败：需要凭据，请用 GitHub 登录或填写访问令牌')).toBeTruthy()
+    expect(onMerged).toHaveBeenCalledTimes(1)
+    cleanup()
+
+    onMerged.mockClear()
+    const host = fakeHost({ repoUrl: '/srv/memory.git' })
+    section(host.connection, { onMerged })
+    fireEvent.click(await screen.findByRole('button', { name: '检查远端' }))
+    const comparison = await screen.findByRole('dialog')
+    await within(comparison).findByText('远端独有 1 条 · 本机独有 0 条 · 1 处写法不同')
+    fireEvent.click(within(comparison).getByRole('button', { name: '立即同步' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(host.calls('push')).toEqual([{ confirmed: true }])
+    expect(onMerged).toHaveBeenCalledTimes(1)
+  })
+
+  it('reaches the memory views from the configuration page itself', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git' })
+    const review = reviewHost()
+    const call = vi.fn(async (channel: string, endpoint: string, payload: Record<string, unknown> = {}) => {
+      if (channel === MNEMON_SYNC_CHANNEL) return host.call(channel, endpoint, payload)
+      if (channel === MNEMON_REVIEW_CHANNEL) return review(channel, endpoint)
+      if (channel === MNEMON_PACK_CHANNEL && endpoint === 'target') return { ok: true as const, value: { root: '/data', scope: 'global' } }
+      // The composition and its status are other reads this page makes; they are not part of this check.
+      throw new Error(`unexpected endpoint ${channel} ${endpoint}`)
+    })
+    const scope = settingsScope({ status: 'ready' as const, value: { storageScope: 'global' as const, syncEnabled: true }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const })
+    const changes = new MnemonChangeSignal(0)
+    render(<MnemonSettingsCard scope={scope} connection={{ rpc: { call }, isLoopback: true } as unknown as ClientConnectionHandle} componentChanges={changes} />)
+    fireEvent.click(await screen.findByRole('button', { name: '立即同步' }))
+    await waitFor(() => expect(changes.getSnapshot()).toBe(1))
+    // The line that says what the sync did stays while the page reads its own data again.
+    expect(await screen.findByText('已同步，推送了 abcdef12。')).toBeTruthy()
+
+    fireEvent.click(await screen.findByRole('button', { name: '接受' }))
+    fireEvent.click(await screen.findByRole('button', { name: '执行' }))
+    await waitFor(() => expect(changes.getSnapshot()).toBe(2))
   })
 })
 

@@ -183,7 +183,7 @@ DSH 0.1.7 keeps a plugin's configuration on its own page under **Plugins**. The 
 | Memory Spaces' page | Memory providers and the Mnemon Native embedding | Switches at once; typed connections with **Apply** |
 | Layered strategy's page | Task Agent model and idle review | Choices at once; review limits with **Apply** |
 
-A change saved from another window, or an edit of the profile, shows up without a reload.
+A change saved from another window, or an edit of the profile, shows up without a reload. After **Sync now**, **Merge here only**, a ZIP import or an applied **Memory reconciliation** plan here, the Memory System reads its open page again, so going back to it shows what they brought in. An automatic sync runs in the background; use **Refresh** in the Memory System header to see what it brought in.
 
 ### Memory composition
 

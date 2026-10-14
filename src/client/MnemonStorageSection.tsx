@@ -92,6 +92,8 @@ export interface MnemonStorageSectionProps {
   t: MnemonTranslate
   onOpen: (entry: MemoryPluginEntryView) => void
   onSaved: () => void
+  /** A sync, a merge, an import or an applied plan may have changed memory, which views elsewhere show. */
+  onDataChanged?: () => void
 }
 
 /**
@@ -183,14 +185,17 @@ export function MnemonStorageSection(props: MnemonStorageSectionProps): JSX.Elem
       <PanelActions dirty={storage.dirty} saving={storage.saving} invalid={problem} failed={storage.failed} applied={storage.applied} disabled={props.disabled || storageMissing(draft)}
         note={t('storage.moveNote')} t={t} onDiscard={storage.discard} onApply={() => { void storage.apply() }} />
       <MnemonPackSection {...(props.connection === undefined ? {} : { connection: props.connection })} {...(props.sessionId === undefined ? {} : { sessionId: props.sessionId })}
-        {...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId })} target={props.target} t={t} />
+        {...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId })} target={props.target}
+        {...(props.onDataChanged === undefined ? {} : { onImported: props.onDataChanged })} t={t} />
       <MnemonSyncSection {...(props.connection === undefined ? {} : { connection: props.connection })} {...(props.sessionId === undefined ? {} : { sessionId: props.sessionId })}
-        {...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId })} disabled={props.disabled} enabled={sync.value} onEnabled={sync.set} t={t} />
+        {...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId })} disabled={props.disabled} enabled={sync.value} onEnabled={sync.set}
+        {...(props.onDataChanged === undefined ? {} : { onMerged: props.onDataChanged })} t={t} />
       <WriteFailure error={sync.failed} t={t} />
       {/* The reconciliation is the other half of one channel: it reads the branch the
           switch above publishes to, so it only exists once that switch is on. */}
       {sync.value && <MnemonReviewSection {...(props.connection === undefined ? {} : { connection: props.connection })} {...(props.sessionId === undefined ? {} : { sessionId: props.sessionId })}
-        {...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId })} disabled={props.disabled} t={t} />}
+        {...(props.workspaceId === undefined ? {} : { workspaceId: props.workspaceId })} disabled={props.disabled}
+        {...(props.onDataChanged === undefined ? {} : { onApplied: props.onDataChanged })} t={t} />}
     </div>
   </section>
 }
