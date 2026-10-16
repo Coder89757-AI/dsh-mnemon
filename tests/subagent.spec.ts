@@ -855,7 +855,8 @@ describe('Mnemon memory subagent coordinator', () => {
       ],
       hint: expect.stringContaining('Recall refinement is complete'),
     })
-    expect(exhausted).toMatchObject({ results: refinement.results, hint: expect.stringContaining('budget is exhausted') })
+    // Past the budget a new query runs nothing; the refinement's evidence never reads as its answer (#389).
+    expect(exhausted).toMatchObject({ query: 'tenant recovery', results: [], notRun: true, budgetExhausted: true, hint: expect.stringContaining('budget is exhausted') })
     expect(nextTurn.results.map(result => result.id)).toEqual(['duplicate-first', 'rollback-1', 'medium-refinement', 'unknown-refinement'])
     expect(memoryService.search).toHaveBeenCalledTimes(3)
     expect(coordinator.snapshot()).toMatchObject({ recalls: 3, failures: 0 })

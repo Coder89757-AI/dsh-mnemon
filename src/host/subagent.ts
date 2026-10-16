@@ -917,7 +917,8 @@ export class MnemonSubagentCoordinator {
     try {
       const turn = execution.context
       const evidence = await execution.graph.source(typeId, turn.scope).forTurn(turn).route(routeId, input, execution.signal)
-      if (typeId === 'memory-spaces' && ['recall', 'related'].includes(routeId)) {
+      // A read the Strategy did not run, past its turn budget, is no recall (#389).
+      if (typeId === 'memory-spaces' && ['recall', 'related'].includes(routeId) && optionalObject(evidence.output)?.notRun !== true) {
         const observed = this.observedReads.get(turn) ?? new Set<string>()
         if (!observed.has(evidence.id)) { this.recordRecall(); observed.add(evidence.id) }
         this.observedReads.set(turn, observed)

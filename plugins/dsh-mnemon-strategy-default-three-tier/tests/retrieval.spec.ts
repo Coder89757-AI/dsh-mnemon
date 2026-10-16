@@ -90,7 +90,7 @@ describe('independent three-tier execution policy', () => {
       expect(query).toHaveBeenCalledOnce()
       expect(query.mock.calls[0]![0]).toMatchObject({ route: { maxResults: 4, maxCharacters: 6_000 }, input: { limit: 4 } })
       expect(output(a).results.reduce((sum, item) => sum + item.content.length, 0)).toBeLessThanOrEqual(6_000)
-      expect(output(b).notRun).toBe(true)
+      expect(output(b)).toMatchObject({ query: 'second', notRun: true, budgetExhausted: true, results: [] })
       const child = await runner.beginTurn()
       expect(child.view.id).toBe(first.view.id)
       expect(output(await child.executeRoute(route, { query: 'child' })).notRun).toBeUndefined()
@@ -121,6 +121,35 @@ describe('independent three-tier execution policy', () => {
     } finally { await runner.dispose() }
   })
 
+  it('never answers a read past the turn budget with another one\'s evidence (issue 389)', async () => {
+    const { runner, query } = await fixture('memory-spaces')
+    try {
+      const turn = await runner.beginTurn()
+      const recall = turn.view.routes.find(route => route.sourceRouteId === 'recall')!.id
+      const related = turn.view.routes.find(route => route.sourceRouteId === 'related')!.id
+      const first = await turn.executeRoute(recall, { query: 'alpha' })
+      const second = await turn.executeRoute(recall, { query: 'beta' })
+      const third = await turn.executeRoute(recall, { query: 'gamma' })
+      expect(query).toHaveBeenCalledTimes(2)
+      // A third question runs nothing and returns nothing, under its own query.
+      expect(third.items).toEqual([])
+      expect(third.output).toMatchObject({ query: 'gamma', results: [], notRun: true, budgetExhausted: true })
+      expect(JSON.stringify(third.output)).not.toContain('beta evidence')
+      // The same question still gets its own evidence again.
+      expect(output(await turn.executeRoute(recall, { query: 'BETA' })).results).toEqual(output(second).results)
+      expect(query).toHaveBeenCalledTimes(2)
+      // Related runs one traversal per turn: the same one replays, another runs nothing.
+      const [one, two] = output(first).results
+      const graph = await turn.executeRoute(related, { id: one!.id, memoryBodyId: 'project' })
+      const other = await turn.executeRoute(related, { id: two!.id, memoryBodyId: 'project' })
+      expect(query).toHaveBeenCalledTimes(3)
+      expect(other.items).toEqual([])
+      expect(other.output).toMatchObject({ query: `related:${two!.id}`, results: [], notRun: true, budgetExhausted: true })
+      expect(output(await turn.executeRoute(related, { id: one!.id, memoryBodyId: 'project' })).results).toEqual(output(graph).results)
+      expect(query).toHaveBeenCalledTimes(3)
+    } finally { await runner.dispose() }
+  })
+
   it('admits Related only from final Recall evidence and preserves Source identity on replay', async () => {
     const { runner, query } = await fixture('memory-spaces')
     try {
@@ -128,7 +157,7 @@ describe('independent three-tier execution policy', () => {
       const recall = turn.view.routes.find(route => route.sourceRouteId === 'recall')!.id
       const related = turn.view.routes.find(route => route.sourceRouteId === 'related')!.id
       const denied = await turn.executeRoute(related, { id: 'not-admitted', memoryBodyId: 'project' })
-      expect(output(denied).results).toEqual([])
+      expect(output(denied)).toMatchObject({ results: [], notRun: true })
       expect(query).not.toHaveBeenCalled()
       const first = await turn.executeRoute(recall, { query: 'alpha' })
       const admitted = output(first).results[0]!.id

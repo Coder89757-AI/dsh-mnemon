@@ -14,6 +14,10 @@ type Insight = RecallInsight
 interface SearchRequest { query: string; mode?: string; limit?: number; memoryBodyIds?: string[] }
 interface RecallResult {
   query: string; mode: string; results: RecallInsight[]; hint?: string
+  /** No Provider query ran for this call, so `results` holds nothing of its own. */
+  notRun?: true
+  /** The turn's budget for this read was already spent; the reason it did not run. */
+  budgetExhausted?: true
   memoryEvidence?: Omit<MemoryEvidence, 'items'>
 }
 interface RecallAuthority { viewId: string; sourceInstanceKey: string; memoryBodyIds: string[] }
@@ -197,8 +201,8 @@ class ThreeTierTurn implements MemoryStrategyTurn {
     const query = String(input.query).trim()
     const includeArchived = input.includeArchived === true
     if (this.state.documentSearchClaimed) return { ...this.empty(request), output: {
-      query, includeArchived, notRun: true, results: [],
-      hint: 'This Agent turn already used its Documents search slot, so no second disk query ran. Use the admitted evidence, make one focused mnemon_recall only if exact durable history is still missing, or answer with appropriate uncertainty.',
+      query, includeArchived, notRun: true, budgetExhausted: true, results: [],
+      hint: 'This Agent turn already used its Documents search slot, so this query did not run: the empty list does not mean no document matches. Use the admitted evidence, make one focused mnemon_recall only if exact durable history is still missing, or answer with appropriate uncertainty.',
     } }
     this.state.documentSearchClaimed = true
     const evidence = await read({ query, includeArchived, limit: Math.min(4, typeof input.limit === 'number' ? Math.max(1, input.limit) : 4) },
@@ -248,14 +252,15 @@ class ThreeTierTurn implements MemoryStrategyTurn {
       }
     }
     if (retrieval.recallAttempts.length >= MODEL_RECALL_ATTEMPT_LIMIT) {
-      const latest = retrieval.recallAttempts[retrieval.recallAttempts.length - 1]
-      const last = latest?.result ?? await latest?.pending
-      const previous = last?.memoryEvidence?.sourceInstanceKey === authority.sourceInstanceKey ? last : undefined
+      // Another query's evidence must never read as this one's answer (#389): a new
+      // query past the budget runs nothing and returns nothing, and says so.
       return {
-        query: previous?.query ?? scoped.query,
-        mode: previous?.mode ?? scoped.mode ?? 'smart',
-        ...replayEvidence(previous, scoped.memoryBodyIds, authority.sourceInstanceKey),
-        hint: 'The two-query turn Recall budget is exhausted. The Host replayed the latest admitted evidence without another Provider query; stop retrieval and answer from the evidence or state what remains unknown.',
+        query: scoped.query,
+        mode: scoped.mode ?? 'smart',
+        results: [],
+        notRun: true,
+        budgetExhausted: true,
+        hint: 'The two-query turn Recall budget is exhausted, so this query did not run: these are no results of its own, and the empty list does not mean nothing matches. Stop retrieval and answer from the evidence earlier calls returned, or state what remains unknown.',
       }
     }
     const attemptIndex = retrieval.recallAttempts.length
@@ -333,6 +338,7 @@ class ThreeTierTurn implements MemoryStrategyTurn {
         query: `related:${id}`,
         mode: 'related',
         results: [],
+        notRun: true,
         hint: 'Related traversal requires an insight admitted by the current turn\'s direct Recall. No Provider query was made.',
       }
     }
@@ -344,15 +350,25 @@ class ThreeTierTurn implements MemoryStrategyTurn {
       edge: options.edge ?? '',
     }))
     if (retrieval.relatedDigest !== undefined) {
+      // Only the same traversal gets its evidence again; another one's neighbours never
+      // read as this insight's (#389).
+      if (retrieval.relatedDigest !== digest) {
+        return {
+          query: `related:${id}`,
+          mode: 'related',
+          results: [],
+          notRun: true,
+          budgetExhausted: true,
+          hint: 'Related traversal is complete for this turn, so this one did not run: these are no results of its own. Stop retrieval and answer from the evidence earlier calls returned.',
+        }
+      }
       const last = retrieval.relatedResult ?? await retrieval.relatedPending
       const previous = last?.memoryEvidence?.sourceInstanceKey === authority.sourceInstanceKey ? last : undefined
       return {
         query: previous?.query ?? `related:${id}`,
         mode: previous?.mode ?? 'related',
         ...replayEvidence(previous, [selected], authority.sourceInstanceKey),
-        hint: retrieval.relatedDigest === digest
-          ? 'This exact Related traversal already ran. The Host replayed its admitted evidence without another Provider query; stop retrieval and answer from it.'
-          : 'Related traversal is complete for this turn. The Host replayed the admitted evidence; stop retrieval and answer from it.',
+        hint: 'This exact Related traversal already ran. The Host replayed its admitted evidence without another Provider query; stop retrieval and answer from it.',
       }
     }
     retrieval.relatedDigest = digest
