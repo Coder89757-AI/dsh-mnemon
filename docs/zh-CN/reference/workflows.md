@@ -2,7 +2,7 @@
 
 **简体中文** | [English](../../en/reference/workflows.md) | [文档中心](../README.md)
 
-本页描述默认的**分层策略**。**通用策略**在同一份预算内提供全部可用 Source，由模型决定如何路由：具名工具服务各自的 Source，其余路由通过 `mnemon_view_route` 读取、`mnemon_view_action` 修改。它除各路由自身的上限外没有召回准入信封，不做 Runtime 容量维护与归档，也不做空闲审查。见[策略与增强](../guides/capabilities.md#策略与增强)。
+本页描述默认的**分层策略**。**通用策略**在同一份预算内提供全部可用 Source，由模型决定如何路由：具名工具服务各自的 Source，其余路由通过 `mnemon_view_route` 读取、`mnemon_view_action` 修改。profile 在 Starter 实例旁再挂载同类型的 Source（例如第二条运行时记忆轨）时，具名工具服务 Starter 实例，另一个实例保留各自确切的 route 与 offer。它除各路由自身的上限外没有召回准入信封，不做 Runtime 容量维护与归档，也不做空闲审查。见[策略与增强](../guides/capabilities.md#策略与增强)。
 
 ## 每轮上下文
 

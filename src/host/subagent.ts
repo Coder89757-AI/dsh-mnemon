@@ -8,7 +8,7 @@ import { SourceSession, sourceFailure } from './source-session.ts'
 import { threeTierActionWorkflow } from 'dsh-mnemon-strategy-default-three-tier/extension-sdk'
 import { receipt as mutationReceipt } from '../sdk/input.ts'
 import { allowsParticipation, assertParticipation } from './access.ts'
-import type { MemorySpaceMetadataMaintenanceResult, MemorySpaceMetadataUpdate, MemoryPlacementDecision, MnemonReconcileOptions, MnemonReconcileResult, SubagentCounters } from './protocol.ts'
+import { namedToolInstance, type MemorySpaceMetadataMaintenanceResult, type MemorySpaceMetadataUpdate, type MemoryPlacementDecision, type MnemonReconcileOptions, type MnemonReconcileResult, type SubagentCounters } from './protocol.ts'
 import { emptyDocumentSnapshot, foreignMachines, parseReconcileResult, pendingOpinions, RECONCILE_PERSONA, RECONCILE_SCHEMA, reconcilePrompt, type MnemonReconcileEvidence } from './reconcile.ts'
 import { DEFAULT_MEMORY_VIEW_BUDGET, type ComposableMemoryView, type MemoryEvidence, type MemoryJsonValue, type MemoryMigrationLineage, type MemoryMutationReceipt, type MemoryOperationScope, type MemorySourceManagementRequest, type MemorySourceManagementResult } from '../core/contracts/index.ts'
 import type { MemoryCompositionGeneration } from '../core/composition.ts'
@@ -1045,12 +1045,23 @@ export class MnemonSubagentCoordinator {
     const authority = this.turnAuthority(parent, false)
     if (authority !== undefined) {
       const lease = authority.graph.memoryComposition.acquire(authority.context.view.runtimeGeneration)
-      const keys = new Set(lease.generation.sourceInstances().filter(source => source.sourceTypeId === 'runtime').map(source => source.sourceInstanceKey))
+      const instances = lease.generation.sourceInstances().filter(source => source.sourceTypeId === 'runtime')
       lease.release()
-      const offers = authority.context.view.actionOffers.filter(offer => keys.has(offer.sourceInstanceKey) && offer.sourceActionId === 'mutate')
+      const offers = authority.context.view.actionOffers.filter(offer => offer.sourceActionId === 'mutate'
+        && instances.some(source => source.sourceInstanceKey === offer.sourceInstanceKey))
       if (offers.length === 0) throw new Error('Source Action is not offered by the current View: runtime/mutate')
-      if (offers.length !== 1) throw new Error('Runtime Action is ambiguous; use an exact View ActionOffer')
-      const result = await this.viewAction(parent, authority, offers[0]!.id, request as unknown as MemoryJsonValue, signal)
+      // The tool runs the offer the View binds it to, the Starter instance's when a profile
+      // mounts another runtime Source beside it (#397). The others keep their exact offers,
+      // which the View lists for mnemon_view_action.
+      const bound = namedToolInstance(instances, 'runtime')
+      const offer = bound === undefined ? undefined : offers.find(item => item.sourceInstanceKey === bound.sourceInstanceKey)
+      if (offer === undefined) {
+        const exact = offers.map(item => item.id).join(', ')
+        throw new Error(bound === undefined
+          ? `Several runtime Sources offer mutate and none is the Starter instance this tool writes to; use mnemon_view_action with one of: ${exact}`
+          : `The runtime Source this tool writes to offers no mutate in this View; use mnemon_view_action with one of: ${exact}`)
+      }
+      const result = await this.viewAction(parent, authority, offer.id, request as unknown as MemoryJsonValue, signal)
       return { ...result.details as unknown as CoordinatedRuntimeMemoryResult,
         ...(result.revision === undefined ? {} : { revision: result.revision }),
         memoryReceipt: { status: result.status, completion: result.completion, ...(result.committedAt === undefined ? {} : { committedAt: result.committedAt }) } }

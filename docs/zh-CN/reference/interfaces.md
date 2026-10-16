@@ -272,7 +272,7 @@ Core 发布 `ctx.mnemonMemory: MnemonMemoryService`，实际服务只提供 `ins
 | `dsh-mnemon-source-memory-spaces/provider-sdk` | Memory Spaces 自己的 Provider 子模块协议 |
 | `dsh-mnemon-source-memory-spaces/testing` | Provider 驱动测试夹具 |
 
-通用模型工具 `mnemon_view_route`、`mnemon_view_action` 只执行当前 View 内的 route/offer；原有具名工具保留默认工作流。浏览器管理使用 `source-management-catalog`、`source-management-read`、`source-management-mutate` 与可选 `source-assistance`，Host/Source 检查实例、确认、修订与当前权限。内部 RPC 名称不是插件 SDK，页面应使用限定实例的管理客户端。见[插件开发](../development/extensions.md)。
+通用模型工具 `mnemon_view_route`、`mnemon_view_action` 只执行当前 View 内的 route/offer；原有具名工具保留默认工作流。同类型有多个 Source 时，具名工具作用于 Starter 实例，只有一个实例时作用于它；其他实例的 offer 由 View 列出，供 `mnemon_view_action` 使用。浏览器管理使用 `source-management-catalog`、`source-management-read`、`source-management-mutate` 与可选 `source-assistance`，Host/Source 检查实例、确认、修订与当前权限。内部 RPC 名称不是插件 SDK，页面应使用限定实例的管理客户端。见[插件开发](../development/extensions.md)。
 
 ## 国际化范围
 
