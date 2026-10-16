@@ -326,6 +326,8 @@ details[open] > summary .providerChevron { transform: rotate(180deg); }
 .embeddingTest { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
 .embeddingTest > span { min-width: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .embeddingTest > span.error { color: var(--dsw-alias-state-error-primary); }
+/* The status line wraps; the button keeps its label on one line. */
+.embeddingTest > button { flex: none; white-space: nowrap; }
 /* Each Mnemon Native space's vectors under the status line (#392). */
 .embeddingSpaces { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .embeddingSpaces > small,
