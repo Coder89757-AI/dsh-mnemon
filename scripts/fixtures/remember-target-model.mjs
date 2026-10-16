@@ -9,24 +9,30 @@ export const rememberTargetContent = '调研结论：TimescaleDB 的写入吞吐
  * A memory saved into a named Memory Space (#387), over the docs demo's spaces. After
  * `remember-target-check` the root Agent lists the spaces and names Lumen 项目 for a
  * research conclusion. The writer first tries 调研归档, which describes the memory better
- * but is switched off, then the space it was given. Only the model decisions are
- * scripted; the tools, their guard and the Mnemon Native writes are real.
+ * but is switched off, then the space it was given. After `remember-archive-check` the root
+ * Agent names 调研归档 itself, which the Host refuses before any writer runs. Only the model
+ * decisions are scripted; the tools, their guard and the Mnemon Native writes are real.
  */
 export function rememberTargetModel(report) {
   return request => {
     const messages = request.messages ?? []
     const terminal = delegatedCompletion(request)
     if (terminal === undefined) {
-      const userIndex = messages.findLastIndex(message => message.role === 'user' && text(message).includes('remember-target-check'))
+      const userIndex = messages.findLastIndex(message => message.role === 'user' && /remember-(?:target|archive)-check/u.test(text(message)))
       if (userIndex < 0) return 'Send remember-target-check.'
       // DSH titles the session with a separate request that carries no memory protocol.
       if (text(messages[userIndex]).startsWith('Generate the session title')) return 'Remember target check'
+      const space = text(messages[userIndex]).includes('remember-archive-check') ? '调研归档' : 'Lumen 项目'
       const results = messages.slice(userIndex + 1).filter(message => message.role === 'tool').map(parse)
       if (results.length === 0) return { name: 'mnemon_memory_bodies', args: {} }
-      const named = results[0]?.items?.find(item => item.name === 'Lumen 项目')
-      if (named === undefined) return 'Lumen 项目 is not listed.'
+      const named = results[0]?.items?.find(item => item.name === space)
+      if (named === undefined) return `${space} is not listed.`
       if (results.length === 1) return { name: 'mnemon_remember', args: { content: rememberTargetContent, category: 'fact', importance: 3, memoryBodyId: named.id } }
       const receipt = results.at(-1)
+      if (typeof receipt.action !== 'string') {
+        report({ event: 'refused', named: named.id, message: String(receipt.error ?? '').slice(0, 300) })
+        return `写入被拒绝：${String(receipt.error ?? '').replace(/^Error: /u, '')}`
+      }
       report({ event: 'receipt', named: named.id, action: receipt.action, memoryBodyIds: receipt.memoryBodyIds, activated: receipt.activatedMemoryBodyIds ?? [] })
       return `记忆 Agent 回执：${receipt.action}；写入的记忆空间：${(receipt.memoryBodyIds ?? []).join('、') || '无'}${(receipt.activatedMemoryBodyIds ?? []).length === 0 ? '' : '；被重新激活：' + receipt.activatedMemoryBodyIds.join('、')}。`
     }
