@@ -166,6 +166,11 @@ export class MnemonClient {
     return this.call(MNEMON_WRITE_CHANNEL, 'provider-service-update', this.scoped(request))
   }
 
+  /** Fill in the vectors a Mnemon Native space lacks (#392). */
+  fillEmbeddings(memoryBodyId: string): Promise<{ memoryBodyId: string; succeeded: number; failed: number }> {
+    return this.call(MNEMON_WRITE_CHANNEL, 'embedding-fill', this.scoped({ memoryBodyId }))
+  }
+
   /** Settled memory-tool activity of one turn, shared across all mounted tails. */
   async turnActivity(turn: number, cursor = 0): Promise<TurnMemoryActivity | null> {
     const snapshot = await loadTurnActivities(this.connection, this.sessionId, cursor)

@@ -208,6 +208,7 @@ async function manageMemorySpaces(service: MemorySpacesService, request: MemoryS
 
   if (!request.confirmed) throw new Error('Memory Spaces management mutation requires explicit confirmation')
   switch (request.operation) {
+    case 'embedding-fill': return managementResult(service, await service.embedMissing(text(input.memoryBodyId, 'memoryBodyId', 300)!, request.signal))
     case 'provider-service-update': {
       const providerId = text(input.providerId, 'providerId', 128)!
       await service.updateProviderService(

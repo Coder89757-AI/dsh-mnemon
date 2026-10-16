@@ -19,6 +19,8 @@ export interface MnemonRunOptions {
   store?: string
   /** Output cap for this call. Whole-store reads raise it; everything else keeps the 2 MiB default. */
   maxOutputBytes?: number
+  /** Time limit for this call instead of the configured one, for work that grows with a Store. */
+  timeoutMs?: number
 }
 
 export interface MnemonTextCommand {
@@ -110,7 +112,7 @@ export function createRunner(config: ResolvedConfig, processRunner: ProcessRunne
     const argv = options.globalFlags === false ? [...args] : [...globalArgs(options.store), ...args]
     const environment = processEnvironment(config)
     const processOptions: ProcessOptions = {
-      timeoutMs: config.timeoutMs,
+      timeoutMs: options.timeoutMs ?? config.timeoutMs,
       ...(environment === undefined ? {} : { env: environment }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),

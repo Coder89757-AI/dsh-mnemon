@@ -433,6 +433,40 @@ describe('MemorySpacesService', () => {
     expect(existsSync(join(dataDir, 'data', 'gone'))).toBe(false)
   })
 
+  it('fills in a Mnemon Native space\'s missing vectors, and keeps Mnemon\'s reason when it cannot (#392)', async () => {
+    const dataDir = populatedDataDir()
+    const outputs = [
+      { stdout: JSON.stringify({ failed: 0, model: 'nomic-embed-text', status: 'backfill_complete', succeeded: 31 }), stderr: '', exitCode: 0 },
+      { stdout: JSON.stringify({ message: 'all insights already have embeddings', status: 'complete' }), stderr: '', exitCode: 0 },
+      { stdout: '', stderr: 'Error: Ollama embedding provider not available at http://127.0.0.1:9 — install with: brew install ollama\nUsage:\n  mnemon embed [id] [flags]\n', exitCode: 1 },
+    ]
+    const process = vi.fn<ProcessRunner>(async () => outputs.shift()!)
+    const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
+    const runner = createRunner(config, process)
+    const service = createService(runner, config, createRegistry(runner, true))
+    await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', succeeded: 31, failed: 0 })
+    // The Host's data directory and Store, with time for a whole Store rather than one command.
+    expect(process).toHaveBeenNthCalledWith(1, FAKE_CLI, ['--data-dir', dataDir, '--store', 'work', 'embed', '--all'], expect.objectContaining({ timeoutMs: 60_000 }))
+    await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', succeeded: 0, failed: 0 })
+    await expect(service.embedMissing('work')).rejects.toThrow(/^Ollama embedding provider not available at http:\/\/127\.0\.0\.1:9 — install with: brew install ollama$/u)
+    expect(process).toHaveBeenCalledTimes(3)
+  })
+
+  it('fills in no space whose database is missing, and nothing while read-only (#392)', async () => {
+    const dataDir = populatedDataDir()
+    const at = '2026-10-05T08:37:12.218Z'
+    writeFileSync(join(dataDir, 'data', '.dsh-memory-bodies.json'), JSON.stringify({ version: 1, bodies: ['work', 'gone'].map(id => ({ id, name: id, description: '', active: true, createdAt: at, updatedAt: at })) }))
+    const process = vi.fn<ProcessRunner>(async () => ({ stdout: '{}', stderr: '', exitCode: 0 }))
+    const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
+    const runner = createRunner(config, process)
+    await expect(createService(runner, config, createRegistry(runner, true)).embedMissing('gone')).rejects.toThrow('Memory Space gone has no database')
+    // The CLI would have created an empty Store for it.
+    expect(existsSync(join(dataDir, 'data', 'gone'))).toBe(false)
+    const readOnly = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work', writeEnabled: false })
+    await expect(createService(runner, readOnly, createRegistry(runner, true)).embedMissing('work')).rejects.toThrow('read-only')
+    expect(process).not.toHaveBeenCalled()
+  })
+
   it('coalesces simultaneous Memory Space health snapshots', async () => {
     const { service, process } = fixture()
 

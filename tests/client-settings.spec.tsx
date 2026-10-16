@@ -256,18 +256,27 @@ describe('MnemonSettingsCard', () => {
       base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
     }
     const scope = settingsScope(snapshot)
-    const call = vi.fn(async (channel: string, endpoint: string) => {
+    const space = (memoryBodyId: string, name: string, totalInsights: number, embedded: number, coverage: string, active = true) => ({ memoryBodyId, name, active, totalInsights, embedded, coverage })
+    let filled = false
+    const fill = Promise.withResolvers<void>()
+    const call = vi.fn(async (channel: string, endpoint: string, payload?: unknown) => {
       if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
         ok: true as const,
         value: {
-          available: true, model: 'nomic-embed-text', totalInsights: 158, embedded: 127, coverage: '80%',
+          available: true, model: 'nomic-embed-text', totalInsights: 158, embedded: filled ? 158 : 127, coverage: filled ? '100%' : '80%',
           spaces: [
-            { memoryBodyId: 'default', name: 'Lumen 项目', active: true, totalInsights: 94, embedded: 94, coverage: '100%' },
-            { memoryBodyId: '7b3da8e7', name: '工具实测', active: true, totalInsights: 64, embedded: 33, coverage: '51%' },
-            { memoryBodyId: 'archive', name: '调研归档', active: false, totalInsights: 0, embedded: 0, coverage: '0%' },
-            { memoryBodyId: 'broken', name: '损坏的空间', active: true, totalInsights: 0, embedded: 0, coverage: '0%', error: 'database disk image is malformed' },
+            space('default', 'Lumen 项目', 94, 94, '100%'),
+            filled ? space('7b3da8e7', '工具实测', 64, 64, '100%') : space('7b3da8e7', '工具实测', 64, 33, '51%'),
+            space('archive', '调研归档', 0, 0, '0%', false),
+            { ...space('broken', '损坏的空间', 0, 0, '0%'), error: 'database disk image is malformed' },
           ],
         },
+      }
+      if (channel === '/dsh-mnemon-write' && endpoint === 'embedding-fill') {
+        expect(payload).toEqual({ memoryBodyId: '7b3da8e7' })
+        await fill.promise
+        filled = true
+        return { ok: true as const, value: { memoryBodyId: '7b3da8e7', succeeded: 31, failed: 0 } }
       }
       if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
       if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
@@ -280,16 +289,62 @@ describe('MnemonSettingsCard', () => {
     fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
 
     expect(await screen.findByText('嵌入服务可用 · nomic-embed-text · 已嵌入 127/158（80%）')).toBeTruthy()
-    const list = screen.getByRole('list', { name: '各 Mnemon Native 空间' })
-    expect(within(list).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+    const rows = () => within(screen.getByRole('list', { name: '各 Mnemon Native 空间' })).getAllByRole('listitem')
+    expect(rows().map(item => item.textContent)).toEqual([
       'Lumen 项目已嵌入 94/94（100%）',
-      '工具实测已嵌入 33/64（51%）',
+      '工具实测已嵌入 33/64（51%）补齐',
       '调研归档 · 未激活已嵌入 0/0（0%）',
       '损坏的空间无法读取：database disk image is malformed',
     ])
-    // Only a space that lacks vectors is marked, and only then does the hint appear.
-    expect(within(list).getAllByRole('listitem').map(item => item.hasAttribute('data-missing'))).toEqual([false, true, false, false])
-    expect(screen.getByText('缺少向量的记忆只能被关键词召回找到。嵌入服务可用时，用 Mnemon CLI 的 embed --all 为对应空间补齐。')).toBeTruthy()
+    // Only a space that lacks vectors is marked and can be filled in.
+    expect(rows().map(item => item.hasAttribute('data-missing'))).toEqual([false, true, false, false])
+    expect(screen.getByText('缺少向量的记忆只能被关键词召回找到，点「补齐」为该空间生成向量。')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '补齐「工具实测」的向量' }))
+    expect((await screen.findByRole('button', { name: '补齐「工具实测」的向量' })).textContent).toBe('补齐中…')
+    fill.resolve()
+    // The counts are read again once the Host has filled the space in.
+    expect(await screen.findByText('嵌入服务可用 · nomic-embed-text · 已嵌入 158/158（100%）')).toBeTruthy()
+    expect(rows()[1]!.textContent).toBe('工具实测已嵌入 64/64（100%）')
+    expect(screen.queryByRole('button', { name: '补齐「工具实测」的向量' })).toBeNull()
+    expect(call.mock.calls.filter(([, endpoint]) => endpoint === 'embedding-status')).toHaveLength(2)
+  })
+
+  it('says why a fill failed, and offers none while the embedding service is down (#392)', async () => {
+    const snapshot = {
+      status: 'ready' as const,
+      value: { storageScope: 'global' as const },
+      base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
+    }
+    const scope = settingsScope(snapshot)
+    let available = true
+    const call = vi.fn(async (channel: string, endpoint: string) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
+        ok: true as const,
+        value: { available, model: 'nomic-embed-text', totalInsights: 64, embedded: 33, coverage: '51%',
+          spaces: [{ memoryBodyId: 'tools', name: '工具实测', active: true, totalInsights: 64, embedded: 33, coverage: '51%' }] },
+      }
+      if (channel === '/dsh-mnemon-write' && endpoint === 'embedding-fill') {
+        available = false
+        return { ok: false as const, error: { message: 'Ollama embedding provider not available at http://127.0.0.1:11434' } }
+      }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(spaces(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    fireEvent.click(await screen.findByRole('button', { name: '补齐「工具实测」的向量' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('「工具实测」的向量没有补齐：Ollama embedding provider not available at http://127.0.0.1:11434')
+    // The status read again finds the service down: no fill is offered, and the hint says when one will be.
+    expect(await screen.findByText('嵌入服务不可达 · nomic-embed-text · 已嵌入 33/64（51%）')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '补齐「工具实测」的向量' })).toBeNull()
+    expect(screen.getByText('缺少向量的记忆只能被关键词召回找到，嵌入服务可用后可以在这里补齐。')).toBeTruthy()
+    // A new test starts clean.
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
   it('renders one switch per live Catalog layer and persists only its enabled state', async () => {

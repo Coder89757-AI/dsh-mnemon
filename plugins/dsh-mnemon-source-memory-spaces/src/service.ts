@@ -386,6 +386,9 @@ function embeddingCounts(value: JsonValue): MnemonEmbeddingStatus {
   return { available, model, totalInsights: totalInsights!, embedded: embedded!, coverage, ...(validProtocol ? { protocol } : {}) }
 }
 
+/** How long one fill of a space's vectors may hold the storage lock. */
+const EMBED_FILL_TIMEOUT_MS = 60_000
+
 /** A whole percent, as Mnemon writes it, that reads 100% only when every memory has its vector. */
 function coveragePercent(embedded: number, total: number): string {
   return total === 0 ? '0%' : `${Math.floor(embedded * 100 / total)}%`
@@ -636,6 +639,33 @@ export class MemorySpacesService {
     const totalInsights = spaces.reduce((sum, space) => sum + space.totalInsights, 0)
     const embedded = spaces.reduce((sum, space) => sum + space.embedded, 0)
     return { ...runtime, totalInsights, embedded, coverage: coveragePercent(embedded, totalInsights), spaces }
+  }
+
+  /**
+   * Fill in the vectors a Mnemon Native space lacks, through the Host's own data directory and
+   * embedding settings, which a terminal `mnemon embed --all` may not share (#392). One call runs
+   * for at most EMBED_FILL_TIMEOUT_MS while it holds the storage lock; Mnemon keeps the vectors it
+   * wrote before a timeout, so the next call goes on from there.
+   */
+  async embedMissing(memoryBodyId: string, signal?: AbortSignal): Promise<{ memoryBodyId: string; succeeded: number; failed: number }> {
+    this.assertWritable()
+    const body = this.memorySpaces.get(validateMemorySpaceId(memoryBodyId))
+    if (!this.isNativeSpace(body)) throw new Error(`${body.provider.label} keeps no Mnemon vectors to fill in`)
+    // The CLI would create an empty Store for a space whose database is missing.
+    if (!existsSync(body.dbPath)) throw new Error(`Memory Space ${body.name} has no database`)
+    let output: Record<string, JsonValue> | undefined
+    try {
+      output = record(await this.runner.runJson(['embed', '--all'], {
+        store: body.id, timeoutMs: Math.max(this.config.timeoutMs, EMBED_FILL_TIMEOUT_MS), ...(signal === undefined ? {} : { signal }),
+      }))
+    } catch (error) {
+      // Mnemon prints its usage after the reason; keep the reason.
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(/\bError: ([^\n]+)/u.exec(detail)?.[1]?.trim() ?? detail.split('\n')[0]!, { cause: error })
+    }
+    const succeeded = number(output?.succeeded)
+    const failed = number(output?.failed)
+    return { memoryBodyId: body.id, succeeded: Number.isInteger(succeeded) ? succeeded! : 0, failed: Number.isInteger(failed) ? failed! : 0 }
   }
 
   async status(signal?: AbortSignal): Promise<StatusView> {

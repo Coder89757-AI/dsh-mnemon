@@ -162,6 +162,8 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
   const form = useStaged(saved, async draft => { await scope.mutate([{ op: 'set', path: ['embedding'], value: embeddingValue(managedSaved, draft) } as SettingsOperation]) })
   const [nativeCliFound, setNativeCliFound] = useState<boolean | undefined>(undefined)
   const [status, setStatus] = useState<{ state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }>({ state: 'idle' })
+  // The space whose vectors are being filled in, and why the last fill failed.
+  const [fill, setFill] = useState<{ memoryBodyId: string; error?: string } | undefined>(undefined)
   const statusRequest = useRef(0)
   const on = page.component.enabled
 
@@ -174,6 +176,7 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
   useEffect(() => {
     statusRequest.current += 1
     setStatus({ state: 'idle' })
+    setFill(undefined)
   }, [client, snapshot.revision])
 
   // Providers are read only while their Source runs; the page's switch turns it on.
@@ -187,6 +190,15 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
     void client.embeddingStatus().then(
       value => { if (statusRequest.current === request) setStatus({ state: 'ready', value }) },
       reason => { if (statusRequest.current === request) setStatus({ state: 'error', error: message(reason) }) },
+    )
+  }
+  // A fill runs through the Host, with its data directory and embedding settings; the counts are read again after it.
+  const fillSpace = (memoryBodyId: string): void => {
+    if (client === undefined || fill?.error === undefined && fill !== undefined) return
+    setFill({ memoryBodyId })
+    void client.fillEmbeddings(memoryBodyId).then(
+      () => { setFill(undefined); test() },
+      reason => { setFill({ memoryBodyId, error: message(reason) }); test() },
     )
   }
   const activeScope = isWorkspaceStorageScope(snapshot.value?.storageScope ?? 'global') ? 'workspace' : 'global'
@@ -209,7 +221,8 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
       t={t}
       leading={<NativeProviderCard activeScope={activeScope} cliMissing={cliMissing} t={t}>
         <EmbeddingEditor managed={managed.value} draft={form.draft} disabled={disabled} connectionAvailable={client !== undefined} cliMissing={cliMissing} changing={form.dirty}
-          status={status} t={t} onEdit={form.edit} onTest={test}
+          status={status} t={t} onEdit={form.edit} onTest={() => { setFill(undefined); test() }}
+          canFill={!disabled && !readOnly} fill={fill} onFill={fillSpace}
           onManaged={on => { if (!on) form.discard(); managed.set(on) }}
           actions={<>
             <WriteFailure error={managed.failed} t={t} />
@@ -254,6 +267,10 @@ function EmbeddingEditor(props: {
   cliMissing: boolean
   changing: boolean
   status: { state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }
+  /** Whether this page may fill in a space's vectors: it is writable and Mnemon takes writes. */
+  canFill: boolean
+  fill: { memoryBodyId: string; error?: string } | undefined
+  onFill: (memoryBodyId: string) => void
   t: MnemonTranslate
   actions: ReactNode
   onManaged: (managed: boolean) => void
@@ -301,28 +318,42 @@ function EmbeddingEditor(props: {
       </Button>
     </div>
     {!props.cliMissing && !props.changing && status.state === 'ready' && (status.value?.spaces ?? []).length > 0
-      && <EmbeddingSpaces spaces={status.value!.spaces!} t={t} />}
+      && <EmbeddingSpaces spaces={status.value!.spaces!} available={status.value!.available} canFill={props.canFill} fill={props.fill} onFill={props.onFill} t={t} />}
   </section>
 }
 
 /**
  * Each Mnemon Native space's vectors under the status line. Mnemon counts one Store at a
  * time, so the total alone could read as every space's health while one lacked vectors (#392).
+ * A space that lacks them can have them filled in here while the embedding service answers.
  */
-function EmbeddingSpaces(props: { spaces: readonly MnemonEmbeddingSpaceStatus[]; t: MnemonTranslate }): JSX.Element {
-  const { t } = props
+function EmbeddingSpaces(props: {
+  spaces: readonly MnemonEmbeddingSpaceStatus[]
+  available: boolean
+  canFill: boolean
+  fill: { memoryBodyId: string; error?: string } | undefined
+  onFill: (memoryBodyId: string) => void
+  t: MnemonTranslate
+}): JSX.Element {
+  const { t, fill } = props
   const missing = (space: MnemonEmbeddingSpaceStatus): boolean => space.error === undefined && space.embedded < space.totalInsights
+  const fillable = props.available && props.canFill
+  const filling = fill !== undefined && fill.error === undefined
+  const failed = fill?.error === undefined ? undefined : props.spaces.find(space => space.memoryBodyId === fill.memoryBodyId)
   return <div className={css.embeddingSpaces}>
     <small id="mnemon-embedding-spaces">{t('config.embeddingSpaces')}</small>
     <ul aria-labelledby="mnemon-embedding-spaces">
       {props.spaces.map(space => <li key={space.memoryBodyId} data-missing={missing(space) ? '' : undefined} data-failed={space.error === undefined ? undefined : ''}>
-        <span title={space.memoryBodyId}>{space.active ? space.name : `${space.name} · ${t('common.inactive')}`}</span>
-        <span>{space.error === undefined
+        <span className={css.embeddingSpaceName} title={space.memoryBodyId}>{space.active ? space.name : `${space.name} · ${t('common.inactive')}`}</span>
+        <span className={css.embeddingSpaceCount}>{space.error === undefined
           ? t('config.embeddingSpaceCounts', { embedded: space.embedded, total: space.totalInsights, coverage: space.coverage })
           : t('config.embeddingSpaceFailed', { error: space.error })}</span>
+        {fillable && missing(space) && <Button variant="ghost" size="sm" disabled={filling} aria-label={t('config.embeddingFillLabel', { name: space.name })}
+          onClick={() => props.onFill(space.memoryBodyId)}>{filling && fill!.memoryBodyId === space.memoryBodyId ? t('config.embeddingFilling') : t('config.embeddingFill')}</Button>}
       </li>)}
     </ul>
-    {props.spaces.some(missing) && <p>{t('config.embeddingMissingHint')}</p>}
+    {props.spaces.some(missing) && <p>{t(fillable ? 'config.embeddingMissingFill' : props.available ? 'config.embeddingMissing' : 'config.embeddingMissingOffline')}</p>}
+    {fill?.error !== undefined && <p className={css.error} role="alert">{t('config.embeddingFillFailed', { name: failed?.name ?? fill.memoryBodyId, error: fill.error })}</p>}
   </div>
 }
 

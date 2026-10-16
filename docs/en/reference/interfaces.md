@@ -185,6 +185,7 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `body-create` / `body-update` / `body-delete` / `body-merge` | Create or connect, edit, confirm Native deletion or remote disconnection, and merge Memory Spaces |
 | `body-metadata-maintain` | Let a task Agent refresh names and descriptions of 1 to 20 active Memory Spaces |
 | `provider-service-update` | Update one Provider service; credentials remain on the Host and the response is redacted |
+| `embedding-fill` | Fill in the vectors one Mnemon Native space lacks, through the Host's storage root and embedding settings; at most one minute per call |
 | `source-management-mutate` / `source-assistance` | Generic Source management mutation, and Host-assisted operations confirmed against the Source's current revision |
 | `version-update` | Update a named component with Host-fixed commands and arguments |
 
