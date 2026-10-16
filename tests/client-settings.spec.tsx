@@ -276,7 +276,7 @@ describe('MnemonSettingsCard', () => {
         expect(payload).toEqual({ memoryBodyId: '7b3da8e7' })
         await fill.promise
         filled = true
-        return { ok: true as const, value: { memoryBodyId: '7b3da8e7', succeeded: 31, failed: 0 } }
+        return { ok: true as const, value: { memoryBodyId: '7b3da8e7', filled: 31, remaining: 0, model: 'nomic-embed-text' } }
       }
       if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
       if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
@@ -293,20 +293,28 @@ describe('MnemonSettingsCard', () => {
     expect(rows().map(item => item.textContent)).toEqual([
       'Lumen 项目已嵌入 94/94（100%）',
       '工具实测已嵌入 33/64（51%）补齐',
-      '调研归档 · 未激活已嵌入 0/0（0%）',
+      '调研归档未激活已嵌入 0/0（0%）',
       '损坏的空间无法读取：database disk image is malformed',
     ])
+    // The marker is not part of the name, which is what shortens in a narrow card.
+    expect(within(rows()[2]!).getByText('调研归档').getAttribute('title')).toBe('调研归档')
     // Only a space that lacks vectors is marked and can be filled in.
     expect(rows().map(item => item.hasAttribute('data-missing'))).toEqual([false, true, false, false])
-    expect(screen.getByText('缺少向量的记忆只能被关键词召回找到，点「补齐」为该空间生成向量。')).toBeTruthy()
+    expect(screen.getByText('没有向量的记忆不参与语义匹配；点空间旁的「补齐」即可生成缺少的向量。')).toBeTruthy()
+    expect(screen.getByText('无法读取的空间没有计入合计。')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '补齐「工具实测」的向量' }))
-    expect((await screen.findByRole('button', { name: '补齐「工具实测」的向量' })).textContent).toBe('补齐中…')
+    const running = await screen.findByRole('button', { name: '正在补齐「工具实测」的向量' })
+    expect(running.textContent).toBe('补齐中…')
+    expect(running.getAttribute('aria-busy')).toBe('true')
+    // A test would wait for the fill's lock; it waits for the fill instead.
+    expect(screen.getByRole('button', { name: '测试状态' })).toHaveProperty('disabled', true)
     fill.resolve()
-    // The counts are read again once the Host has filled the space in.
+    // The counts are read again once the Host has filled the space in, and the line says what it did.
+    expect((await screen.findByRole('status')).textContent).toBe('已为「工具实测」补齐 31 条向量。')
     expect(await screen.findByText('嵌入服务可用 · nomic-embed-text · 已嵌入 158/158（100%）')).toBeTruthy()
     expect(rows()[1]!.textContent).toBe('工具实测已嵌入 64/64（100%）')
-    expect(screen.queryByRole('button', { name: '补齐「工具实测」的向量' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /补齐「工具实测」的向量/u })).toBeNull()
     expect(call.mock.calls.filter(([, endpoint]) => endpoint === 'embedding-status')).toHaveLength(2)
   })
 
@@ -341,10 +349,56 @@ describe('MnemonSettingsCard', () => {
     // The status read again finds the service down: no fill is offered, and the hint says when one will be.
     expect(await screen.findByText('嵌入服务不可达 · nomic-embed-text · 已嵌入 33/64（51%）')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '补齐「工具实测」的向量' })).toBeNull()
-    expect(screen.getByText('缺少向量的记忆只能被关键词召回找到，嵌入服务可用后可以在这里补齐。')).toBeTruthy()
+    expect(screen.getByText('没有向量的记忆不参与语义匹配；嵌入服务可用后，可以在这里补齐。')).toBeTruthy()
     // A new test starts clean.
     fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('says what a fill that stopped early did, and promises no fill a read-only Host cannot make (#392)', async () => {
+    const snapshot = (writeEnabled: boolean) => ({
+      status: 'ready' as const,
+      value: { storageScope: 'global' as const, writeEnabled },
+      base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
+    })
+    const results = [
+      // The service answers Mnemon's probe and returns no vector, as when its model is not pulled.
+      { memoryBodyId: 'tools', filled: 0, remaining: 64, model: 'nomic-embed-text', stopped: 'refused' },
+      { memoryBodyId: 'tools', filled: 50, remaining: 14, model: 'nomic-embed-text', stopped: 'time' },
+      { memoryBodyId: 'tools', filled: 10, remaining: 4, model: 'nomic-embed-text', stopped: 'refused' },
+    ]
+    const call = vi.fn(async (channel: string, endpoint: string) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
+        ok: true as const,
+        value: { available: true, model: 'nomic-embed-text', totalInsights: 64, embedded: 0, coverage: '0%',
+          spaces: [{ memoryBodyId: 'tools', name: '工具实测', active: true, totalInsights: 64, embedded: 0, coverage: '0%' }] },
+      }
+      if (channel === '/dsh-mnemon-write' && endpoint === 'embedding-fill') return { ok: true as const, value: results.shift()! }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+    const connection = { rpc: { call }, isLoopback: true } as ClientConnectionHandle
+    const view = render(spaces(settingsScope(snapshot(true)), connection))
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    const fillIn = async (): Promise<void> => {
+      const button = await screen.findByRole('button', { name: '补齐「工具实测」的向量' })
+      await waitFor(() => expect(button).toHaveProperty('disabled', false))
+      fireEvent.click(button)
+    }
+    await fillIn()
+    expect((await screen.findByRole('alert')).textContent).toBe('嵌入服务没有为「工具实测」返回向量，请确认它在运行并提供模型 nomic-embed-text。')
+    await fillIn()
+    expect((await screen.findByRole('status')).textContent).toBe('已为「工具实测」补齐 50 条向量，还缺 14 条，再点「补齐」继续。')
+    await fillIn()
+    expect((await screen.findByRole('status')).textContent).toBe('已为「工具实测」补齐 10 条向量；其余 4 条嵌入服务没有返回向量，可以稍后再点「补齐」。')
+    view.unmount()
+
+    render(spaces(settingsScope(snapshot(false)), connection))
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    expect(await screen.findByText('没有向量的记忆不参与语义匹配。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /补齐/u })).toBeNull()
   })
 
   it('renders one switch per live Catalog layer and persists only its enabled state', async () => {

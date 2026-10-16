@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveMemorySpacesConfig } from "../src/config.ts"
 import { adapterRegistry, createRegistry, descriptors, installedCliStub } from './providers.ts'
 import { MemoryProviderCatalog } from '../src/providers/catalog.ts'
-import type { ProcessRunner } from '../src/providers/process.ts'
+import { ProcessError, type ProcessRunner } from '../src/providers/process.ts'
+import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import { createRunner } from '../src/runner.ts'
 import { mutationResultCompletion, mutationResultCommitted, type MemorySpacesService } from '../src/service.ts'
 import type { MnemonRunner } from '../src/runner.ts'
@@ -322,55 +323,21 @@ describe('MemorySpacesService', () => {
   })
 
   it('reports the effective Mnemon embedding connection and coverage with strict response validation', async () => {
-    const process = vi.fn<ProcessRunner>()
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          total_insights: 8,
-          embedded: 6,
-          coverage: '75%',
-          embedding_available: true,
-          protocol: 'openai',
-          model: 'qwen3-embedding:0.6b',
-        }),
-        stderr: '', exitCode: 0,
-      })
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          total_insights: 8,
-          embedded: 6,
-          coverage: '75%',
-          ollama_available: true,
-          model: 'qwen3-embedding:0.6b',
-        }),
-        stderr: '', exitCode: 0,
-      })
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          total_insights: 8,
-          embedded: 6,
-          coverage: '75%',
-          ollama_available: true,
-          model: 'x'.repeat(201),
-        }),
-        stderr: '', exitCode: 0,
-      })
-      .mockResolvedValueOnce({ stdout: JSON.stringify({ ollama_available: true, embedded: 9, total_insights: 8 }), stderr: '', exitCode: 0 })
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          total_insights: 8,
-          embedded: 6,
-          coverage: '101%',
-          ollama_available: true,
-          model: 'qwen3-embedding:0.6b',
-        }),
-        stderr: '', exitCode: 0,
-      })
+    const valid = { total_insights: 8, embedded: 6, coverage: '75%', embedding_available: true, protocol: 'openai', model: 'qwen3-embedding:0.6b' }
+    const legacy = { total_insights: 8, embedded: 6, coverage: '75%', ollama_available: true, model: 'qwen3-embedding:0.6b' }
+    const invalid = [
+      { total_insights: 8, embedded: 6, coverage: '75%', ollama_available: true, model: 'x'.repeat(201) },
+      { ollama_available: true, embedded: 9, total_insights: 8 },
+      { total_insights: 8, embedded: 6, coverage: '101%', ollama_available: true, model: 'qwen3-embedding:0.6b' },
+    ]
+    // An invalid answer fails the space, and then the runtime probe that stands in for it.
+    const outputs: unknown[] = [valid, legacy, ...invalid.flatMap(output => [output, output])]
+    const process = vi.fn<ProcessRunner>(async () => ({ stdout: JSON.stringify(outputs.shift()), stderr: '', exitCode: 0 }))
     const dataDir = populatedDataDir()
     const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
     const runner = createRunner(config, process)
     const service = createService(runner, config, createRegistry(runner, true))
 
-    // The one Mnemon Native space is Mnemon's own Store, counted by the same call.
     const spaces = [{ memoryBodyId: 'work', name: 'work', active: true, totalInsights: 8, embedded: 6, coverage: '75%' }]
     // Mnemon ≥ 0.3.x reports `embedding_available` plus the resolved protocol.
     const expected = {
@@ -396,9 +363,8 @@ describe('MemorySpacesService', () => {
       '--data-dir', dataDir, '--store', 'work', 'embed', '--status',
     ], expect.anything())
     await expect(service.embeddingStatus()).resolves.toEqual(legacyExpected)
-    await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
-    await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
-    await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
+    for (const _output of invalid) await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
+    expect(outputs).toEqual([])
   })
 
   it('counts the vectors of every Mnemon Native space, and never reads one whose database is missing (#392)', async () => {
@@ -413,43 +379,163 @@ describe('MemorySpacesService', () => {
     })) }))
     const counts: Record<string, unknown> = {
       work: { total_insights: 94, embedded: 94, coverage: '100%', embedding_available: true, model: 'nomic-embed-text' },
-      notes: { total_insights: 64, embedded: 33, coverage: '51%', embedding_available: true, model: 'nomic-embed-text' },
-      broken: { total_insights: 3 },
+      // Mnemon rounds; the list floors as the total does, so a row never reads more than the total says.
+      notes: { total_insights: 3, embedded: 2, coverage: '67%', embedding_available: true, model: 'nomic-embed-text' },
     }
-    const process = vi.fn<ProcessRunner>(async (_command, args) => ({ stdout: JSON.stringify(counts[args[args.indexOf('--store') + 1]!]), stderr: '', exitCode: 0 }))
+    const usage = 'Error: open database: file is not a database\nUsage:\n  mnemon embed [id] [flags]\n\nFlags:\n      --all      backfill embeddings for all un-embedded insights\n'
+    const process = vi.fn<ProcessRunner>(async (_command, args) => {
+      const store = args[args.indexOf('--store') + 1]!
+      return store === 'broken' ? { stdout: '', stderr: usage, exitCode: 1 } : { stdout: JSON.stringify(counts[store]), stderr: '', exitCode: 0 }
+    })
     const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
     const runner = createRunner(config, process)
     const service = createService(runner, config, createRegistry(runner, true))
     await expect(service.embeddingStatus()).resolves.toEqual({
-      available: true, model: 'nomic-embed-text', totalInsights: 158, embedded: 127, coverage: '80%',
+      available: true, model: 'nomic-embed-text', totalInsights: 97, embedded: 96, coverage: '98%',
       spaces: [
         { memoryBodyId: 'work', name: 'Work', active: true, totalInsights: 94, embedded: 94, coverage: '100%' },
-        { memoryBodyId: 'notes', name: 'Notes', active: false, totalInsights: 64, embedded: 33, coverage: '51%' },
-        { memoryBodyId: 'broken', name: 'Broken', active: true, totalInsights: 0, embedded: 0, coverage: '0%', error: 'mnemon embed --status returned an invalid response' },
+        { memoryBodyId: 'notes', name: 'Notes', active: false, totalInsights: 3, embedded: 2, coverage: '66%' },
+        // Mnemon's reason without the usage it prints after it; the space stays out of the total.
+        { memoryBodyId: 'broken', name: 'Broken', active: true, totalInsights: 0, embedded: 0, coverage: '0%', error: 'open database: file is not a database' },
       ],
     })
-    // Mnemon's own Store is counted once, and a space without a database is never read: the CLI would create its Store.
+    // Each space is counted by a call of its own, and one without a database is never read: the CLI would create its Store.
     expect(process.mock.calls.map(([, args]) => args[args.indexOf('--store') + 1])).toEqual(['work', 'notes', 'broken'])
     expect(existsSync(join(dataDir, 'data', 'gone'))).toBe(false)
   })
 
-  it('fills in a Mnemon Native space\'s missing vectors, and keeps Mnemon\'s reason when it cannot (#392)', async () => {
+  it('asks Mnemon for its embedding runtime in a scratch data directory while no space has a database (#392)', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'dsh-mnemon-service-'))
+    temporaryDirectories.push(dataDir)
+    // The active file names a Store without a database, as after one was removed outside DSH.
+    writeFileSync(join(dataDir, 'active'), 'ghost\n')
+    const scratch: string[] = []
+    const process = vi.fn<ProcessRunner>(async (_command, args) => {
+      scratch.push(args[1]!)
+      expect(existsSync(args[1]!)).toBe(true)
+      return { stdout: JSON.stringify({ total_insights: 0, embedded: 0, coverage: '0%', embedding_available: true, model: 'nomic-embed-text' }), stderr: '', exitCode: 0 }
+    })
+    const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir })
+    const runner = createRunner(config, process)
+    const service = createService(runner, config, createRegistry(runner, true))
+    await expect(service.embeddingStatus()).resolves.toEqual({ available: true, model: 'nomic-embed-text', totalInsights: 0, embedded: 0, coverage: '0%', spaces: [] })
+    expect(process.mock.calls.map(([, args]) => args)).toEqual([['--data-dir', scratch[0], 'embed', '--status']])
+    // Mnemon creates the Store it opens: the scratch directory goes again, and the data directory gains no Store.
+    expect(scratch[0]!.startsWith(dataDir)).toBe(false)
+    expect(existsSync(scratch[0]!)).toBe(false)
+    expect(existsSync(join(dataDir, 'data', 'ghost'))).toBe(false)
+  })
+
+  it('neither counts nor fills a space removed while its call waited, and never creates its Store again (#392)', async () => {
     const dataDir = populatedDataDir()
-    const outputs = [
-      { stdout: JSON.stringify({ failed: 0, model: 'nomic-embed-text', status: 'backfill_complete', succeeded: 31 }), stderr: '', exitCode: 0 },
-      { stdout: JSON.stringify({ message: 'all insights already have embeddings', status: 'complete' }), stderr: '', exitCode: 0 },
-      { stdout: '', stderr: 'Error: Ollama embedding provider not available at http://127.0.0.1:9 — install with: brew install ollama\nUsage:\n  mnemon embed [id] [flags]\n', exitCode: 1 },
-    ]
-    const process = vi.fn<ProcessRunner>(async () => outputs.shift()!)
+    mkdirSync(join(dataDir, 'data', 'notes'), { recursive: true })
+    writeFileSync(join(dataDir, 'data', 'notes', 'mnemon.db'), 'fixture database')
+    const at = '2026-10-05T08:37:12.218Z'
+    writeFileSync(join(dataDir, 'data', '.dsh-memory-bodies.json'), JSON.stringify({ version: 1, bodies: ['work', 'notes'].map(id => ({
+      id, name: id[0]!.toUpperCase() + id.slice(1), description: '', active: true, createdAt: at, updatedAt: at,
+    })) }))
+    const process = vi.fn<ProcessRunner>(async () => ({
+      stdout: JSON.stringify({ total_insights: 2, embedded: 1, coverage: '50%', embedding_available: true, model: 'nomic-embed-text' }), stderr: '', exitCode: 0,
+    }))
     const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
     const runner = createRunner(config, process)
     const service = createService(runner, config, createRegistry(runner, true))
-    await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', succeeded: 31, failed: 0 })
-    // The Host's data directory and Store, with time for a whole Store rather than one command.
-    expect(process).toHaveBeenNthCalledWith(1, FAKE_CLI, ['--data-dir', dataDir, '--store', 'work', 'embed', '--all'], expect.objectContaining({ timeoutMs: 60_000 }))
-    await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', succeeded: 0, failed: 0 })
+    // Another operation on the storage root, such as a space's removal, holds the lock while both calls wait.
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const held = withMemoryStorageLock(runner.effectiveDataDir(), () => gate)
+    const status = service.embeddingStatus()
+    const fill = service.embedMissing('notes')
+    rmSync(join(dataDir, 'data', 'notes'), { recursive: true, force: true })
+    release()
+    await held
+    await expect(fill).rejects.toThrow('Memory Space Notes has no database')
+    await expect(status).resolves.toMatchObject({ totalInsights: 2, embedded: 1, spaces: [expect.objectContaining({ memoryBodyId: 'work' })] })
+    expect((await status).spaces).toHaveLength(1)
+    expect(process.mock.calls.map(([, args]) => args[args.indexOf('--store') + 1])).toEqual(['work'])
+    expect(existsSync(join(dataDir, 'data', 'notes'))).toBe(false)
+  })
+
+  it('fills in more than one call\'s hundred vectors, letting other memory work run between its steps (#392)', async () => {
+    const dataDir = populatedDataDir()
+    const store = { total: 130, embedded: 0 }
+    const order: string[] = []
+    let releaseStep!: () => void
+    const firstStep = new Promise<void>(resolve => { releaseStep = resolve })
+    const process = vi.fn<ProcessRunner>(async (_command, args) => {
+      const command = args.includes('--all') ? 'fill' : args.includes('recall') ? 'recall' : 'count'
+      order.push(command)
+      if (command === 'recall') return { stdout: JSON.stringify({ results: [] }), stderr: '', exitCode: 0 }
+      if (command === 'count') return { stdout: JSON.stringify({ total_insights: store.total, embedded: store.embedded, coverage: '0%', embedding_available: true, model: 'nomic-embed-text' }), stderr: '', exitCode: 0 }
+      if (order.filter(entry => entry === 'fill').length === 1) await firstStep
+      // Mnemon fills at most 100 a call.
+      const written = Math.min(100, store.total - store.embedded)
+      store.embedded += written
+      return { stdout: JSON.stringify({ failed: 0, model: 'nomic-embed-text', status: 'backfill_complete', succeeded: written }), stderr: '', exitCode: 0 }
+    })
+    const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work', timeoutMs: 4321 })
+    const runner = createRunner(config, process)
+    const service = createService(runner, config, createRegistry(runner, true))
+    const fill = service.embedMissing('work')
+    await vi.waitFor(() => { expect(order).toEqual(['count', 'fill']) })
+    // A recall asked for during a step runs before the next one.
+    const recall = runner.runText(['recall', 'storage'])
+    releaseStep()
+    await expect(fill).resolves.toEqual({ memoryBodyId: 'work', filled: 130, remaining: 0, model: 'nomic-embed-text' })
+    await recall
+    expect(order).toEqual(['count', 'fill', 'recall', 'count', 'fill', 'count'])
+    // The Host's data directory and Store, and no step longer than one configured call.
+    const steps = process.mock.calls.filter(([, args]) => args.includes('--all'))
+    expect(steps.map(([, args]) => args)).toEqual([0, 1].map(() => ['--data-dir', dataDir, '--store', 'work', 'embed', '--all']))
+    expect(steps.map(([, , options]) => options.timeoutMs)).toEqual([4321, 4321])
+  })
+
+  it('keeps the vectors of a step that ran out of time, and stops once its minute is up (#392)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const dataDir = populatedDataDir()
+      const store = { total: 500, embedded: 0 }
+      const process = vi.fn<ProcessRunner>(async (_command, args) => {
+        if (args.includes('--all')) {
+          // A slow service: the step writes 30 vectors, then is stopped at its time, which Mnemon survives.
+          store.embedded += 30
+          vi.setSystemTime(Date.now() + 20_000)
+          throw new ProcessError('mnemon did not respond within 10000ms', 'timeout')
+        }
+        return { stdout: JSON.stringify({ total_insights: store.total, embedded: store.embedded, coverage: '0%', embedding_available: true, model: 'nomic-embed-text' }), stderr: '', exitCode: 0 }
+      })
+      const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work', timeoutMs: 120_000 })
+      const runner = createRunner(config, process)
+      const service = createService(runner, config, createRegistry(runner, true))
+      await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', filled: 90, remaining: 410, model: 'nomic-embed-text', stopped: 'time' })
+      // A longer configured time does not make a step hold the storage lock for longer than ten seconds.
+      expect(process.mock.calls.filter(([, args]) => args.includes('--all')).map(([, , options]) => options.timeoutMs)).toEqual([10_000, 10_000, 10_000])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports a fill the embedding service returned no vectors for, and keeps Mnemon\'s reason when it cannot run (#392)', async () => {
+    const dataDir = populatedDataDir()
+    const store = { total: 4, embedded: 0 }
+    const steps = [
+      // The model is not pulled: Ollama answers Mnemon's probe, and the backfill fails every memory yet exits 0.
+      { stdout: JSON.stringify({ failed: 4, model: 'nomic-embed-text', status: 'backfill_complete', succeeded: 0 }), stderr: '', exitCode: 0 },
+      { stdout: '', stderr: 'Error: Ollama embedding provider not available at http://127.0.0.1:9 — install with: brew install ollama\nUsage:\n  mnemon embed [id] [flags]\n', exitCode: 1 },
+    ]
+    const process = vi.fn<ProcessRunner>(async (_command, args) => args.includes('--all')
+      ? steps.shift()!
+      : { stdout: JSON.stringify({ total_insights: store.total, embedded: store.embedded, coverage: '0%', embedding_available: true, model: 'nomic-embed-text' }), stderr: '', exitCode: 0 })
+    const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
+    const runner = createRunner(config, process)
+    const service = createService(runner, config, createRegistry(runner, true))
+    await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', filled: 0, remaining: 4, model: 'nomic-embed-text', stopped: 'refused' })
     await expect(service.embedMissing('work')).rejects.toThrow(/^Ollama embedding provider not available at http:\/\/127\.0\.0\.1:9 — install with: brew install ollama$/u)
-    expect(process).toHaveBeenCalledTimes(3)
+    // Nothing missing, nothing run.
+    store.embedded = 4
+    await expect(service.embedMissing('work')).resolves.toEqual({ memoryBodyId: 'work', filled: 0, remaining: 0, model: 'nomic-embed-text' })
+    expect(steps).toEqual([])
+    expect(process.mock.calls.filter(([, args]) => args.includes('--all'))).toHaveLength(2)
   })
 
   it('fills in no space whose database is missing, and nothing while read-only (#392)', async () => {

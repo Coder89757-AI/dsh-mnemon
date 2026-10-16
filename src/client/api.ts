@@ -37,6 +37,7 @@ import {
   type MnemonSyncPullResult,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
+  type MnemonEmbeddingFill,
   type MnemonEmbeddingStatus,
   type StatusView,
   type TaskAgentModelCatalog,
@@ -167,7 +168,7 @@ export class MnemonClient {
   }
 
   /** Fill in the vectors a Mnemon Native space lacks (#392). */
-  fillEmbeddings(memoryBodyId: string): Promise<{ memoryBodyId: string; succeeded: number; failed: number }> {
+  fillEmbeddings(memoryBodyId: string): Promise<MnemonEmbeddingFill> {
     return this.call(MNEMON_WRITE_CHANNEL, 'embedding-fill', this.scoped({ memoryBodyId }))
   }
 

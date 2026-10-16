@@ -7,7 +7,7 @@ import type { MemoryMutationCompletion } from 'dsh-mnemon/contracts'
 import { memoryInputInteger as integer } from 'dsh-mnemon/extension-sdk'
 import type { ResolvedMemorySpacesConfig as ResolvedConfig } from './config.ts'
 import { MemorySpaceRegistry, validateMemorySpaceId } from './memory-spaces.ts'
-import type { MnemonRunner } from './runner.ts'
+import { MnemonCliError, type MnemonRunner } from './runner.ts'
 import { finalizeLlmPlacement, prepareMemoryPlacement, rulesOnlyPlacement } from './provider-placement.ts'
 import { EMPTY_MEMORY_PROVIDER_CATALOG, MemoryProviderCatalog } from './providers/catalog.ts'
 import { type MemoryProviderAdapter, type ProviderSpaceStatus, type ProviderSearchResult } from './providers/adapter.ts'
@@ -52,6 +52,7 @@ import {
   type MemoryGraphSnapshot,
   type MemoryListRequest,
   type MemoryListView,
+  type MnemonEmbeddingFill,
   type MnemonEmbeddingSpaceStatus,
   type MnemonEmbeddingStatus,
   type MemoryPlacementDecision,
@@ -386,12 +387,24 @@ function embeddingCounts(value: JsonValue): MnemonEmbeddingStatus {
   return { available, model, totalInsights: totalInsights!, embedded: embedded!, coverage, ...(validProtocol ? { protocol } : {}) }
 }
 
-/** How long one fill of a space's vectors may hold the storage lock. */
-const EMBED_FILL_TIMEOUT_MS = 60_000
+/** How long one fill of a space's vectors may run, and the longest step of it that holds the storage lock (#392). */
+const EMBED_FILL_BUDGET_MS = 60_000
+const EMBED_FILL_STEP_MS = 10_000
 
 /** A whole percent, as Mnemon writes it, that reads 100% only when every memory has its vector. */
 function coveragePercent(embedded: number, total: number): string {
   return total === 0 ? '0%' : `${Math.floor(embedded * 100 / total)}%`
+}
+
+/** Mnemon's reason for a failed call, without the usage it prints after its `Error:` line. */
+function cliReason(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return /\bError: ([^\n]+)/u.exec(detail)?.[1]?.trim() ?? detail.split('\n')[0]!.trim()
+}
+
+/** Whether a CLI call failed for this cause. */
+function cliFailure(error: unknown, reason: MnemonCliError['reason']): boolean {
+  return error instanceof MnemonCliError && error.reason === reason
 }
 
 export class MemorySpacesService {
@@ -611,61 +624,91 @@ export class MemorySpacesService {
   }
 
   /**
-   * Probe the effective Mnemon embedding runtime, and the vector coverage of every Mnemon
-   * Native space: `mnemon embed --status` counts only one Store, so a full count for it could
-   * read as the health of every space while another one lacked vectors (#392).
+   * Probe Mnemon's embedding runtime, and count the vectors of every Mnemon Native space:
+   * `mnemon embed --status` counts only one Store, so a full count for it could read as the
+   * health of every space while another one lacked vectors (#392).
    */
   async embeddingStatus(signal?: AbortSignal): Promise<MnemonEmbeddingStatus> {
-    const runtime = embeddingCounts(await this.runner.runJson(['embed', '--status'], signal === undefined ? {} : { signal }))
-    // Spaces whose database is missing have nothing to count, and a count must not create one.
+    // Mnemon creates the Store it opens, so a space whose database is missing is not read.
     const native = this.memorySpaces.list().filter(body => this.isNativeSpace(body) && existsSync(body.dbPath))
-    if (native.length === 0) return runtime
-    const counted = this.runner.effectiveStore()
+    let runtime: MnemonEmbeddingStatus | undefined
     const spaces: MnemonEmbeddingSpaceStatus[] = []
     for (const body of native) {
       const space = { memoryBodyId: body.id, name: body.name, active: body.active }
-      if (body.id === counted) {
-        spaces.push({ ...space, totalInsights: runtime.totalInsights, embedded: runtime.embedded, coverage: runtime.coverage })
-        continue
-      }
       try {
-        const counts = embeddingCounts(await this.runner.runJson(['embed', '--status'], { store: body.id, ...(signal === undefined ? {} : { signal }) }))
-        spaces.push({ ...space, totalInsights: counts.totalInsights, embedded: counts.embedded, coverage: counts.coverage })
+        const counts = embeddingCounts(await this.runner.runJson(['embed', '--status'], { store: body.id, database: body.dbPath, ...(signal === undefined ? {} : { signal }) }))
+        runtime ??= counts
+        spaces.push({ ...space, totalInsights: counts.totalInsights, embedded: counts.embedded, coverage: coveragePercent(counts.embedded, counts.totalInsights) })
       } catch (error) {
         if (signal?.aborted === true) throw error
-        spaces.push({ ...space, totalInsights: 0, embedded: 0, coverage: '0%', error: error instanceof Error ? error.message : String(error) })
+        // A space removed since the list was read has nothing left to count.
+        if (cliFailure(error, 'no-database')) continue
+        spaces.push({ ...space, totalInsights: 0, embedded: 0, coverage: '0%', error: cliReason(error) })
       }
     }
-    const totalInsights = spaces.reduce((sum, space) => sum + space.totalInsights, 0)
-    const embedded = spaces.reduce((sum, space) => sum + space.embedded, 0)
+    runtime ??= await this.embeddingRuntime(signal)
+    // A space that could not be read stays out of the total, which the list then says.
+    const counted = spaces.filter(space => space.error === undefined)
+    const totalInsights = counted.reduce((sum, space) => sum + space.totalInsights, 0)
+    const embedded = counted.reduce((sum, space) => sum + space.embedded, 0)
     return { ...runtime, totalInsights, embedded, coverage: coveragePercent(embedded, totalInsights), spaces }
+  }
+
+  /** Mnemon's embedding runtime, asked in a scratch data directory: no space could be counted, and Mnemon creates the Store it opens. */
+  private async embeddingRuntime(signal?: AbortSignal): Promise<MnemonEmbeddingStatus> {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-mnemon-embedding-'))
+    try {
+      return embeddingCounts(await this.runner.runJson(['--data-dir', directory, 'embed', '--status'], { globalFlags: false, ...(signal === undefined ? {} : { signal }) }))
+    } catch (error) {
+      throw new Error(cliReason(error), { cause: error })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   }
 
   /**
    * Fill in the vectors a Mnemon Native space lacks, through the Host's own data directory and
-   * embedding settings, which a terminal `mnemon embed --all` may not share (#392). One call runs
-   * for at most EMBED_FILL_TIMEOUT_MS while it holds the storage lock; Mnemon keeps the vectors it
-   * wrote before a timeout, so the next call goes on from there.
+   * embedding settings, which a terminal `mnemon embed --all` may not share (#392). Mnemon fills at
+   * most 100 a call and keeps the vectors it wrote when a call is stopped, so the fill goes in steps
+   * no longer than one CLI call, letting other memory work take the storage lock between them,
+   * until none is missing, a step writes none, or a minute is up.
    */
-  async embedMissing(memoryBodyId: string, signal?: AbortSignal): Promise<{ memoryBodyId: string; succeeded: number; failed: number }> {
+  async embedMissing(memoryBodyId: string, signal?: AbortSignal): Promise<MnemonEmbeddingFill> {
     this.assertWritable()
     const body = this.memorySpaces.get(validateMemorySpaceId(memoryBodyId))
     if (!this.isNativeSpace(body)) throw new Error(`${body.provider.label} keeps no Mnemon vectors to fill in`)
-    // The CLI would create an empty Store for a space whose database is missing.
-    if (!existsSync(body.dbPath)) throw new Error(`Memory Space ${body.name} has no database`)
-    let output: Record<string, JsonValue> | undefined
-    try {
-      output = record(await this.runner.runJson(['embed', '--all'], {
-        store: body.id, timeoutMs: Math.max(this.config.timeoutMs, EMBED_FILL_TIMEOUT_MS), ...(signal === undefined ? {} : { signal }),
-      }))
-    } catch (error) {
-      // Mnemon prints its usage after the reason; keep the reason.
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(/\bError: ([^\n]+)/u.exec(detail)?.[1]?.trim() ?? detail.split('\n')[0]!, { cause: error })
+    const options = { store: body.id, database: body.dbPath, ...(signal === undefined ? {} : { signal }) }
+    const failed = (error: unknown): Error => new Error(cliFailure(error, 'no-database') ? `Memory Space ${body.name} has no database` : cliReason(error), { cause: error })
+    const count = async (): Promise<MnemonEmbeddingStatus> => {
+      try {
+        return embeddingCounts(await this.runner.runJson(['embed', '--status'], options))
+      } catch (error) {
+        throw failed(error)
+      }
     }
-    const succeeded = number(output?.succeeded)
-    const failed = number(output?.failed)
-    return { memoryBodyId: body.id, succeeded: Number.isInteger(succeeded) ? succeeded! : 0, failed: Number.isInteger(failed) ? failed! : 0 }
+    const step = Math.min(this.config.timeoutMs, EMBED_FILL_STEP_MS)
+    const deadline = Date.now() + EMBED_FILL_BUDGET_MS
+    const first = await count()
+    let last = first
+    let stopped: MnemonEmbeddingFill['stopped']
+    while (last.embedded < last.totalInsights) {
+      if (Date.now() + step > deadline) { stopped = 'time'; break }
+      try {
+        await this.runner.runText(['embed', '--all'], { ...options, timeoutMs: step })
+      } catch (error) {
+        // A stopped step keeps the vectors it wrote; the count after it says how far it got.
+        if (!cliFailure(error, 'timeout')) throw failed(error)
+      }
+      const next = await count()
+      const progressed = next.embedded > last.embedded
+      last = next
+      if (!progressed) { stopped = 'refused'; break }
+    }
+    const remaining = last.totalInsights - last.embedded
+    return {
+      memoryBodyId: body.id, filled: Math.max(0, last.embedded - first.embedded), remaining, model: last.model,
+      ...(remaining > 0 && stopped !== undefined ? { stopped } : {}),
+    }
   }
 
   async status(signal?: AbortSignal): Promise<StatusView> {

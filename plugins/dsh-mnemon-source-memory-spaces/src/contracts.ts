@@ -576,7 +576,7 @@ export interface MnemonEmbeddingStatus {
   model: string
   /** Protocol Mnemon resolved for the embedding endpoint; omitted when the CLI does not report one. */
   protocol?: string
-  /** Across every Mnemon Native space in `spaces`; Mnemon's own Store when there is none. */
+  /** Across the spaces in `spaces` that could be counted; 0 when no space has a database. */
   totalInsights: number
   embedded: number
   coverage: string
@@ -592,8 +592,24 @@ export interface MnemonEmbeddingSpaceStatus {
   totalInsights: number
   embedded: number
   coverage: string
-  /** Why the space could not be counted; its counts are then 0. */
+  /** Why the space could not be counted; its counts are then 0 and stay out of the total. */
   error?: string
+}
+
+/** What one fill of a Mnemon Native space's missing vectors did (#392). */
+export interface MnemonEmbeddingFill {
+  memoryBodyId: string
+  /** Vectors the fill wrote. */
+  filled: number
+  /** Memories of the space still without a vector when it stopped. */
+  remaining: number
+  /** The embedding model Mnemon used. */
+  model: string
+  /**
+   * Why it stopped while memories remain: its minute ran out (`time`), or a step wrote no vector,
+   * so the embedding service returned none for the memories left (`refused`).
+   */
+  stopped?: 'time' | 'refused'
 }
 
 

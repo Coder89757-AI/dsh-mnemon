@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { JsonValue } from './contracts.ts'
 import type { ResolvedMemorySpacesConfig as ResolvedConfig } from './config.ts'
-import { ProcessError, runProcess, type ProcessOptions, type ProcessRunner } from './providers/process.ts'
+import { ProcessError, runProcess, type ProcessFailureReason, type ProcessOptions, type ProcessRunner } from './providers/process.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import { findMnemonCommand, isMnemonExecutable, resolveMnemonInvocation } from './native-cli.ts'
 
+/** Why a CLI call failed where callers act on the cause; a call that ran and exited non-zero carries none. */
+export type MnemonCliFailure = ProcessFailureReason | 'no-database'
+
 export class MnemonCliError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly reason?: MnemonCliFailure) {
     super(message)
     this.name = 'MnemonCliError'
   }
@@ -21,6 +24,11 @@ export interface MnemonRunOptions {
   maxOutputBytes?: number
   /** Time limit for this call instead of the configured one, for work that grows with a Store. */
   timeoutMs?: number
+  /**
+   * Database file the call needs, checked once the call holds the storage lock: Mnemon creates
+   * the Store it opens, so a space removed while the call waited is not created again (#392).
+   */
+  database?: string
 }
 
 export interface MnemonTextCommand {
@@ -108,7 +116,8 @@ export function createRunner(config: ResolvedConfig, processRunner: ProcessRunne
     args: readonly string[],
     options: MnemonRunOptions = {},
   ): Promise<string> => {
-    if (options.signal?.aborted === true) throw new MnemonCliError(`mnemon command aborted: ${String(options.signal.reason ?? 'cancelled')}`)
+    if (options.signal?.aborted === true) throw new MnemonCliError(`mnemon command aborted: ${String(options.signal.reason ?? 'cancelled')}`, 'aborted')
+    if (options.database !== undefined && !existsSync(options.database)) throw new MnemonCliError(`mnemon ${args.find(arg => !arg.startsWith('-')) ?? 'command'}: no database at ${options.database}`, 'no-database')
     const argv = options.globalFlags === false ? [...args] : [...globalArgs(options.store), ...args]
     const environment = processEnvironment(config)
     const processOptions: ProcessOptions = {
@@ -123,7 +132,7 @@ export function createRunner(config: ResolvedConfig, processRunner: ProcessRunne
       result = await processRunner(invocation.command, invocation.args,
         { ...processOptions, ...(invocation.env === undefined ? {} : { env: invocation.env }) })
     } catch (error) {
-      throw new MnemonCliError(processFailureMessage(error, args))
+      throw new MnemonCliError(processFailureMessage(error, args), error instanceof ProcessError ? error.reason : 'launch')
     }
     if (result.exitCode !== 0) {
       const detail = result.stderr.trim() || result.stdout.trim() || 'no output'
