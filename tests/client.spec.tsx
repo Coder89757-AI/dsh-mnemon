@@ -2029,6 +2029,33 @@ describe('MnemonWorkbench', () => {
     expect(call).not.toHaveBeenCalledWith(expect.anything(), 'remember', expect.anything())
   })
 
+  it('says when the task Agent or a write with constraints saved a memory without a vector (#388)', async () => {
+    const { connection, call } = createConnection()
+    const domain = call.getMockImplementation()!
+    call.mockImplementation(async (...args: Parameters<typeof domain>) => {
+      const endpoint = args[1]
+      if (endpoint === 'supervise') return { ok: true, value: { delegated: true, sessionId: 'session-1', runId: 'child-1', provider: 'spawn', summary: '已存入项目记忆空间。', action: 'added', memoryBodyIds: ['project'], unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }] } }
+      // Mnemon Native's own receipt for a memory saved while the embedding service did not answer.
+      if (endpoint === 'remember') return { ok: true, value: { action: 'added', id: 'memory-2', memoryBodyId: 'project', embedded: false } }
+      return domain(...args)
+    })
+    render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
+    await waitFor(() => expect(screen.getByText('已连接')).toBeTruthy())
+    const note = '未生成向量：嵌入服务没有响应，关键词召回能找到这条记忆，语义召回要等补齐向量后才能找到。'
+
+    await openRememberDialog()
+    fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Grafana 在 3300 端口。' } })
+    fireEvent.click(await screen.findByRole('button', { name: '交给任务 Agent' }))
+    await waitFor(() => expect(screen.getByText('已存入项目记忆空间。')).toBeTruthy())
+    expect(screen.getByText(note)).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Prometheus 在 9090 端口。' } })
+    fireEvent.click(await screen.findByRole('button', { name: '按约束交给任务 Agent' }))
+    await waitFor(() => expect(call).toHaveBeenCalledWith(expect.anything(), 'remember', expect.objectContaining({ content: '预发集群的 Prometheus 在 9090 端口。' })))
+    await waitFor(() => expect(screen.getByText(note)).toBeTruthy())
+    expect(screen.queryByText('已存入项目记忆空间。')).toBeNull()
+  })
+
   it('renders a usable empty overview when no memory spaces exist', async () => {
     const call = vi.fn(async (_channel: string, endpoint: string) => {
       if (endpoint === 'status' || endpoint === 'status-summary') return {

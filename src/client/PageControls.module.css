@@ -92,3 +92,9 @@
 }
 .receipt > :first-child { flex: none; margin-top: 1px; }
 .receiptAction { flex: none; margin-left: auto; }
+/* A fact about the write the summary may leave out, under the row. */
+.receipt > .receiptNote {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 18px;
+}

@@ -19,7 +19,7 @@ export interface MemorySpacesPageClient {
   agentSearch(request: SearchRequest): Promise<AgentSearchResponse>
   related(id: string, memoryBodyId?: string): Promise<Insight[]>
   remember(request: RememberRequest): Promise<Record<string, unknown>>
-  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[] }>
+  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[]; unembedded?: Array<{ memoryBodyId?: string; id?: string }> }>
   forget(id: string, memoryBodyId?: string): Promise<Record<string, unknown>>
   createBody(request: CreateMemorySpaceRequest): Promise<MemorySpace>
   updateBody(memoryBodyId: string, request: UpdateMemorySpaceRequest): Promise<MemorySpace>

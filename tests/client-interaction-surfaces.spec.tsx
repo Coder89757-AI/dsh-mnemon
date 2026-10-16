@@ -513,6 +513,39 @@ describe('conversation interaction surfaces', () => {
     await screen.findByText('saveAction.saved.runtimeMaintained')
   })
 
+  it('says when a memory was saved without a vector, through the task Agent or written directly (#388)', async () => {
+    const native = { id: 'native', name: 'Native space', active: true, providerEnabled: true, provider: { id: 'mnemon-native', label: 'Mnemon Native', capabilities: { remember: true } } }
+    let embedded = false
+    const rpcCall = vi.fn(async (_channel: string, endpoint: string) => {
+      if (endpoint === 'status') return { ok: true as const, value: { writeEnabled: true, commandFound: true, memoryBodies: [native], lifecycle: { taskAgentAvailable: true }, memorySystem: memorySystem() } }
+      if (endpoint === 'assistant-message') return { ok: true as const, value: { messageId: 'message-1', text: 'Grafana on the staging cluster listens on port 3300.' } }
+      if (endpoint === 'source-management-read') return emptyRuntime
+      if (endpoint === 'source-management-catalog') return runtimeCatalog()
+      if (endpoint === 'supervise') return { ok: true as const, value: { summary: 'Saved to Native space.', action: 'added', memoryBodyIds: ['native'], unembedded: [{ memoryBodyId: 'native', id: 'm1' }] } }
+      if (endpoint === 'source-management-mutate') return { ok: true as const, value: { revision: 's2', value: { action: 'added', id: 'm2', memoryBodyId: 'native', embedded } } }
+      throw new Error(`unexpected endpoint: ${endpoint}`)
+    })
+    openSaveAction(rpcCall)
+    await screen.findByText('taskAgent.ready')
+    const submit = screen.getByRole('button', { name: 'saveAction.submit' }) as HTMLButtonElement
+    await waitFor(() => expect(submit.disabled).toBe(false))
+    fireEvent.click(submit)
+    // The task Agent's result lists the memory; its own summary may leave that out.
+    await screen.findByText('Saved to Native space.')
+    expect(screen.getByText('receipt.unembedded')).toBeTruthy()
+    // Written directly, Mnemon Native's receipt says embedded: false.
+    choose(/^Native space/)
+    fireEvent.click(screen.getByRole('button', { name: 'saveAction.save' }))
+    await screen.findByText('saveAction.saved.space')
+    expect(screen.getByText('receipt.unembedded')).toBeTruthy()
+    // A memory saved with its vector reads as before.
+    embedded = true
+    fireEvent.change(screen.getByRole('textbox', { name: 'saveAction.candidate' }), { target: { value: 'Grafana on the staging cluster listens on port 3301.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'saveAction.save' }))
+    await screen.findByText('saveAction.saved.space')
+    expect(screen.queryByText('receipt.unembedded')).toBeNull()
+  })
+
   it('says before saving when working memory cannot take the text, or will make room first', async () => {
     let taskAgent = true
     const rpcCall = vi.fn(async (_channel: string, endpoint: string) => {
