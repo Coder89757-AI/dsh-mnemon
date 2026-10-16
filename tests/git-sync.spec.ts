@@ -712,7 +712,7 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
       await create(machineA)
       await machineA.sync.push({ message: 'From A' })
       const machineB = await machine('sync-document-older-b', origin)
-      // A build before 0.5.28 kept neither record.
+      // No release up to 0.5.28 used either record in a merge; one before 0.5.28 kept neither.
       const older = async (message: string) => {
         for (const path of [agreementOf(machineB.root), join(machineB.root, 'state', 'sync', 'last-run.json')]) rmSync(path, { force: true })
         await machineB.sync.push({ message })
@@ -724,6 +724,7 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
       await machineA.sync.push({ message: 'A, version 2' })
       // B keeps version 1 under the same id and version 2 as a copy, and publishes both.
       await older('B, as before this change')
+      expect(documentsOf(machineB.root)).toHaveLength(2)
       await machineA.sync.push({ message: 'A again' })
       expect(textOf(machineA.root, id)).toContain('Version 2 from A')
     })
@@ -776,6 +777,87 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
       await machineA.sync.push({ message: 'A again' })
       expect(textOf(machineA.root, id)).toContain('Version 2, only on A')
       // Without a common history to agree on, B's version is kept beside A's, as before.
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
+
+    const branchTexts = async (origin: string, subdir = 'mnemon/') => {
+      const index = JSON.parse(await git(['show', 'mnemon-sync:' + subdir + 'payload/documents/index.json'], origin)) as { documents: DocumentEntry[] }
+      return Promise.all(index.documents.map(document => git(['show', 'mnemon-sync:' + subdir + 'payload/' + document.relativePath], origin)))
+    }
+    const texts = (target: Awaited<ReturnType<typeof machine>>) => documentsOf(target.root).map(document => textOf(target.root, document.id))
+
+    it('keeps the version a runtime-only merge on 0.5.28 never took in (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-runtime-remote')
+      const machineA = await machine('sync-document-upgrade-runtime-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-upgrade-runtime-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      // A merge of runtime memory only is a run 0.5.28 recorded all the same, though no document came in.
+      await machineB.sync.pull({ components: ['runtime'] })
+      rmSync(agreementOf(machineB.root), { force: true })
+      await machineB.sync.push({ message: 'B, the first sync after the update' })
+      expect(texts(machineB).some(text => text.includes('Version 2 from A'))).toBe(true)
+      expect((await branchTexts(origin)).some(text => text.includes('Version 2 from A'))).toBe(true)
+    })
+
+    it('takes no agreement from the last sync of another directory (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-subdir-remote')
+      const machineA = await machine('sync-document-upgrade-subdir-a', origin)
+      await machineA.sync.configure({ subdir: 'team/' })
+      await create(machineA)
+      await machineA.sync.push({ message: 'A in team/' })
+      const machineB = await machine('sync-document-upgrade-subdir-b', origin)
+      await machineB.sync.configure({ subdir: 'team/' })
+      await machineB.sync.push({ message: 'B in team/' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineB, id, '# Release plan\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B, version 2 in team/' })
+      // A, on 0.5.28, syncs another directory of the branch, edits, comes back and updates.
+      await machineA.sync.configure({ subdir: 'mnemon/' })
+      await machineA.sync.push({ message: 'A in mnemon/' })
+      rmSync(agreementOf(machineA.root), { force: true })
+      await editDocument(machineA, id, '# Release plan\n\nA, first edit')
+      await editDocument(machineA, id, '# Release plan\n\nA, second edit')
+      await machineA.sync.configure({ subdir: 'team/' })
+      await machineA.sync.push({ message: 'A back in team/' })
+      await machineB.sync.push({ message: 'B again' })
+      // B's version 2 is never lost: without an agreement for team/, it is kept as a copy.
+      for (const held of [texts(machineA), texts(machineB), await branchTexts(origin, 'team/')]) expect(held.some(text => text.includes('Version 2 from B'))).toBe(true)
+      expect(texts(machineA).some(text => text.includes('A, second edit'))).toBe(true)
+    })
+
+    it('agrees on the documents of a last run where the branch already held the payload (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-held-remote')
+      const machineA = await machine('sync-document-upgrade-held', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'Version 1' })
+      expect((await machineA.sync.push({ message: 'Nothing new' })).committed).toBe(false)
+      rmSync(agreementOf(machineA.root), { force: true })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2')
+      await machineA.sync.push({ message: 'A again' })
+      expect(documentsOf(machineA.root).map(document => [document.id, document.revision])).toEqual([[id, 2]])
+    })
+
+    it('keeps copies when the last run\'s commit holds no documents to agree on (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-empty-remote')
+      // The branch starts with a commit of its own, which holds no Mnemon payload.
+      await unrelatedCommit(origin)
+      const empty = (await git(['rev-parse', 'mnemon-sync'], origin)).trim()
+      const machineA = await machine('sync-document-upgrade-empty', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'Version 1' })
+      rmSync(agreementOf(machineA.root), { force: true })
+      const lastRun = join(machineA.root, 'state', 'sync', 'last-run.json')
+      writeFileSync(lastRun, JSON.stringify({ ...JSON.parse(readFileSync(lastRun, 'utf8')) as Record<string, unknown>, commit: empty }))
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2')
+      await expect(machineA.sync.push({ message: 'A again' })).resolves.toMatchObject({ pushed: true })
+      // An ancestor without a Documents index is no agreement: a copy is kept, as before.
       expect(documentsOf(machineA.root)).toHaveLength(2)
     })
 
