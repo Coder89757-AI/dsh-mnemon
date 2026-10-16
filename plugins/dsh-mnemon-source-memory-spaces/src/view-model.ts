@@ -73,6 +73,8 @@ export function modelStatus(status: MemorySpacesStatus) {
     omittedProviderCount: Math.max(0, relevantProviders.length - providers.length),
     ...(status.stats === undefined ? {} : {
       aggregate: {
+        // Per-space sums never match it once a space is switched off or a memory forgotten (#390).
+        scope: 'Sums over the active, healthy Memory Spaces only (memorySpaces.healthy). totalInsights counts live memories; forgotten ones are in deletedInsights.',
         totalInsights: status.stats.totalInsights,
         deletedInsights: status.stats.deletedInsights,
         edgeCount: status.stats.edgeCount,

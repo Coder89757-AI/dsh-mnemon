@@ -142,6 +142,17 @@ describe('standalone Memory Spaces Source', () => {
       expect(link.mock.calls.at(-1)?.slice(0, 3)).toEqual([expect.objectContaining({ id: notes }), 'written', 'twin'])
       await expect(turn.executeAction(offer('link'), { sourceId: 'written', targetId: 'twin', memoryBodyId: archive }, () => true)).rejects.toThrow('link requires two evidence items')
       turn.release()
+      // A switched-off space is outside the next View, and a forget there says so rather than looking like a missing memory (#390).
+      await runner.executeManagement({ scope, sourceInstanceKey: source.sourceInstanceKey, mode: 'mutate', confirmed: true,
+        expectedRevision: (await runner.managementCatalog(scope)).sources[0]!.revision, operation: 'body-update', input: { memoryBodyId: archive, active: false } })
+      const later = await runner.beginTurn({ scope })
+      const forgetOffer = later.view.actionOffers.find(action => action.sourceActionId === 'forget')!.id
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: archive }, () => true))
+        .rejects.toThrow(`Memory Space ${JSON.stringify(archive)} (Archive) is switched off, so this View does not read it and cannot forget from it. Switch it on first`)
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: 'nowhere' }, () => true)).rejects.toThrow('Memory Space "nowhere" does not exist')
+      await expect(later.executeAction(forgetOffer, { id: 'missing' }, () => true)).rejects.toThrow('A memory in a switched-off space is outside this View until the space is switched on')
+      expect(forget).toHaveBeenCalledTimes(2)
+      later.release()
     } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
   })
 

@@ -38,6 +38,15 @@ describe('Memory Spaces health for model tools', () => {
     expect(disabled.notice).toBe(blocked.notice)
   })
 
+  it('says what the aggregate sums, so per-space counts can be squared with it (#390)', () => {
+    const stats = { totalInsights: 108, deletedInsights: 3, edgeCount: 3879, oplogCount: 40, dbSizeBytes: 3_547_136, byCategory: {}, topEntities: [] }
+    const value = modelStatus(status({ memoryBodies: [{ id: 'default', name: 'Default', active: true, providerEnabled: true, healthy: true }] as never, stats } as never))
+    expect(value.aggregate).toEqual({
+      scope: 'Sums over the active, healthy Memory Spaces only (memorySpaces.healthy). totalInsights counts live memories; forgotten ones are in deletedInsights.',
+      totalInsights: 108, deletedInsights: 3, edgeCount: 3879, oplogCount: 40, dbSizeBytes: 3_547_136,
+    })
+  })
+
   it('adds nothing once a Memory Space exists', () => {
     const value = modelStatus(status({ memoryBodies: [{ id: 'default', name: 'Default', active: true, providerEnabled: true, healthy: true }] as never }))
     expect(value).not.toHaveProperty('notice')

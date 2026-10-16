@@ -36,9 +36,13 @@ describe('Host document creation protection', () => {
     })
     await f.turn()
     const args = { title: 'Deployment follow-up', content: 'A separate rollout note.', sourcePaths: ['README.md'] }
-    const result = await f.create.execute(args as never, { agent: f.child, signal: f.signal })
-    expect(result).toMatchObject({ action: 'created', document: { title: args.title, content: args.content, sessionIds: [f.child.id] },
-      memoryReceipt: { completion: 'committed' } })
+    const result = await f.create.execute(args as never, { agent: f.child, signal: f.signal }) as { document: { id: string } }
+    // The model reads the Document it wrote and the layer's totals, not every Document with its paths (#390).
+    expect(result).toMatchObject({ action: 'created', document: { title: args.title, sourcePaths: ['README.md'] },
+      documents: { active: 2, archived: 0 }, memoryReceipt: { completion: 'committed' } })
+    expect(result).not.toHaveProperty('snapshot')
+    expect(result.document).not.toHaveProperty('content')
+    expect(await f.documents.read<DocumentView>('document', { id: result.document.id })).toMatchObject({ content: args.content, sessionIds: [f.child.id] })
     expect(await f.documents.read<DocumentView>('document', { id: original.document.id })).toMatchObject({
       content: original.document.content, contentHash: original.document.contentHash, revision: original.document.revision,
     })
@@ -66,6 +70,22 @@ describe('Host document creation protection', () => {
     expect(() => f.create.execute({ title: 'Blocked', content: 'Blocked candidate.' } as never, { agent: f.child, signal: f.signal })).toThrow()
     expect(f.coordinator.document).not.toHaveBeenCalled()
     expect(f.coordinator.archiveDocument).not.toHaveBeenCalled()
+  })
+
+  it('hands the model a compact receipt for root Document writes too (#390)', async () => {
+    const f = await fixture()
+    const written = await f.documents.mutate<DocumentMutationResult>('mutate', { action: 'create', title: 'Runbook', content: '# Runbook' })
+    vi.mocked(f.coordinator.document).mockResolvedValue(written as never)
+    const manage = f.registered.find(tool => tool.name === 'mnemon_document_manage')!
+    const result = await manage.execute({ action: 'update', id: written.document.id, content: '# Runbook v2' } as never, { agent: f.root, signal: f.signal })
+    expect(result).toEqual({
+      success: true, action: 'created',
+      document: expect.objectContaining({ id: written.document.id, title: 'Runbook', relativePath: written.document.relativePath }),
+      documents: { active: 1, archived: 0, activeBytes: written.snapshot.activeBytes, limitBytes: written.snapshot.limitBytes },
+    })
+    // Neither the body the model wrote nor any absolute path comes back.
+    expect(JSON.stringify(result)).not.toContain('# Runbook')
+    expect(JSON.stringify(result)).not.toContain(f.workspace)
   })
 
   it('keeps explicit root document updates on the coordinated management path', async () => {

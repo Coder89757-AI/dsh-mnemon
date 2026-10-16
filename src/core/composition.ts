@@ -451,6 +451,20 @@ function normalizeEvidence(value: MemoryEvidence, view: ComposableMemoryView, ro
   }, 'memory Evidence')
 }
 
+/**
+ * Why an id names nothing this View offers, told apart (#390): the View offers none of that
+ * kind, the id is a short form of one exact id, or it is none of the ids the View lists.
+ */
+function unofferedViewId(kind: string, plural: string, id: string, offered: readonly string[]): string {
+  if (offered.length === 0) return `memory ${kind} is unavailable: ${id}; this View offers no ${plural} this turn`
+  // Ids are exact, as the MNEMON VIEW ROUTES envelope lists them, e.g. source:<instance>/<name>.
+  const name = id.split('/').at(-1)!
+  const near = offered.filter(candidate => candidate.split('/').at(-1) === name)
+  if (near.length === 1) return `memory ${kind} is unavailable: ${id}; ids are exact as the View lists them: ${JSON.stringify(near[0])}`
+  const shown = offered.slice(0, 12).map(candidate => JSON.stringify(candidate)).join(', ')
+  return `memory ${kind} is unavailable: ${id}; this View offers ${shown}${offered.length > 12 ? ` and ${offered.length - 12} more` : ''}`
+}
+
 export class MemoryCompositionGeneration {
   readonly id: string
   readonly report: MemoryCompositionEvaluationReport
@@ -794,7 +808,7 @@ export class MemoryCompositionGeneration {
     this.assertOpen()
     if (view.runtimeGeneration !== this.id) throw new Error('memory View belongs to a different runtime generation')
     const route = view.routes.find(candidate => candidate.id === routeId)
-    if (route === undefined) throw new Error(`memory View Route is unavailable: ${routeId}`)
+    if (route === undefined) throw new Error(unofferedViewId('View Route', 'Routes', routeId, view.routes.map(candidate => candidate.id)))
     const grant = view.readGrants.find(candidate => candidate.id === route.readGrantId && candidate.sourceInstanceKey === route.sourceInstanceKey)
     if (grant === undefined) throw new Error(`memory View Route has no valid ReadGrant: ${routeId}`)
     assertInputSchema(route.inputSchema, input, 'memory Route input')
@@ -848,7 +862,7 @@ export class MemoryCompositionGeneration {
     this.assertOpen()
     if (view.runtimeGeneration !== this.id) throw new Error('memory View belongs to a different runtime generation')
     const offer = view.actionOffers.find(candidate => candidate.id === offerId)
-    if (offer === undefined) throw new Error(`memory ActionOffer is unavailable: ${offerId}`)
+    if (offer === undefined) throw new Error(unofferedViewId('ActionOffer', 'ActionOffers', offerId, view.actionOffers.map(candidate => candidate.id)))
     assertInputSchema(offer.inputSchema, input, 'memory Action input')
     if (!await authorize(offer)) throw new Error(`memory ActionOffer is not currently authorized: ${offer.id}`)
     const source = this.sources.get(offer.sourceInstanceKey)

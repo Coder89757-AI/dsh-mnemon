@@ -28,6 +28,28 @@ function requireAgent(exec: ToolExecution) {
 }
 
 /** Named product tools are views over the same Source Route/Action protocol. */
+/** The fields of a written Document the model needs to refer to it; never its body, which it just wrote. */
+const DOCUMENT_RECEIPT_FIELDS = ['id', 'title', 'description', 'status', 'revision', 'sizeBytes', 'relativePath', 'sourcePaths', 'memoryBodyIds', 'archivedAt', 'archiveSummary'] as const
+
+/**
+ * A Document write as the model reads it: the Document written and the layer's totals. The
+ * snapshot of every Document, with their excerpts and paths, grows with the layer and stays on
+ * the control plane the WebUI reads (#390).
+ */
+export function documentReceipt(value: unknown): unknown {
+  const result = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+  const snapshot = result?.snapshot
+  if (result === undefined || typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) return value
+  const { snapshot: _snapshot, document, ...rest } = result
+  const totals = snapshot as Record<string, unknown>
+  const written = typeof document === 'object' && document !== null && !Array.isArray(document) ? document as Record<string, unknown> : undefined
+  return {
+    ...rest,
+    ...(written === undefined ? {} : { document: Object.fromEntries(DOCUMENT_RECEIPT_FIELDS.filter(key => written[key] !== undefined).map(key => [key, written[key]])) }),
+    documents: { active: totals.activeCount, archived: totals.archivedCount, activeBytes: totals.activeBytes, limitBytes: totals.limitBytes },
+  }
+}
+
 export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentRuntimeSource, coordinator: MnemonSubagentCoordinator): void {
   const runtimeFor = (exec: ToolExecution): MnemonRuntimeGraph => runtimeSource.forAgent(requireAgent(exec))
   const sourceFor = (exec: ToolExecution, typeId: string) => {
@@ -118,7 +140,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_recall',
-    description: 'Recall bounded durable evidence from this turn\'s pinned MemorySource only when the current question needs history. The Host allows one initial query plus one LLM-chosen different-query refinement, shares one evidence envelope, validates Memory Spaces, ignores brittle semantic filters, and replays duplicate queries. Omit memoryBodyIds to search every pinned active space.',
+    description: 'Recall bounded durable evidence from this turn\'s pinned MemorySource only when the current question needs history. The Host allows one initial query plus one LLM-chosen different-query refinement, shares one evidence envelope, validates Memory Spaces, ignores brittle semantic filters, and replays duplicate queries. Omit memoryBodyIds to search every pinned active space. It searches the memories in Memory Spaces only: project Documents are never in its results, so search those with mnemon_document_search.',
     parameters: {
       type: 'object',
       properties: {
@@ -145,7 +167,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_related',
-    description: 'Traverse one insight admitted by this turn\'s mnemon_recall. At most one traversal is allowed per turn; use it only when the owning Memory Space reports capabilities.related=true and graph neighbors materially help. OpenViking does not currently support this operation.',
+    description: 'Traverse one insight admitted by this turn\'s mnemon_recall. At most one traversal is allowed per turn; use it only when the owning Memory Space reports capabilities.related=true and graph neighbors materially help. OpenViking does not currently support this operation. Each neighbor names the edge it came through (edgeType). Mnemon adds temporal edges between memories written close in time and entity edges between memories that share an entity, so those are many; pass edge to follow one kind, such as semantic or causal.',
     parameters: {
       type: 'object',
       properties: {
@@ -187,7 +209,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_document_search',
-    description: 'Run one focused search over project-scoped managed Documents before durable Recall. The Host admits only one Documents query per executing Agent turn; parallel calls share that slot, while child turns have independent budgets. Results contain bounded query-local evidence, not complete records. Cold archives are excluded unless a known archive reference requires them.',
+    description: 'Run one focused search over project-scoped managed Documents before durable Recall. The Host admits only one Documents query per executing Agent turn; parallel calls share that slot, while child turns have independent budgets. Results contain bounded query-local evidence, not complete records. Cold archives are excluded unless a known archive reference requires them. It searches Documents only: memories in Memory Spaces are never in its results, so recall those with mnemon_recall.',
     parameters: {
       type: 'object',
       properties: {
@@ -225,7 +247,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       presentationMeta: memoryWritePresentation('documents', 'create') },
     execute: (args: { title: string; description?: string; content: string; sourcePaths?: string[] }, exec: ToolExecution) => {
       requireSource(exec, 'documents', 'write')
-      return sourceAction(exec, 'documents', 'create', { ...args, sessionIds: [requireAgent(exec).id] })
+      return sourceAction(exec, 'documents', 'create', { ...args, sessionIds: [requireAgent(exec).id] }).then(documentReceipt)
     },
     presentCall: (args: { title: string }) => ({ card: 'generic', title: 'Create Mnemon Document', kind: 'edit', rawInput: args.title }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon Document created' }),
@@ -256,13 +278,13 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
         requireSource(exec, 'documents', 'archive')
         if (isSubagent(agent)) throw new Error('idle document workers cannot cold-archive directly')
         if (args.id === undefined) throw new Error('document id is required for archive')
-        return coordinator.archiveDocument(agent, args.id, exec.signal)
+        return Promise.resolve(coordinator.archiveDocument(agent, args.id, exec.signal)).then(documentReceipt)
       }
       requireSource(exec, 'documents', 'write')
       const request: DocumentMutation = args.action === 'create'
         ? { action: 'create', title: args.title ?? '', content: args.content ?? '', ...(args.description === undefined ? {} : { description: args.description }), ...(args.sourcePaths === undefined ? {} : { sourcePaths: args.sourcePaths }), sessionIds: [agent.id] }
         : { action: 'update', id: args.id ?? '', ...(args.title === undefined ? {} : { title: args.title }), ...(args.description === undefined ? {} : { description: args.description }), ...(args.content === undefined ? {} : { content: args.content }), ...(args.sourcePaths === undefined ? {} : { sourcePaths: args.sourcePaths }), sessionIds: [agent.id] }
-      return isSubagent(agent) ? sourceAction(exec, 'documents', 'manage', request) : coordinator.document(agent, request, exec.signal)
+      return Promise.resolve(isSubagent(agent) ? sourceAction(exec, 'documents', 'manage', request) : coordinator.document(agent, request, exec.signal)).then(documentReceipt)
     },
     presentCall: (args: { action: string; title?: string }) => ({ card: 'generic', title: `${args.action} Mnemon Document`, kind: 'edit', ...(args.title === undefined ? {} : { rawInput: args.title }) }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon Document processed' }),

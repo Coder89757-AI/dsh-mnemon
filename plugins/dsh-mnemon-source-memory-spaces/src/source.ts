@@ -131,6 +131,15 @@ function placementDecision(value: MemoryJsonValue | undefined): MemoryPlacementD
   }
 }
 
+/** Why this View cannot change a Memory Space it does not read (#390). */
+function outsideView(service: MemorySpacesService, memoryBodyId: string): string {
+  const body = service.spaceDirectory().items.find(candidate => candidate.id === memoryBodyId)
+  if (body === undefined) return `Memory Space ${JSON.stringify(memoryBodyId)} does not exist`
+  if (!body.active) return `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name}) is switched off, so this View does not read it and cannot forget from it. Switch it on first, with mnemon_memory_body_update (active: true) or on the Memory Spaces page, then forget`
+  if (body.providerEnabled === false) return `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name}) uses ${body.provider.label}, which is turned off on the dsh-mnemon page under Plugins`
+  return `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name}) is outside this View`
+}
+
 function managementResult(service: MemorySpacesService, value: unknown): MemorySourceManagementResult {
   return { revision: service.memoryRevision(), value: value as MemoryJsonValue }
 }
@@ -646,9 +655,12 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           result = await service.link(sourceId, targetId, edge, weight, text(input.reason, 'reason', 1_000, false), request.signal, bodyId) as MemoryJsonValue
         } else if (request.offer.sourceActionId === 'forget') {
           const id = text(input.id, 'id', 2_000)!
+          // A space this View does not read says why, rather than looking like a missing memory (#390).
+          const named = text(input.memoryBodyId, 'memoryBodyId', 300, false)
+          if (named !== undefined && !allowedBodies.includes(named)) throw new Error(outsideView(service, named))
           bodyId = await admittedOwner(id)
           if (bodyId === undefined || !allowedBodies.includes(bodyId)) {
-            throw new Error('forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it')
+            throw new Error('forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it. A memory in a switched-off space is outside this View until the space is switched on')
           }
           result = await service.forget(id, request.signal, bodyId) as MemoryJsonValue
         } else {
