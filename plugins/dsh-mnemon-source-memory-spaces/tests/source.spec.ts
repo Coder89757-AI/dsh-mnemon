@@ -129,7 +129,8 @@ describe('standalone Memory Spaces Source', () => {
       await expect(turn.executeAction(offer('forget'), { id: 'written' }, () => true)).resolves.toMatchObject({ completion: 'committed' })
       expect(forget.mock.calls.at(-1)?.slice(0, 2)).toEqual([expect.objectContaining({ id: notes }), 'written'])
       // An id no authorized space holds, or one two spaces hold, is not guessed.
-      await expect(turn.executeAction(offer('forget'), { id: 'missing' }, () => true)).rejects.toThrow('already admitted')
+      // With no space switched off, the refusal names none (#390).
+      await expect(turn.executeAction(offer('forget'), { id: 'missing' }, () => true)).rejects.toThrow(/already admitted.*when several hold it$/u)
       await expect(turn.executeAction(offer('forget'), { id: 'twin' }, () => true)).rejects.toThrow('already admitted')
       expect(forget).toHaveBeenCalledOnce()
       // Naming the space settles it.
@@ -147,12 +148,21 @@ describe('standalone Memory Spaces Source', () => {
         expectedRevision: (await runner.managementCatalog(scope)).sources[0]!.revision, operation: 'body-update', input: { memoryBodyId: archive, active: false } })
       const later = await runner.beginTurn({ scope })
       const forgetOffer = later.view.actionOffers.find(action => action.sourceActionId === 'forget')!.id
-      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: archive }, () => true))
-        .rejects.toThrow(`Memory Space ${JSON.stringify(archive)} (Archive) is switched off, so this View does not read it and cannot forget from it. Switch it on first`)
+      // Whether a space is on stays the user's choice, and the View is pinned for the turn.
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: archive }, () => true)).rejects.toThrow(`Memory Space ${JSON.stringify(archive)} (Archive) is switched off, so this turn's View does not read it and cannot forget from it. Whether it is on is the user's choice, on the Memory Spaces page; once it is on, a forget there works from the next turn`)
       await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: 'nowhere' }, () => true)).rejects.toThrow('Memory Space "nowhere" does not exist')
-      await expect(later.executeAction(forgetOffer, { id: 'missing' }, () => true)).rejects.toThrow('A memory in a switched-off space is outside this View until the space is switched on')
+      await expect(later.executeAction(forgetOffer, { id: 'missing' }, () => true)).rejects.toThrow('when several hold it. Switched-off spaces ("Archive") are outside this View; one the user switches on is read from the next turn')
+      // Switched on again during the turn, the space is still outside the pinned View until the next one.
+      await runner.executeManagement({ scope, sourceInstanceKey: source.sourceInstanceKey, mode: 'mutate', confirmed: true,
+        expectedRevision: (await runner.managementCatalog(scope)).sources[0]!.revision, operation: 'body-update', input: { memoryBodyId: archive, active: true } })
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: archive }, () => true))
+        .rejects.toThrow(`Memory Space ${JSON.stringify(archive)} (Archive) was switched on after this turn began, so this turn's View does not read it yet; a forget there works from the next turn`)
       expect(forget).toHaveBeenCalledTimes(2)
       later.release()
+      const next = await runner.beginTurn({ scope })
+      await next.executeAction(next.view.actionOffers.find(action => action.sourceActionId === 'forget')!.id, { id: 'twin', memoryBodyId: archive }, () => true)
+      expect(forget).toHaveBeenCalledTimes(3)
+      next.release()
     } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
   })
 

@@ -4,7 +4,8 @@ import type { RuntimeMemoryImportance, RuntimeMemoryTarget } from 'dsh-mnemon-so
 import type { Category, EdgeType, Source } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { CATEGORIES, EDGE_TYPES, SOURCES } from './protocol.ts'
 import { assertParticipation } from './access.ts'
-import type { MemoryCapability, MemoryJsonValue } from '../core/contracts/index.ts'
+import type { MemoryCapability, MemoryJsonValue, MemoryMutationReceipt } from '../core/contracts/index.ts'
+import { unofferedViewId } from './view-presentation.ts'
 import { agentScope, type MnemonAgentRuntimeSource, type MnemonRuntimeGraph } from './runtime.ts'
 import { isSubagent, MnemonSubagentCoordinator } from './subagent.ts'
 import { memoryReadPresentation, memoryWritePresentation } from './activity-presentation.ts'
@@ -27,9 +28,12 @@ function requireAgent(exec: ToolExecution) {
   return exec.agent
 }
 
-/** Named product tools are views over the same Source Route/Action protocol. */
-/** The fields of a written Document the model needs to refer to it; never its body, which it just wrote. */
-const DOCUMENT_RECEIPT_FIELDS = ['id', 'title', 'description', 'status', 'revision', 'sizeBytes', 'relativePath', 'sourcePaths', 'memoryBodyIds', 'archivedAt', 'archiveSummary'] as const
+/**
+ * The fields of a written Document the model needs to refer to it: never its body, which it just
+ * wrote, nor a path under the storage root, which it could read as one in the workspace. The
+ * content hash is what an archive's lineage names.
+ */
+const DOCUMENT_RECEIPT_FIELDS = ['id', 'title', 'description', 'status', 'revision', 'contentHash', 'sizeBytes', 'sourcePaths', 'memoryBodyIds', 'archivedAt', 'archiveSummary'] as const
 
 /**
  * A Document write as the model reads it: the Document written and the layer's totals. The
@@ -50,6 +54,14 @@ export function documentReceipt(value: unknown): unknown {
   }
 }
 
+/** A generic Action's receipt for a Document write, compacted as the named Document tools return it (#390). */
+function documentActionReceipt(receipt: MemoryMutationReceipt): MemoryMutationReceipt {
+  const details = receipt.details
+  if (typeof details !== 'object' || details === null || Array.isArray(details)) return receipt
+  return { ...receipt, details: ('result' in details ? { ...details, result: documentReceipt(details.result) } : documentReceipt(details)) as MemoryJsonValue }
+}
+
+/** Named product tools are views over the same Source Route/Action protocol. */
 export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentRuntimeSource, coordinator: MnemonSubagentCoordinator): void {
   const runtimeFor = (exec: ToolExecution): MnemonRuntimeGraph => runtimeSource.forAgent(requireAgent(exec))
   const sourceFor = (exec: ToolExecution, typeId: string) => {
@@ -96,6 +108,9 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       presentationMeta: memoryReadPresentation(undefined, 'view-route', 'routeId') },
     execute: async (args: { routeId: string; input: MemoryJsonValue }, exec: ToolExecution) => {
       const { manager, turn } = composableTurn(exec)
+      // An id the View does not offer names only what the envelope shows (#390).
+      const refusal = unofferedViewId(runtimeFor(exec), turn, 'route', args.routeId)
+      if (refusal !== undefined) throw new Error(refusal)
       const evidence = await manager.executeRoute(turn.turnId, args.routeId, args.input, exec.signal)
       return evidence.output ?? evidence
     },
@@ -118,7 +133,17 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       presentationMeta: memoryWritePresentation(undefined, 'view-action', 'offerId') },
     execute: (args: { offerId: string; input: MemoryJsonValue }, exec: ToolExecution) => {
       if (!config.writeEnabled) throw new Error('dsh-mnemon is configured read-only (writeEnabled: false)')
-      return coordinator.action(requireAgent(exec), args.offerId, args.input, exec.signal)
+      const agent = requireAgent(exec)
+      const graph = runtimeFor(exec)
+      // The turn the coordinator acts in; an id it does not offer names only what the envelope shows (#390).
+      const turn = graph.composableTurns.activeTurn(agent.id)
+      const refusal = turn === undefined ? undefined : unofferedViewId(graph, turn, 'action', args.offerId)
+      if (refusal !== undefined) throw new Error(refusal)
+      const offer = turn?.view.actionOffers.find(candidate => candidate.id === args.offerId)
+      const source = offer === undefined ? undefined : graph.memoryComposition.generation(turn!.view.runtimeGeneration)?.sourceInstances()
+        .find(candidate => candidate.sourceInstanceKey === offer.sourceInstanceKey)
+      const receipt = coordinator.action(agent, args.offerId, args.input, exec.signal)
+      return source?.sourceTypeId === 'documents' ? receipt.then(documentActionReceipt) : receipt
     },
     presentCall: (args: { offerId: string }) => ({ card: 'generic', title: 'Apply composable memory action', kind: 'edit', rawInput: args.offerId }),
     presentResult: () => ({ card: 'generic', title: 'Composable memory receipt ready' }),
@@ -140,7 +165,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_recall',
-    description: 'Recall bounded durable evidence from this turn\'s pinned MemorySource only when the current question needs history. The Host allows one initial query plus one LLM-chosen different-query refinement, shares one evidence envelope, validates Memory Spaces, ignores brittle semantic filters, and replays duplicate queries. Omit memoryBodyIds to search every pinned active space. It searches the memories in Memory Spaces only: project Documents are never in its results, so search those with mnemon_document_search.',
+    description: 'Recall bounded durable evidence from this turn\'s pinned MemorySource only when the current question needs history. The Host allows one initial query plus one LLM-chosen different-query refinement, shares one evidence envelope, validates Memory Spaces, ignores brittle semantic filters, and replays duplicate queries. Omit memoryBodyIds to search every pinned active space. It searches the memories in Memory Spaces, not project Documents, which mnemon_document_search searches; of a cold-archived Document it finds only the index memory the archive left in a space.',
     parameters: {
       type: 'object',
       properties: {
@@ -167,7 +192,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_related',
-    description: 'Traverse one insight admitted by this turn\'s mnemon_recall. At most one traversal is allowed per turn; use it only when the owning Memory Space reports capabilities.related=true and graph neighbors materially help. OpenViking does not currently support this operation. Each neighbor names the edge it came through (edgeType). Mnemon adds temporal edges between memories written close in time and entity edges between memories that share an entity, so those are many; pass edge to follow one kind, such as semantic or causal.',
+    description: 'Traverse one insight admitted by this turn\'s mnemon_recall. At most one traversal is allowed per turn; use it only when the owning Memory Space reports capabilities.related=true and graph neighbors materially help. OpenViking does not currently support this operation. In a Mnemon Native space each neighbor names the edge it came through (edgeType): Mnemon adds temporal edges between memories written close in time and entity edges between memories that share an entity, so those are many; pass edge to follow one kind, such as semantic or causal. Other Providers name no edge type and do not filter by edge.',
     parameters: {
       type: 'object',
       properties: {

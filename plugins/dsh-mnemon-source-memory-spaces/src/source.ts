@@ -131,13 +131,29 @@ function placementDecision(value: MemoryJsonValue | undefined): MemoryPlacementD
   }
 }
 
-/** Why this View cannot change a Memory Space it does not read (#390). */
+/**
+ * Why this turn's View cannot forget from a Memory Space it does not read (#390). The View is
+ * pinned for the turn, so switching a space on reaches a forget from the next turn only, and
+ * whether a space is on stays the user's choice.
+ */
 function outsideView(service: MemorySpacesService, memoryBodyId: string): string {
-  const body = service.spaceDirectory().items.find(candidate => candidate.id === memoryBodyId)
+  const catalog = service.spaceDirectory()
+  const body = catalog.items.find(candidate => candidate.id === memoryBodyId)
   if (body === undefined) return `Memory Space ${JSON.stringify(memoryBodyId)} does not exist`
-  if (!body.active) return `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name}) is switched off, so this View does not read it and cannot forget from it. Switch it on first, with mnemon_memory_body_update (active: true) or on the Memory Spaces page, then forget`
-  if (body.providerEnabled === false) return `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name}) uses ${body.provider.label}, which is turned off on the dsh-mnemon page under Plugins`
-  return `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name}) is outside this View`
+  const space = `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name})`
+  if (!body.active) return `${space} is switched off, so this turn's View does not read it and cannot forget from it. Whether it is on is the user's choice, on the Memory Spaces page; once it is on, a forget there works from the next turn`
+  if (body.providerEnabled === false) return `${space} uses ${body.provider.label}, which is turned off on the dsh-mnemon page under Plugins`
+  const provider = catalog.providers.find(candidate => candidate.id === body.provider.id)
+  if (provider?.serviceConfigured === false) return `${space} uses ${body.provider.label}, which is not available here${(provider.typeId ?? provider.id) === 'mnemon-native' ? ': the Mnemon CLI is not installed' : ''}`
+  return `${space} was switched on after this turn began, so this turn's View does not read it yet; a forget there works from the next turn`
+}
+
+/** The switched-off spaces a forget cannot reach this turn, named only when there are some (#390). */
+function switchedOffSpaces(service: MemorySpacesService): string {
+  const off = service.spaceDirectory().items.filter(body => !body.active)
+  if (off.length === 0) return ''
+  const names = off.slice(0, 5).map(body => JSON.stringify(body.name)).join(', ')
+  return `. Switched-off spaces (${names}${off.length > 5 ? ` and ${off.length - 5} more` : ''}) are outside this View; one the user switches on is read from the next turn`
 }
 
 function managementResult(service: MemorySpacesService, value: unknown): MemorySourceManagementResult {
@@ -660,7 +676,7 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           if (named !== undefined && !allowedBodies.includes(named)) throw new Error(outsideView(service, named))
           bodyId = await admittedOwner(id)
           if (bodyId === undefined || !allowedBodies.includes(bodyId)) {
-            throw new Error('forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it. A memory in a switched-off space is outside this View until the space is switched on')
+            throw new Error(`forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it${switchedOffSpaces(service)}`)
           }
           result = await service.forget(id, request.signal, bodyId) as MemoryJsonValue
         } else {

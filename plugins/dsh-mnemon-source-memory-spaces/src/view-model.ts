@@ -36,6 +36,8 @@ export function modelSpaceCatalog(catalog: MemorySpaceCatalog) {
 export function modelStatus(status: MemorySpacesStatus) {
   const active = status.memoryBodies.filter(body => body.active && body.providerEnabled !== false)
   const unhealthy = active.filter(body => !body.healthy)
+  // The aggregate sums the spaces the status could take statistics from.
+  const summed = active.filter(body => body.healthy && body.stats !== undefined)
   const relevantProviders = status.providerServices?.filter(provider => (
     provider.enabled || provider.configured || provider.memoryBodyCount > 0 || provider.status === 'unhealthy'
   )) ?? []
@@ -73,8 +75,9 @@ export function modelStatus(status: MemorySpacesStatus) {
     omittedProviderCount: Math.max(0, relevantProviders.length - providers.length),
     ...(status.stats === undefined ? {} : {
       aggregate: {
-        // Per-space sums never match it once a space is switched off or a memory forgotten (#390).
-        scope: 'Sums over the active, healthy Memory Spaces only (memorySpaces.healthy). totalInsights counts live memories; forgotten ones are in deletedInsights.',
+        // Per-space counts never match it once a space is switched off, its Provider keeps no statistics, or a memory is forgotten (#390).
+        scope: 'Sums over the active, healthy Memory Spaces whose Provider reports statistics (spaces); the others add nothing. totalInsights counts live memories, and deletedInsights the forgotten ones a Provider keeps, as Mnemon Native does.',
+        spaces: summed.length,
         totalInsights: status.stats.totalInsights,
         deletedInsights: status.stats.deletedInsights,
         edgeCount: status.stats.edgeCount,

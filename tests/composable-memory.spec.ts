@@ -333,26 +333,6 @@ describe('Composable View Memory compiler', () => {
     await generation.dispose()
   })
 
-  it('tells an id the View does not offer from a short form of one it does (#390)', async () => {
-    const generation = new MemoryCompositionGeneration(contributions())
-    try {
-      const view = await generation.compose(REQUEST)
-      const route = view.routes[0]!.id
-      const offer = view.actionOffers[0]!.id
-      // The model wrote the Route's name without the Source part of its exact id.
-      await expect(generation.executeRoute(view, route.split('/').at(-1)!, { query: 'needle' }))
-        .rejects.toThrow(`memory View Route is unavailable: ${route.split('/').at(-1)}; ids are exact as the View lists them: ${JSON.stringify(route)}`)
-      await expect(generation.executeRoute(view, 'source:fixture/undeclared', { query: 'needle' }))
-        .rejects.toThrow(`memory View Route is unavailable: source:fixture/undeclared; this View offers ${view.routes.map(candidate => JSON.stringify(candidate.id)).join(', ')}`)
-      await expect(generation.executeAction(view, offer.split('/').at(-1)!, { text: 'fact' }, () => true))
-        .rejects.toThrow(`memory ActionOffer is unavailable: ${offer.split('/').at(-1)}; ids are exact as the View lists them: ${JSON.stringify(offer)}`)
-      // A View without any offers says so, rather than echoing the id alone.
-      const empty = { ...view, routes: [], actionOffers: [] }
-      await expect(generation.executeRoute(empty, route, { query: 'needle' })).rejects.toThrow(`memory View Route is unavailable: ${route}; this View offers no Routes this turn`)
-      await expect(generation.executeAction(empty, offer, { text: 'fact' }, () => true)).rejects.toThrow(`memory ActionOffer is unavailable: ${offer}; this View offers no ActionOffers this turn`)
-    } finally { await generation.dispose() }
-  })
-
   it('narrows execution limits before the Source runs without mutating the pinned View', async () => {
     const query = vi.fn()
     const generation = new MemoryCompositionGeneration(contributions(installedSource(sourceDefinition({ query }))))

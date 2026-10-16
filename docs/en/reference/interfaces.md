@@ -53,7 +53,7 @@ Model tools, lifecycle hooks, and system scheduling use an `automatic` trigger. 
 
 “Read only” means managed bodies and durable semantics do not change. `mnemon_document_search` still updates `lastAccessedAt` for LRU ordering, so feature read-only is not disk read-only.
 
-`mnemon_recall` searches the memories in Memory Spaces and `mnemon_document_search` searches Documents; neither finds the other's items, and each tool says so. `mnemon_related` names the edge each neighbor came through (`edgeType`); temporal and entity edges are added automatically and outnumber the others, so `edge` follows one kind. `mnemon_status` sums its `aggregate` over the active, healthy spaces only and says so in `aggregate.scope`; `totalInsights` counts live memories and `deletedInsights` the forgotten ones.
+`mnemon_recall` searches the memories in Memory Spaces and `mnemon_document_search` searches Documents; each tool says so, and that of a cold-archived Document recall finds only the index memory the archive left in a space. In a Mnemon Native space `mnemon_related` names the edge each neighbor came through (`edgeType`); temporal and entity edges are added automatically and outnumber the others, so pass `edge` to follow one kind. Other Providers name no edge type and do not filter by `edge`. `mnemon_status` sums its `aggregate` over the active, healthy spaces whose Provider reports statistics, counts them in `aggregate.spaces` and says so in `aggregate.scope`; `totalInsights` counts live memories and `deletedInsights` the forgotten ones a Provider keeps, as Mnemon Native does.
 
 ### Tools available with `writeEnabled=true`
 
@@ -71,7 +71,7 @@ Model tools, lifecycle hooks, and system scheduling use an `automatic` trigger. 
 
 When a worker invokes the same tool name, it reaches the service directly and is not delegated recursively.
 
-A Document write returns to the model the Document it wrote, without the body it just sent, and the layer's totals in `documents`: active and archived counts and bytes. The catalog of every Document, with excerpts and paths, stays on the control plane the WebUI reads. `mnemon_view_route` and `mnemon_view_action` refuse an id the View does not offer with what it does offer, or with the exact id a short one stands for; `mnemon_forget` refused for a switched-off space names the space and says to switch it on first.
+A Document write returns to the model the Document it wrote, with its `contentHash` and without the body it just sent or a path, and the layer's totals in `documents`: the active and archived counts, the active bytes and the limit. The catalog of every Document, with excerpts and paths, stays on the control plane the WebUI reads; a Document write through `mnemon_view_action` returns the same. `mnemon_view_route` and `mnemon_view_action` refuse an id the View does not offer by naming the tool that offers that operation, the exact id a short one stands for, or the ids `MNEMON VIEW ROUTES` lists, and never an id it does not show. `mnemon_forget` refused for a space this turn's View does not read names the space and why: it is switched off, which stays the user's choice and reaches a forget from the next turn; its Provider is turned off or not installed; or it was switched on after the turn began.
 
 Autonomous write workers — distillation and supervised writeback runs — decide content on their own, so the host excludes `mnemon_forget` from their hard tool allowlist: a duplicate or conflict is resolved by skipping or storing a corrected entry, never by deleting the existing one. Operations whose request names an exact target supplied by the user or a user-facing flow (`/mnemon forget`, `mnemon_link`, and Memory Space management) keep the full write toolset.
 
@@ -90,21 +90,21 @@ Idle review can search Documents and call `mnemon_document_create`, but cannot c
 
 ## Model tools and the Mnemon CLI
 
-The model tools and the Mnemon CLI reach the same Mnemon Native memory along different paths. A tool works on the spaces the current View pins, with dsh-mnemon's storage root and, when DSH manages the embedding, its endpoint, model and key. The CLI works on one Store: `--store <id>`, else `MNEMON_STORE`, else its active file, under `--data-dir` or its default data directory. A command run from a terminal reaches dsh-mnemon's memory only with the same `--data-dir`, and finds a memory of another Store only with its `--store`.
+The model tools and the Mnemon CLI reach the same Mnemon Native memory along different paths. A tool works on the spaces the current View pins, with dsh-mnemon's storage root and, when DSH manages the embedding, its endpoint, model and key. The CLI works on one Store: `--store <id>`, else `MNEMON_STORE`, else its active file, in the data directory `--data-dir` names, else `MNEMON_DATA_DIR`, else `~/.mnemon`. dsh-mnemon's Global scope uses the same directory, so a terminal command reaches its memory while both see the same `MNEMON_DATA_DIR`; a Workspace scope or a custom data directory needs that directory as `--data-dir`. A memory of another Store is found only with its `--store`.
 
 | Task | Model tool | Mnemon CLI |
 |---|---|---|
 | Recall memories | `mnemon_recall`: every active space in the View | `mnemon recall` or `search`: one Store |
 | Search Documents | `mnemon_document_search` | None: Documents are dsh-mnemon's own layer |
-| Follow graph neighbors | `mnemon_related`: each result names its `edgeType`; `edge` follows one kind | `mnemon related <id>` |
+| Follow graph neighbors | `mnemon_related`: in a Mnemon Native space each result names its `edgeType`, and `edge` follows one kind | `mnemon related <id>` |
 | Save a memory | `mnemon_remember`, through a write worker | `mnemon remember` |
 | Link two memories | `mnemon_link` | `mnemon link` |
-| Forget a memory | `mnemon_forget`: spaces the View reads; a switched-off space is switched on first | `mnemon forget <id>` in the Store named |
-| Create a space | `mnemon_memory_body_create`: a Store and its dsh-mnemon entry | `mnemon store create`: a Store only, which dsh-mnemon does not list |
+| Forget a memory | `mnemon_forget`: spaces the View reads; a switched-off space from the turn after the user switches it on | `mnemon forget <id>` in the Store named |
+| Create a space | `mnemon_memory_body_create`: a Store and its dsh-mnemon entry | `mnemon store create`: a Store only, which dsh-mnemon lists as a switched-off space when it is in dsh-mnemon's data directory |
 | Rename, describe, switch on or off | `mnemon_memory_body_update` | None: these belong to dsh-mnemon |
 | Merge spaces | `mnemon_memory_body_merge` | `mnemon import` of a draft |
-| Delete a space | None: the Memory Spaces page in the WebUI | `mnemon store remove`, which leaves dsh-mnemon's entry behind |
-| Check health and counts | `mnemon_status`: sums over active, healthy spaces | `mnemon status`: one Store |
+| Delete a space | None: the Memory Spaces page in the WebUI | `mnemon store remove`, which leaves dsh-mnemon's entry behind; its next status check creates an empty Store in its place |
+| Check health and counts | `mnemon_status`: sums over the active, healthy spaces whose Provider reports statistics | `mnemon status`: one Store |
 | Vector coverage | None: Test status in the Mnemon Native embedding settings | `mnemon embed --status` and `--all`: one Store |
 | Choose the active Store | None: the View pins spaces per turn | `mnemon store set`: the CLI's own default |
 

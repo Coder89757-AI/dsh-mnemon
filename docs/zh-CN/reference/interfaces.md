@@ -53,7 +53,7 @@ Headless 会获得完整模型工具面。它把命令行任务作为普通用�
 
 “只读”表示不修改受管正文或长期语义内容。`mnemon_document_search` 命中后仍会更新 `lastAccessedAt`，用于 LRU 排序，因此功能只读不等于磁盘只读。
 
-`mnemon_recall` 搜索记忆空间中的记忆，`mnemon_document_search` 搜索项目档案；两者都找不到对方的条目，各自的工具说明也写明了这一点。`mnemon_related` 标明每个关联记忆经由哪种边得到（`edgeType`）；时间边和实体边由系统自动添加，数量远多于其他边，所以可以用 `edge` 只沿一种边查找。`mnemon_status` 的 `aggregate` 只合计已激活且正常的空间，并在 `aggregate.scope` 中说明；`totalInsights` 统计未遗忘的记忆，已遗忘的计入 `deletedInsights`。
+`mnemon_recall` 搜索记忆空间中的记忆，`mnemon_document_search` 搜索项目档案；各自的工具说明写明了这一点，也写明对于冷归档的档案，召回只能找到归档时留在空间里的索引记忆。在 Mnemon Native 空间中，`mnemon_related` 标明每个关联记忆经由哪种边得到（`edgeType`）；时间边和实体边由系统自动添加，数量远多于其他边，所以可以传入 `edge` 只沿一种边查找。其他 Provider 不标明边的类型，也不按 `edge` 筛选。`mnemon_status` 的 `aggregate` 只合计已激活、正常且 Provider 提供统计数据的空间，在 `aggregate.spaces` 中给出空间数，并在 `aggregate.scope` 中说明；`totalInsights` 统计未遗忘的记忆，`deletedInsights` 统计 Provider 保留下来的已遗忘记忆（Mnemon Native 会保留）。
 
 ### `writeEnabled=true` 时的工具
 
@@ -71,7 +71,7 @@ Headless 会获得完整模型工具面。它把命令行任务作为普通用�
 
 worker 内调用同名工具时直接进入服务层，不再递归委派。
 
-写入项目档案后，返回给模型的是它写入的那份档案（不含刚发送的正文）以及 `documents` 中该层的合计：未归档和已归档的数量与字节数。包含摘录和路径的全部档案目录留在 WebUI 读取的控制面。`mnemon_view_route` 与 `mnemon_view_action` 拒绝 View 未提供的 id 时，会列出它提供的 id，或给出简写所对应的完整 id；`mnemon_forget` 因空间已停用而被拒绝时，会说出是哪个空间，并说明要先打开它。
+写入项目档案后，返回给模型的是它写入的那份档案（带 `contentHash`，不含刚发送的正文，也不含路径）以及 `documents` 中该层的合计：未归档与已归档的数量、未归档的字节数和上限。包含摘录和路径的全部档案目录留在 WebUI 读取的控制面；经由 `mnemon_view_action` 写入项目档案时，返回的也是这样的结果。`mnemon_view_route` 与 `mnemon_view_action` 拒绝 View 未提供的 id 时，会说出提供该操作的工具、简写所对应的完整 id，或 `MNEMON VIEW ROUTES` 列出的 id，不会说出它没有展示的 id。`mnemon_forget` 因本回合的 View 不读取某个空间而被拒绝时，会说出是哪个空间以及原因：空间未激活（是否激活由用户决定，激活后从下一回合起才能遗忘）；它的 Provider 已关闭或未安装；或者它是在本回合开始之后才激活的。
 
 自主 write worker（蒸馏与 supervised writeback 运行）自行决定写入内容，因此宿主在其硬性工具白名单中排除了 `mnemon_forget`：遇到重复或冲突时只能跳过或写入修正后的条目，不能删除已有记忆。请求目标由用户或用户侧流程显式给出的操作（`/mnemon forget`、`mnemon_link` 与记忆空间管理）保留完整 write 工具面。
 
@@ -90,21 +90,21 @@ worker 内调用同名工具时直接进入服务层，不再递归委派。
 
 ## 模型工具与 Mnemon CLI
 
-模型工具和 Mnemon CLI 通过不同的路径访问同一份 Mnemon Native 记忆。工具作用于当前 View 固定的空间，使用 dsh-mnemon 的存储根目录，以及 DSH 管理嵌入时的地址、模型和密钥。CLI 每次只作用于一个 Store：`--store <id>`，否则是 `MNEMON_STORE`，再否则是它的 active 文件，所在目录由 `--data-dir` 决定，否则是它的默认数据目录。在终端运行的命令只有使用相同的 `--data-dir` 才能访问 dsh-mnemon 的记忆，也只有带上对应的 `--store` 才能找到另一个 Store 里的记忆。
+模型工具和 Mnemon CLI 通过不同的路径访问同一份 Mnemon Native 记忆。工具作用于当前 View 固定的空间，使用 dsh-mnemon 的存储根目录，以及 DSH 管理嵌入时的地址、模型和密钥。CLI 每次只作用于一个 Store：`--store <id>`，否则是 `MNEMON_STORE`，再否则是它的 active 文件；所在的数据目录由 `--data-dir` 决定，否则是 `MNEMON_DATA_DIR`，再否则是 `~/.mnemon`。dsh-mnemon 的全局范围使用同一个目录，所以只要两边看到的 `MNEMON_DATA_DIR` 相同，在终端运行的命令就能访问它的记忆；工作区范围或自定义数据目录需要把该目录作为 `--data-dir` 传入。只有带上对应的 `--store`，才能找到另一个 Store 里的记忆。
 
 | 任务 | 模型工具 | Mnemon CLI |
 |---|---|---|
 | 召回记忆 | `mnemon_recall`：View 中每个已激活的空间 | `mnemon recall` 或 `search`：一个 Store |
 | 搜索项目档案 | `mnemon_document_search` | 无：项目档案是 dsh-mnemon 自己的层 |
-| 沿图谱查看关联记忆 | `mnemon_related`：每条结果标明 `edgeType`；`edge` 只沿一种边 | `mnemon related <id>` |
+| 沿图谱查看关联记忆 | `mnemon_related`：在 Mnemon Native 空间中每条结果标明 `edgeType`，`edge` 只沿一种边 | `mnemon related <id>` |
 | 保存记忆 | `mnemon_remember`，经由写入任务 Agent | `mnemon remember` |
 | 关联两条记忆 | `mnemon_link` | `mnemon link` |
-| 遗忘记忆 | `mnemon_forget`：View 读取的空间；停用的空间要先打开 | 在指定的 Store 中 `mnemon forget <id>` |
-| 新建空间 | `mnemon_memory_body_create`：一个 Store 及其 dsh-mnemon 登记 | `mnemon store create`：只有 Store，dsh-mnemon 不会列出 |
-| 重命名、修改说明、打开或停用 | `mnemon_memory_body_update` | 无：这些属于 dsh-mnemon |
+| 遗忘记忆 | `mnemon_forget`：View 读取的空间；未激活的空间要等用户激活后的下一回合 | 在指定的 Store 中 `mnemon forget <id>` |
+| 新建空间 | `mnemon_memory_body_create`：一个 Store 及其 dsh-mnemon 登记 | `mnemon store create`：只有 Store；它位于 dsh-mnemon 的数据目录中时，dsh-mnemon 会把它列为未激活的空间 |
+| 重命名、修改说明、激活或取消激活 | `mnemon_memory_body_update` | 无：这些属于 dsh-mnemon |
 | 合并空间 | `mnemon_memory_body_merge` | 导入草稿的 `mnemon import` |
-| 删除空间 | 无：在 WebUI 的记忆空间页面删除 | `mnemon store remove`，dsh-mnemon 的登记仍会留下 |
-| 查看健康状况与数量 | `mnemon_status`：已激活且正常的空间的合计 | `mnemon status`：一个 Store |
+| 删除空间 | 无：在 WebUI 的记忆空间页面删除 | `mnemon store remove`，dsh-mnemon 的登记仍会留下，它下一次检查状态时会在原处创建一个空的 Store |
+| 查看健康状况与数量 | `mnemon_status`：已激活、正常且 Provider 提供统计数据的空间的合计 | `mnemon status`：一个 Store |
 | 向量覆盖率 | 无：Mnemon Native 嵌入设置中的「测试状态」 | `mnemon embed --status` 与 `--all`：一个 Store |
 | 选择 active Store | 无：View 每个回合固定空间 | `mnemon store set`：只影响 CLI 自己的默认值 |
 
