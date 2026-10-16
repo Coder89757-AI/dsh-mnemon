@@ -5,7 +5,8 @@
     "baseline": "main 4feee034",
     "fix": "d05ad398",
     "receipts": "c554f75c",
-    "reviewFix": "46759447"
+    "reviewFix": "46759447",
+    "wording": "5a371060"
   },
   "environment": {
     "os": "macOS 15.6 arm64",
@@ -44,21 +45,21 @@
       "fixture": "--exact-id",
       "input": "/mnemon remember 预发集群的 Grafana 在 3300 端口，排查监控问题时先看它。",
       "main": "Mnemon 记忆 Agent 已处理：added · 记忆空间 default\nSaved the fixture memory.",
-      "fix": "Mnemon 记忆 Agent 已处理：added · 记忆空间 default\nSaved the fixture memory.\n未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。",
-      "fixRevision": "46759447"
+      "fix": "Mnemon 记忆 Agent 已处理：added · 记忆空间 default\nSaved the fixture memory.\n未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。",
+      "fixRevision": "5a371060"
     },
     "saveToMemory": {
       "fixture": "--save-action",
       "throughTaskAgent": {
         "main": "已存入 · Saved in Release notes: … · 在记忆空间中查看",
-        "fix": "已存入 · Saved in Release notes: … · 在记忆空间中查看 · 未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。"
+        "fix": "已存入 · Saved in Release notes: … · 在记忆空间中查看 · 未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。"
       },
       "straightToSpace": {
         "candidate": "Release approvals need two maintainers.",
         "main": "已存入 · 已存入记忆空间“Release notes” · 在记忆空间中查看",
-        "fix": "已存入 · 已存入记忆空间“Release notes” · 在记忆空间中查看 · 未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。"
+        "fix": "已存入 · 已存入记忆空间“Release notes” · 在记忆空间中查看 · 未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。"
       },
-      "fixRevision": "46759447",
+      "fixRevision": "5a371060",
       "consoleErrors": 0
     },
     "baselineMethod": "the same build with src/host/subagent.ts, src/host/commands.ts, src/client/page-controls.tsx, src/client/MnemonSaveAction.tsx, src/client/api.ts, src/client/locales.ts, src/client/PageControls.module.css and the Memory Spaces page's client/pages.tsx and client/api.ts from main"
