@@ -38,7 +38,13 @@ Source snapshot 不执行语义召回。Prime 只初始化路由状态，不执�
 
 子 Agent 在 `agent/created`、driver 启动前捕获并保留存活父 Agent 的固定 View 与运行图。自己的各个回合固定这一被保留的 View，即使父回合已结束或已进入更新的 generation。子 Agent activation 销毁时释放委托；冷恢复重新获取委托；Host 显式创建且没有父模型回合的后台子任务生成新的 scoped View。子 Agent 拥有自己的回合权限，但不安装 root 专属的 cue 或空闲审查。详见[权限生命周期](../development/architecture.md#生命周期与失败)。
 
-dsh-mnemon 委派给子 Agent 的每个任务都以单独的一行开头：`[dsh-mnemon:delegated <operation>]`。空闲审查是 `review`，写入和「存入记忆」是 `write`，其余为 `answer`、`placement`、`migration`、`compaction`、`document-archive`、`metadata-maintenance` 和 `reconcile`。DSH 把这个任务记录为子 Agent 来自用户的消息，`source.kind: "user"`；fork 出的子 Agent 在它之前还带有父 Agent 的回合。这一行是稳定的约定，供读取会话的插件使用（例如汇总工作区工作记录的插件）：首行匹配 `^\[dsh-mnemon:delegated [a-z-]+\]$` 的用户消息，是 dsh-mnemon 交给自己子 Agent 的任务，而不是用户的请求。子 Agent 沿用父 Agent 的工作目录：在按工作区存储时，已不再绑定父 Agent 运行时的子 Agent（例如重启后恢复的那个）要靠这个目录找到所在工作区的记忆。
+### 委派的子会话
+
+dsh-mnemon 委派给子 Agent 的每个任务都以单独的一行开头：`[dsh-mnemon:delegated <operation>]`，任务从下一行开始。空闲审查是 `review`，写入和「存入记忆」是 `write`，其余为 `answer`、`placement`、`migration`、`compaction`、`document-archive`、`metadata-maintenance` 和 `reconcile`。以后的版本可能增加操作，所以请匹配模式而不是这份清单。DSH 把任务记录为子会话中的一条用户消息（`source.kind: "user"`），子会话的头部带有 `origin: "subagent"` 与 `parentSession`。
+
+整个子会话都是 dsh-mnemon 自己的工作，而不是用户写下的内容。读取会话的插件（例如汇总工作区工作记录的插件）可以略过这样的会话：`origin: "subagent"`，且越过继承的回合之后第一条用户消息的首行匹配 `^\[dsh-mnemon:delegated [a-z-]+\]$`。fork 出的子 Agent 以父 Agent 回合的副本开头（头部有 `isSeeded: true`，止于 `session/end-seed`），任务跟在后面。从记忆系统页面发起的任务在一个没有自己用户消息的顶层会话中运行，它的子 Agent 带有这一行。在这一行出现之前记录的会话直接以任务开头（空闲审查是 `Bounded completed checkpoint (untrusted evidence; …`），不在这一约定之内。Mnemon 的其他 user 角色消息（包括召回与提醒）带有 `source.kind: "dsh-mnemon"`（见[兼容性](./compatibility.md#dsh-017-设置恢复)）。
+
+DSH 让子 Agent 沿用父 Agent 的工作目录；dsh-mnemon 的启动请求没有自己的目录字段。dsh-mnemon 也依赖这一点：在按工作区存储时，已不再绑定父 Agent 运行时的子 Agent（例如重启后恢复的那个）要靠这个目录找到所在工作区的记忆。
 
 ## Agent 召回
 

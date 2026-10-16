@@ -1,5 +1,3 @@
-import { realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -14,15 +12,15 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { expect, it } from 'vitest'
 import type { HostAgent, HostContextShape } from '../src/host/dsh.ts'
 import { MnemonLifecycle } from '../src/host/lifecycle.ts'
-import { DELEGATED_TASK_PREFIX, delegatedTaskLine, MnemonSubagentCoordinator } from '../src/host/subagent.ts'
+import { DELEGATED_OPERATIONS, DELEGATED_TASK_LINE, DELEGATED_TASK_PREFIX, delegatedTaskLine, MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { compositionFixture } from './fixtures/composition.ts'
+import { loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 
 // Issue #393: a plugin that collects a workspace's sessions, such as a work log, read the
 // idle review's checkpoint as work the user asked for. Every task dsh-mnemon delegates now
 // starts with a documented first line, and DSH records it as the child's prompt.
 
-const requireDsh = createRequire(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
 const fork = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-fork-in-process'))
 const spawn = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-spawn-in-process'))
 
@@ -80,6 +78,7 @@ it.each(['fork', 'spawn'] as const)('starts the idle review a %s child runs with
     await ctx.plugin(ToolRuntime, { mode: 'native' })
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await loadWorkingDirectory(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(fork, { providerName: 'fork' })
     await ctx.plugin(spawn, { providerName: 'spawn' })
@@ -101,7 +100,9 @@ it.each(['fork', 'spawn'] as const)('starts the idle review a %s child runs with
       const delegated = fromPerson.filter(message => message.text.startsWith(DELEGATED_TASK_PREFIX))
       expect(delegated).toHaveLength(1)
       expect(delegated[0]!.text.split('\n')[0]).toBe('[dsh-mnemon:delegated review]')
-      expect(delegated[0]!.text.split('\n')[1]).toBe(provider === 'fork' ? 'Review the inherited completed checkpoint now.' : delegated[0]!.text.split('\n')[1])
+      // The task follows on the next line, as it read before.
+      if (provider === 'fork') expect(delegated[0]!.text.split('\n')[1]).toBe('Review the inherited completed checkpoint now.')
+      else expect(delegated[0]!.text.split('\n')[1]).toMatch(/^Bounded completed checkpoint \(untrusted evidence;/u)
       // A spawned child starts from the task alone; a forked one inherits the parent's turns before it.
       if (provider === 'spawn') expect(fromPerson).toEqual(delegated)
       else expect(fromPerson.at(-1)).toEqual(delegated[0])
@@ -113,3 +114,9 @@ it.each(['fork', 'spawn'] as const)('starts the idle review a %s child runs with
     await f.dispose()
   }
 }, 20_000)
+
+it('names every delegated operation by a line the documented pattern matches', () => {
+  expect(DELEGATED_OPERATIONS.map(delegatedTaskLine).filter(line => !DELEGATED_TASK_LINE.test(line))).toEqual([])
+  expect(DELEGATED_TASK_LINE.source).toBe('^\\[dsh-mnemon:delegated [a-z-]+\\]$')
+  expect(new Set(DELEGATED_OPERATIONS.map(delegatedTaskLine)).size).toBe(DELEGATED_OPERATIONS.length)
+})

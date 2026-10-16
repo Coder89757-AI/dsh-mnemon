@@ -63,7 +63,12 @@ function evidenceInsights(evidence: MemoryEvidence): RecallInsight[] {
  * rely on this line, documented as stable, to leave Mnemon's own children out.
  */
 export const DELEGATED_TASK_PREFIX = '[dsh-mnemon:delegated '
-export function delegatedTaskLine(operation: string): string {
+/** Every kind of task dsh-mnemon delegates, as its line names it. */
+export const DELEGATED_OPERATIONS = ['write', 'answer', 'review', 'placement', 'migration', 'compaction', 'document-archive', 'metadata-maintenance', 'reconcile'] as const
+export type DelegatedOperation = typeof DELEGATED_OPERATIONS[number]
+/** The line as the reference documents it for readers of DSH sessions. */
+export const DELEGATED_TASK_LINE = /^\[dsh-mnemon:delegated [a-z-]+\]$/u
+export function delegatedTaskLine(operation: DelegatedOperation): string {
   return `${DELEGATED_TASK_PREFIX}${operation}]`
 }
 
@@ -1896,7 +1901,7 @@ ${runtimeSnapshotContext('user', plan.entries)}`
 
   private async delegate(
     parent: HostAgent,
-    operation: 'write' | 'answer' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile',
+    operation: DelegatedOperation,
     label: string,
     prompt: string,
     tools: string[],
