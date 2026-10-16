@@ -62,12 +62,17 @@ async function execute(serviceOrSource: MnemonAgentRuntimeSource, coordinator: M
         query: argument,
         limit: Math.min(graph.config.defaultRecallLimit, 10),
       }, invocation.signal)
+      // A read that did not run found nothing either way; say why rather than that nothing matched (#389).
+      if (response.notRun === true) return { kind: 'error', text: response.budgetExhausted === true ? `本回合的召回次数已用完，“${argument}”没有查询。` : `“${argument}”没有查询。` }
       if (response.results.length === 0) return { kind: 'success', text: `没有找到与“${argument}”相关的记忆。` }
       return { kind: 'success', text: `召回 ${response.results.length} 条：\n\n${response.results.map(insightLine).join('\n\n')}` }
     }
     case 'related': {
       if (argument === '') return error('related 需要 recall 返回的完整 ID。')
-      const results = (await coordinator.related(invocation.agent, argument, undefined, invocation.signal)).results
+      const response = await coordinator.related(invocation.agent, argument, undefined, invocation.signal)
+      const results = response.results
+      // Related starts only from a memory the same turn's recall returned, and each command runs a turn of its own.
+      if (response.notRun === true) return { kind: 'error', text: response.budgetExhausted === true ? `本回合的关联查询次数已用完，ID ${argument} 没有查询。` : `ID ${argument} 没有查询：关联查询只从同一回合召回返回的记忆出发，请在对话中召回后再查关联。` }
       if (results.length === 0) return { kind: 'success', text: `ID ${argument} 的两跳内没有关联记忆。` }
       return { kind: 'success', text: `关联记忆 ${results.length} 条：\n\n${results.map(insightLine).join('\n\n')}` }
     }

@@ -14,7 +14,7 @@ type Insight = RecallInsight
 interface SearchRequest { query: string; mode?: string; limit?: number; memoryBodyIds?: string[] }
 interface RecallResult {
   query: string; mode: string; results: RecallInsight[]; hint?: string
-  /** No Provider query ran for this call, so `results` holds nothing of its own. */
+  /** This call ran no query and returns no evidence of its own. */
   notRun?: true
   /** The turn's budget for this read was already spent; the reason it did not run. */
   budgetExhausted?: true
@@ -23,7 +23,7 @@ interface RecallResult {
 interface RecallAuthority { viewId: string; sourceInstanceKey: string; memoryBodyIds: string[] }
 interface RecallAttempt { queryDigest: string; result?: RecallResult; pending?: Promise<RecallResult> }
 interface TurnRetrievalState {
-  documentSearchClaimed?: boolean; recallAttempts: RecallAttempt[]
+  documentSearchClaimed?: boolean; documentSearchPending?: Promise<unknown>; recallAttempts: RecallAttempt[]
   relatedDigest?: string; relatedResult?: RecallResult; relatedPending?: Promise<RecallResult>
   evidenceDigests: Set<string>; evidenceReferences: Set<string>
 }
@@ -200,13 +200,29 @@ class ThreeTierTurn implements MemoryStrategyTurn {
     const input = object(request.input, 'Documents search')
     const query = String(input.query).trim()
     const includeArchived = input.includeArchived === true
+    // A search in flight can still fail and give the slot back, so a parallel one waits for it.
+    if (this.state.documentSearchPending !== undefined) {
+      await Promise.allSettled([this.state.documentSearchPending])
+      return this.documents(request, read)
+    }
     if (this.state.documentSearchClaimed) return { ...this.empty(request), output: {
       query, includeArchived, notRun: true, budgetExhausted: true, results: [],
-      hint: 'This Agent turn already used its Documents search slot, so this query did not run: the empty list does not mean no document matches. Use the admitted evidence, make one focused mnemon_recall only if exact durable history is still missing, or answer with appropriate uncertainty.',
+      hint: 'This query did not run: this Agent turn already used its Documents search. The empty list does not mean no document matches. Use the admitted evidence, make one focused mnemon_recall where it is offered only if exact durable history is still missing, or answer with appropriate uncertainty.',
     } }
     this.state.documentSearchClaimed = true
-    const evidence = await read({ query, includeArchived, limit: Math.min(4, typeof input.limit === 'number' ? Math.max(1, input.limit) : 4) },
+    const pending = read({ query, includeArchived, limit: Math.min(4, typeof input.limit === 'number' ? Math.max(1, input.limit) : 4) },
       { maxResults: 4, maxCharacters: 6_000 })
+    this.state.documentSearchPending = pending
+    let evidence: MemoryEvidence
+    try {
+      evidence = await pending
+    } catch (error) {
+      // A failed search spent nothing: the next one in this turn may run.
+      this.state.documentSearchClaimed = false
+      throw error
+    } finally {
+      if (this.state.documentSearchPending === pending) delete this.state.documentSearchPending
+    }
     const metadata = optionalObject(evidence.metadata) ?? {}
     const results = evidence.items.filter(item => optionalObject(item.provenance)?.kind !== 'suggestion').map(item => {
       const record = optionalObject(item.provenance) ?? {}
@@ -252,6 +268,14 @@ class ThreeTierTurn implements MemoryStrategyTurn {
       }
     }
     if (retrieval.recallAttempts.length >= MODEL_RECALL_ATTEMPT_LIMIT) {
+      // A query holding the budget can still fail and give its slot back, so a parallel call
+      // waits for the queries in flight and asks again before it says the budget is spent.
+      const inflight = retrieval.recallAttempts.flatMap(entry => entry.pending === undefined ? [] : [entry.pending])
+      if (inflight.length > 0) {
+        await Promise.allSettled(inflight)
+        signal.throwIfAborted()
+        return this.recall(request, read, signal, authority)
+      }
       // Another query's evidence must never read as this one's answer (#389): a new
       // query past the budget runs nothing and returns nothing, and says so.
       return {
@@ -260,7 +284,7 @@ class ThreeTierTurn implements MemoryStrategyTurn {
         results: [],
         notRun: true,
         budgetExhausted: true,
-        hint: 'The two-query turn Recall budget is exhausted, so this query did not run: these are no results of its own, and the empty list does not mean nothing matches. Stop retrieval and answer from the evidence earlier calls returned, or state what remains unknown.',
+        hint: 'The two-query turn Recall budget is exhausted, so this query did not run. It has no results; the empty list does not mean nothing matches. Answer from the evidence the other Recall calls returned, or state what remains unknown.',
       }
     }
     const attemptIndex = retrieval.recallAttempts.length
@@ -353,13 +377,19 @@ class ThreeTierTurn implements MemoryStrategyTurn {
       // Only the same traversal gets its evidence again; another one's neighbours never
       // read as this insight's (#389).
       if (retrieval.relatedDigest !== digest) {
+        // The traversal holding the slot can still fail and give it back.
+        if (retrieval.relatedPending !== undefined) {
+          await Promise.allSettled([retrieval.relatedPending])
+          signal.throwIfAborted()
+          return this.related(id, memoryBodyId, read, signal, authority, options)
+        }
         return {
           query: `related:${id}`,
           mode: 'related',
           results: [],
           notRun: true,
           budgetExhausted: true,
-          hint: 'Related traversal is complete for this turn, so this one did not run: these are no results of its own. Stop retrieval and answer from the evidence earlier calls returned.',
+          hint: 'Related traversal is complete for this turn, so this one did not run. It has no results; the empty list does not mean nothing is related. Answer from the evidence the other calls returned.',
         }
       }
       const last = retrieval.relatedResult ?? await retrieval.relatedPending

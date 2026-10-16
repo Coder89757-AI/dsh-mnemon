@@ -77,9 +77,9 @@ LLM 判断 evidence 是否足够
 
 这一准入信封是分层策略的每回合策略；通用策略只应用各路由自身的上限与调用预算。
 
-模型工具不暴露 `category`、`source` 或 `intent` 过滤器：模型猜错过滤条件不能遮住精确证据。Recall 并非强制执行，普通 root 回合是 0 次 Provider 查询。LLM 主动调用后，Host 允许一个首次查询；只有 LLM 查看 evidence 后仍认为不足，才允许再提交一个实质不同的精炼查询。同查询和并发重复请求会 join 或重放；第三个不同查询只重放最新 evidence，不再到达 Provider。随后至多执行一次 Related，而且只能使用两次 Recall 任一已准入的 `memoryBodyId + id`；重复 Related 同样重放结果。
+模型工具不暴露 `category`、`source` 或 `intent` 过滤器：模型猜错过滤条件不能遮住精确证据。Recall 并非强制执行，普通 root 回合是 0 次 Provider 查询。LLM 主动调用后，Host 允许一个首次查询；只有 LLM 查看 evidence 后仍认为不足，才允许再提交一个实质不同的精炼查询。同查询和并发重复请求会 join 或重放；第三个不同查询不会执行，并如实说明，不会到达 Provider。随后至多执行一次 Related，而且只能使用两次 Recall 任一已准入的 `memoryBodyId + id`；同一次遍历再调用会重放结果，不同的遍历则不会执行。
 
-Recall、Related 和单次 Documents 搜索槽位按执行中的 Agent 回合计预算。同一回合内并发调用共享状态，兄弟任务、后续回合和冷恢复的 activation 不会共享缓存 evidence 或占用彼此的预算。委派的子 Agent 在自己的一个回合内完成整个任务，所以整个任务共用一份预算。重复回合内已运行过的读取会重放它自己的 evidence，并限于本次请求的 Memory Space 子集。超出预算的另一次读取不会执行查询，而是以它自己的查询返回 `notRun: true`、`budgetExhausted: true` 和空的 `results`，绝不返回另一次读取的 evidence；从本回合召回未准入的条目出发的 Related 遍历同样返回 `notRun: true`。Document search 另有独立边界：最多 4 条记录、每条最多 2,600 个查询附近字符、总正文最多 6,000 字符。模型侧 Memory Space 目录最多 16 项，`mnemon_status` 只返回紧凑健康汇总。完整记录、Provider 设置、路径和逐 Space 统计仍由 Web/RPC 控制面读取，不进入对话历史。
+Recall、Related 和单次 Documents 搜索槽位按执行中的 Agent 回合计预算。同一回合内并发调用共享状态，兄弟任务、后续回合和冷恢复的 activation 不会共享缓存 evidence 或占用彼此的预算。子 Agent 从收到任务到最后一步算作一个回合、共用一份预算；之后继续这个子 Agent 的消息会开始另一个回合，预算重新计算。重复回合内已运行过的 Recall 或 Related 读取会重放它自己的 evidence，并限于本次请求的 Memory Space 子集。超出预算的另一次读取（包括第二次 Documents 搜索）不会执行查询，而是以它自己的查询返回 `notRun: true`、`budgetExhausted: true` 和空的 `results`，绝不返回另一次读取的 evidence；并发调用会先等正在进行的读取结束，因为失败的读取会把名额还回来。从本回合召回未准入的条目出发的 Related 遍历同样返回 `notRun: true`。Document search 另有独立边界：最多 4 条记录、每条最多 2,600 个查询附近字符、总正文最多 6,000 字符。模型侧 Memory Space 目录最多 16 项，`mnemon_status` 只返回紧凑健康汇总。完整记录、Provider 设置、路径和逐 Space 统计仍由 Web/RPC 控制面读取，不进入对话历史。
 
 如果用户已经提供当前事实，或仓库可以直接回答，Agent 不应为了“展示记忆”而召回。
 

@@ -81,6 +81,17 @@ describe('/mnemon command', () => {
     expect(result).toEqual(expect.objectContaining({ kind: 'success', text: expect.stringContaining('memory-full-id') }))
   })
 
+  it('says when a recall or related query did not run, instead of that nothing was found (#389)', async () => {
+    const service = { config: { writeEnabled: true, defaultRecallLimit: 10 } }
+    const memoryCoordinator = coordinator({
+      recall: vi.fn(async () => ({ query: '站会', mode: 'smart', results: [], notRun: true as const, budgetExhausted: true as const })),
+      related: vi.fn(async () => ({ query: 'related:memory-full-id', mode: 'related', results: [], notRun: true as const })),
+    })
+    const command = createMnemonCommand(runtime(service), memoryCoordinator)
+    expect(await command.handler(invocation('recall 站会'))).toEqual({ kind: 'error', text: '本回合的召回次数已用完，“站会”没有查询。' })
+    expect(await command.handler(invocation('related memory-full-id'))).toEqual({ kind: 'error', text: expect.stringContaining('ID memory-full-id 没有查询') })
+  })
+
   it('rejects mutation subcommands in read-only mode', async () => {
     const remember = vi.fn()
     const service = { config: { writeEnabled: false, defaultRecallLimit: 10 }, remember }

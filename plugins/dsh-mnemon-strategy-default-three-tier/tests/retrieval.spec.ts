@@ -98,6 +98,19 @@ describe('independent three-tier execution policy', () => {
     } finally { await runner.dispose() }
   })
 
+  it('gives the Documents slot back when the search failed', async () => {
+    const { runner, query } = await fixture('documents')
+    try {
+      const turn = await runner.beginTurn()
+      const route = turn.view.routes[0]!.id
+      query.mockImplementationOnce(async () => { throw new Error('Documents unavailable') })
+      await expect(turn.executeRoute(route, { query: 'first' })).rejects.toThrow('Documents unavailable')
+      expect(output(await turn.executeRoute(route, { query: 'second' })).notRun).toBeUndefined()
+      expect(output(await turn.executeRoute(route, { query: 'third' }))).toMatchObject({ notRun: true, budgetExhausted: true })
+      expect(query).toHaveBeenCalledTimes(2)
+    } finally { await runner.dispose() }
+  })
+
   it('preserves old Recall ceilings, filters, duplicate replay and refinement across generic calls', async () => {
     const { runner, query } = await fixture('memory-spaces')
     try {
@@ -147,6 +160,44 @@ describe('independent three-tier execution policy', () => {
       expect(other.output).toMatchObject({ query: `related:${two!.id}`, results: [], notRun: true, budgetExhausted: true })
       expect(output(await turn.executeRoute(related, { id: one!.id, memoryBodyId: 'project' })).results).toEqual(output(graph).results)
       expect(query).toHaveBeenCalledTimes(3)
+    } finally { await runner.dispose() }
+  })
+
+  it('lets a parallel read run when one that held the budget failed, and says budget exhausted only once it is spent', async () => {
+    const { runner, query } = await fixture('memory-spaces')
+    try {
+      let turn = await runner.beginTurn()
+      let recall = turn.view.routes.find(route => route.sourceRouteId === 'recall')!.id
+      // Three in parallel: the first two run, the third waits for them and then runs nothing.
+      const parallel = await Promise.all(['alpha', 'beta', 'gamma'].map(text => turn.executeRoute(recall, { query: text })))
+      expect(query).toHaveBeenCalledTimes(2)
+      expect(parallel[2]!.output).toMatchObject({ query: 'gamma', results: [], notRun: true, budgetExhausted: true })
+      // The same in a new turn, with the first query failing: it takes the second with it, and the third runs.
+      query.mockClear()
+      turn = await runner.beginTurn()
+      recall = turn.view.routes.find(route => route.sourceRouteId === 'recall')!.id
+      const original = query.getMockImplementation()!
+      query.mockImplementationOnce(async () => { throw new Error('Provider unavailable') })
+      const settled = await Promise.allSettled(['alpha', 'beta', 'gamma'].map(text => turn.executeRoute(recall, { query: text })))
+      expect(settled.map(entry => entry.status)).toEqual(['rejected', 'rejected', 'fulfilled'])
+      expect((settled[2] as PromiseFulfilledResult<{ output?: MemoryJsonValue }>).value.output).toMatchObject({ query: 'gamma', results: expect.arrayContaining([expect.objectContaining({ id: 'gamma:0' })]) })
+      expect((settled[2] as PromiseFulfilledResult<{ output?: MemoryJsonValue }>).value.output).not.toHaveProperty('notRun')
+      query.mockImplementation(original)
+    } finally { await runner.dispose() }
+  })
+
+  it('lets a second Related traversal run when the first failed', async () => {
+    const { runner, query } = await fixture('memory-spaces')
+    try {
+      const turn = await runner.beginTurn()
+      const recall = turn.view.routes.find(route => route.sourceRouteId === 'recall')!.id
+      const related = turn.view.routes.find(route => route.sourceRouteId === 'related')!.id
+      const [one, two] = output(await turn.executeRoute(recall, { query: 'alpha' })).results
+      query.mockImplementationOnce(async () => { throw new Error('Provider unavailable') })
+      const settled = await Promise.allSettled([one!, two!].map(item => turn.executeRoute(related, { id: item.id, memoryBodyId: 'project' })))
+      expect(settled.map(entry => entry.status)).toEqual(['rejected', 'fulfilled'])
+      expect((settled[1] as PromiseFulfilledResult<{ output?: MemoryJsonValue }>).value.output).toMatchObject({ query: `related:${two!.id}` })
+      expect((settled[1] as PromiseFulfilledResult<{ output?: MemoryJsonValue }>).value.output).not.toHaveProperty('notRun')
     } finally { await runner.dispose() }
   })
 
