@@ -170,6 +170,8 @@ Runtime 写入范围回归使用 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm 
 
 `pnpm e2e:serve --docs-demo`（中文）或 `--docs-demo=en` 会预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间，都在宿主启动前通过各 Source 自己的管理操作写入。包含“结账”（英文演示为 “checkout”）的消息会经真实 View 工具完成一次档案检索与两次记忆空间召回后作答；随后包含“记住”（英文演示为 “remember”）的消息（例如新的 LCP 目标）会替换对应的工作记忆条目。脚本只决定模型调用哪些工具，不涉及任何个人数据。加上 `--live-model` 则改由 DeepSeek API 作答，密钥从 `DEEPSEEK_API_KEY` 读取；此时提问会经过真实的模型、任务 Agent 与 Agent 查询，图集即以这种方式采集。界面变化后应使用该夹具重新采集截图集。
 
+`pnpm e2e:serve --recall-budget` 预置同一个中文 Lumen 项目，并使用一个脚本模型：发送 `recall-budget-check` 后，它在同一回合内提出三个不同的召回问题（[#389](https://github.com/omdsh-dev/dsh-mnemon/issues/389)）。分层策略每回合允许两次；回复会说明第三次调用返回了什么，也就是不读提示的模型会怎样理解它。修复后第三次查询不会执行，并如实说明（`notRun`、`budgetExhausted`）；没有修复的构建会返回第二次查询的 evidence。夹具以 `Recall budget:` 行输出第三次的结果。见[双语复现与证据](../../pr-assets/issue-389-recall-budget/README.zh-CN.md)。
+
 `pnpm e2e:serve --trusted-host=memory.test:4331` 把该授权主机加入 DSH 的浏览器信任边界，用于以远程页面身份检查 WebUI；再加 `--remote-management` 即设置 `remoteAccess: trusted-host`。同时设置 `MNEMON_E2E_PORT=4331` 使端口一致，在测试浏览器中把该名称解析到 127.0.0.1（Chrome 可用 `--host-resolver-rules="MAP memory.test 127.0.0.1"` 并加 `--no-proxy-server`），再把打印出的启动 URL 中的回环地址换成 `memory.test:4331` 打开。未授权时“插件 → 可组合记忆”页面为只读；授权后，保存会经 API Gateway 持久化。
 
 ## 发布
