@@ -24,10 +24,10 @@ import { reviewLayersModel } from './fixtures/review-layers-model.mjs'
 import { strictTemplateModel } from './fixtures/strict-template-model.mjs'
 import { generalStrategyModel } from './fixtures/general-strategy-model.mjs'
 import { exactIdModel } from './fixtures/exact-id-model.mjs'
+import { rememberTargetModel } from './fixtures/remember-target-model.mjs'
 import { saveActionModel } from './fixtures/save-action-model.mjs'
 import { profileCompactionModel } from './fixtures/profile-compaction-model.mjs'
 import { DOCS_DEMO_LANGUAGES, docsDemoAssistant, docsDemoModel, seedDocsDemo } from './fixtures/docs-demo.mjs'
-import { rememberTargetModel } from './fixtures/remember-target-model.mjs'
 import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies, slowEmbeddingServer } from './fixtures/archive-copies.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -58,11 +58,11 @@ for (const flag of flags) {
   if (flag === '--exact-id') continue
   if (flag === '--archive-copies') continue
   if (flag === '--save-action') continue
+  if (flag === '--remember-target') continue
   if (flag === '--profile-compaction') continue
   if (flag === '--without-mnemon-cli') continue
   if (flag === '--remote-management') continue
   if (flag === '--live-model') continue
-  if (flag === '--remember-target') continue
   if (flag === '--docs-demo' || flag.startsWith('--docs-demo=')) {
     docsDemo = flag === '--docs-demo' ? 'zh-CN' : flag.slice('--docs-demo='.length)
     if (!DOCS_DEMO_LANGUAGES.includes(docsDemo)) throw new Error('--docs-demo accepts ' + DOCS_DEMO_LANGUAGES.join(' or '))
@@ -142,12 +142,12 @@ const scriptedModel = liveModel ? undefined : flags.has('--runtime-routing') ? r
   : flags.has('--general-strategy') ? generalStrategyModel(event => console.log('General strategy: ' + JSON.stringify(event)))
   : flags.has('--exact-id') ? exactIdModel(event => console.log('Exact id: ' + JSON.stringify(event)))
   : flags.has('--save-action') ? saveActionModel(event => console.log('Save action: ' + JSON.stringify(event)))
+  : flags.has('--remember-target') ? rememberTargetModel(event => console.log('Remember target: ' + JSON.stringify(event)))
   : flags.has('--profile-compaction') ? profileCompactionModel(event => console.log('Profile compaction: ' + JSON.stringify(event)))
   : flags.has('--runtime-write-scope') ? runtimeWriteScopeModel(event => console.log('Runtime write scope: ' + JSON.stringify(event)))
   : flags.has('--result-tool-cache') ? resultToolCacheModel(event => console.log('Result tool cache: ' + JSON.stringify(event)))
   : flags.has('--legacy-session-replay') ? legacySessionReplayModel(event => console.log('Legacy replay: ' + JSON.stringify(event)))
   : flags.has('--document-archive') ? documentArchiveModel(event => console.log('Document archive: ' + JSON.stringify(event)))
-  : flags.has('--remember-target') ? rememberTargetModel(event => console.log('Remember target: ' + JSON.stringify(event)))
   : docsDemo !== undefined ? docsDemoModel(docsDemo, event => console.log('Docs demo: ' + JSON.stringify(event))) : reviewModel ?? protectionModel
 const reviewFailure = flags.has('--review-failure')
 /**
@@ -338,14 +338,14 @@ try {
     console.log(`Archive copies seeded: working memory is full and Memory Space ${memoryBodyId} holds an exact copy of each entry; embeddings answer after ${embeddingDelayMs} ms.`)
     console.log('Add this working-memory entry on the Runtime Memory page: ' + archiveCopiesPending)
   }
-  if (docsDemo !== undefined) {
-    await seedDocsDemo({ dataDir, workspace, language: docsDemo })
-    console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target.'))
-  }
   // The docs demo's spaces, one of them switched off, for a memory saved into a named space (#387).
   if (flags.has('--remember-target') && docsDemo === undefined) {
     await seedDocsDemo({ dataDir, workspace, language: 'zh-CN' })
     console.log('Remember target seeded; send remember-target-check.')
+  }
+  if (docsDemo !== undefined) {
+    await seedDocsDemo({ dataDir, workspace, language: docsDemo })
+    console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target.'))
   }
   console.log('Fixture: ' + fixture)
   console.log('Workspace: ' + workspace)
