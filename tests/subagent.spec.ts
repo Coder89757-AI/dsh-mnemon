@@ -1483,6 +1483,22 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(coordinator.snapshot()).toMatchObject({ writes: 1, failures: 0 })
   })
 
+  it.each([false, true])('says whether a write saved its memory without a vector (embedded: %s, #388)', async embedded => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, {
+        action: 'added', id: 'memory-1', embedded, message: 'Stored durable project memory.', memoryBodyId: 'project', memoryBodyName: 'Project',
+      })
+    })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, new AbortController().signal)
+    expect(result).toMatchObject({ delegated: true, action: 'added', memoryBodyIds: ['project'] })
+    if (embedded) {
+      expect(result).not.toHaveProperty('unembedded')
+      expect(result).not.toHaveProperty('hint')
+    } else expect(result).toMatchObject({ unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }], hint: expect.stringContaining('Saved without a vector') })
+  })
+
   it.each(['accepted', 'candidate', 'partial', 'unknown', 'failed'])('does not recover %s completion as stored', async completion => {
     const resultTools = toolRegistry()
     const host = observedSubagents(resultTools, child => {

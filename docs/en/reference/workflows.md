@@ -123,6 +123,8 @@ structured receipt
 
 The first Memory Space created in an empty storage root uses Mnemon's native `default` ID; the Host generates later IDs. A successful write to an inactive target activates it. This activation affects only DSH routing, and merging a source database is non-destructive.
 
+Mnemon Native saves a memory without a vector when its embedding server does not answer, and says so in the receipt (`embedded: false`). The write result then lists it in `unembedded`, with a `hint`: keyword recall finds such a memory, semantic recall misses it until its vector is filled, for example with `mnemon --store <memoryBodyId> embed --all` once the server runs. `/mnemon remember` adds a line that says so, and the writer is asked to mention it in its summary.
+
 Runtime `add` / `replace` / `remove` and Document `create` / `update` do not need a model to perform storage I/O; they enter the deterministic control layer through the coordinator. Only capacity maintenance and archiving start dedicated workers.
 
 ## Runtime add: Normal Path

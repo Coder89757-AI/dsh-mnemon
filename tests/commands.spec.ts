@@ -81,6 +81,16 @@ describe('/mnemon command', () => {
     expect(result).toEqual(expect.objectContaining({ kind: 'success', text: expect.stringContaining('memory-full-id') }))
   })
 
+  it('says when the memory was saved without a vector (#388)', async () => {
+    const service = { config: { writeEnabled: true, defaultRecallLimit: 10 } }
+    const memoryCoordinator = coordinator({
+      remember: vi.fn(async () => ({ delegated: true as const, runId: 'run-1', provider: 'spawn', summary: '', action: 'stored', memoryBodyIds: ['project'],
+        unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }], hint: 'Saved without a vector.' })),
+    })
+    const result = await createMnemonCommand(runtime(service), memoryCoordinator).handler(invocation('remember 一条稳定记忆'))
+    expect(result).toEqual({ kind: 'success', text: 'Mnemon 记忆 Agent 已处理：stored · 记忆空间 project\n未生成向量：嵌入服务没有响应，关键词召回能找到这条记忆，语义召回要等补齐向量后才能找到。' })
+  })
+
   it('rejects mutation subcommands in read-only mode', async () => {
     const remember = vi.fn()
     const service = { config: { writeEnabled: false, defaultRecallLimit: 10 }, remember }

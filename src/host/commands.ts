@@ -75,7 +75,8 @@ async function execute(serviceOrSource: MnemonAgentRuntimeSource, coordinator: M
       if (!graph.config.writeEnabled) return { kind: 'error', text: 'Mnemon 当前为只读模式，不能写入记忆。' }
       if (argument === '') return error('remember 需要一条自包含的记忆内容。')
       const result = await coordinator.remember(invocation.agent, { content: argument, source: 'user' }, invocation.signal)
-      return { kind: 'success', text: `Mnemon 记忆 Agent 已处理：${result.action}${result.memoryBodyIds.length === 0 ? '' : ` · 记忆空间 ${result.memoryBodyIds.join(', ')}`}${result.summary === '' ? '' : `\n${result.summary}`}` }
+      const vectorless = (result.unembedded ?? []).length === 0 ? '' : '\n未生成向量：嵌入服务没有响应，关键词召回能找到这条记忆，语义召回要等补齐向量后才能找到。'
+      return { kind: 'success', text: `Mnemon 记忆 Agent 已处理：${result.action}${result.memoryBodyIds.length === 0 ? '' : ` · 记忆空间 ${result.memoryBodyIds.join(', ')}`}${result.summary === '' ? '' : `\n${result.summary}`}${vectorless}` }
     }
     case 'forget': {
       if (!graph.config.writeEnabled) return { kind: 'error', text: 'Mnemon 当前为只读模式，不能删除记忆。' }
