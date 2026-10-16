@@ -108,7 +108,7 @@ describe('/mnemon command', () => {
     })
     const result = await createMnemonCommand(runtime(service), memoryCoordinator).handler(invocation('remember 一条稳定记忆'))
     // A write that put no memory anywhere says nothing about one.
-    expect(result).toEqual({ kind: 'success', text: `Mnemon 记忆 Agent 已处理：${action} · 记忆空间 project${said ? '\n未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。' : ''}` })
+    expect(result).toEqual({ kind: 'success', text: `Mnemon 记忆 Agent 已处理：${action} · 记忆空间 project${said ? '\n未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。' : ''}` })
   })
 
   it('reports an explicit forget only after a forgotten receipt', async () => {

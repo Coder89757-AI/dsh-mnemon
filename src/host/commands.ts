@@ -5,7 +5,7 @@ import { mutationResultCommitted } from './receipts.ts'
 import type { MnemonSubagentCoordinator } from './subagent.ts'
 
 /** What a memory saved without a vector means, in the words the WebUI receipts use (#388). */
-const UNEMBEDDED_LINE = '未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
+const UNEMBEDDED_LINE = '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
 
 const USAGE = '用法：/mnemon [status|recall <查询>|related <ID>|remember <内容>|forget <ID>]'
 

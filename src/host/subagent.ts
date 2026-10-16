@@ -390,7 +390,7 @@ export interface DelegatedWriteResult {
 }
 
 /** What a memory saved without a vector means for recall, and how its vector comes. */
-const UNEMBEDDED_HINT = 'Saved without a vector, because embedding did not succeed. Keyword recall finds it; semantic recall misses it until its vector is filled in. Once the embedding service answers, the user fills it in from Test status in the Mnemon Native embedding settings, which runs through the storage root and embedding settings DSH uses; a terminal mnemon command may reach neither.'
+const UNEMBEDDED_HINT = 'Saved without a vector, because embedding did not succeed: semantic matching misses it until its vector is filled in, while keyword, link and recency recall still reach it. Once the embedding service answers, the user fills it in from Test status in the Mnemon Native embedding settings, which runs through the storage root and embedding settings DSH uses; a terminal mnemon command may reach neither.'
 
 /** The memories a write saved without a vector: Mnemon Native says so with `embedded: false` (#388). */
 function withoutVector(receipts: readonly CapturedToolReceipt[]): Array<{ memoryBodyId?: string; id?: string }> {

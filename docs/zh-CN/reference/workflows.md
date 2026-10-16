@@ -123,7 +123,7 @@ Agent 查询
 
 空存储根首次创建 Memory Space 时使用 Mnemon 原生 `default` ID，后续 ID 由 Host 生成。向 inactive 目标写入成功后会激活它。这里的激活只影响 DSH 路由；来源数据库的合并是非破坏性的。
 
-嵌入没有成功时（服务不可用或缺少模型），Mnemon Native 会在没有向量的情况下保存记忆，并在回执中说明（`embedded: false`）。经由任务 Agent 的写入会在 `unembedded` 中列出这些记忆，并附上 `hint`：关键词召回能找到它们，语义召回要等补齐向量之后才能找到；嵌入服务可用后，可在 Mnemon Native 嵌入设置的 **测试状态** 中补齐。补齐使用 DSH 的存储根目录和嵌入设置，在终端运行的 `mnemon` 命令未必一致。`/mnemon remember` 会加一行说明；对话中和记忆空间页上的 **存入记忆** 回执也一样，无论记忆由任务 Agent 写入，还是直接写入某个空间；只有写入确实存入了记忆时才显示这一行。
+嵌入没有成功时（服务不可用或缺少模型），Mnemon Native 会在没有向量的情况下保存记忆，并在回执中说明（`embedded: false`）。经由任务 Agent 的写入会在 `unembedded` 中列出这些记忆，并附上 `hint`：补齐向量之前，它们不参与语义匹配，关键词、关联与时间召回仍能找到它们；嵌入服务可用后，可在 Mnemon Native 嵌入设置的 **测试状态** 中补齐。补齐使用 DSH 的存储根目录和嵌入设置，在终端运行的 `mnemon` 命令未必一致。`/mnemon remember` 会加一行说明；对话中和记忆空间页上的 **存入记忆** 回执也一样，无论记忆由任务 Agent 写入，还是直接写入某个空间；只有写入确实存入了记忆时才显示这一行。
 
 运行时 `add` / `replace` / `remove` 和 Document `create` / `update` 不需要模型做存储 I/O；它们通过 coordinator 进入确定性控制层。容量维护和归档才启动专用 worker。
 

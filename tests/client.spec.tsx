@@ -2041,7 +2041,7 @@ describe('MnemonWorkbench', () => {
     })
     render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
     await waitFor(() => expect(screen.getByText('已连接')).toBeTruthy())
-    const note = '未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
+    const note = '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
 
     await openRememberDialog()
     fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Grafana 在 3300 端口。' } })
