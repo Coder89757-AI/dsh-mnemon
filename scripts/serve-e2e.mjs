@@ -93,6 +93,8 @@ for (const flag of flags) {
   }
   throw new Error('Unknown option: ' + flag)
 }
+// The Layered strategy composes one Source per role, so a second runtime track needs the General one.
+if (flags.has('--second-runtime') && !flags.has('--general-strategy')) throw new Error('--second-runtime requires --general-strategy')
 const extensionNames = ['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture']
 // Strategy packages that also register themselves as bundles; the Starter row owns them.
 const selfRegistering = new Set([...extensionNames, 'dsh-mnemon-strategy-general'])

@@ -1050,16 +1050,15 @@ export class MnemonSubagentCoordinator {
       const offers = authority.context.view.actionOffers.filter(offer => offer.sourceActionId === 'mutate'
         && instances.some(source => source.sourceInstanceKey === offer.sourceInstanceKey))
       if (offers.length === 0) throw new Error('Source Action is not offered by the current View: runtime/mutate')
-      // The tool runs the offer the View binds it to, the Starter instance's when a profile
-      // mounts another runtime Source beside it (#397). The others keep their exact offers,
-      // which the View lists for mnemon_view_action.
+      // The tool runs the offer of the instance the View binds it to, the Starter instance's when a
+      // profile mounts another runtime Source beside it (#397), and otherwise the only runtime
+      // Source the View lets it write to, as a Scoped composition can make it. The others keep
+      // their exact offers, which the View lists for mnemon_view_action.
       const bound = namedToolInstance(instances, 'runtime')
-      const offer = bound === undefined ? undefined : offers.find(item => item.sourceInstanceKey === bound.sourceInstanceKey)
+      const offer = offers.find(item => item.sourceInstanceKey === bound?.sourceInstanceKey) ?? (offers.length === 1 ? offers[0] : undefined)
       if (offer === undefined) {
-        const exact = offers.map(item => item.id).join(', ')
-        throw new Error(bound === undefined
-          ? `Several runtime Sources offer mutate and none is the Starter instance this tool writes to; use mnemon_view_action with one of: ${exact}`
-          : `The runtime Source this tool writes to offers no mutate in this View; use mnemon_view_action with one of: ${exact}`)
+        throw new Error('Several runtime Sources offer mutate and none is the Starter instance this tool writes to; use mnemon_view_action with one of: '
+          + offers.map(item => item.id).join(', '))
       }
       const result = await this.viewAction(parent, authority, offer.id, request as unknown as MemoryJsonValue, signal)
       return { ...result.details as unknown as CoordinatedRuntimeMemoryResult,

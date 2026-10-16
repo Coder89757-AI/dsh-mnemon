@@ -3,8 +3,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as runtimePlugin from 'dsh-mnemon-source-runtime'
 import * as general from 'dsh-mnemon-strategy-general'
+import * as scoped from 'dsh-mnemon-strategy-scoped'
 import type { RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
 import type { HostAgent, HostContextShape, HostSubagentsService, ToolDefinition } from '../src/host/dsh.ts'
+import type { Config } from '../src/host/config.ts'
 import { agentScope } from '../src/host/runtime.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
@@ -23,11 +25,15 @@ const otherRuntimeKey = 'source:mnemon-source-runtime-global'
 const fixtures: Awaited<ReturnType<typeof compositionFixture>>[] = []
 afterEach(async () => { for (const f of fixtures.splice(0)) await f.dispose() })
 
-async function fixture() {
-  const f = await compositionFixture({ memoryTopology: { strategyId: 'general' } })
+async function fixture(options: { strategy?: 'general' | 'layered'; prefix?: string; config?: Config } = {}) {
+  const layered = options.strategy === 'layered'
+  const f = await compositionFixture({ ...(layered ? {} : { memoryTopology: { strategyId: 'general' } }), ...options.config },
+    options.prefix === undefined ? {} : { entryPrefix: options.prefix })
   fixtures.push(f)
-  await f.mount(general, { instanceId: 'mnemon-strategy-general' })
-  await f.releases[3]!()
+  if (!layered) {
+    await f.mount(general, { instanceId: (options.prefix === undefined ? '' : options.prefix + ':') + 'mnemon-strategy-general' })
+    await f.releases[3]!()
+  }
   const otherRuntime = join(f.root, 'global-runtime')
   mkdirSync(otherRuntime)
   await f.mount(runtimePlugin, { instanceId: 'mnemon-source-runtime-global', config: { dataDir: otherRuntime, userDataDir: otherRuntime } })
@@ -65,6 +71,49 @@ describe('a second Source of one type beside the Starter instance (issue 397)', 
     await f.execute('mnemon_view_action', { offerId: other.id, input: { action: 'add', target: 'memory', content: 'Shared fact for the global track.' } })
     expect(await f.runtimeEntries(otherRuntimeKey)).toEqual(['Shared fact for the global track.'])
     expect(await f.runtimeEntries(runtimeKey)).toEqual(['Project fact for the Starter track.'])
+    f.graph.composableTurns.endTurn(turn.turnId)
+  })
+
+  it('writes through the Starter instance nested under an include, as the Starter bundle mounts it', async () => {
+    const f = await fixture({ prefix: 'include' })
+    const turn = await f.begin()
+    expect(turn.view.actionOffers.filter(offer => offer.sourceActionId === 'mutate').map(offer => offer.sourceInstanceKey).sort())
+      .toEqual(['source:include:mnemon-source-runtime', otherRuntimeKey])
+    await f.execute('mnemon_runtime_memory', { action: 'add', target: 'memory', content: 'Nested Starter fact.' })
+    expect(await f.runtimeEntries('source:include:mnemon-source-runtime')).toEqual(['Nested Starter fact.'])
+    expect(await f.runtimeEntries(otherRuntimeKey)).toEqual([])
+    f.graph.composableTurns.endTurn(turn.turnId)
+  })
+
+  it('writes through the only runtime Source the View lets it write to, as a Scoped composition can make it', async () => {
+    const f = await fixture()
+    await f.mount(scoped, { instanceId: 'scoped', config: { writableSourceKeys: [otherRuntimeKey, 'source:mnemon-source-documents', 'source:mnemon-source-memory-spaces'] } })
+    const turn = await f.begin()
+    expect(turn.view.actionOffers.filter(offer => offer.sourceActionId === 'mutate').map(offer => offer.sourceInstanceKey)).toEqual([otherRuntimeKey])
+    await expect(f.execute('mnemon_runtime_memory', { action: 'add', target: 'memory', content: 'Fact for the writable track.' }))
+      .resolves.toMatchObject({ memoryReceipt: { status: 'succeeded' } })
+    expect(await f.runtimeEntries(otherRuntimeKey)).toEqual(['Fact for the writable track.'])
+    expect(await f.runtimeEntries(runtimeKey)).toEqual([])
+    f.graph.composableTurns.endTurn(turn.turnId)
+  })
+
+  it('keeps capacity maintenance on the Starter track under the Layered strategy with Scoped composition', async () => {
+    const f = await fixture({ strategy: 'layered', config: { runtimeMemory: { memoryLimitBytes: 512, userLimitBytes: 512 } } })
+    const body = await f.memorySpace()
+    const saved = 'Saved durable fact. '.repeat(15).trim()
+    const pending = 'Pending durable fact. '.repeat(15).trim()
+    await f.graph.source('runtime').mutate('mutate', { action: 'add', target: 'memory', content: saved })
+    await f.graph.source('runtime').forInstance(otherRuntimeKey).mutate('mutate', { action: 'add', target: 'memory', content: 'Shared track fact.' })
+    // Without Scoped composition the Layered strategy refuses a second Source of one role.
+    await f.mount(scoped, { instanceId: 'scoped' })
+    const turn = await f.begin()
+    expect(turn.view.actionOffers.filter(offer => offer.sourceActionId === 'mutate').map(offer => offer.sourceInstanceKey).sort()).toEqual([runtimeKey, otherRuntimeKey])
+    await expect(f.execute('mnemon_runtime_memory', { action: 'add', target: 'memory', content: pending }))
+      .resolves.toMatchObject({ maintenance: { kind: 'mnemon-archive', memoryBodyIds: [body.id] } })
+    expect(await f.runtimeEntries(runtimeKey)).toEqual([pending])
+    expect(await f.runtimeEntries(otherRuntimeKey)).toEqual(['Shared track fact.'])
+    expect(await f.graph.source('memory-spaces').read('search', { query: 'Saved durable fact' })).toMatchObject({ results: [expect.objectContaining({ content: saved })] })
+    expect(f.start).not.toHaveBeenCalled()
     f.graph.composableTurns.endTurn(turn.turnId)
   })
 
