@@ -1,5 +1,3 @@
-import { realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -18,13 +16,13 @@ import { MnemonLifecycle } from '../src/host/lifecycle.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { compositionFixture } from './fixtures/composition.ts'
+import { loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 
 // Issue #387: mnemon_remember named a Memory Space, and the delegated writer put the
 // memory into another one whose description matched it better, switching that space
 // back on. The writer now writes where the caller asked, or nowhere, and never switches
 // on a space the caller did not name.
 
-const requireDsh = createRequire(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
 const spawn = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-spawn-in-process'))
 
 type Message = GenerateOptions['messages'][number]
@@ -96,6 +94,7 @@ async function host(attempts: () => string[]) {
   await ctx.plugin(ToolRuntime, { mode: 'native' })
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
+  await loadWorkingDirectory(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(spawn, { providerName: 'spawn' })
   ctx.llm.registerAdapter(['scripted'], adapter)
