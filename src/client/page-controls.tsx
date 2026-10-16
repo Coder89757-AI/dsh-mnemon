@@ -114,7 +114,7 @@ export function WriteReceipt(props: { action?: string | undefined; summary?: str
     <Tag tone={TONES[outcome]}>{t(LABELS[outcome])}</Tag>
     {props.summary !== undefined && props.summary !== '' && <p>{props.summary}</p>}
     {props.onView !== undefined && viewable && <Button variant="ghost" size="sm" className={css.receiptAction} onClick={props.onView}>{props.viewLabel ?? t('receipt.view')}</Button>}
-    {props.unembedded === true && <p className={css.receiptNote}>{t('receipt.unembedded')}</p>}
+    {props.unembedded === true && (outcome === 'written' || outcome === 'updated' || outcome === 'partial') && <p className={css.receiptNote}>{t('receipt.unembedded')}</p>}
   </div>
 }
 

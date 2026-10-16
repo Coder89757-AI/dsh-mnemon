@@ -513,6 +513,24 @@ describe('conversation interaction surfaces', () => {
     await screen.findByText('saveAction.saved.runtimeMaintained')
   })
 
+  it('says nothing about a vector when the write put no memory anywhere (#388)', async () => {
+    const rpcCall = vi.fn(async (_channel: string, endpoint: string) => {
+      if (endpoint === 'status') return { ok: true as const, value: { writeEnabled: true, lifecycle: { taskAgentAvailable: true } } }
+      if (endpoint === 'assistant-message') return { ok: true as const, value: { messageId: 'message-1', text: 'Checkout loads the payment SDK after interaction.' } }
+      // An earlier write in the run had no vector; the run itself ended as a skipped duplicate.
+      if (endpoint === 'supervise') return { ok: true as const, value: { summary: 'Already saved.', action: 'skipped', memoryBodyIds: [], unembedded: [{ memoryBodyId: 'lumen', id: 'm1' }] } }
+      throw new Error(`unexpected endpoint: ${endpoint}`)
+    })
+    render(<MnemonSaveAction messageId="message-1" sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as ClientConnectionHandle} settingsScope={writableSettingsScope} localeRuntime={localeRuntime} t={translate as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'saveAction.button' }))
+    await screen.findByText('taskAgent.ready')
+    const submit = screen.getByRole('button', { name: 'saveAction.submit' }) as HTMLButtonElement
+    await waitFor(() => expect(submit.disabled).toBe(false))
+    fireEvent.click(submit)
+    await screen.findByText('receipt.skipped')
+    expect(screen.queryByText('receipt.unembedded')).toBeNull()
+  })
+
   it('says when a memory was saved without a vector, through the task Agent or written directly (#388)', async () => {
     const native = { id: 'native', name: 'Native space', active: true, providerEnabled: true, provider: { id: 'mnemon-native', label: 'Mnemon Native', capabilities: { remember: true } } }
     let embedded = false

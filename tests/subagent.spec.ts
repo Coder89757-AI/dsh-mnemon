@@ -1496,7 +1496,32 @@ describe('Mnemon memory subagent coordinator', () => {
     if (embedded) {
       expect(result).not.toHaveProperty('unembedded')
       expect(result).not.toHaveProperty('hint')
-    } else expect(result).toMatchObject({ unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }], hint: expect.stringContaining('Saved without a vector') })
+    } else {
+      expect(result).toMatchObject({ unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }], hint: expect.stringContaining('Saved without a vector') })
+      // The next step goes through DSH's own storage root and embedding settings, never a terminal command.
+      expect((result as { hint: string }).hint).toContain('Test status in the Mnemon Native embedding settings')
+      expect((result as { hint: string }).hint).not.toContain('--store')
+    }
+  })
+
+  it('lists only the memories a run saved without a vector, and none for a skipped duplicate (#388)', async () => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, {
+        action: 'added', id: 'memory-1', embedded: true, memoryBodyId: 'project',
+      })
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Prometheus runs on port 9090.', memoryBodyId: 'ops' }, {
+        action: 'added', id: 'memory-2', embedded: false, memoryBodyId: 'ops',
+      })
+      // A duplicate skip carries no embedded field at all.
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, {
+        action: 'skipped', memoryBodyId: 'project',
+      })
+    }, 'completed', { action: 'stored', summary: 'Saved two memories.', memoryBodyIds: ['project', 'ops'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Monitoring ports.' }, new AbortController().signal)
+    expect(result).toMatchObject({ unembedded: [{ memoryBodyId: 'ops', id: 'memory-2' }] })
+    expect((result as { unembedded: unknown[] }).unembedded).toHaveLength(1)
   })
 
   it.each(['accepted', 'candidate', 'partial', 'unknown', 'failed'])('does not recover %s completion as stored', async completion => {

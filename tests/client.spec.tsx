@@ -2035,13 +2035,13 @@ describe('MnemonWorkbench', () => {
     call.mockImplementation(async (...args: Parameters<typeof domain>) => {
       const endpoint = args[1]
       if (endpoint === 'supervise') return { ok: true, value: { delegated: true, sessionId: 'session-1', runId: 'child-1', provider: 'spawn', summary: '已存入项目记忆空间。', action: 'added', memoryBodyIds: ['project'], unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }] } }
-      // Mnemon Native's own receipt for a memory saved while the embedding service did not answer.
-      if (endpoint === 'remember') return { ok: true, value: { action: 'added', id: 'memory-2', memoryBodyId: 'project', embedded: false } }
+      // Mnemon Native's own receipt for a memory saved while embedding did not succeed, then one with its vector.
+      if (endpoint === 'remember') return { ok: true, value: { action: 'added', id: 'memory-2', memoryBodyId: 'project', embedded: call.mock.calls.filter(entry => entry[1] === 'remember').length > 1 } }
       return domain(...args)
     })
     render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
     await waitFor(() => expect(screen.getByText('已连接')).toBeTruthy())
-    const note = '未生成向量：嵌入服务没有响应，关键词召回能找到这条记忆，语义召回要等补齐向量后才能找到。'
+    const note = '未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
 
     await openRememberDialog()
     fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Grafana 在 3300 端口。' } })
@@ -2054,6 +2054,12 @@ describe('MnemonWorkbench', () => {
     await waitFor(() => expect(call).toHaveBeenCalledWith(expect.anything(), 'remember', expect.objectContaining({ content: '预发集群的 Prometheus 在 9090 端口。' })))
     await waitFor(() => expect(screen.getByText(note)).toBeTruthy())
     expect(screen.queryByText('已存入项目记忆空间。')).toBeNull()
+    // A memory saved with its vector reads as before.
+    fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Loki 在 3100 端口。' } })
+    fireEvent.click(await screen.findByRole('button', { name: '按约束交给任务 Agent' }))
+    await waitFor(() => expect(call.mock.calls.filter(entry => entry[1] === 'remember')).toHaveLength(2))
+    await screen.findByText('已存入')
+    expect(screen.queryByText(note)).toBeNull()
   })
 
   it('renders a usable empty overview when no memory spaces exist', async () => {

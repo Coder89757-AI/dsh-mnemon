@@ -1,7 +1,11 @@
 import type { CommandDefinition, CommandInvocation, CommandResult, CommandService } from "./dsh.ts"
 import type { Insight, MemorySpacesStatus } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { agentScope, type MnemonAgentRuntimeSource } from './runtime.ts'
+import { mutationResultCommitted } from './receipts.ts'
 import type { MnemonSubagentCoordinator } from './subagent.ts'
+
+/** What a memory saved without a vector means, in the words the WebUI receipts use (#388). */
+const UNEMBEDDED_LINE = '未生成向量：嵌入没有成功，暂时只有关键词召回能找到这条记忆。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
 
 const USAGE = '用法：/mnemon [status|recall <查询>|related <ID>|remember <内容>|forget <ID>]'
 
@@ -75,7 +79,8 @@ async function execute(serviceOrSource: MnemonAgentRuntimeSource, coordinator: M
       if (!graph.config.writeEnabled) return { kind: 'error', text: 'Mnemon 当前为只读模式，不能写入记忆。' }
       if (argument === '') return error('remember 需要一条自包含的记忆内容。')
       const result = await coordinator.remember(invocation.agent, { content: argument, source: 'user' }, invocation.signal)
-      const vectorless = (result.unembedded ?? []).length === 0 ? '' : '\n未生成向量：嵌入服务没有响应，关键词召回能找到这条记忆，语义召回要等补齐向量后才能找到。'
+      const written = mutationResultCommitted({ action: result.action }) || result.action === 'partial'
+      const vectorless = !written || (result.unembedded ?? []).length === 0 ? '' : '\n' + UNEMBEDDED_LINE
       return { kind: 'success', text: `Mnemon 记忆 Agent 已处理：${result.action}${result.memoryBodyIds.length === 0 ? '' : ` · 记忆空间 ${result.memoryBodyIds.join(', ')}`}${result.summary === '' ? '' : `\n${result.summary}`}${vectorless}` }
     }
     case 'forget': {
