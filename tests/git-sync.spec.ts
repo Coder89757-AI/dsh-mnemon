@@ -11,6 +11,7 @@ import type { MnemonGitHubAuth } from '../src/host/github-auth.ts'
 import { MnemonMachineStore, defaultMachineLabel } from '../src/host/machine-identity.ts'
 import { runProcess, type ProcessRunner } from '../src/host/process.ts'
 import { sourceFixture } from './fixtures/sources.ts'
+import { sqlite as nodeSqlite, writeSpace } from './helpers/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []
@@ -77,6 +78,15 @@ async function machine(label: string, repository?: string, clock: () => Date = n
   const sync = new MnemonGitSync(runner, config, packs, run, clock)
   if (repository !== undefined) sync.configure({ repoUrl: repository })
   return { root, workspace, runner, config, packs, sync, sources }
+}
+
+/** One Memory Space as Mnemon writes it, so the payload carries a `mnemon.db`. */
+function seedSpace(root: string): void {
+  const data = join(root, 'data')
+  mkdirSync(join(data, 'default'), { recursive: true })
+  writeSpace(join(data, 'default', 'mnemon.db'), { insights: [{ id: 'i-1', content: 'The gateway routes by model family' }] })
+  const at = '2026-10-05T08:37:12.218Z'
+  writeFileSync(join(data, '.dsh-memory-bodies.json'), JSON.stringify({ version: 1, bodies: [{ id: 'default', name: 'Default', description: '', active: true, createdAt: at, updatedAt: at }] }, null, 2) + '\n')
 }
 
 /** Run with these environment variables set, or removed where the value is undefined. */
@@ -491,15 +501,19 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(readFileSync(join(machineB.root, 'runtime', 'memories.json'), 'utf8')).not.toContain('Published profile')
   })
 
-  it('reads the payload the branch holds, not files the mirror does not track (#396)', async () => {
+  it.skipIf(nodeSqlite === undefined)('reads the payload the branch holds, not files the mirror does not track (#396)', async () => {
     const origin = await repository('sync-untracked-remote')
     const machineA = await machine('sync-untracked', origin)
+    seedSpace(machineA.root)
     await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Published profile', importance: 'normal' }, { confirmed: true })
     await machineA.sync.push({ message: 'Publish' })
-    // SQLite leaves -wal and -shm beside a database something opened in place, and Git
-    // tracks neither. A reset keeps files Git does not track, so every later sync read
-    // them as payload and failed until someone deleted them by hand.
     const mirror = join(machineA.root, 'state', 'sync', 'git')
+    expect(await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)).toContain('mnemon/payload/data/default/mnemon.db')
+    // SQLite leaves -wal and -shm beside a database something opened in place, and Git
+    // tracks neither, here ignores them even. A reset keeps such files, so every later sync
+    // read them as payload and failed until someone deleted them by hand.
+    writeFileSync(join(mirror, '.git', 'info', 'exclude'), '*-shm\n*-wal\n')
+    writeFileSync(join(mirror, 'notes.txt'), 'outside the sync directory')
     const stray = [join('mnemon', 'payload', 'data', 'default', 'mnemon.db-shm'), join('mnemon', 'payload', 'data', 'default', 'mnemon.db-wal'),
       join('mnemon', 'payload', 'runtime', 'scratch', 'left-over.json')]
     for (const path of stray) {
@@ -508,17 +522,39 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     }
     await expect(machineA.sync.preview()).resolves.toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/u) })
     for (const path of stray) expect(existsSync(join(mirror, path))).toBe(false)
+    expect(existsSync(join(mirror, 'mnemon', 'payload', 'data', 'default', 'mnemon.db'))).toBe(true)
     for (const path of stray) {
       mkdirSync(join(mirror, path, '..'), { recursive: true })
       writeFileSync(join(mirror, path), 'not part of the payload')
     }
     await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Second profile entry', importance: 'normal' }, { confirmed: true })
     await expect(machineA.sync.push({ message: 'Publish again' })).resolves.toMatchObject({ committed: true, pushed: true })
-    expect(await git(['status', '--porcelain'], mirror)).toBe('')
+    expect(await git(['status', '--porcelain'], mirror)).toBe('?? notes.txt\n')
     const published = await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)
     expect(published).toContain('mnemon/payload/runtime/USER.md')
     expect(published).not.toMatch(/-shm|-wal|left-over/u)
     expect(await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)).toContain('Second profile entry')
+    // Only the sync directory is brought back to the branch.
+    expect(readFileSync(join(mirror, 'notes.txt'), 'utf8')).toBe('outside the sync directory')
+  })
+
+  it.skipIf(nodeSqlite === undefined)('publishes payload files the ignore rules on this machine match, and syncs again (#396)', async () => {
+    const origin = await repository('sync-ignored-remote')
+    const machineA = await machine('sync-ignored-a', origin)
+    seedSpace(machineA.root)
+    // A global ignore file, as many machines have one, that matches every Memory Space database.
+    const home = temporary('sync-ignored-home')
+    writeFileSync(join(home, 'ignore'), '*.db\n')
+    writeFileSync(join(home, 'gitconfig'), '[core]\n\texcludesFile = ' + join(home, 'ignore') + '\n')
+    await withEnvironment({ GIT_CONFIG_GLOBAL: join(home, 'gitconfig') }, async () => {
+      await machineA.sync.push({ message: 'Publish' })
+      expect(await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)).toContain('mnemon/payload/data/default/mnemon.db')
+      await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Second profile entry', importance: 'normal' }, { confirmed: true })
+      await expect(machineA.sync.push({ message: 'Publish again' })).resolves.toMatchObject({ committed: true, pushed: true })
+      const machineB = await machine('sync-ignored-b', origin)
+      await expect(machineB.sync.pull({ mode: 'merge' })).resolves.toBeDefined()
+      expect(existsSync(join(machineB.root, 'data', 'default', 'mnemon.db'))).toBe(true)
+    })
   })
 
   it('reports an empty remote instead of importing an empty payload', async () => {
@@ -981,6 +1017,8 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
   it('never waits on a prompt a person would have to answer', () => {
     // No terminal is watched on the Host: a missing credential has to fail, not hang a push.
     expect(gitEnvironment({ PATH: '/bin', GIT_TERMINAL_PROMPT: '1' })).toEqual({ PATH: '/bin', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' })
+    // Nor does it change how Git reads the paths it is given.
+    expect(gitEnvironment({ PATH: '/bin', GIT_LITERAL_PATHSPECS: '1', GIT_ICASE_PATHSPECS: '1' })).toEqual({ PATH: '/bin', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' })
   })
 
   it('offers the GitHub sign-in to github.com and to no other host', async () => {
