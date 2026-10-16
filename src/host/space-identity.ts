@@ -7,14 +7,17 @@
  * merge that compares bytes kept the other machine's space as a new one on every sync,
  * doubling the spaces each round (#370). Spaces are compared by their content instead:
  * every table, column and row, the edges included, except the usage columns, the read log
- * and the derived embedding and effective importance.
+ * and the derived embedding and effective importance. An edge is the two memories it links
+ * and its type, its table's key: a merge of spaces or a new link writes its weight, note and
+ * time again, so the same edge with other values is still the same edge (#391).
  *
  * Rows are compared by their columns in name order, so the order a table declares them in
  * does not matter. One version contains another when it holds every row of it. Two versions
  * of one space merge by adding to this machine's database the rows only the other holds:
  * this machine's rows, read counts, read log and schema stay as they are, and the result holds
- * the memories of both. A row both sides hold differently, a memory edited or forgotten on
- * one of them, refuses the merge, and the caller keeps a copy instead.
+ * the memories of both; an edge both hold keeps this machine's values. A row both sides hold
+ * differently, a memory edited or forgotten on one of them, refuses the merge, and the caller
+ * keeps a copy instead.
  *
  * It needs `node:sqlite` (Node 22.13, 23.4 and later). Without it, for bytes that are not a
  * readable database, for a database with a virtual table, or past the row limits, the identity
@@ -32,6 +35,8 @@ type Database = InstanceType<Sqlite['DatabaseSync']>
 const USAGE_TABLES = new Set(['oplog'])
 /** Written by reading a space, or derived from what it holds. */
 const USAGE_COLUMNS = new Set(['access_count', 'last_accessed_at', 'effective_importance', 'embedding'])
+/** Values a table's rows carry beside what makes them themselves: an edge is its key. */
+const ROW_VALUES: Readonly<Record<string, ReadonlySet<string>>> = { edges: new Set(['weight', 'metadata', 'created_at']) }
 const SCRATCH_PREFIX = '.dsh-space-identity-'
 /**
  * Past this many rows a space is compared by its bytes, and past the second limit every space
@@ -43,7 +48,7 @@ export const MEMORY_SPACE_MERGE_MAX_ROWS = 2_000_000
 
 /** One table as the identity reads it. */
 interface Table {
-  /** The columns its content is compared by, in name order: all but the usage columns. */
+  /** The columns its content is compared by, in name order: all but the usage columns and an edge's values. */
   columns: string[]
   /** Every column, as a row is written back. */
   all: string[]
@@ -306,7 +311,7 @@ export class MemorySpaceIdentity {
       let budget = this.maxRows
       for (const name of names) {
         const all = (database.prepare(`PRAGMA table_info(${quote(name)})`).all() as Array<{ name: string }>).map(column => column.name)
-        const columns = all.filter(column => !USAGE_COLUMNS.has(column)).sort()
+        const columns = all.filter(column => !USAGE_COLUMNS.has(column) && ROW_VALUES[name]?.has(column) !== true).sort()
         const rows: string[] = []
         if (columns.length > 0) {
           const statement = database.prepare(`SELECT ${columns.map(quote).join(', ')} FROM ${quote(name)}`)

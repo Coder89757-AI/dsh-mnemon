@@ -54,13 +54,13 @@ async function fixture(label: string, seed: number, bodyId = 'project') {
 }
 
 /** Replace a fixture's Memory Spaces with real databases, as Mnemon writes them. */
-function spaces(root: string, bodies: Array<{ id: string; name: string; insights: SpaceInsight[]; reads?: number }>): void {
+function spaces(root: string, bodies: Array<{ id: string; name: string; insights: SpaceInsight[]; reads?: number; edges?: Parameters<typeof writeSpace>[1]['edges'] }>): void {
   const data = join(root, 'data')
   rmSync(data, { recursive: true, force: true })
   mkdirSync(data, { recursive: true })
   for (const body of bodies) {
     mkdirSync(join(data, body.id), { recursive: true })
-    writeSpace(join(data, body.id, 'mnemon.db'), { insights: body.insights, ...(body.reads === undefined ? {} : { reads: body.reads }) })
+    writeSpace(join(data, body.id, 'mnemon.db'), { insights: body.insights, ...(body.reads === undefined ? {} : { reads: body.reads }), ...(body.edges === undefined ? {} : { edges: body.edges }) })
   }
   const at = '2026-10-05T08:37:12.218Z'
   writeFileSync(join(data, '.dsh-memory-bodies.json'), `${JSON.stringify({
@@ -347,6 +347,34 @@ describe('Mnemon Pack', () => {
         rightIds = held(right.root, 'gateway')
         expect(leftIds).toEqual([...contents.keys()].sort())
         expect(rightIds).toEqual(leftIds)
+      }
+    })
+
+    it('keeps one space when a merge here rewrote the edges the branch still holds as published (#391)', async () => {
+      const source = await fixture('pack-edges-source', 70)
+      const target = await fixture('pack-edges-target', 71)
+      const published = { weight: 0.86, metadata: '{"sub_type":"similar_topic"}' }
+      // Merging a copy back into this machine's space wrote every edge again: weight 0.5, the
+      // reason as the only note, and the time of the merge.
+      const rewritten = { weight: 0.5, metadata: '{"reason":"semantic"}', createdAt: '2026-10-16T10:35:00Z' }
+      spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(2), reads: 2, edges: [['i-1', 'i-2', rewritten]] }])
+      const learned: SpaceInsight[] = []
+      for (let round = 1; round <= 3; round += 1) {
+        // The other machine still holds the edge as it was published, and keeps learning.
+        learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
+        spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round,
+          edges: [['i-1', 'i-2', published], ['i-2', 'i-' + String(round + 2), published]] }])
+        await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(target.root).map(body => body.id)).toEqual(['gateway'])
+        expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)])
+      }
+      const database = new nodeSqlite!.DatabaseSync(join(target.root, 'data', 'gateway', 'mnemon.db'))
+      try {
+        // This machine's values stay on the edge both hold; the edges only the other machine made arrive.
+        expect(database.prepare("SELECT weight, metadata FROM edges WHERE source_id = 'i-1' AND target_id = 'i-2'").get()).toEqual({ weight: 0.5, metadata: '{"reason":"semantic"}' })
+        expect(database.prepare('SELECT count(*) AS n FROM edges').get()).toEqual({ n: 4 })
+      } finally {
+        database.close()
       }
     })
 
