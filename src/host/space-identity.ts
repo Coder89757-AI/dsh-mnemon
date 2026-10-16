@@ -9,7 +9,9 @@
  * every table, column and row, the edges included, except the usage columns, the read log
  * and the derived embedding and effective importance. An edge is the two memories it links
  * and its type, its table's key: a merge of spaces or a new link writes its weight, note and
- * time again, so the same edge with other values is still the same edge (#391).
+ * time again, so the same edge with other values is still the same edge (#391). A memory's
+ * update time is left out too: filling in its vector or keeping it from pruning moves it, while
+ * an edit or a forget changes what is compared.
  *
  * Rows are compared by their columns in name order, so the order a table declares them in
  * does not matter. One version contains another when it holds every row of it. Two versions
@@ -35,8 +37,15 @@ type Database = InstanceType<Sqlite['DatabaseSync']>
 const USAGE_TABLES = new Set(['oplog'])
 /** Written by reading a space, or derived from what it holds. */
 const USAGE_COLUMNS = new Set(['access_count', 'last_accessed_at', 'effective_importance', 'embedding'])
-/** Values a table's rows carry beside what makes them themselves: an edge is its key. */
-const ROW_VALUES: Readonly<Record<string, ReadonlySet<string>>> = { edges: new Set(['weight', 'metadata', 'created_at']) }
+/**
+ * Values a row carries beside what it holds, which Mnemon writes again without changing that
+ * (#391): an edge is its key, and an import or a new link writes its weight, note and time
+ * again; a memory's update time moves when its vector is filled in or it is kept from pruning.
+ */
+const ROW_VALUES: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['edges', new Set(['weight', 'metadata', 'created_at'])],
+  ['insights', new Set(['updated_at'])],
+])
 const SCRATCH_PREFIX = '.dsh-space-identity-'
 /**
  * Past this many rows a space is compared by its bytes, and past the second limit every space
@@ -311,7 +320,7 @@ export class MemorySpaceIdentity {
       let budget = this.maxRows
       for (const name of names) {
         const all = (database.prepare(`PRAGMA table_info(${quote(name)})`).all() as Array<{ name: string }>).map(column => column.name)
-        const columns = all.filter(column => !USAGE_COLUMNS.has(column) && ROW_VALUES[name]?.has(column) !== true).sort()
+        const columns = all.filter(column => !USAGE_COLUMNS.has(column) && ROW_VALUES.get(name)?.has(column) !== true).sort()
         const rows: string[] = []
         if (columns.length > 0) {
           const statement = database.prepare(`SELECT ${columns.map(quote).join(', ')} FROM ${quote(name)}`)
