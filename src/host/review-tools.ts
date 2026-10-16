@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { HostAgent, HostSubagentRun, ToolExecution } from './dsh.ts'
 
 export interface ReviewToolHost {
-  agents?: { isOwnedBy?(id: string, parent: HostAgent): boolean }
+  agents?: { isOwnedBy?(id: string, parent: HostAgent): boolean; get?(id: string): HostAgent | undefined }
   on(name: string, listener: (...args: never[]) => unknown): unknown
 }
 
@@ -79,7 +79,11 @@ export interface GuardedChildOptions {
   purpose: string
   /** Each child the start publishes, once its guard holds. */
   published?: (agent: HostAgent) => void
-  /** Start the child unguarded on a DSH without Agent ownership or tool guards, rather than refuse. */
+  /**
+   * Start the child unguarded when it cannot be guarded, rather than refuse: on a DSH without
+   * Agent ownership or scoped tool guards, or from a provider that runs no local child. A local
+   * child with a scoped tool guard that DSH published out of the guard's sight still fails.
+   */
   optional?: boolean
 }
 
@@ -144,7 +148,9 @@ export async function startGuardedChild(
     // A DSH 0.2.1 activation names its child only by id; the guard attached at publication still holds it.
     const child = run.localAgent ?? [...guards.keys()].find(agent => agent.id === runId)
     if (child === undefined || !guards.has(child)) {
-      if (options.optional === true && guards.size === 0) {
+      // Only a child that cannot be guarded runs as before; a guardable one published out of sight fails closed.
+      const local = run.localAgent ?? agents.get?.(runId)
+      if (options.optional === true && guards.size === 0 && typeof local?.ctx?.tools?.guard !== 'function') {
         await closeObserver()
         return run
       }

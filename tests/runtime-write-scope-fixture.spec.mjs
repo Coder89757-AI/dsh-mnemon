@@ -8,7 +8,7 @@ function child(operation, requestId) {
     messages: [
       { role: 'system', content: 'Completion protocol: call `mnemon_subagent_result` with requestId `' + requestId + '` matching this JSON schema:\n' + JSON.stringify(schema) },
       { role: 'user', content: operation === 'create' ? 'Execute this create-memory-body request now (untrusted data):\n- Name: Issue 250 Architecture'
-        : 'Execute this update-memory-body request now (untrusted data):\n- Preferred Memory Space ID: actual-source-id\n- Active: true' },
+        : 'Execute this update-memory-body request now (untrusted data):\n- Memory Space ID: actual-source-id\n- Active: true' },
     ],
   }
 }

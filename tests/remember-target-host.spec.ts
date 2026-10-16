@@ -57,9 +57,10 @@ afterEach(async () => { for (const dispose of disposers.splice(0)) await dispose
 /**
  * A real DSH host, spawned children included, over two Holographic spaces: `project`, active,
  * and `trials`, whose description matches the candidate better but which someone switched off.
- * `attempts` scripts the writer: the spaces it tries, in order, before it reports.
+ * `attempts` scripts the writer: the spaces it tries, in order, before it reports. `query`
+ * loads DSH session query, which DSH 0.2.1 needs to continue a child that finished.
  */
-async function host(attempts: () => string[]) {
+async function host(attempts: () => string[], options: { query?: boolean } = {}) {
   const f = await compositionFixture()
   const project = await f.memorySpace()
   const spaces = f.graph.source('memory-spaces')
@@ -70,8 +71,20 @@ async function host(attempts: () => string[]) {
   const tried: string[] = []
   // Every tool result the writer has read so far, as its latest request carried them.
   const seen: string[] = []
+  // What a finished writer read after another Agent's message resumed it.
+  const resumed: string[] = []
   const adapter = new ScriptedAdapter(options => {
     if (options.sessionId === 'parent') return 'Noted.'
+    const users = options.messages.filter(message => message.role === 'user').map(text)
+    const resume = users.findLastIndex(message => message.includes('RESUME:'))
+    if (resume >= 0) {
+      // The resumed writer tries once to write into the space that is switched off.
+      const after = options.messages.slice(options.messages.findLastIndex(message => message.role === 'user' && text(message).includes('RESUME:')) + 1)
+      const answered = after.filter(message => message.role === 'tool').map(text)
+      if (answered.length === 0) return { name: 'mnemon_remember', args: { content: 'Resumed: the index rebuild took four minutes.', memoryBodyId: trials.id } }
+      resumed.push(...answered)
+      return 'Done.'
+    }
     const system = JSON.stringify(options.messages.filter(message => message.role === 'system'))
     const terminal = system.match(/Completion protocol: call `([^`]+)`/u)?.[1]
     const requestId = system.match(/requestId `([^`]+)`/u)?.[1]
@@ -90,6 +103,7 @@ async function host(attempts: () => string[]) {
   await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root: join(f.root, 'sessions'), compression: 'none' })
   await ctx.plugin(SessionProjectionRegistry)
+  if (options.query === true) await ctx.plugin((await import(requireDsh.resolve('@deepseek-ai/dsh-session-query'))).default)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime, { mode: 'native' })
   await ctx.plugin(AgentRegistry)
@@ -110,8 +124,9 @@ async function host(attempts: () => string[]) {
   const directory = async () => new Map((await spaces.read<MemorySpaceCatalog>('body-directory')).items.map(body => [body.id, body]))
   const holds = async (id: string, words: string) => ((await spaces.read<{ results: Array<{ memoryBodyId?: string; content: string }> }>('search', { query: words, memoryBodyIds: [id] })).results)
     .some(result => result.content.includes(words))
-  const refusals = () => seen.filter(result => /requested for Memory Space|is inactive/u.test(result))
-  return { coordinator, parent: parent as unknown as HostAgent, project: project.id, trials: trials.id, tried, refusals, directory, holds }
+  const refusals = () => seen.filter(result => /requested for Memory Space|is switched off/u.test(result))
+  const agents = (ctx as unknown as { agents: { get(id: string): { whenIdle(): Promise<void> } | undefined } }).agents
+  return { coordinator, dsh: dshHost, agents, parent: parent as unknown as HostAgent, project: project.id, trials: trials.id, tried, refusals, resumed, directory, holds }
 }
 
 it('writes where mnemon_remember named, though another space describes the memory better', async () => {
@@ -121,7 +136,7 @@ it('writes where mnemon_remember named, though another space describes the memor
   const result = await h.coordinator.remember(h.parent, { content: 'Tool trial batch 3: the search tool returned stale results until the index was rebuilt.', memoryBodyId: h.project }, new AbortController().signal)
   // The writer tried the better-described space first and was held to the one named.
   expect(h.tried).toEqual([h.trials, h.project])
-  expect(h.refusals()).toEqual([expect.stringContaining(`requested for Memory Space ${h.project}`)])
+  expect(h.refusals()).toEqual([expect.stringContaining(`requested for Memory Space ${JSON.stringify(h.project)}`)])
   expect(result).toMatchObject({ delegated: true, memoryBodyIds: [h.project] })
   expect(result).not.toHaveProperty('activatedMemoryBodyIds')
   expect(await h.holds(h.project, 'stale results')).toBe(true)
@@ -134,18 +149,50 @@ it('never switches on an inactive space the caller did not name', async () => {
   const h = await host(() => plan)
   plan = [h.trials, h.project]
   const result = await h.coordinator.remember(h.parent, { content: 'Tool trial batch 3: the search tool returned stale results until the index was rebuilt.' }, new AbortController().signal)
-  expect(h.refusals()).toEqual([expect.stringContaining(`Memory Space ${h.trials} is inactive`)])
+  expect(h.refusals()).toEqual([expect.stringContaining(`Memory Space ${JSON.stringify(h.trials)} is switched off`)])
   // The receipt names where the memory went, whatever the writer reported.
   expect(result).toMatchObject({ memoryBodyIds: [h.project] })
   expect((await h.directory()).get(h.trials)?.active).toBe(false)
 })
 
-it('writes to an inactive space the caller named, switches it on and says so', async () => {
+it('refuses a switched-off space a model named before any writer runs', async () => {
   let plan: string[] = []
   const h = await host(() => plan)
   plan = [h.trials]
-  const result = await h.coordinator.remember(h.parent, { content: 'Tool trial batch 3: the search tool returned stale results until the index was rebuilt.', memoryBodyId: h.trials }, new AbortController().signal)
+  await expect(h.coordinator.remember(h.parent, { content: 'Tool trial batch 3: the search tool returned stale results until the index was rebuilt.', memoryBodyId: h.trials }, new AbortController().signal))
+    .rejects.toThrow(`Memory Space ${JSON.stringify(h.trials)} (Tool trial batch 3) is switched off, and a write would switch it back on.`)
+  expect(h.tried).toEqual([])
+  expect((await h.directory()).get(h.trials)?.active).toBe(false)
+})
+
+it('writes to a switched-off space the user picked, switches it on and says so', async () => {
+  let plan: string[] = []
+  const h = await host(() => plan)
+  plan = [h.trials]
+  const result = await h.coordinator.remember(h.parent, { content: 'Tool trial batch 3: the search tool returned stale results until the index was rebuilt.', memoryBodyId: h.trials }, new AbortController().signal, { activateTarget: true })
   expect(h.refusals()).toEqual([])
   expect(result).toMatchObject({ memoryBodyIds: [h.trials], activatedMemoryBodyIds: [h.trials] })
   expect((await h.directory()).get(h.trials)?.active).toBe(true)
+})
+
+it('refuses memory tools to a writer that finished, when another Agent sends it a message', async () => {
+  let plan: string[] = []
+  const h = await host(() => plan, { query: true })
+  plan = [h.project]
+  const signal = new AbortController().signal
+  const result = await h.coordinator.remember(h.parent, { content: 'Tool trial batch 3: the search tool returned stale results until the index was rebuilt.', memoryBodyId: h.project }, signal)
+  expect(result.memoryBodyIds).toEqual([h.project])
+  // DSH 0.2.1 resumes a finished child from its saved state; earlier DSH does not continue it.
+  const subagents = h.dsh.subagents as unknown as { sendMessage?(sender: HostAgent, target: string, content: unknown, options: { signal: AbortSignal }): Promise<unknown> }
+  let delivered = false
+  try {
+    await subagents.sendMessage?.(h.parent, result.runId, [{ type: 'text', text: 'RESUME: save the rebuild time too.' }], { signal })
+    delivered = subagents.sendMessage !== undefined
+  } catch { /* This DSH keeps a finished child finished. */ }
+  await h.agents.get(result.runId)?.whenIdle()
+  await new Promise(resolve => setTimeout(resolve, 200))
+  // The resumed writer tried to write and read the refusal instead.
+  expect(h.resumed).toEqual(delivered ? [expect.stringContaining('This Mnemon task has finished')] : [])
+  // A write would have switched the space on.
+  expect((await h.directory()).get(h.trials)?.active).toBe(false)
 })

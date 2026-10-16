@@ -123,7 +123,9 @@ Agent 查询
 
 空存储根首次创建 Memory Space 时使用 Mnemon 原生 `default` ID，后续 ID 由 Host 生成。向 inactive 目标写入成功后会激活它。这里的激活只影响 DSH 路由；来源数据库的合并是非破坏性的。
 
-`mnemon_remember` 指定了记忆空间时，写入任务 Agent 只写到那里，否则不写：DSH 在它运行前挂上的守卫会拒绝写入其他空间的 `mnemon_remember`，以及任何创建、修改或合并空间的操作。没有指定空间时，任务 Agent 在已激活的空间和它自己新建的空间中选择；守卫会拒绝写入运行开始时就处于停用状态的空间，也拒绝把它打开，所以只有指定了该停用空间的调用方或用户本人才会让它重新激活。「存入记忆」遵循同样的规则。回执中的 `memoryBodyIds` 取自 Source 回执实际写入的空间；写入打开了被指定的停用空间时，`activatedMemoryBodyIds` 会列出它。不支持 Agent 归属或工具守卫的 DSH 上，任务 Agent 像以前一样不受守卫地运行。
+`mnemon_remember` 指定了记忆空间时，写入任务 Agent 只写到那里，否则不写。Host 在任务 Agent 启动前检查指定的空间：不存在的空间、Provider 已关闭或不接受写入的空间，以及已停用的空间，都会立即失败并说明原因。模型想重新启用某个停用的空间时，要先用 `mnemon_memory_body_update` 打开它；用户在记忆空间页上选中的停用空间会随写入重新打开。DSH 在任务 Agent 运行前挂上的守卫会拒绝写入其他空间的 `mnemon_remember` 或 `mnemon_link`，以及任何创建或修改空间的操作。
+
+没有指定空间时，任务 Agent 在已激活的空间和它自己新建的空间中选择；守卫会拒绝写入或关联运行开始时就处于停用状态的空间，也拒绝把它打开。存入记忆从不合并空间。「存入记忆」遵循同样的规则，所以所有空间都停用时，除非任务 Agent 新建一个空间，否则不会保存任何内容。结果中的 `memoryBodyIds` 取自 Source 回执实际写入的空间，包括 Code Mode 程序中写入成功、之后程序才失败的那次写入；任务 Agent 报告了写入、却没有任何回执能证明时，结果为 `unknown`。写入打开了停用的空间时，`activatedMemoryBodyIds` 会列出它。不支持 Agent 归属或工具守卫的 DSH 上，任务 Agent 像以前一样不受守卫地运行；DSH 在守卫看不到的地方发布任务 Agent 时，写入会失败。运行结束后，委派的任务 Agent 不能再使用记忆工具：在 DSH 0.2.1 上，其他 Agent 给已结束的任务 Agent 发消息会让它从保存的状态恢复运行，这时它也无法再写入。
 
 运行时 `add` / `replace` / `remove` 和 Document `create` / `update` 不需要模型做存储 I/O；它们通过 coordinator 进入确定性控制层。容量维护和归档才启动专用 worker。
 
