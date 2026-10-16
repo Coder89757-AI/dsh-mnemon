@@ -712,10 +712,11 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
       await create(machineA)
       await machineA.sync.push({ message: 'From A' })
       const machineB = await machine('sync-document-older-b', origin)
+      // A build before 0.5.28 kept neither record.
       const older = async (message: string) => {
-        rmSync(agreementOf(machineB.root), { force: true })
+        for (const path of [agreementOf(machineB.root), join(machineB.root, 'state', 'sync', 'last-run.json')]) rmSync(path, { force: true })
         await machineB.sync.push({ message })
-        rmSync(agreementOf(machineB.root), { force: true })
+        for (const path of [agreementOf(machineB.root), join(machineB.root, 'state', 'sync', 'last-run.json')]) rmSync(path, { force: true })
       }
       await older('B joins')
       const id = documentsOf(machineA.root)[0]!.id
@@ -725,6 +726,57 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
       await older('B, as before this change')
       await machineA.sync.push({ message: 'A again' })
       expect(textOf(machineA.root, id)).toContain('Version 2 from A')
+    })
+
+    it('carries an edit made before the first sync after an update from 0.5.28 as an edit (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-remote')
+      const machineA = await machine('sync-document-upgrade', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'Version 1' })
+      // dsh-mnemon 0.5.28 remembered the commit of its last sync, but no agreement.
+      rmSync(agreementOf(machineA.root), { force: true })
+      expect(existsSync(join(machineA.root, 'state', 'sync', 'last-run.json'))).toBe(true)
+      const id = documentsOf(machineA.root)[0]!.id
+      for (const version of [2, 3]) await editDocument(machineA, id, '# Release plan\n\nVersion ' + String(version))
+      await machineA.sync.push({ message: 'The first sync after the update' })
+      expect(documentsOf(machineA.root).map(document => [document.id, document.revision])).toEqual([[id, 3]])
+      expect(textOf(machineA.root, id)).toContain('Version 3')
+      const published = JSON.parse(await git(['show', 'mnemon-sync:mnemon/payload/documents/index.json'], origin)) as { documents: DocumentEntry[] }
+      expect(published.documents.map(document => [document.id, document.revision])).toEqual([[id, 3]])
+    })
+
+    it('takes the branch\'s newer version after an update from 0.5.28 whose last run was a merge (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-merge-remote')
+      const machineA = await machine('sync-document-upgrade-merge-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-upgrade-merge-b', origin)
+      await machineB.sync.pull()
+      rmSync(agreementOf(machineB.root), { force: true })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      await machineB.sync.push({ message: 'B, the first sync after the update' })
+      alike([machineA, machineB], id, 'Version 2 from A')
+    })
+
+    it('keeps a copy after an update from 0.5.28 when the branch no longer descends from the last sync (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-rewritten-remote')
+      const machineA = await machine('sync-document-upgrade-rewritten-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-upgrade-rewritten-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2, only on A')
+      rmSync(agreementOf(machineA.root), { force: true })
+      // The branch is deleted, and B publishes it again from a history of its own.
+      await git(['update-ref', '-d', 'refs/heads/mnemon-sync'], origin)
+      await machineB.sync.push({ message: 'B starts the branch again' })
+      await machineA.sync.push({ message: 'A again' })
+      expect(textOf(machineA.root, id)).toContain('Version 2, only on A')
+      // Without a common history to agree on, B's version is kept beside A's, as before.
+      expect(documentsOf(machineA.root)).toHaveLength(2)
     })
 
     it('keeps a rename and an archive made on one machine when the other changed the text', async () => {

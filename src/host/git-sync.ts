@@ -882,14 +882,33 @@ export class MnemonGitSync {
     try {
       value = record(JSON.parse(readFileSync(this.basePath(), 'utf8')) as unknown)
     } catch {
-      return undefined
+      value = undefined
     }
-    if (value?.version !== 1 || value.scope !== this.agreementScope(settings)) return undefined
+    if (value?.version !== 1) return this.lastRunDocuments(settings, tip, signal)
+    if (value.scope !== this.agreementScope(settings)) return undefined
     const documents = record(value.documents)
     if (typeof value.commit !== 'string' || !AGREED_COMMIT.test(value.commit) || documents === undefined) return undefined
     const ancestry = await this.git(['merge-base', '--is-ancestor', value.commit, tip], { cwd: this.store.mirror(), signal })
     if (ancestry.exitCode !== 0) return undefined
     return Object.fromEntries(Object.entries(documents).filter(([, version]) => typeof version === 'string' && /^[a-f0-9]{64}$/u.test(version))) as Record<string, string>
+  }
+
+  /**
+   * Without an agreement on record, as after an update from dsh-mnemon 0.5.28, which remembered
+   * only when it last synced: at that run's commit this machine and the branch held the same
+   * documents, as it published that payload or took it in. Read from there while the branch
+   * descends from it, they keep the first sync after the update from taking a document this
+   * machine edited since for a new one (#385). Every version there is in the branch's own history.
+   */
+  private async lastRunDocuments(settings: MnemonSyncSettings & { repoUrl: string }, tip: string, signal?: AbortSignal): Promise<Record<string, string> | undefined> {
+    const last = this.lastRun()
+    if (last === undefined || !AGREED_COMMIT.test(last.commit)) return undefined
+    const mirror = this.store.mirror()
+    const ancestry = await this.git(['merge-base', '--is-ancestor', last.commit, tip], { cwd: mirror, signal })
+    if (ancestry.exitCode !== 0) return undefined
+    const index = await this.git(['show', `${last.commit}:${settings.subdir}payload/documents/index.json`], { cwd: mirror, signal, maxOutputBytes: MAX_FILE_BYTES })
+    if (index.exitCode !== 0) return undefined
+    return documentVersions({ 'payload/documents/index.json': new TextEncoder().encode(index.stdout) })
   }
 
   /** Remember what this machine and the branch at `commit` now agree on. Bookkeeping never fails the run it follows. */
