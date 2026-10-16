@@ -170,6 +170,8 @@ Runtime 写入范围回归使用 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm 
 
 `pnpm e2e:serve --docs-demo`（中文）或 `--docs-demo=en` 会预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间，都在宿主启动前通过各 Source 自己的管理操作写入。包含“结账”（英文演示为 “checkout”）的消息会经真实 View 工具完成一次档案检索与两次记忆空间召回后作答；随后包含“记住”（英文演示为 “remember”）的消息（例如新的 LCP 目标）会替换对应的工作记忆条目。脚本只决定模型调用哪些工具，不涉及任何个人数据。加上 `--live-model` 则改由 DeepSeek API 作答，密钥从 `DEEPSEEK_API_KEY` 读取；此时提问会经过真实的模型、任务 Agent 与 Agent 查询，图集即以这种方式采集。界面变化后应使用该夹具重新采集截图集。
 
+`pnpm e2e:serve --remember-target` 预置同一个中文 Lumen 项目（其中「调研归档」空间已停用），并使用一个脚本模型，把记忆存入指定的空间（[#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387)）。发送 `remember-target-check` 后，根 Agent 先列出空间，再带着「Lumen 项目」的 id 调用 `mnemon_remember` 保存一条调研结论；写入任务 Agent 先尝试描述更贴切的「调研归档」，再写入它被指定的空间。回复会引用回执中的空间。修复后守卫会拒绝第一次尝试，「调研归档」保持停用；没有修复的构建会把记忆存进「调研归档」并把它重新激活。夹具以 `Remember target:` 行输出每一步。见[双语复现与证据](../../pr-assets/issue-387-explicit-space-target/README.zh-CN.md)。
+
 `pnpm e2e:serve --trusted-host=memory.test:4331` 把该授权主机加入 DSH 的浏览器信任边界，用于以远程页面身份检查 WebUI；再加 `--remote-management` 即设置 `remoteAccess: trusted-host`。同时设置 `MNEMON_E2E_PORT=4331` 使端口一致，在测试浏览器中把该名称解析到 127.0.0.1（Chrome 可用 `--host-resolver-rules="MAP memory.test 127.0.0.1"` 并加 `--no-proxy-server`），再把打印出的启动 URL 中的回环地址换成 `memory.test:4331` 打开。未授权时“插件 → 可组合记忆”页面为只读；授权后，保存会经 API Gateway 持久化。
 
 ## 发布
