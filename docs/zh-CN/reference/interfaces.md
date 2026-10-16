@@ -163,7 +163,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `graph` / `bodies` / `body-directory` | active 多空间图谱投影、含 Provider 能力的记忆空间目录与快速目录投影 |
 | `body-reconnect` | 清除短期健康状态并刷新单个记忆空间，不修改持久数据 |
 | `provider-services` | 脱敏的 Provider 服务目录；可包含已配置的凭据字段名，绝不包含凭据值 |
-| `embedding-status` | Mnemon 嵌入模型、可用性与默认 Store 覆盖率 |
+| `embedding-status` | Mnemon 嵌入模型与可用性，以及每个 Mnemon Native 空间的向量覆盖率和合计 |
 | `list` / `entities` | 内容列表与实体聚合 |
 | `search` / `agent-search` / `related` | 直接检索、证据回答与关系遍历 |
 | `turn-activities` / `turn-activity` | 会话或单回合的记忆工具活动 |

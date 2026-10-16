@@ -249,6 +249,49 @@ describe('MnemonSettingsCard', () => {
     expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'embedding-status', {})
   })
 
+  it('lists the vectors of each Mnemon Native space, so a full count for one never reads as all of them (#392)', async () => {
+    const snapshot = {
+      status: 'ready' as const,
+      value: { storageScope: 'global' as const },
+      base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
+    }
+    const scope = settingsScope(snapshot)
+    const call = vi.fn(async (channel: string, endpoint: string) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
+        ok: true as const,
+        value: {
+          available: true, model: 'nomic-embed-text', totalInsights: 158, embedded: 127, coverage: '80%',
+          spaces: [
+            { memoryBodyId: 'default', name: 'Lumen 项目', active: true, totalInsights: 94, embedded: 94, coverage: '100%' },
+            { memoryBodyId: '7b3da8e7', name: '工具实测', active: true, totalInsights: 64, embedded: 33, coverage: '51%' },
+            { memoryBodyId: 'archive', name: '调研归档', active: false, totalInsights: 0, embedded: 0, coverage: '0%' },
+            { memoryBodyId: 'broken', name: '损坏的空间', active: true, totalInsights: 0, embedded: 0, coverage: '0%', error: 'database disk image is malformed' },
+          ],
+        },
+      }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(spaces(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    expect(screen.getByText('尚未检查嵌入服务的连接与各 Mnemon Native 空间的覆盖率。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+
+    expect(await screen.findByText('嵌入服务可用 · nomic-embed-text · 已嵌入 127/158（80%）')).toBeTruthy()
+    const list = screen.getByRole('list', { name: '各 Mnemon Native 空间' })
+    expect(within(list).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+      'Lumen 项目已嵌入 94/94（100%）',
+      '工具实测已嵌入 33/64（51%）',
+      '调研归档 · 未激活已嵌入 0/0（0%）',
+      '损坏的空间无法读取：database disk image is malformed',
+    ])
+    // Only a space that lacks vectors is marked, and only then does the hint appear.
+    expect(within(list).getAllByRole('listitem').map(item => item.hasAttribute('data-missing'))).toEqual([false, true, false, false])
+    expect(screen.getByText('缺少向量的记忆只能被关键词召回找到。嵌入服务可用时，用 Mnemon CLI 的 embed --all 为对应空间补齐。')).toBeTruthy()
+  })
+
   it('renders one switch per live Catalog layer and persists only its enabled state', async () => {
     const mutate = vi.fn(async () => {})
     const snapshot = {

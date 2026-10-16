@@ -10,6 +10,7 @@ import {
   type ClientConnectionHandle,
   type ClientSettingsScope,
   type Config,
+  type MnemonEmbeddingSpaceStatus,
   type MnemonEmbeddingStatus,
   type ResolvedIdleReviewConfig,
   type SettingsOperation,
@@ -299,7 +300,30 @@ function EmbeddingEditor(props: {
         {t('config.embeddingTest')}
       </Button>
     </div>
+    {!props.cliMissing && !props.changing && status.state === 'ready' && (status.value?.spaces ?? []).length > 0
+      && <EmbeddingSpaces spaces={status.value!.spaces!} t={t} />}
   </section>
+}
+
+/**
+ * Each Mnemon Native space's vectors under the status line. Mnemon counts one Store at a
+ * time, so the total alone could read as every space's health while one lacked vectors (#392).
+ */
+function EmbeddingSpaces(props: { spaces: readonly MnemonEmbeddingSpaceStatus[]; t: MnemonTranslate }): JSX.Element {
+  const { t } = props
+  const missing = (space: MnemonEmbeddingSpaceStatus): boolean => space.error === undefined && space.embedded < space.totalInsights
+  return <div className={css.embeddingSpaces}>
+    <small id="mnemon-embedding-spaces">{t('config.embeddingSpaces')}</small>
+    <ul aria-labelledby="mnemon-embedding-spaces">
+      {props.spaces.map(space => <li key={space.memoryBodyId} data-missing={missing(space) ? '' : undefined} data-failed={space.error === undefined ? undefined : ''}>
+        <span title={space.memoryBodyId}>{space.active ? space.name : `${space.name} · ${t('common.inactive')}`}</span>
+        <span>{space.error === undefined
+          ? t('config.embeddingSpaceCounts', { embedded: space.embedded, total: space.totalInsights, coverage: space.coverage })
+          : t('config.embeddingSpaceFailed', { error: space.error })}</span>
+      </li>)}
+    </ul>
+    {props.spaces.some(missing) && <p>{t('config.embeddingMissingHint')}</p>}
+  </div>
 }
 
 // ---- Layered strategy: the background tasks it drives ----

@@ -370,6 +370,8 @@ describe('MemorySpacesService', () => {
     const runner = createRunner(config, process)
     const service = createService(runner, config, createRegistry(runner, true))
 
+    // The one Mnemon Native space is Mnemon's own Store, counted by the same call.
+    const spaces = [{ memoryBodyId: 'work', name: 'work', active: true, totalInsights: 8, embedded: 6, coverage: '75%' }]
     // Mnemon ≥ 0.3.x reports `embedding_available` plus the resolved protocol.
     const expected = {
       available: true,
@@ -378,6 +380,7 @@ describe('MemorySpacesService', () => {
       totalInsights: 8,
       embedded: 6,
       coverage: '75%',
+      spaces,
     }
     // Legacy output carries no protocol, so the field stays absent.
     const legacyExpected = {
@@ -386,6 +389,7 @@ describe('MemorySpacesService', () => {
       totalInsights: 8,
       embedded: 6,
       coverage: '75%',
+      spaces,
     }
     await expect(service.embeddingStatus()).resolves.toEqual(expected)
     expect(process).toHaveBeenNthCalledWith(1, FAKE_CLI, [
@@ -395,6 +399,38 @@ describe('MemorySpacesService', () => {
     await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
     await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
     await expect(service.embeddingStatus()).rejects.toThrow('invalid response')
+  })
+
+  it('counts the vectors of every Mnemon Native space, and never reads one whose database is missing (#392)', async () => {
+    const dataDir = populatedDataDir()
+    for (const id of ['notes', 'broken']) {
+      mkdirSync(join(dataDir, 'data', id), { recursive: true })
+      writeFileSync(join(dataDir, 'data', id, 'mnemon.db'), 'fixture database')
+    }
+    const at = '2026-10-05T08:37:12.218Z'
+    writeFileSync(join(dataDir, 'data', '.dsh-memory-bodies.json'), JSON.stringify({ version: 1, bodies: ['work', 'notes', 'gone', 'broken'].map(id => ({
+      id, name: id[0]!.toUpperCase() + id.slice(1), description: '', active: id !== 'notes', createdAt: at, updatedAt: at,
+    })) }))
+    const counts: Record<string, unknown> = {
+      work: { total_insights: 94, embedded: 94, coverage: '100%', embedding_available: true, model: 'nomic-embed-text' },
+      notes: { total_insights: 64, embedded: 33, coverage: '51%', embedding_available: true, model: 'nomic-embed-text' },
+      broken: { total_insights: 3 },
+    }
+    const process = vi.fn<ProcessRunner>(async (_command, args) => ({ stdout: JSON.stringify(counts[args[args.indexOf('--store') + 1]!]), stderr: '', exitCode: 0 }))
+    const config = resolveMemorySpacesConfig({ cliPath: FAKE_CLI, dataDir, store: 'work' })
+    const runner = createRunner(config, process)
+    const service = createService(runner, config, createRegistry(runner, true))
+    await expect(service.embeddingStatus()).resolves.toEqual({
+      available: true, model: 'nomic-embed-text', totalInsights: 158, embedded: 127, coverage: '80%',
+      spaces: [
+        { memoryBodyId: 'work', name: 'Work', active: true, totalInsights: 94, embedded: 94, coverage: '100%' },
+        { memoryBodyId: 'notes', name: 'Notes', active: false, totalInsights: 64, embedded: 33, coverage: '51%' },
+        { memoryBodyId: 'broken', name: 'Broken', active: true, totalInsights: 0, embedded: 0, coverage: '0%', error: 'mnemon embed --status returned an invalid response' },
+      ],
+    })
+    // Mnemon's own Store is counted once, and a space without a database is never read: the CLI would create its Store.
+    expect(process.mock.calls.map(([, args]) => args[args.indexOf('--store') + 1])).toEqual(['work', 'notes', 'broken'])
+    expect(existsSync(join(dataDir, 'data', 'gone'))).toBe(false)
   })
 
   it('coalesces simultaneous Memory Space health snapshots', async () => {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -52,6 +52,7 @@ import {
   type MemoryGraphSnapshot,
   type MemoryListRequest,
   type MemoryListView,
+  type MnemonEmbeddingSpaceStatus,
   type MnemonEmbeddingStatus,
   type MemoryPlacementDecision,
   type MemoryProviderDescriptor,
@@ -360,6 +361,36 @@ export function mutationResultCommitted(result: unknown): boolean {
   return mutationResultCompletion(result) === 'committed'
 }
 
+/** One `mnemon embed --status` answer, strictly validated. */
+function embeddingCounts(value: JsonValue): MnemonEmbeddingStatus {
+  const output = record(value)
+  // Mnemon ≥ 0.3.x reports `embedding_available`; `ollama_available` is the
+  // legacy alias kept for older binaries.
+  const available = output?.embedding_available ?? output?.ollama_available
+  const model = text(output?.model)?.trim()
+  // Mnemon ≥ 0.3.x may report the endpoint protocol it resolved; older binaries
+  // omit the field, so a missing or malformed value is dropped instead of
+  // failing the whole status probe.
+  const protocol = text(output?.protocol)?.trim()
+  const totalInsights = number(output?.total_insights)
+  const embedded = number(output?.embedded)
+  const coverage = text(output?.coverage)?.trim()
+  if (typeof available !== 'boolean'
+    || model === undefined || model === '' || model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model)
+    || !Number.isInteger(totalInsights) || totalInsights! < 0
+    || !Number.isInteger(embedded) || embedded! < 0 || embedded! > totalInsights!
+    || coverage === undefined || !/^(?:100|\d{1,2})%$/u.test(coverage)) {
+    throw new Error('mnemon embed --status returned an invalid response')
+  }
+  const validProtocol = protocol !== undefined && protocol.length <= 32 && !/[\u0000-\u001f\u007f]/u.test(protocol)
+  return { available, model, totalInsights: totalInsights!, embedded: embedded!, coverage, ...(validProtocol ? { protocol } : {}) }
+}
+
+/** A whole percent, as Mnemon writes it, that reads 100% only when every memory has its vector. */
+function coveragePercent(embedded: number, total: number): string {
+  return total === 0 ? '0%' : `${Math.floor(embedded * 100 / total)}%`
+}
+
 export class MemorySpacesService {
   readonly memorySpaces: MemorySpaceRegistry
   private readonly providers: Map<MemorySpace['provider']['id'], MemoryProviderAdapter>
@@ -576,32 +607,35 @@ export class MemorySpacesService {
     }
   }
 
-  /** Probe the effective Mnemon embedding runtime and its default Store coverage. */
+  /**
+   * Probe the effective Mnemon embedding runtime, and the vector coverage of every Mnemon
+   * Native space: `mnemon embed --status` counts only one Store, so a full count for it could
+   * read as the health of every space while another one lacked vectors (#392).
+   */
   async embeddingStatus(signal?: AbortSignal): Promise<MnemonEmbeddingStatus> {
-    const output = record(await this.runner.runJson(
-      ['embed', '--status'],
-      signal === undefined ? {} : { signal },
-    ))
-    // Mnemon ≥ 0.3.x reports `embedding_available`; `ollama_available` is the
-    // legacy alias kept for older binaries.
-    const available = output?.embedding_available ?? output?.ollama_available
-    const model = text(output?.model)?.trim()
-    // Mnemon ≥ 0.3.x may report the endpoint protocol it resolved; older binaries
-    // omit the field, so a missing or malformed value is dropped instead of
-    // failing the whole status probe.
-    const protocol = text(output?.protocol)?.trim()
-    const totalInsights = number(output?.total_insights)
-    const embedded = number(output?.embedded)
-    const coverage = text(output?.coverage)?.trim()
-    if (typeof available !== 'boolean'
-      || model === undefined || model === '' || model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model)
-      || !Number.isInteger(totalInsights) || totalInsights! < 0
-      || !Number.isInteger(embedded) || embedded! < 0 || embedded! > totalInsights!
-      || coverage === undefined || !/^(?:100|\d{1,2})%$/u.test(coverage)) {
-      throw new Error('mnemon embed --status returned an invalid response')
+    const runtime = embeddingCounts(await this.runner.runJson(['embed', '--status'], signal === undefined ? {} : { signal }))
+    // Spaces whose database is missing have nothing to count, and a count must not create one.
+    const native = this.memorySpaces.list().filter(body => this.isNativeSpace(body) && existsSync(body.dbPath))
+    if (native.length === 0) return runtime
+    const counted = this.runner.effectiveStore()
+    const spaces: MnemonEmbeddingSpaceStatus[] = []
+    for (const body of native) {
+      const space = { memoryBodyId: body.id, name: body.name, active: body.active }
+      if (body.id === counted) {
+        spaces.push({ ...space, totalInsights: runtime.totalInsights, embedded: runtime.embedded, coverage: runtime.coverage })
+        continue
+      }
+      try {
+        const counts = embeddingCounts(await this.runner.runJson(['embed', '--status'], { store: body.id, ...(signal === undefined ? {} : { signal }) }))
+        spaces.push({ ...space, totalInsights: counts.totalInsights, embedded: counts.embedded, coverage: counts.coverage })
+      } catch (error) {
+        if (signal?.aborted === true) throw error
+        spaces.push({ ...space, totalInsights: 0, embedded: 0, coverage: '0%', error: error instanceof Error ? error.message : String(error) })
+      }
     }
-    const validProtocol = protocol !== undefined && protocol.length <= 32 && !/[\u0000-\u001f\u007f]/u.test(protocol)
-    return { available, model, totalInsights: totalInsights!, embedded: embedded!, coverage, ...(validProtocol ? { protocol } : {}) }
+    const totalInsights = spaces.reduce((sum, space) => sum + space.totalInsights, 0)
+    const embedded = spaces.reduce((sum, space) => sum + space.embedded, 0)
+    return { ...runtime, totalInsights, embedded, coverage: coveragePercent(embedded, totalInsights), spaces }
   }
 
   async status(signal?: AbortSignal): Promise<StatusView> {

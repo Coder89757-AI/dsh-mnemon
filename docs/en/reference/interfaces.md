@@ -163,7 +163,7 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `graph` / `bodies` / `body-directory` | Active multi-space graph projection, provider-capability catalog, and fast directory projection |
 | `body-reconnect` | Invalidate transient health state and refresh one Memory Space without changing persistent data |
 | `provider-services` | Redacted Provider service catalog; configured-secret names may be present, secret values never are |
-| `embedding-status` | Mnemon's embedding model, availability and default-store coverage |
+| `embedding-status` | Mnemon's embedding model and availability, and the vector coverage of each Mnemon Native space with its total |
 | `list` / `entities` | Durable content list and entity aggregation |
 | `search` / `agent-search` / `related` | Direct retrieval, evidence answer, and relation traversal |
 | `turn-activities` / `turn-activity` | Session-wide or single-turn memory-tool activity |

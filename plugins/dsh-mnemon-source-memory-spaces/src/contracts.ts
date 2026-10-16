@@ -576,9 +576,24 @@ export interface MnemonEmbeddingStatus {
   model: string
   /** Protocol Mnemon resolved for the embedding endpoint; omitted when the CLI does not report one. */
   protocol?: string
+  /** Across every Mnemon Native space in `spaces`; Mnemon's own Store when there is none. */
   totalInsights: number
   embedded: number
   coverage: string
+  /** Each Mnemon Native space with a database, as `mnemon --store <id> embed --status` counts it (#392). */
+  spaces?: MnemonEmbeddingSpaceStatus[]
+}
+
+/** One Mnemon Native space's vector coverage. */
+export interface MnemonEmbeddingSpaceStatus {
+  memoryBodyId: string
+  name: string
+  active: boolean
+  totalInsights: number
+  embedded: number
+  coverage: string
+  /** Why the space could not be counted; its counts are then 0. */
+  error?: string
 }
 
 
