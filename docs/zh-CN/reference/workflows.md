@@ -113,7 +113,7 @@ Agent 查询
 派发写入任务 Agent
        |
        +-- 列出记忆空间
-       +-- 选择最小的适用范围
+       +-- 指定的空间，或最小的适用已激活范围
        +-- 需要查重或检查冲突时召回
        +-- 只有反复出现的独立领域才创建新范围
        +-- 按请求执行 remember / link / forget / merge
@@ -122,6 +122,8 @@ Agent 查询
 ```
 
 空存储根首次创建 Memory Space 时使用 Mnemon 原生 `default` ID，后续 ID 由 Host 生成。向 inactive 目标写入成功后会激活它。这里的激活只影响 DSH 路由；来源数据库的合并是非破坏性的。
+
+`mnemon_remember` 指定了记忆空间时，写入任务 Agent 只写到那里，否则不写：DSH 在它运行前挂上的守卫会拒绝写入其他空间的 `mnemon_remember`，以及任何创建、修改或合并空间的操作。没有指定空间时，任务 Agent 在已激活的空间和它自己新建的空间中选择；守卫会拒绝写入运行开始时就处于停用状态的空间，也拒绝把它打开，所以只有指定了该停用空间的调用方或用户本人才会让它重新激活。「存入记忆」遵循同样的规则。回执中的 `memoryBodyIds` 取自 Source 回执实际写入的空间；写入打开了被指定的停用空间时，`activatedMemoryBodyIds` 会列出它。不支持 Agent 归属或工具守卫的 DSH 上，任务 Agent 像以前一样不受守卫地运行。
 
 运行时 `add` / `replace` / `remove` 和 Document `create` / `update` 不需要模型做存储 I/O；它们通过 coordinator 进入确定性控制层。容量维护和归档才启动专用 worker。
 

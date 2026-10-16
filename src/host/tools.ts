@@ -315,7 +315,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
         tags: { type: 'array', items: { type: 'string' }, description: 'At most 20 concise tags.' },
         entities: { type: 'array', items: { type: 'string' }, description: 'At most 50 named entities.' },
         source: { type: 'string', enum: [...SOURCES], description: 'Defaults to agent for model-authored writeback.' },
-        memoryBodyId: { type: 'string', description: 'Target Memory Space id. Required unless exactly one space is active.' },
+        memoryBodyId: { type: 'string', description: 'Target Memory Space id; the write goes there or nowhere, and switches on an inactive space it names. Required unless exactly one space is active.' },
       },
       required: ['content'],
     },

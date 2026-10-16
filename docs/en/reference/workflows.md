@@ -113,7 +113,7 @@ durable candidate
 spawn write worker
        |
        +-- list Memory Spaces
-       +-- choose the narrowest suitable scope
+       +-- the named space, or the narrowest suitable active scope
        +-- recall when duplicate/conflict checking is useful
        +-- create a new scope only for a recurring distinct domain
        +-- remember / link / forget / merge as requested
@@ -122,6 +122,8 @@ structured receipt
 ```
 
 The first Memory Space created in an empty storage root uses Mnemon's native `default` ID; the Host generates later IDs. A successful write to an inactive target activates it. This activation affects only DSH routing, and merging a source database is non-destructive.
+
+When `mnemon_remember` names a Memory Space, the worker writes there or nowhere: a guard DSH attaches to the worker before it runs refuses `mnemon_remember` into any other space and any creation, change or merge of spaces. Without a named space, the worker chooses among active spaces and those it creates; the guard refuses a write into a space that was inactive when the run started, and switching such a space on, so only a caller that names an inactive space, or the user, switches it on. Save to memory follows the same rule. The receipt's `memoryBodyIds` are the spaces the Source receipts name, and `activatedMemoryBodyIds` lists a named inactive space the write switched on. A DSH without Agent ownership or tool guards runs the worker unguarded, as before.
 
 Runtime `add` / `replace` / `remove` and Document `create` / `update` do not need a model to perform storage I/O; they enter the deterministic control layer through the coordinator. Only capacity maintenance and archiving start dedicated workers.
 
