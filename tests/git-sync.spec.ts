@@ -491,6 +491,45 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(readFileSync(join(machineB.root, 'runtime', 'memories.json'), 'utf8')).not.toContain('Published profile')
   })
 
+  /**
+   * The state the reported store was left in: one document's digest carries a stray character.
+   * A first push is the dangerous one, because the import check that guards every later push
+   * has nothing to read yet, so the bad payload would go straight to the branch and lock the
+   * channel behind it.
+   */
+  it('refuses a first push whose document digest is not a sha256', async () => {
+    const origin = await repository('sync-index-shape-remote')
+    const machineA = await machine('sync-index-shape', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Hermes image generation', content: '# Hermes\n\nDirect upstream call.' }, { confirmed: true })
+    const indexPath = join(machineA.root, 'documents', 'index.json')
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as { documents: Array<{ contentHash: string }> }
+    index.documents[0]!.contentHash += '6'
+    writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`)
+
+    await expect(machineA.sync.push({ message: 'First push' })).rejects.toThrow('Documents index contains invalid metadata')
+    // The branch is where the damage would have landed, and nothing reached it.
+    expect((await git(['branch', '--list', 'mnemon-sync'], origin)).trim()).toBe('')
+    expect(await git(['status', '--porcelain'], join(machineA.root, 'state', 'sync', 'git'))).toBe('')
+  })
+
+  /**
+   * Sixty-four lowercase hex characters, so the shape check reads it as a digest and only a
+   * comparison against the body can tell that it is not this document's.
+   */
+  it('refuses a first push whose document digest does not match its body', async () => {
+    const origin = await repository('sync-index-value-remote')
+    const machineA = await machine('sync-index-value', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Hermes image generation', content: '# Hermes\n\nDirect upstream call.' }, { confirmed: true })
+    const indexPath = join(machineA.root, 'documents', 'index.json')
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as { documents: Array<{ contentHash: string }> }
+    index.documents[0]!.contentHash = '0'.repeat(64)
+    writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`)
+
+    await expect(machineA.sync.push({ message: 'First push' })).rejects.toThrow('Documents payload content hash does not match')
+    expect((await git(['branch', '--list', 'mnemon-sync'], origin)).trim()).toBe('')
+    expect(await git(['status', '--porcelain'], join(machineA.root, 'state', 'sync', 'git'))).toBe('')
+  })
+
   it('reports an empty remote instead of importing an empty payload', async () => {
     const origin = await repository('sync-empty-remote')
     const machineA = await machine('sync-empty', origin)
