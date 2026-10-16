@@ -38,6 +38,8 @@ Source snapshotting does not run semantic recall. Prime only initializes routing
 
 A child captures and retains its live parent's pinned View and runtime at `agent/created`, before its driver starts. Its own turns pin that retained View, even after the parent finishes or moves to a newer generation. The delegation is released when the child activation is disposed. A cold resume receives a new delegation; an explicitly Host-created background child with no parent model turn snapshots a fresh scoped View. Children have their own turn authority without root-only cues or idle review. See [the authority lifecycle](../development/architecture.md#lifecycle-and-failures).
 
+Every task dsh-mnemon delegates to a child Agent starts with one line of its own, `[dsh-mnemon:delegated <operation>]`: `review` for idle review, `write` for writes and Save to memory, and `answer`, `placement`, `migration`, `compaction`, `document-archive`, `metadata-maintenance` and `reconcile` for the others. DSH records the task as the child's message from a person, `source.kind: "user"`; a forked child has its parent's turns before it. The line is a stable contract for plugins that read sessions, such as one that collects a workspace's work: a user message whose first line matches `^\[dsh-mnemon:delegated [a-z-]+\]$` is a task dsh-mnemon gave its own child, not a request from the user. A child keeps its parent's working directory: with a per-workspace storage scope, a child no longer bound to its parent's runtime, such as one resumed after a restart, finds its workspace's memory through it.
+
 ## Agent Recall
 
 ```text

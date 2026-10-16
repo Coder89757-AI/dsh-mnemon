@@ -38,6 +38,8 @@ Source snapshot 不执行语义召回。Prime 只初始化路由状态，不执�
 
 子 Agent 在 `agent/created`、driver 启动前捕获并保留存活父 Agent 的固定 View 与运行图。自己的各个回合固定这一被保留的 View，即使父回合已结束或已进入更新的 generation。子 Agent activation 销毁时释放委托；冷恢复重新获取委托；Host 显式创建且没有父模型回合的后台子任务生成新的 scoped View。子 Agent 拥有自己的回合权限，但不安装 root 专属的 cue 或空闲审查。详见[权限生命周期](../development/architecture.md#生命周期与失败)。
 
+dsh-mnemon 委派给子 Agent 的每个任务都以单独的一行开头：`[dsh-mnemon:delegated <operation>]`。空闲审查是 `review`，写入和「存入记忆」是 `write`，其余为 `answer`、`placement`、`migration`、`compaction`、`document-archive`、`metadata-maintenance` 和 `reconcile`。DSH 把这个任务记录为子 Agent 来自用户的消息，`source.kind: "user"`；fork 出的子 Agent 在它之前还带有父 Agent 的回合。这一行是稳定的约定，供读取会话的插件使用（例如汇总工作区工作记录的插件）：首行匹配 `^\[dsh-mnemon:delegated [a-z-]+\]$` 的用户消息，是 dsh-mnemon 交给自己子 Agent 的任务，而不是用户的请求。子 Agent 沿用父 Agent 的工作目录：在按工作区存储时，已不再绑定父 Agent 运行时的子 Agent（例如重启后恢复的那个）要靠这个目录找到所在工作区的记忆。
+
 ## Agent 召回
 
 ```text
