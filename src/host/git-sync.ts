@@ -1279,6 +1279,12 @@ export class MnemonGitSync {
     if (fetched.exitCode !== 0) throw remoteFailure('git fetch failed: ' + this.mask(tail(fetched.stderr || fetched.stdout), credential))
     const reset = await this.git(['reset', '--hard', '--quiet', 'FETCH_HEAD'], { cwd: mirror, signal })
     if (reset.exitCode !== 0) throw new Error('git reset failed: ' + tail(reset.stderr || reset.stdout))
+    // A reset keeps the files Git does not track, and the payload is read from the work tree:
+    // the -wal and -shm SQLite leaves beside a database something opened in place failed every
+    // sync as unchecksummed payload until someone deleted them (#396). The sync directory holds
+    // the branch's payload and nothing else; the rest of the mirror is left as it is.
+    const cleaned = await this.git(['clean', '-fdxq', '--', ':(literal)' + settings.subdir], { cwd: mirror, signal })
+    if (cleaned.exitCode !== 0) throw new Error('git clean failed: ' + tail(cleaned.stderr || cleaned.stdout))
     // The payload read next is the one fetched, which another machine can have moved on since
     // `ls-remote` answered, so the commit reported for it is the one now checked out.
     return { tip: await this.head(signal) }

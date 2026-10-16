@@ -491,6 +491,36 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(readFileSync(join(machineB.root, 'runtime', 'memories.json'), 'utf8')).not.toContain('Published profile')
   })
 
+  it('reads the payload the branch holds, not files the mirror does not track (#396)', async () => {
+    const origin = await repository('sync-untracked-remote')
+    const machineA = await machine('sync-untracked', origin)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Published profile', importance: 'normal' }, { confirmed: true })
+    await machineA.sync.push({ message: 'Publish' })
+    // SQLite leaves -wal and -shm beside a database something opened in place, and Git
+    // tracks neither. A reset keeps files Git does not track, so every later sync read
+    // them as payload and failed until someone deleted them by hand.
+    const mirror = join(machineA.root, 'state', 'sync', 'git')
+    const stray = [join('mnemon', 'payload', 'data', 'default', 'mnemon.db-shm'), join('mnemon', 'payload', 'data', 'default', 'mnemon.db-wal'),
+      join('mnemon', 'payload', 'runtime', 'scratch', 'left-over.json')]
+    for (const path of stray) {
+      mkdirSync(join(mirror, path, '..'), { recursive: true })
+      writeFileSync(join(mirror, path), 'not part of the payload')
+    }
+    await expect(machineA.sync.preview()).resolves.toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/u) })
+    for (const path of stray) expect(existsSync(join(mirror, path))).toBe(false)
+    for (const path of stray) {
+      mkdirSync(join(mirror, path, '..'), { recursive: true })
+      writeFileSync(join(mirror, path), 'not part of the payload')
+    }
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Second profile entry', importance: 'normal' }, { confirmed: true })
+    await expect(machineA.sync.push({ message: 'Publish again' })).resolves.toMatchObject({ committed: true, pushed: true })
+    expect(await git(['status', '--porcelain'], mirror)).toBe('')
+    const published = await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)
+    expect(published).toContain('mnemon/payload/runtime/USER.md')
+    expect(published).not.toMatch(/-shm|-wal|left-over/u)
+    expect(await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)).toContain('Second profile entry')
+  })
+
   it('reports an empty remote instead of importing an empty payload', async () => {
     const origin = await repository('sync-empty-remote')
     const machineA = await machine('sync-empty', origin)
