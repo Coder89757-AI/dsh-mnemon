@@ -4,6 +4,7 @@ import { isAbsolute } from 'node:path'
 import { normalizeDisplayMode } from './display-mode.ts'
 import { schema as MemoryViewConfig, preferences as validateMemoryViewPreferences } from './view-preferences.ts'
 import { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
+import { MEMORY_SPACE_ID_PATTERN } from 'dsh-mnemon-source-memory-spaces/contracts'
 
 export { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
 import {
@@ -348,7 +349,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
   if (requestedPackId !== undefined && selectedPack === undefined) throw new Error(`dsh-mnemon: unknown custom Pack: ${requestedPackId}`)
   const dataDir = selectedPack?.dataDir ?? legacyDataDir
   if (storageScope === 'custom' && dataDir === undefined) throw new Error('dsh-mnemon: a custom dataDir is required when storageScope is custom')
-  if (store !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(store)) {
+  if (store !== undefined && !MEMORY_SPACE_ID_PATTERN.test(store)) {
     throw new Error('dsh-mnemon: store must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
   }
   return {

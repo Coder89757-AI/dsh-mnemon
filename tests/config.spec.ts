@@ -221,6 +221,11 @@ describe('Mnemon config and resolution', () => {
 
   it('rejects unsafe store names', () => {
     expect(() => resolveConfig({ store: '../other' })).toThrow('store')
+    // A store names a Native space's directory, so it takes exactly a space id.
+    for (const store of ['default', 'A-1_b', '9lives']) expect(resolveConfig({ store }).store).toBe(store)
+    for (const store of ['-lead', '_lead', 'a.b', 'a/b', 'ä', 'a b']) {
+      expect(() => resolveConfig({ store }), store).toThrow('dsh-mnemon: store must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
+    }
   })
 
 })

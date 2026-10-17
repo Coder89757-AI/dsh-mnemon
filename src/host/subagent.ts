@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { HostAgent, HostSubagentResult, HostSubagentRun, HostSubagentsService, ToolDefinition, ToolExecution } from "./dsh.ts"
 import type { DocumentCapacityPlan, DocumentMutation, DocumentMutationResult, DocumentRecord, DocumentSearchResult, DocumentSnapshot, DocumentView } from 'dsh-mnemon-source-documents/contracts'
-import { RUNTIME_ENTRY_DELIMITER, type RuntimeMemoryCompactedEntry, type RuntimeMemoryMaintenancePlan, type RuntimeMemoryMutation, type RuntimeMemoryMutationResult, type RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
+import { RUNTIME_ENTRY_DELIMITER, RUNTIME_PROJECTION_FILES, type RuntimeMemoryCompactedEntry, type RuntimeMemoryMaintenancePlan, type RuntimeMemoryMutation, type RuntimeMemoryMutationResult, type RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
 import type { EdgeType, Insight, MemorySpaceCatalog, MemorySpaceMetadataSample, MemorySpaceWriteScopeRequest, PreparedMemoryPlacement, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { mutationResultCommitted } from './receipts.ts'
 import { SourceSession, sourceFailure } from './source-session.ts'
@@ -594,7 +594,7 @@ function runtimeSnapshotContext(
   target: 'memory' | 'user',
   entries: ReadonlyArray<{ content: string; importance: string; branches?: string[] }>,
 ): string {
-  const file = target === 'memory' ? 'MEMORY.md' : 'USER.md'
+  const file = RUNTIME_PROJECTION_FILES[target]
   const rendered = entries.length === 0
     ? '(empty)'
     : entries.map((entry, index) => `${index + 1}. [importance=${entry.importance}${runtimeEntryScopeMeta(entry)}] ${entry.content}`).join(RUNTIME_ENTRY_DELIMITER)

@@ -2824,7 +2824,7 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(compactionPrompt).toContain('Run local USER.md compaction now')
     expect(compactionPrompt).toContain('User prefers direct answers.')
     expect(compactionPrompt).toContain('User prefers concise {{language}} Chinese release notes.')
-    expect(compactionPrompt).toContain('<runtime-memory-snapshot target="user">')
+    expect(compactionPrompt).toContain('Committed USER.md snapshot (read-only run data; numbering is one-based):\n<runtime-memory-snapshot target="user">')
     expect(compactionCall.persona).toContain('never send user preferences to Mnemon Memory Spaces')
     expect(compactionCall.persona).toContain('every source number must appear exactly once')
     expect(compactionCall.persona).not.toContain('{{language}}')
