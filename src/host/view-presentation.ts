@@ -3,19 +3,26 @@ import type { MemoryCompositionGeneration } from '../core/composition.ts'
 import type { ComposableMemoryView } from '../core/contracts/index.ts'
 import type { MemoryViewInspection } from './view-protocol.ts'
 import type { MnemonRuntimeGraph } from './runtime.ts'
-import { namedToolInstance } from './protocol.ts'
+import { memoryTools, namedToolInstance } from './protocol.ts'
 
-/** These are existing DSH product-tool bindings, not Core operation names. */
-const ROUTE_TOOLS: Record<string, Record<string, string>> = {
-  documents: { search: 'mnemon_document_search' },
-  'memory-spaces': { inspect: 'mnemon_memory_bodies / mnemon_status', recall: 'mnemon_recall', related: 'mnemon_related' },
+/**
+ * The named tools bound to each Source type's Routes or Actions, from the tool table: these are
+ * existing DSH product-tool bindings, not Core operation names. Tools that share one operation are
+ * listed together, in table order, as the View's tool list names them.
+ */
+function namedBindings(kind: 'route' | 'action'): Record<string, Record<string, string>> {
+  const bindings: Record<string, Record<string, string>> = {}
+  for (const [name, tool] of memoryTools()) {
+    if (tool.sourceTypeId === undefined || tool.operation === undefined || (tool.kind === 'write') !== (kind === 'action')) continue
+    const operations = bindings[tool.sourceTypeId] ??= {}
+    const listed = operations[tool.operation]
+    operations[tool.operation] = listed === undefined ? name : `${listed} / ${name}`
+  }
+  return bindings
 }
-const ACTION_TOOLS: Record<string, Record<string, string>> = {
-  runtime: { mutate: 'mnemon_runtime_memory' },
-  documents: { manage: 'mnemon_document_manage', create: 'mnemon_document_create' },
-  'memory-spaces': { remember: 'mnemon_remember', link: 'mnemon_link', forget: 'mnemon_forget',
-    'manage-spaces': 'mnemon_memory_body_create / mnemon_memory_body_update / mnemon_memory_body_merge' },
-}
+const ROUTE_TOOLS = namedBindings('route')
+const ACTION_TOOLS = namedBindings('action')
+const NAMED_SOURCE_TYPES = [...new Set([...Object.keys(ROUTE_TOOLS), ...Object.keys(ACTION_TOOLS)])]
 
 /** Use a short availability list only where the Host has the matching named binding.
  * Unbound external operations retain exact ids and schemas in the generic envelope. */
@@ -62,7 +69,7 @@ export function unofferedViewId(graph: MnemonRuntimeGraph, turn: ComposableMemor
 function memoryWakeBindings(generation: MemoryCompositionGeneration, view: ComposableMemoryView): MemoryWakeBindings {
   const instances = generation.sourceInstances()
   const routes: Record<string, string> = {}, actions: Record<string, string> = {}
-  for (const typeId of Object.keys(ACTION_TOOLS)) {
+  for (const typeId of NAMED_SOURCE_TYPES) {
     const selected = namedToolInstance(instances.filter(source => source.sourceTypeId === typeId), typeId)
     if (selected === undefined) continue
     for (const route of view.routes.filter(route => route.sourceInstanceKey === selected.sourceInstanceKey)) {
