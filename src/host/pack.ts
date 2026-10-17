@@ -861,7 +861,10 @@ function mergeDocuments(root: string, pack: ParsedPack, base?: Readonly<Record<s
   }
   for (const source of incoming.index.documents) {
     const existing = ids.get(source.id)
-    const agreed = existing !== undefined && base !== undefined && Object.hasOwn(base, source.id) ? base[source.id] : undefined
+    const recorded = existing !== undefined && base !== undefined && Object.hasOwn(base, source.id) ? base[source.id] : undefined
+    // A version this machine agreed on is one it held, so it is never above this machine's own
+    // revision: one that is was never held here, and the merge goes on as without an agreement.
+    const agreed = recorded !== undefined && documentVersion(source) === recorded && source.revision > existing!.revision ? undefined : recorded
     if (existing !== undefined && agreed !== undefined) {
       if (documentVersion(source) === agreed) continue
       const at = current.index.documents.indexOf(existing)

@@ -707,10 +707,11 @@ export class MnemonGitSync {
       && tokenHost(previous.repoUrl) !== tokenHost(next.repoUrl)) delete next.token
     this.store.write(next)
     if (naming) this.machine.rename(name)
-    // When memory last travelled is a fact about one repository; another one starts with none.
+    // When memory last travelled is a fact about one repository, branch and directory; another
+    // one starts with none, as the documents there are no agreement with this machine (#385).
     // What the documents last agreed on stays: it names its repository, branch and commit, so
     // another repository never uses it, and reconnecting to this one picks it up again.
-    if (previous.repoUrl !== next.repoUrl) rmSync(this.lastRunPath(), { force: true })
+    if (previous.repoUrl !== next.repoUrl || previous.branch !== next.branch || previous.subdir !== next.subdir) rmSync(this.lastRunPath(), { force: true })
     return this.credentialView(next)
   }
 
@@ -891,14 +892,39 @@ export class MnemonGitSync {
     try {
       value = record(JSON.parse(readFileSync(this.basePath(), 'utf8')) as unknown)
     } catch {
-      return undefined
+      value = undefined
     }
-    if (value?.version !== 1 || value.scope !== this.agreementScope(settings)) return undefined
+    if (value === undefined) return this.lastRunDocuments(settings, tip, signal)
+    if (value.version !== 1 || value.scope !== this.agreementScope(settings)) return undefined
     const documents = record(value.documents)
     if (typeof value.commit !== 'string' || !AGREED_COMMIT.test(value.commit) || documents === undefined) return undefined
     const ancestry = await this.git(['merge-base', '--is-ancestor', value.commit, tip], { cwd: this.store.mirror(), signal })
     if (ancestry.exitCode !== 0) return undefined
     return Object.fromEntries(Object.entries(documents).filter(([, version]) => typeof version === 'string' && /^[a-f0-9]{64}$/u.test(version))) as Record<string, string>
+  }
+
+  /**
+   * Without an agreement on record, as after an update from dsh-mnemon 0.5.28, which remembered
+   * only when it last synced: that run's commit holds the documents as the branch held them,
+   * which this machine had just published or merged in. Read from there while the branch
+   * descends from it, they keep the first sync after the update from taking a document this
+   * machine edited since for a new one (#385). The record is dropped when the repository,
+   * branch or directory changes, and every version read here is in the branch's own history;
+   * one this machine never held is caught by the merge, which keeps a copy then.
+   */
+  private async lastRunDocuments(settings: MnemonSyncSettings & { repoUrl: string }, tip: string, signal?: AbortSignal): Promise<Record<string, string> | undefined> {
+    const last = this.lastRun()
+    if (last === undefined || !AGREED_COMMIT.test(last.commit)) return undefined
+    try {
+      const ancestry = await this.git(['merge-base', '--is-ancestor', last.commit, tip], { cwd: this.store.mirror(), signal })
+      if (ancestry.exitCode !== 0) return undefined
+      const index = await this.show(last.commit, settings.subdir + 'payload/documents/index.json', signal)
+      return index === undefined ? undefined : documentVersions({ 'payload/documents/index.json': index })
+    } catch (error) {
+      // An old index that cannot be read is no agreement; the merge keeps copies, as without one.
+      signal?.throwIfAborted()
+      return undefined
+    }
   }
 
   /** Remember what this machine and the branch at `commit` now agree on. Bookkeeping never fails the run it follows. */
@@ -1080,7 +1106,8 @@ export class MnemonGitSync {
     return this.lock(async () => {
       const remote = await this.readRemote(settings, input.signal)
       if (remote === undefined) throw this.absentPayload(settings)
-      const base = await this.agreedDocuments(settings, remote.commit, input.signal)
+      const base = input.components === undefined || input.components.includes('documents')
+        ? await this.agreedDocuments(settings, remote.commit, input.signal) : undefined
       const imported = await this.packs.importPack(
         Buffer.from(remote.archive).toString('base64'),
         { ...options, tombstones: { version: 1, tombstones: remote.tombstones }, ...(base === undefined ? {} : { documentsBase: base }) },
