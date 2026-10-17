@@ -1,6 +1,6 @@
 # Skin development and Mnemon integration
 
-**English** | [简体中文](../../zh-CN/development/skin-integration.md) | [Development and verification](./README.md)
+[简体中文](../../zh-CN/development/skin-integration.md) | **English** | [Development and verification](./README.md)
 
 This guide is for authors who want the Mnemon workbench to match their host skin. Mnemon provides a stable page selector and background properties; the skin chooses colors, transparency and readability. Installing an existing skin does not automatically enable a glass effect for Mnemon. The skin must supply an explicit override.
 

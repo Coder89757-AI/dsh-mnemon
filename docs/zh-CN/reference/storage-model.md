@@ -35,7 +35,7 @@ follow an exact cold reference when full text is required
 
 共享不意味着广播对话或文件。多个 Agent 都集成 Mnemon，且能够访问相同存储根与可识别的 Store 时，可以共享 Native 长期事实。三方 Provider 通过自己的 workspace、user、bank、project 或 container 范围共享；Runtime 与 Documents 不会自动进入其他 Agent 的上下文。
 
-`global` 适合本机公共根，`custom` 适合显式约定的目录，`workspace` 将共享限制在项目。多进程并发依赖 Provider 自身的一致性保证；离线复制或直接修改本地数据库前，应停止所有使用者，参见[运维指南](../guides/operations.md#备份与恢复)。
+哪种共享适合哪个范围，见[选择跨 Agent 共享范围](./configuration.md#选择跨-agent-共享范围)。多进程并发依赖 Provider 自身的一致性保证；离线复制或直接修改本地数据库前，应停止所有使用者，参见[运维指南](../guides/operations.md#备份与恢复)。
 
 ## 统一根目录
 
@@ -67,10 +67,19 @@ follow an exact cold reference when full text is required
         +-- git/                  # 同步分支的可丢弃 Git 镜像；不属于任何数据组件
 ```
 
-`storageScope` 决定整个根，而不只是 Mnemon 数据库。`workspace` 范围会为每个已登记 DSH 工作区解析独立的 `<workspace>/.mnemon`。显式启用的 `runtimeUserScope=global` 是唯一的分根例外：Runtime 从全局根读取 USER.md，MEMORY.md 与其他所有组件仍留在所选根。工作台任务使用查看工作区；对话工具与生命周期使用所属会话的 cwd 和已固定的 View。`state/memory-providers.json` 保存第三方 endpoint、目标 URI、身份和可选凭据；文件权限为 `0600`，Host 只返回已配置字段名，不回传凭据值。`state/sync-git.json` 保存 Git 同步配置：仓库地址、分支、远端目录、提交身份、自动同步间隔（分钟，`autoBackupMinutes`，`0` 为关闭），以及供 HTTPS 远端使用的可选令牌。它遵循同样的 `0600` 权限与脱敏规则，既不属于 Config，也不进入 Mnemon Pack。`state/sync/git` 下的镜像是同步分支的可丢弃 Git 工作树：push 与 pull 都在其中工作，存储根本身永远不会成为 Git 工作树；删除镜像只多一次 fetch，不会丢数据。镜像在自己的 Git 配置里记录它取自哪个仓库（`mnemon.origin`），换成另一个仓库时会重建，因此一个仓库的历史不会进入另一个仓库。`state/sync/last-run.json` 记录上一次同步或合并完成的时间，重启后页面仍能说明。 `state/machine.json` 记录每个导出包都会带上的本机标识：生成的 id、默认取自主机名（用户改名后则为新名字）的标签，以及创建时间。`state/tombstones.json` 记录本机已经导出过的删除，`state/runtime-index.json` 记录上次导出携带的 Runtime 条目；两者一起让合并能区分“本机删除了它”与“本机从来没有过它”，因此旧包不会把删除复活。`state/review-ledger.json` 保存整理建议与留在其上的意见，最新在前，上限 200 条。这四个文件都不属于任何 Pack 组件，因此都不会同步：机器的身份与审查历史留在产生它的机器上。
+`storageScope` 选择的是整个根，而不只是 Mnemon 数据库；每个范围解析到哪个根，见[存储范围](./configuration.md#存储范围)。显式启用的 `runtimeUserScope=global` 是唯一的分根例外：Runtime 从全局根读取 USER.md，MEMORY.md 与其他所有组件仍留在所选根。工作台任务使用查看工作区；对话工具与生命周期使用所属会话的 cwd 和已固定的 View。Host 解析目录时不创建文件，也不修改旧根。
 
-`workspaces` 布局把四个 area 集中在 `<集中根>/workspaces/<工作区路径哈希>/`；Host 解析目录时不创建文件或修改旧根。只有显式 `runtimeUserScope: global` 会把 USER.md 放在该工作区子目录之外。
+`state/` 下的文件：
 
+- `memory-providers.json` 保存第三方 endpoint、目标 URI、身份和可选凭据；文件权限为 `0600`，Host 只返回已配置字段名，不回传凭据值。
+- `sync-git.json` 保存 Git 同步配置：仓库地址、分支、远端目录、提交身份、自动同步间隔（分钟，`autoBackupMinutes`，`0` 为关闭），以及供 HTTPS 远端使用的可选令牌。它遵循同样的 `0600` 权限与脱敏规则，既不属于 Config，也不进入 Mnemon Pack。
+- `sync/git` 下的镜像是同步分支的可丢弃 Git 工作树：push 与 pull 都在其中工作，存储根本身永远不会成为 Git 工作树；删除镜像只多一次 fetch，不会丢数据。镜像在自己的 Git 配置里记录它取自哪个仓库（`mnemon.origin`），换成另一个仓库时会重建，因此一个仓库的历史不会进入另一个仓库。
+- `sync/last-run.json` 记录上一次同步或合并完成的时间，重启后页面仍能说明。
+- `machine.json` 记录每个导出包都会带上的本机标识：生成的 id、默认取自主机名（用户改名后则为新名字）的标签，以及创建时间。
+- `tombstones.json` 记录本机已经导出过的删除，`runtime-index.json` 记录上次导出携带的 Runtime 条目；两者一起让合并能区分“本机删除了它”与“本机从来没有过它”，因此旧包不会把删除复活。
+- `review-ledger.json` 保存整理建议与留在其上的意见，最新在前，上限 200 条。
+
+`machine.json`、`tombstones.json`、`runtime-index.json` 与 `review-ledger.json` 都不属于任何 Pack 组件，因此都不会同步：机器的身份与审查历史留在产生它的机器上。
 
 <a id="runtime-memory"></a>
 
@@ -125,11 +134,11 @@ Runtime Source 会在面向模型的快照中，为每条正文添加一行元�
 | 目标 | 默认上限 | 维护方式 |
 |---|---:|---|
 | `USER.md` | 4 KiB | 本地、无工具 worker 保守合并，不进入 Memory Space |
-| `MEMORY.md` | 10 KiB | Host 精确归档已提交条目，再确定性装填热记忆余量；没有能接收它们的记忆空间时，未保留的条目移入 `runtime/archived/` |
+| `MEMORY.md` | 10 KiB | Host 精确归档已提交条目，再确定性装填保留在运行时记忆中的余量；没有能接收它们的记忆空间时，未保留的条目移入 `runtime/archived/` |
 
-两个上限都可以通过 `runtimeMemory.userLimitBytes` 与 `runtimeMemory.memoryLimitBytes` 调整，见 [Runtime Memory 容量与维护预算](./configuration.md#runtime-memory-容量与维护预算)。分层策略下，合法写入超过上限时才触发容量维护；其他策略会直接拒绝该写入。具名工具、通用 Action、后台子 Agent 和 Web 管理共用同一 Host 流程；Web 写入按所选存储范围执行，不要求打开用户会话。归档失败会保留热记忆并返回错误。完全没有能接收归档的记忆空间时，Runtime Source 改为在同一把锁内、提交之前，把未保留的条目移入 `runtime/archived/`。底层 Source 独立使用时仍只执行自己的存储操作，自定义 Strategy 不会隐式继承默认归档。
+两个上限都可以通过 `runtimeMemory.userLimitBytes` 与 `runtimeMemory.memoryLimitBytes` 调整，见 [Runtime Memory 容量与维护预算](./configuration.md#runtime-memory-容量与维护预算)。分层策略下，合法写入超过上限时才触发容量维护；其他策略会直接拒绝该写入。具名工具、通用 Action、后台子 Agent 和 Web 管理共用同一 Host 流程；Web 写入按所选存储范围执行，不要求打开用户会话。归档失败会保留运行时记忆并返回错误。完全没有能接收归档的记忆空间时，Runtime Source 改为在同一把锁内、提交之前，把未保留的条目移入 `runtime/archived/`。底层 Source 独立使用时仍只执行自己的存储操作，自定义 Strategy 不会隐式继承默认归档。
 
-容量按存储正文和条目分隔符的实际 UTF-8 字节计算，不包含仅用于 prompt 的元数据。单条内容最大 8 KiB。当 `add`、`replace` 或 `remove` 遇到容量溢出时，Host 会在任何 Provider 写入前重新检查源 revision。只有一个可写 Memory Space 时完全不调用模型；存在多个空间时，worker 只读取有界路由摘录并返回目标 id，不重写记忆内容。Mnemon Native 先从只读命名空间快照复用完全相同的原文，合并批内相同条目，再按目标空间通过 schema-v1 draft 和 `--no-diff` 各导入一次剩余原文，避免内容相似但不同的事实被跳过或相互覆盖。其他 Provider 继续使用适配器定义的写入语义。Host 要求每个源条目都有一条精确终态回执（跳过的重复项还必须有精确 Recall 证据），随后按重要性和字节预算选择热记忆保留项，并在原 revision fence 下把余量与待处理变更一次提交。Provider 无法与本地文件共享同一事务，因此稍后的 revision 冲突或并发外部写入可能留下已经归档的重复项；现有热记忆仍受修订检查保护。
+容量按存储正文和条目分隔符的实际 UTF-8 字节计算，不包含仅用于 prompt 的元数据。单条内容最大 8 KiB。当 `add`、`replace` 或 `remove` 遇到容量溢出时，Host 会在任何 Provider 写入前重新检查源 revision。只有一个可写 Memory Space 时完全不调用模型；存在多个空间时，worker 只读取有界路由摘录并返回目标 id，不重写记忆内容。Mnemon Native 先从只读命名空间快照复用完全相同的原文，合并批内相同条目，再按目标空间通过 schema-v1 draft 和 `--no-diff` 各导入一次剩余原文，避免内容相似但不同的事实被跳过或相互覆盖。其他 Provider 继续使用适配器定义的写入语义。Host 要求每个源条目都有一条精确终态回执（跳过的重复项还必须有精确 Recall 证据），随后按重要性和字节预算选择运行时记忆的保留项，并在原 revision fence 下把余量与待处理变更一次提交。Provider 无法与本地文件共享同一事务，因此稍后的 revision 冲突或并发外部写入可能留下已经归档的重复项；现有的运行时记忆条目仍受修订检查保护。
 
 <a id="project-documents"></a>
 
@@ -231,7 +240,7 @@ Mnemon Native 保留 `temporal`、`semantic`、`causal` 和 `entity` 关系；Hi
 
 | 数据 | 权威源 | 派生/缓存 |
 |---|---|---|
-| 热记忆 | `runtime/memories.json` | `USER.md`、`MEMORY.md` |
+| 运行时记忆 | `runtime/memories.json` | `USER.md`、`MEMORY.md` |
 | Documents | `documents/index.json` + 托管 Markdown | excerpt、搜索排序、状态聚合 |
 | Mnemon Native 目录 | `data/.dsh-memory-bodies.json` + 磁盘 Store | Web 状态聚合 |
 | 第三方 Provider 连接 | `state/memory-providers.json` | 脱敏的 Provider 能力与状态 |

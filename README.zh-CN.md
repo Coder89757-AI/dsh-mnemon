@@ -37,7 +37,7 @@
 - **看得见这一轮用了什么。** 每条回复下方的回合记忆栏列出这一轮读到和写入的档案与记忆，点一下就在记忆系统中打开它；记忆系统展示全部已保存的内容，并可直接编辑。
 - **一键存入记忆。** 对话里出现值得保留的事实，点击回复下的脑形图标，由任务 Agent 去重、提炼并写入合适的记忆空间，也可以直接存到你选择的位置：工作记忆、用户画像或某个记忆空间。回执写明存到了哪里。
 - **在插件页组合。** 选择一个主策略和若干可选增强，切换时无需迁移任何数据；每个组件都有自己的设置页。
-- **数据放在你想放的地方。** 默认由 Mnemon Native 在本地保存，也可以接入八种第三方 Provider；存储范围可选全局、按工作区或集中存储，并支持 ZIP 备份。
+- **数据放在你想放的地方。** 默认由 Mnemon Native 在本地保存，也可以接入八种第三方 Provider；存储范围可选全局、按工作区、集中存储或你指定的目录，并支持 ZIP 备份。
 - **可以扩展。** Source 与 Strategy 都是基于公开 SDK 的普通 DSH 插件；安装的组件与随附组件拥有同样的页面和开关。
 
 ## 看看实际效果
@@ -93,7 +93,7 @@ npx @deepseek-ai/dsh web
 4. 使用记忆空间时，可用 `npm install --global @mnemon-dev/mnemon` 安装 Mnemon Native 所需的 CLI，或在记忆空间页面启用其他 Provider。
 5. 在**插件 → 可组合记忆**中选择主策略与增强。
 
-dsh-mnemon 支持 DSH `0.2.0-rc.2`（npm `latest`）与 `0.2.1-rc.1`（npm `next`）。同一个包也用于桌面版的插件页、命令行 `dsh plugin --profile web add dsh-mnemon`，以及 Headless：`dsh plugin --profile headless add dsh-mnemon`；更早的宿主请继续使用[兼容性与升级](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/reference/compatibility.md)为其列出的版本。接下来可以看[快速开始](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/getting-started.md)，已有安装的升级见[兼容性与升级](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/reference/compatibility.md)。
+dsh-mnemon 支持 DSH `0.2.0-rc.2`（npm `latest`）与 `0.2.1-rc.1`（npm `next`）。同一个包也用于桌面版的插件页、命令行 `dsh plugin --profile web add dsh-mnemon`，以及 Headless：`dsh plugin --profile headless add dsh-mnemon`；更早的宿主请继续使用[兼容性与升级](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/reference/compatibility.md)为其列出的版本。接下来可以看[入门指南](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/getting-started.md)，已有安装的升级见[兼容性与升级](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/reference/compatibility.md)。
 
 ## 工作原理
 
@@ -111,7 +111,7 @@ Starter 固定一组经过测试、各自独立版本的包。同一时间只运
 
 | 包 | 作用 | 默认 |
 |---|---|---|
-| [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | 运行时记忆：USER.md、MEMORY.md、修订与本地热存储 | 开启 |
+| [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | 运行时记忆：USER.md、MEMORY.md、修订与本地存储 | 开启 |
 | [dsh-mnemon-source-documents](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-documents/README.md) | 项目档案：Markdown、检索、修订与归档 | 开启 |
 | [dsh-mnemon-source-memory-spaces](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-memory-spaces/README.md) | 记忆空间：长期证据及其 Provider | 开启 |
 | [dsh-mnemon-strategy-default-three-tier](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-default-three-tier/README.md) | 分层策略：运行时记忆常驻，其余按需读取 | 选中 |
@@ -132,7 +132,7 @@ Starter 固定一组经过测试、各自独立版本的包。同一时间只运
 
 - 运行时记忆与项目档案是本地文件，Mnemon Native 也在本地；第三方 Provider 使用各自的服务与作用域。
 - 关闭组件不会删除其中的记忆，更换存储位置也不会搬移数据；需要迁移时使用 ZIP 备份。
-- Git 同步把同一份 Mnemon Pack 载荷以可读文件发布到你自己的仓库，另一台机器可以拉取。可以用 GitHub 登录连接仓库（搜索、选择或新建私有仓库，选择公开仓库前会先确认），也可以填写地址，只有 HTTPS 地址才需要访问令牌。**立即同步**先把仓库合并到本机，再推送结果；**检查远端**在写入任何内容之前说明一次同步会带来什么；**自动同步**按一小时到一周的间隔重复同样的同步。读不到仓库时，这一行会说明原因（凭据、找不到、网络或超时）以及如何修正；**备份历史**按时间与设备列出每台机器的版本。`writeEnabled=false` 时两个方向都会被拒绝。两台设备对同一主题写法不同时，两种写法都会保留，直到**记忆整理**里的**整理记忆**给出方案；方案以待审查建议出现，可以**接受**后**执行**，也可以先留下意见——已拒绝的方案要先**重新打开**，你的意见才会进入下一次整理。整理记忆可以填写你的要求，已接受的方案可以逐条勾选执行，因此可以只采纳其中一部分。
+- Git 同步把同一份 Mnemon Pack 载荷以可读文件发布到你自己的仓库，另一台机器可以拉取；可以**立即同步**、在写入前**检查远端**，或按间隔**自动同步**。两台设备对同一主题写法不同时，两种写法都会保留，直到你接受**记忆整理**给出的方案，见 [Git 仓库同步](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/operations.md#git-仓库同步)。
 - 已保存的 Provider 凭据只留在宿主上，不会被导出；但备份仍包含私有记忆，请妥善保护。
 - Source 与 Strategy 是受信任的进程内 JavaScript，**不是沙箱代码**；历史记忆永远不会凌驾于当前指令之上。
 

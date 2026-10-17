@@ -65,7 +65,7 @@ Code, comments, documentation, commit messages, and PR titles must not contain e
 
 ## Documentation and persistence constraints
 
-- When user-visible behavior changes, review the English and Chinese versions of `ui-guide.md`, `getting-started.md`, `configuration.md`, and `operations.md`;
+- When user-visible behavior changes, review the English and Chinese versions of `installation.md`, `getting-started.md`, `ui-guide.md`, `configuration.md`, `operations.md`, and `compatibility.md`, which states the supported DSH releases;
 - commands, configuration keys, paths, and code symbols must match across both languages;
 - Runtime, Documents, and Memory Space registry format changes must not happen silently; include legacy-format handling and damaged-input tests;
 - do not send user preferences into long-term Memory Spaces or use real private data in fixtures and documentation examples.

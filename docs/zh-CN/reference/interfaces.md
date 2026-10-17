@@ -59,7 +59,7 @@ Headless 会获得完整模型工具面。它把命令行任务作为普通用�
 
 | 工具 | 用途 | Root Agent 路径 |
 |---|---|---|
-| `mnemon_runtime_memory` | `add` / `replace` / `remove` 热记忆 | 确定性控制；add 溢出时可能启动 worker |
+| `mnemon_runtime_memory` | `add` / `replace` / `remove` 运行时记忆 | 确定性控制；add 溢出时可能启动 worker |
 | `mnemon_document_manage` | 创建、更新或归档档案 | 创建/更新确定性；归档使用 worker，没有记忆空间能接收索引时不经 worker 直接归档到本地 |
 | `mnemon_document_create` | 新建独立档案，不更新或归档已有档案 | 确定性 Source `create` Action；供空闲审查使用 |
 | `mnemon_remember` | 按 Provider 语义沉淀洞察，回执区分已接受与持久提交 | `spawn` write worker |
@@ -204,7 +204,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 
 | Endpoint | 行为 |
 |---|---|
-| `runtime-memory` | 热记忆 mutation |
+| `runtime-memory` | 运行时记忆修改 |
 | `document` | create / update / archive |
 | `supervise` | 用独立任务 Agent 处理候选并返回落定回执 |
 | `remember` / `link` / `forget` | 长期语义写入、关系与软删除 |
@@ -251,9 +251,14 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 
 同步载荷始终是完整的 Mnemon Pack：Pack manifest 的 `scope` 只能是 `full` 或恰好一个组件，因此无法表示持久化的组件选择，组件筛选只作为 `pull` 的一次性参数存在。仓库地址是唯一没有默认值的配置项：分支、远端目录、提交者姓名或邮箱留空时，分别回落到默认分支、默认目录，或本机 Git 已有的提交身份。`configure`、`push`、`pull` 以及每个会改动状态的 `github-` endpoint 都要求 `writeEnabled: true`，否则返回与 pack 导入相同的只读拒绝。
 
-token 不会出现在任何响应或错误信息中。通道在每次网络操作时解析一个凭据，顺序为：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中保存的 token，最后是 GitHub 登录写入 DSH 凭据存储（键 `dsh-mnemon/github`）的凭据。`credentialSource` 指出生效的那一个——`environment`、`token`、`github` 或 `none`——前三者都让 `hasToken` 为 `true`，因此已登录的账号完全不需要填 token。GitHub 请求先走环境自带的 `fetch`（与版本检查相同的接缝），启动器配置的代理策略对它同样生效。当这次请求完全连不上时，通道会用从 `HTTPS_PROXY`、`http_proxy`、`all_proxy` 发现的代理——Windows 上还会读系统代理设置——以 Node 自带模块搭建的 CONNECT 隧道重试一次；应答成功的代理会被记住，失效的代理会被丢弃，因此换网络后无需重启即可恢复。失败只报告 GitHub 的错误码与 HTTP 状态，不回显响应体的其他内容；无法使用的设备码回应还会给出它的 content type 与字段名，但不含字段值。`accept: application/json` 请求头没有到达 GitHub 时（例如被其他插件对 `fetch` 的改写丢掉），GitHub 会以表单编码回应，通道按同样的方式读取。完全没到达 GitHub 的请求会报告传输层原因，且在没找到代理时直接指出应设置 `HTTPS_PROXY`。
+凭据与网络：
 
-配置、凭据与失败语义见[备份与恢复](../guides/operations.md#git-仓库同步)。
+- token 不会出现在任何响应或错误信息中。通道在每次网络操作时解析一个凭据，顺序为：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中保存的 token，最后是 GitHub 登录写入 DSH 凭据存储（键 `dsh-mnemon/github`）的凭据。
+- `credentialSource` 指出生效的那一个——`environment`、`token`、`github` 或 `none`——前三者都让 `hasToken` 为 `true`，因此已登录的账号完全不需要填 token。失败会以 `details.reason` 带上类别，页面据此用自己的语言说明。
+- GitHub 请求先走环境自带的 `fetch`（与版本检查相同的接缝），启动器配置的代理策略对它同样生效。当这次请求完全连不上时，通道会用从 `HTTPS_PROXY`、`http_proxy`、`all_proxy` 发现的代理——Windows 上还会读系统代理设置——以 Node 自带模块搭建的 CONNECT 隧道重试一次；应答成功的代理会被记住，失效的代理会被丢弃，因此换网络后无需重启即可恢复。
+- 失败只报告 GitHub 的错误码与 HTTP 状态，不回显响应体的其他内容；无法使用的设备码回应还会给出它的 content type 与字段名，但不含字段值。`accept: application/json` 请求头没有到达 GitHub 时（例如被其他插件对 `fetch` 的改写丢掉），GitHub 会以表单编码回应，通道按同样的方式读取。完全没到达 GitHub 的请求会报告传输层原因，且在没找到代理时直接指出应设置 `HTTPS_PROXY`。
+
+如何连接仓库、每次同步做什么、同步失败时会怎样，见 [Git 仓库同步](../guides/operations.md#git-仓库同步)。
 
 ### 审查通道
 

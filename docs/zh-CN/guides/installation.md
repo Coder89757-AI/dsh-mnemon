@@ -58,7 +58,7 @@ DSH 在 `http://127.0.0.1:3080` 启动，并自动在浏览器中打开一个带
 ## 3. 安装并启用 dsh-mnemon
 
 1. 点击左侧的**插件**，再点击右上角的**添加插件**。
-2. 输入 `dsh-mnemon`，点击**安装**。对话框右侧的**安装源**由 DSH 自动选择：在中国大陆通常是**中国大陆镜像源**，在其他地区是 **npm 官方源**，一般不需要修改。
+2. 输入 `dsh-mnemon`，点击**安装**。在你自己选择之前，对话框右侧的**安装源**由 DSH 测速后选用响应更快的那个：在中国大陆通常是**中国大陆镜像源**，在其他地区是 **npm 官方源**，一般不需要修改。
 3. 几秒后显示**已安装**和版本号，点击**立即启用**。不需要重启 DSH。
 4. 左侧出现**记忆系统**，安装就完成了。
 
@@ -68,7 +68,7 @@ DSH 在 `http://127.0.0.1:3080` 启动，并自动在浏览器中打开一个带
 
 “已安装”卡片中的简介来自软件包信息，所以是英文。插件列表中的名称与说明会跟随界面语言。
 
-习惯命令行时，也可以用下面的命令安装，再按第 2 步启动 DSH；DSH 正在运行时，安装后需要重启它：
+习惯命令行时，也可以用下面的命令安装，再按第 2 步启动 DSH；DSH 正在运行时，安装后需要重启它。其余命令见[命令行与 Headless](#7-命令行与-headless)。
 
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add dsh-mnemon
@@ -96,7 +96,7 @@ npx @deepseek-ai/dsh plugin --profile web add dsh-mnemon
 |---|---|
 | ![回复“已记住”，回合记忆栏列出一条运行时记忆更新](../../assets/install-v0.5.19/zh-CN/first-01-reply.jpg) | ![运行时记忆页高亮新写入的用户画像条目](../../assets/install-v0.5.19/zh-CN/first-02-runtime.jpg) |
 
-模型会自己决定写入的措辞与位置，你看到的文字可能不同。接下来请看[快速开始](./getting-started.md)：项目档案、记忆空间，以及把一段回复**存入记忆**。
+模型会自己决定写入的措辞与位置，你看到的文字可能不同。接下来请看[入门指南](./getting-started.md)：项目档案、记忆空间，以及把一段回复**存入记忆**。
 
 ## 6. 桌面版
 
@@ -104,34 +104,65 @@ DeepSeek Harness 桌面版的**插件**页与网页相同：**插件 → 添加�
 
 - 桌面版使用它自己的 `desktop` profile。从 DSH 0.2 起，命令行不再管理这个 profile，请在桌面版的插件页中安装和管理插件。
 - 桌面版窗口从应用自己的 `dsh-app://app/` 地址加载。dsh-mnemon 0.5.18 及更早的版本会把它当成远程页面，于是记忆系统和插件设置变为只读（[#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)）。0.5.19 已修复，更新 dsh-mnemon 即可，不需要修改配置。
-- DSH 的插件页不能更新已安装的插件。请在**记忆系统 → 状态 → 检查版本 → 更新**中更新 dsh-mnemon，它会用应用自己的安装器安装新版本。dsh-mnemon 0.5.21 及更早的版本在桌面版中做不到这一点；从这些版本更新时，在插件页移除 dsh-mnemon 后重新添加一次即可，记忆数据会保留。
+- DSH 的插件页不能更新已安装的插件。请在**记忆系统 → 状态 → 检查版本 → 更新**中更新 dsh-mnemon；它如何安装新版本，以及在桌面版中从 0.5.21 或更早的版本更新时要先做什么，见[版本检查与更新](./operations.md#版本检查与更新)。
 - 在桌面版中更新 dsh-mnemon 后，完全退出应用再重新打开（macOS 上按 `Cmd+Q`），新版本才会加载。更新后出现报错时，处理方法见[常见问题](#常见问题)。
 
 ## 7. 命令行与 Headless
 
-全局安装 DSH 后，可以用命令行管理每个 profile 的插件：
+本节写给服务器、脚本、一次性任务和开发检出。需要：
+
+- [兼容性与升级](../reference/compatibility.md)列出的 DSH 版本、Node.js `^22.19.0 || >=24.0.0`，以及 pnpm；
+- 一个能够创建独立任务 Agent 的 DSH 模型路由，任务 Agent 如何启动见 [Provider 要求](../reference/configuration.md#provider-要求)；
+- 仅在使用 Mnemon Native 时需要 Mnemon CLI，安装方式见[第 1 步](#1-准备-nodejspnpm-与-mnemon-cli)或 [Mnemon CLI 的其他安装方式](#mnemon-cli-的其他安装方式)；其他 Provider 连接各自的服务。
+
+全局安装 DSH，再核对正在使用的版本以及 npm 上可用的版本：
 
 ```sh
 npm install --global @deepseek-ai/dsh
+dsh --version
+npm view @deepseek-ai/dsh dist-tags
+```
+
+把 dsh-mnemon 安装到带完整工作台的 Web profile，然后启动 DSH；DSH 正在运行时则重启它：
+
+```sh
 dsh plugin --profile web add dsh-mnemon
 dsh web
 ```
 
-不同 profile 的插件互不影响。一次性任务也要用记忆时，把它另外安装到 Headless profile：
+开发检出改用绝对路径安装：
+
+```sh
+dsh plugin --profile web add "link:/absolute/path/to/dsh-mnemon"
+```
+
+### Headless
+
+不同 profile 的插件互不影响。一次性任务也要用记忆时，把 dsh-mnemon 另外安装到 Headless profile；开发检出同样使用 `link:` 路径：
 
 ```sh
 dsh plugin --profile headless add dsh-mnemon
 dsh --profile headless "回答前先检查持久化的项目上下文。"
 ```
 
-升级与卸载：
+Headless 会挂载与 Web Agent 相同的运行时上下文、项目档案、记忆空间工具、生命周期提示和受监督写入路径，但不会挂载工作台、对话按钮、RPC 通道或交互式斜杠命令界面。两者的差别见 [Profile 能力面](../reference/interfaces.md#profile-能力面)，例如一次性任务退出时会取消尚未开始的空闲审查；Headless 按工作区保存记忆的位置见 [`workspace` 范围](../reference/configuration.md#workspace)。
+
+### 更新与卸载
 
 ```sh
 dsh plugin --profile web update dsh-mnemon
 dsh plugin --profile web remove dsh-mnemon
 ```
 
-升级后重启 DSH。新版本发布后的 24 小时内，pnpm 11 的 `update` 会停留在已安装的版本，这时请带版本号安装新版本，例如 `dsh plugin --profile web add dsh-mnemon@0.5.20`。卸载只移除插件，不会删除任何记忆数据。开发检出、云端访问与 Headless 的更多说明见[快速开始](./getting-started.md#1-命令行安装与升级)。
+- 更新后重启 DSH，新版本才会加载。
+- 新版本发布后的 24 小时内，pnpm 11 的 `update` 会停留在已安装的版本，这时请带版本号安装新版本，见[常见问题](#常见问题)。
+- 在网页和桌面版中，**记忆系统 → 状态 → 检查版本 → 更新**做的是同一件事，见[版本检查与更新](./operations.md#版本检查与更新)。
+- 换用另一个 DSH 版本之前，请按[升级顺序](../reference/compatibility.md#升级顺序)操作。
+- 卸载只移除插件注册，不会删除全局、工作区或自定义目录中的任何记忆数据。
+
+### 云端访问
+
+如果需要通过云端域名访问 Web profile，不要直接发布 3080 端口。DSH 通过 Host 启动时输出的一次性 URL 建立浏览器会话，并用它认证全部 Mnemon RPC 与 stream。请按[云端 WebUI](./operations.md#cloud-hosted-webui)同时配置 HTTPS 反向代理或访问网关与可信 authority，再打开该启动 URL。
 
 ## Mnemon CLI 的其他安装方式
 
@@ -257,4 +288,4 @@ mnemon-bundle (cordis:group): pending (waiting for service: mnemonStarterReady)
 
 ### 升级 DSH
 
-先在现有的 DSH 中更新 dsh-mnemon，再升级 DSH，然后再更新一次 dsh-mnemon。在 DSH 0.1.7-rc.2 上，先更新到 0.5.30：`dsh plugin --profile web add dsh-mnemon@0.5.30`。否则新的 DSH 启动时会停用它不支持的旧版本；记忆数据不受影响，更新插件后即可恢复。在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`；改为运行一次[升级顺序](../reference/compatibility.md#升级顺序)中给出的命令。
+先在现有的 DSH 中更新 dsh-mnemon，再升级 DSH，然后再更新一次 dsh-mnemon。否则新的 DSH 启动时会停用它不支持的旧版本；记忆数据不受影响，更新插件后即可恢复。在每个较早的 DSH 上应先更新到哪个版本，以及**检查版本 → 更新**停在 `already-installed` 时要运行一次的命令，见[升级顺序](../reference/compatibility.md#升级顺序)。

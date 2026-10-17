@@ -11,7 +11,7 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 | 要完成的事 | 指南 |
 |---|---|
 | 从零安装并启动：网页、桌面版或命令行，到第一条记忆 | [安装与启动](./guides/installation.md) |
-| 保存并用上第一批记忆 | [快速开始](./guides/getting-started.md) |
+| 保存并用上第一批记忆 | [入门指南](./guides/getting-started.md) |
 | 熟悉对话、记忆系统与插件页 | [界面指南](./guides/ui-guide.md) |
 | 了解每个组件与策略能做什么 | [能力地图](./guides/capabilities.md) |
 | 选择并接入长期记忆后端 | [Provider 指南](./guides/memory-providers.md) |
@@ -36,6 +36,7 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 | 让皮肤适配 Mnemon 背景与透明度 | [皮肤开发](./development/skin-integration.md) |
 | 构建、测试与真实 WebUI 截图 | [开发与验证](./development/README.md) |
 | 为独立包管理版本和发布 | [发布流程](./development/releasing.md) |
+| 参与贡献：规则、脚本与设计计划 | [贡献指南](../../CONTRIBUTING.zh-CN.md) · [脚本](../../scripts/README.md) · [设计计划](../plans/README.md) |
 
 ## 最新变化
 

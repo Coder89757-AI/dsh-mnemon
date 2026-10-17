@@ -36,7 +36,7 @@ An Agent that starts every session from scratch keeps asking what it was already
 - **You can see what a turn used.** Under each reply, the turn memory bar lists the documents and memories the turn read and wrote, and one click opens each in the Memory System. The Memory System shows everything that is stored and lets you edit it.
 - **Save to memory in one click.** When a conversation turns up a fact worth keeping, the brain mark under the reply hands it to a task Agent, which removes duplicates, distils it and writes it to the right Memory Space, or saves it where you choose: working memory, your profile or a Memory Space. The receipt says where it went.
 - **Compose it on the Plugins page.** Choose a main strategy and optional enhancements, and switch them without moving any data. Every component has its own page for its settings.
-- **Keep data where you want it.** Local by default with Mnemon Native, or one of eight third-party Providers. Storage can be global, per workspace or centralized, with ZIP backup.
+- **Keep data where you want it.** Local by default with Mnemon Native, or one of eight third-party Providers. Storage can be global, per workspace, centralized or in a directory you choose, with ZIP backup.
 - **Extend it.** Sources and Strategies are ordinary DSH plugins built on public SDKs. An installed component gets the same pages and switches as the shipped ones.
 
 ## See it in action
@@ -110,7 +110,7 @@ The Starter pins a tested combination of independently versioned packages. One m
 
 | Package | Role | Default |
 |---|---|---|
-| [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | Runtime memory: USER.md, MEMORY.md, revisions and local hot storage | On |
+| [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | Runtime memory: USER.md, MEMORY.md, revisions and local storage | On |
 | [dsh-mnemon-source-documents](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-documents/README.md) | Project Documents: Markdown, search, revisions and archiving | On |
 | [dsh-mnemon-source-memory-spaces](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-memory-spaces/README.md) | Memory Spaces: durable evidence and their Providers | On |
 | [dsh-mnemon-strategy-default-three-tier](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-default-three-tier/README.md) | Layered strategy: resident runtime memory, the rest on demand | Selected |
@@ -131,7 +131,7 @@ Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blo
 
 - Runtime memory and Project Documents are local files; Mnemon Native is local. Third-party Providers use their own services and scopes.
 - Turning a component off does not erase its memory, and changing the storage location does not move data. Use ZIP backup to carry it.
-- Git sync publishes the same Mnemon Pack payload to a repository you own, as readable files, so another machine can pull it. Connect a repository by signing in with GitHub (search, pick or create a private one; a public one asks first) or by its address, with a token field only for HTTPS. **Sync now** merges the repository into this machine and pushes the result, **Check remote** shows what a sync would change before anything is written, and **Automatic sync** repeats the same sync at an interval from an hour to a week. When the repository cannot be read, the row says why (credentials, not found, network or timeout) and how to fix it, and **Backup history** lists every machine's versions by time and computer. Both directions are refused where `writeEnabled` is false. Two machines that wrote one subject differently keep both wordings until **Reconcile** under **Memory reconciliation** proposes a plan, which arrives as a pending proposal to **Accept** and then **Apply**, or to annotate with an opinion first; a rejected plan has to be **reopened** before your words reach the next run. Reconciliation takes your own words as guidance, and an accepted plan is applied operation by operation, so you can take part of it.
+- Git sync publishes the same Mnemon Pack payload as readable files to a repository you own, so another machine can pull it, with **Sync now**, **Check remote** before anything is written, or **Automatic sync**. When two machines wrote one subject differently, both wordings stay until you accept a **Memory reconciliation** plan; see [Git repository sync](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md#git-repository-sync).
 - Saved Provider credentials stay on the Host and are never exported. Backups still contain private memory; protect them.
 - Sources and Strategies are trusted in-process JavaScript, not sandboxed code. Remembered history never outranks current instructions.
 

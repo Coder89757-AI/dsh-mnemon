@@ -74,7 +74,7 @@ dsh-mnemon 是 DeepSeek Harness（DSH）的记忆系统。它不把所有知识�
 - **档案归档**：先为冷引用建立索引，宿主再移动原文件；没有记忆空间能接收索引时，不建索引直接归档到本地；
 - **新空间的 Provider（智能选择）**：只有规则留下多个候选时才调用模型。
 
-任务 Agent 默认跟随 DSH 新会话的模型，即最近一次在任意会话中选择的模型。分层策略页面“后台任务”中的**任务 Agent 模型**也可以改为跟随发起该工作的会话（与审查一致），或自定义 Provider 与模型。任务相互隔离，失败只显示在对应的空间或操作上，不会阻塞整个页面。
+任务 Agent 默认跟随 DSH 新会话的模型，即最近一次在任意会话中选择的模型。分层策略页面“后台任务”中的**任务 Agent 模型**也可以改为跟随发起该工作的会话（与审查一致），或自定义 Provider 与模型，见[配置参考](../reference/configuration.md#后台任务-agent-的模型路由)。任务相互隔离，失败只显示在对应的空间或操作上，不会阻塞整个页面。
 
 ## 出现在哪里
 
@@ -88,7 +88,7 @@ dsh-mnemon 是 DeepSeek Harness（DSH）的记忆系统。它不把所有知识�
 
 ## 存储范围
 
-**全局**使用 `MNEMON_DATA_DIR` 或 `~/.mnemon`，本机各工作区共享；**工作区**使用 `<workspace>/.mnemon`，Mnemon Native、Holographic 与 ByteRover 等本地后端可以跟随它；**自定义**是位于你所选路径的全局范围；**集中存储**在同一个根目录下为每个工作区建立子目录，并可选择全局共享 `USER.md`。切换时不会移动、合并或删除原来的根目录。远程 Provider 的命名空间（workspace、user、bank、project、container、URI）不会随 DSH 工作区改变。参见[存储模型](../reference/storage-model.md)。
+**全局**使用 `MNEMON_DATA_DIR` 或 `~/.mnemon`，本机各工作区共享；**工作区**使用 `<workspace>/.mnemon`，Mnemon Native、Holographic 与 ByteRover 等本地后端可以跟随它；**自定义**是位于你所选路径的全局范围；**集中存储**在同一个根目录下为每个工作区建立子目录，并可选择全局共享 `USER.md`。切换时不会移动、合并或删除原来的根目录。远程 Provider 的命名空间（workspace、user、bank、project、container、URI）不会随 DSH 工作区改变。各个范围的说明见[存储范围](../reference/configuration.md#存储范围)，根目录中保存什么见[存储模型](../reference/storage-model.md)。
 
 ## 明确不做什么
 
@@ -101,7 +101,7 @@ dsh-mnemon 是 DeepSeek Harness（DSH）的记忆系统。它不把所有知识�
 
 ## 继续
 
-1. [快速开始](./getting-started.md)
+1. [入门指南](./getting-started.md)
 2. [熟悉界面](./ui-guide.md)
 3. [比较各个 Provider](./memory-providers.md)
 4. [生命周期、并发与失败边界](../reference/workflows.md)

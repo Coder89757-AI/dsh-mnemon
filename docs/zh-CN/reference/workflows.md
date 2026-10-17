@@ -223,14 +223,22 @@ Host 把每条原始 entry 精确写入规划的已有 Space
   - skipped -> 必须取得完全一致的 Recall evidence
           |
           v
-Host 按重要性与字节预算保留原始热记忆条目
+Host 按重要性与字节预算保留原始运行时记忆条目
           |
           v
 CAS compactAndMutate(revision, compaction, original mutation, lineage)
   -> JSON 与两个 Markdown projection 作为一次本地提交落盘
 ```
 
-planner 没有数据面工具，不能创建 Memory Space。每次写入都由 Host 发起；只有每条已提交来源都有可验证的 durable destination 后，Runtime 才会变化。若远端写入后发生很晚的跨进程 revision 冲突，原 hot entries 仍会保留；远端 Provider 无法共享本地文件锁，因此已提交的 durable copy 会作为安全重复保留，而不会被破坏性回滚。
+planner 没有数据面工具，不能创建 Memory Space。每次写入都由 Host 发起；只有每条已提交来源都有可验证的 durable destination 后，Runtime 才会变化。若远端写入后发生很晚的跨进程 revision 冲突，原有的运行时记忆条目仍会保留；远端 Provider 无法共享本地文件锁，因此已提交的 durable copy 会作为安全重复保留，而不会被破坏性回滚。
+
+### 运行时归档恢复
+
+容量归档写入已激活的记忆空间，其 Provider 必须支持精确写入和安全删除。Hindsight 等异步提取目标会在任何归档写入前被排除。完全没有能接收归档的记忆空间时（该层已关闭或不接受自动写入、没有就绪的 Provider、没有激活的空间，或只剩不支持的 Provider），Runtime Source 会在同一把锁内、紧接着提交压缩与待写入内容之前，把压缩舍弃的条目追加到本地归档 `runtime/archived/`：`MEMORY.md` 供阅读，`memories.jsonl` 保存每个条目及其元数据。另一个记忆空间 Source 中有能接收归档的空间，或 Runtime Source 版本过旧、无法保留压缩舍弃的条目时，仍会拒绝。Mnemon Pack 不包含本地归档，导入 Pack 时会保留它。直接向 Provider 写入仍保持原有的异步行为。
+
+对话归档使用所选 Source 的写入范围：回合中激活的已知空间，以及当前 View 创建的空间，都可作为归档目标。在 View 固定之后由其他操作创建的空间，需要新回合才能使用；所以当合适的空间都在 View 写入范围之外，或当前 View 不提供对它们的写入时，写入会被拒绝，而不是归档到本地。空范围始终不授权任何空间。目标错误会区分目录为空、View 范围为空或排除了当前空间、Provider 能力不支持，并报告目录、授权和可写数量。失败时待新增内容尚未保存；修正所报告的原因后，请在新回合重试同一份工具输入。已有的运行时记忆条目会保留。
+
+归档回执或本地提交失败时，Host 仅尝试删除回执能证明由本次操作新建的条目，保留跳过或复用的既有条目。本地提交报错后，如果 Runtime 修订已变更或无法读取，则提交结果不确定：保留归档条目，避免丢失已提交的记忆。清理失败会标出剩余目标空间和条目 id。Provider 请求失败且没有返回回执时，远端结果可能不确定，因此这不是分布式事务；重试前应检查对应 Provider。
 
 ## Documents 创建、更新和归档
 
@@ -279,6 +287,10 @@ planner 没有数据面工具，不能创建 Memory Space。每次写入都由 H
 ```
 
 人工归档使用同一条“先索引、后迁移”路径；没有记忆空间能接收索引时，同样归档到本地。Mnemon 索引已经成功但 revision 冲突时不会回滚索引，因此可能出现安全的重复引用，而不会丢失 active 原文。
+
+### 项目档案归档恢复
+
+项目档案归档不再要求子代理为 remember/recall 回执编号。旧版本失败后若留下冷索引而档案仍为 active，重试可复用精确路径与当前内容哈希一致的索引；档案更新后需要匹配新修订的索引。异步提取或不支持安全删除的 Provider 会在写入前被拒绝。完全没有能接收索引的记忆空间时，档案会在不建索引的情况下归档到本地：原文移入归档目录，仍可在项目档案页面阅读。清理失败会报告目标空间和本次新建的 id；确认结果前应保留已有数据。
 
 ## 确定性活动评分和空闲审查
 
@@ -334,7 +346,7 @@ Host 判断是否存在待整理内容
 保守的整理决策，每轮只写一层
   - 先看档案：先检索；项目记录至多新建一份独立档案，
     不更新或归档已有档案
-  - 热记忆：只收录用户新提出的、明确且持久的陈述；
+  - 运行时记忆：只收录用户新提出的、明确且持久的陈述；
     MEMORY.md 只收档案未涵盖的简短规则，不收项目记录
     （idleReview.runtimeMemory: false 时关闭）
   - 建了档案就不能再改工作记忆，反之亦然
@@ -345,7 +357,7 @@ Host 判断是否存在待整理内容
       +-- 失败/中止 --------> 保留累计活动
 ```
 
-admission 有意只使用结构信号，不调用 LLM 分类；因此达到 activity 门槛但没有 dirty candidate 的普通 checkpoint 不会启动后台模型。审查 Agent 的工具恰好是 `mnemon_document_search`、`mnemon_runtime_memory` 与 `mnemon_document_create`；`idleReview.runtimeMemory` 为 `false` 时不提供运行时记忆工具。审查 guard 让每轮只写一层：它放行的第一次新建档案或工作记忆修改决定本轮所写的层，另一层随后被拒绝，即使第一次调用失败也是如此；USER.md 的修改不受影响。“至多一份”档案或一次热记忆修改仍由 persona 约束，不是 Host mutation counter。审查的产出之后才进入记忆空间：工作记忆在容量整理时归档，项目档案在冷归档时建立索引。安装了 Agent Teams 工具时，除非设置 `idleReview.agentTeams: scoped`，审查会暂停；暂停期间状态页会给出提示。后台水位尚未持久化，Host 重启会丢失未处理的累计信号。
+admission 有意只使用结构信号，不调用 LLM 分类；因此达到 activity 门槛但没有 dirty candidate 的普通 checkpoint 不会启动后台模型。审查 Agent 的工具恰好是 `mnemon_document_search`、`mnemon_runtime_memory` 与 `mnemon_document_create`；`idleReview.runtimeMemory` 为 `false` 时不提供运行时记忆工具。审查 guard 让每轮只写一层：它放行的第一次新建档案或工作记忆修改决定本轮所写的层，另一层随后被拒绝，即使第一次调用失败也是如此；USER.md 的修改不受影响。“至多一份”档案或一次运行时记忆修改仍由 persona 约束，不是 Host mutation counter。审查的产出之后才进入记忆空间：工作记忆在容量整理时归档，项目档案在冷归档时建立索引。安装了 Agent Teams 工具时，除非设置 `idleReview.agentTeams: scoped`，审查会暂停；暂停期间状态页会给出提示。后台水位尚未持久化，Host 重启会丢失未处理的累计信号。
 
 ## 配置开关的关系
 
