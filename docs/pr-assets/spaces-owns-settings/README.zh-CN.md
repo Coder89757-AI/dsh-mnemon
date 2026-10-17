@@ -14,7 +14,7 @@
 
 **一个字段组件。** `ProviderField`（`src/client/provider-field.tsx`）绘制所有 Provider 字段，包括配置页上的服务字段和记忆空间对话框中空间的字段，取代原先根据描述生成的两套表单。它共用标签、选项标签与输入框属性，并按各处原来的样子绘制：配置页保留它的类名、标签在旁的复选框、显示所输入内容的按钮，以及已保存凭据的掩码；对话框保留它们的类名、上方的标签、“留空即保留已保存凭据”的提示和清除凭据的选项。两处对已保存凭据的处理不同，统一成一条规则会改变其中一处的显示，所以各自保留。
 
-**页面借出的内容。** 注册在记忆空间键下的设置会收到 `host`；它跟随键而不是注册者，注册在其他键下的设置不会收到。`host.configuration` 读取借给记忆空间的键（`embedding`、`storageScope`、`writeEnabled`），并通过页面带修订栅栏的设置写入，只写它拥有的 `embedding`。`host.operations.read`/`write` 调用为它提供的五个操作（`status-summary`、`embedding-status`、`provider-services`、`embedding-fill`、`provider-service-update`），并且只在页面自己的对话与工作区中执行：拒绝其他操作，也拒绝带 `sessionId` 或 `workspaceId` 的输入，因此在对话之外打开的页面两者都不发送，与 `main` 相同。正在进行的相同读取会被合并。`host.retained` 在页面的客户端运行期间，为每个对话与工作区保存设置重新挂载时需要的内容；`host.changed()` 让记忆系统重新读取它的页面。与 Source 页面的 `management` 客户端一样，设置服务和传输层都不会交出。其他包只有抢先注册在记忆空间的键下才能拿到 `host`，而这不会给它超出 DSH 已与所有客户端插件共享的连接之外的任何权限。
+**页面借出的内容。** 注册在记忆空间键下的设置会收到 `host`；它跟随键而不是注册者，注册在其他键下的设置不会收到。`host.configuration` 读取借给记忆空间的键（`embedding`、`storageScope`、`writeEnabled`），并通过页面带修订栅栏的设置写入，只写它拥有的 `embedding`。`host.operations.read`/`write` 调用为它提供的五个操作（`status-summary`、`embedding-status`、`provider-services`、`embedding-fill`、`provider-service-update`），并且只在页面自己的对话与工作区中执行：拒绝其他操作，也拒绝带 `sessionId` 或 `workspaceId` 的输入，因此在对话之外打开的页面两者都不发送，与 `main` 相同。记忆空间的设置自行发起的读取（`provider-services`、`status-summary`）在相同读取仍在进行时会与之合并，但只合并在配置当前修订下发起的那一次，因为更早发起的读取回答的是已经改变的配置；嵌入测试从不合并，因为它检查的是此刻的连接。`host.retained` 在页面的客户端运行期间，为每个对话与工作区保存设置重新挂载时需要的内容；`host.changed()` 让记忆系统重新读取它的页面。与 Source 页面的 `management` 客户端一样，设置服务和传输层都不会交出。其他包只有抢先注册在记忆空间的键下才能拿到 `host`，而这不会给它超出 DSH 已与所有客户端插件共享的连接之外的任何权限。
 
 **面向插件作者。** `dsh-mnemon/client` 只新增记忆空间的设置用到的内容：`MNEMON_COMPONENT_FALLBACK_PRIORITY`、`host` 的类型，以及 dsh-mnemon 绘制这些设置时所用的控件与样式：`ToggleRow`、`useLive`、`useStaged`、`PanelActions`、`WriteFailure`、`Callout`、`Reveal`、`GlobalLocationSetting` 与 `memorySettingsStyles`。类名表的键是固定的一组，即记忆空间的设置用到的 45 个类名：它们属于 API，因为比 Starter 更旧或更新的已安装记忆空间按名称查找它们，`tests/client-sidebar-css.spec.ts` 保证样式表中每个都在。`PanelActions` 与 `WriteFailure` 接收设置自己的 `t`，因为配置页不会在组件的设置外层设置翻译。后备注册与记忆空间的注册函数不导出。导出该常量是 dsh-mnemon 的承诺（写在常量声明处）：以该优先级保留这些设置，并借给它们 `host`。没有移除或重命名任何导出。[扩展开发](../../zh-CN/development/extensions.md#组件自己的设置与状态卡片)说明了它们。
 
@@ -28,6 +28,8 @@ profile 可以自行保留一份记忆空间，比 Starter 固定的版本更旧
 - 记忆空间只在 `dsh-mnemon/client` 导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 时注册自己的设置。它的客户端包是通过 DSH 模块加载器加载的 CommonJS，读取已加载的 dsh-mnemon 缺少的导出时得到 `undefined`，并且在绘制时才读取较新的导出，而不是在加载时。dsh-mnemon 0.5.31 以默认优先级注册内置设置，在那里注册会被拒绝，而且它不借出 `host`。
 
 后备注册很小：只注册一次 `MemorySpacesSettings`，由 Starter 从记忆空间的公开客户端入口 `dsh-mnemon-source-memory-spaces/client` 取得，即它所固定版本中的实现。Starter 的客户端构建会打包所有导入，因此通过仓库的 TypeScript 路径把这个入口解析到固定版本的源码（`tsdown.config.ts` 在 `alwaysBundle` 中列出它）。只有一个模块 `src/client/memory-spaces-client.ts` 导入组件的实现；它还为“状态”页提供记忆空间的 `ProviderIcon`，那里的 Provider 列表仍由 Starter 绘制。`tests/plugin-repository-boundary.spec.ts` 只允许这一个模块。若改为在 Starter 中保留一份副本，本改动删除的重复文件就会留下。后备设置会出现在 0.5.21 及更早的记忆空间旁边，所以在 Starter 保留它期间，记忆空间带来的设置必须能与这些版本配合；它们使用的五个操作这些版本都能应答。
+
+版本之间还剩一处差异，只在文案中，且只在 zh 与 en 以外的语言下：此时设置像 dsh-mnemon 绘制时一样，先询问 DSH 的 `mnemon` 命名空间，其中是 Starter 固定的记忆空间版本的文案，因此对于两者都有的键，较新的记忆空间自己的措辞只在 zh 与 en 下显示。
 
 | Starter | 记忆空间 | 为记忆空间注册的设置 | 记忆空间客户端运行时显示 | WebUI，DSH 0.2.1-rc.2 与 0.2.0-rc.2 |
 |---|---|---|---|---|
@@ -44,9 +46,9 @@ WebUI 一列来自 e2e fixture：用已发布的 `dsh-mnemon@0.5.31` 与 `dsh-mn
 
 ![在 DSH 0.2.1-rc.2 上从记忆空间的页面打开它：先是关闭说明，然后是 Provider 列表](./switch-on.gif)
 
-从记忆空间的页面打开它，会把后备注册换成记忆空间自己的设置，即来自另一个包的另一份实现，所以设置会重新挂载。前一次挂载把 Provider 列表以及 Host 是否找到 Mnemon CLI 存在 `host.retained` 中；后一次从这些内容开始，它的读取会合并进仍在进行的读取。`tests/client-component-fallback.spec.tsx` 在 DSH 的 `SlotCore` 中做了两次替换，一次在首次读取应答之后，一次在读取进行之中：OpenViking 卡片与 Native 卡片的状态都保持不变，没有出现加载中的状态，第二种情况下不发出自己的读取。
+从记忆空间的页面打开它，会把后备注册换成记忆空间自己的设置，即来自另一个包的另一份实现，所以设置会重新挂载。前一次挂载把 Provider 列表以及 Host 是否找到 Mnemon CLI 存在 `host.retained` 中；后一次从这些内容开始，它的读取会合并进在相同配置修订下仍在进行的读取。`tests/client-component-fallback.spec.tsx` 在 DSH 的 `SlotCore` 中做了两次替换，一次在首次读取应答之后，一次在读取进行之中：OpenViking 卡片与 Native 卡片的状态都保持不变，没有出现加载中的状态，第二种情况下不发出自己的读取。
 
-在 WebUI 中录制（英文，1280×800，DSH 0.2.1-rc.2 与 0.2.0-rc.2，本分支与 `main` 各录）：从记忆空间的页面先关闭再打开它，每个动画帧采样一次设置，统计页面发出的读取，并保存 Chrome 绘制的组件开关以下设置区域的每一帧。
+在 WebUI 中录制（在最后一次合并 `main` 之前，使用 DSH 0.2.1-rc.2 与 0.2.0-rc.2 的临时安装，英文，1280×800，本分支与 `main` 各录）：从记忆空间的页面先关闭再打开它，每个动画帧采样一次设置，统计页面发出的读取，并保存 Chrome 绘制的组件开关以下设置区域的每一帧。
 
 - 本分支在点击后 85 到 93 ms 显示后备注册的设置，155 到 244 ms 起显示记忆空间自己的设置；`main` 在约 90 ms 起显示唯一一套。两者的每个采样帧都有 8 行 Provider，Native 卡片也相同。
 - 每次运行中两者都发送两次 `provider-services` 与 `status-summary`：一次在设置首次显示时，一次在配置修订变化之后；替换没有增加读取。
@@ -87,7 +89,7 @@ WebUI 一列来自 e2e fixture：用已发布的 `dsh-mnemon@0.5.31` 与 `dsh-mn
 - **自行固定记忆空间版本的 profile：** 见上表。比本版本更新的记忆空间会像本版本一样用自己的设置替代后备，并以相同的名称读取后备存在 `host.retained` 中的内容。
 - **公开 SDK：** 只有上面列出的新增。移除的 `MnemonClient` 方法和删除的 `src/client` 文件从来不是公开入口。记忆空间的客户端入口新增 `MemorySpacesSettings` 与 `ProviderIcon`。
 - **peer 最低版本：** 记忆空间的设置使用 `dsh-mnemon/client` 的新导出。它在运行时检查这些导出，并在绘制时才读取，因此搭配较旧的 Starter 仍能工作，但发布 PR 应把它的 `dsh-mnemon` peer 最低版本提高到导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 的那一版。
-- **存储数据与 Host：** 没有任何设置、键、RPC 名称、载荷或工具发生变化；Host 未改动。`tests/client-component-host.spec.ts` 检查移走的设置发送的 RPC 名称与载荷、限定在页面的范围、合并的读取与保留的内容。
+- **存储数据与 Host：** 没有任何设置、键、RPC 名称、载荷或工具发生变化；Host 未改动。`tests/client-component-host.spec.ts` 检查移走的设置发送的 RPC 名称与载荷、限定在页面的范围、哪些读取会被合并与保留的内容；`tests/client-component-reads.spec.tsx` 检查配置改变后发起的测试或 Provider 列表读取会重新询问 Host 并显示其回答。
 - **样式：** 没有任何样式规则变化。移走的设置使用 `dsh-mnemon/client` 提供的配置页类名表，相应规则仍归 Starter 所有；对话框继续使用页面工具的样式。
 - **文案：** 较旧的 Starter 搭配本版本记忆空间时，自己的词典里仍有每个键；记忆空间优先读取自己的文案，在设置中则通过 DSH 的语言链读取。
 
@@ -103,4 +105,4 @@ WebUI 一列来自 e2e fixture：用已发布的 `dsh-mnemon@0.5.31` 与 `dsh-mn
 | `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` | 通过，用时 206 秒：17 个独立插件仓库与 18 个打包产物 |
 | `pnpm run release:intent`（基准：合并后的 `main`） | 通过：`dsh-mnemon` 与 `dsh-mnemon-source-memory-spaces` 的 changeset 覆盖 |
 
-新增测试：`tests/client-component-fallback.spec.tsx`（上表四行、在首次读取之后与之中的替换，以及构建好的记忆空间客户端搭配 0.5.31 的导出）；`tests/client-component-host.spec.ts`（`host` 借出和拒绝的内容、限定在页面的范围、合并的读取与保留的内容，以及 RPC 名称与载荷，随客户端方法一起从 `tests/client-api.spec.ts` 移来）；`tests/client-sidebar-css.spec.ts` 中的类名检查；记忆空间的 `tests/settings.spec.tsx`（字段在各处的绘制方式，包括两条凭据规则；语言链；它自己的设置基于借来的 `host` 工作；按 dsh-mnemon 版本决定是否注册）。`tests/client-settings.spec.tsx` 中原有的设置测试改为在 Starter 借出的 host 上渲染记忆空间的设置，断言不变，全部通过。
+新增测试：`tests/client-component-fallback.spec.tsx`（上表四行、在首次读取之后与之中的替换，以及构建好的记忆空间客户端搭配 0.5.31 的导出）；`tests/client-component-host.spec.ts`（`host` 借出和拒绝的内容、限定在页面的范围、哪些读取会被合并与保留的内容，以及 RPC 名称与载荷，随客户端方法一起从 `tests/client-api.spec.ts` 移来）；`tests/client-component-reads.spec.tsx`（更改 Endpoint 后的嵌入测试，以及更改存储范围后的 Provider 列表，在较早的读取仍在进行时都会重新询问 Host）；`tests/client-sidebar-css.spec.ts` 中的类名检查；记忆空间的 `tests/settings.spec.tsx`（字段在各处的绘制方式，包括两条凭据规则；语言链；它自己的设置基于借来的 `host` 工作；按 dsh-mnemon 版本决定是否注册）。`tests/client-settings.spec.tsx` 中原有的设置测试改为在 Starter 借出的 host 上渲染记忆空间的设置，断言不变，全部通过。
