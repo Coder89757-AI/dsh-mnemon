@@ -234,6 +234,41 @@ describe('conversation interaction surfaces', () => {
     unsubscribe()
   })
 
+  it('names and opens every memory tool chip as it always did', async () => {
+    const expected: Record<string, [string, string]> = {
+      mnemon_view_route: ['turnTail.tool.viewRoute', 'memory-spaces/spaces'],
+      mnemon_view_action: ['turnTail.tool.viewAction', 'memory-spaces/spaces'],
+      mnemon_memory_bodies: ['turnTail.tool.spaces', 'memory-spaces/spaces'],
+      mnemon_recall: ['turnTail.tool.recall', 'memory-spaces/explore'],
+      mnemon_related: ['turnTail.tool.related', 'memory-spaces/explore'],
+      mnemon_status: ['turnTail.tool.status', 'status'],
+      mnemon_document_search: ['turnTail.tool.documentSearch', 'documents/library'],
+      mnemon_document_create: ['turnTail.tool.documentCreate', 'documents/library'],
+      mnemon_document_manage: ['turnTail.tool.documentManage', 'documents/library'],
+      mnemon_runtime_memory: ['turnTail.tool.runtime', 'runtime/entries'],
+      mnemon_remember: ['turnTail.tool.remember', 'memory-spaces/spaces'],
+      mnemon_link: ['turnTail.tool.link', 'memory-spaces/spaces'],
+      mnemon_forget: ['turnTail.tool.forget', 'memory-spaces/spaces'],
+      mnemon_memory_body_create: ['turnTail.tool.spaceCreate', 'memory-spaces/spaces'],
+      mnemon_memory_body_update: ['turnTail.tool.spaceUpdate', 'memory-spaces/spaces'],
+      mnemon_memory_body_merge: ['turnTail.tool.spaceMerge', 'memory-spaces/spaces'],
+      // Another tool keeps its own name.
+      mnemon_notes_digest: ['mnemon_notes_digest', 'memory-spaces/spaces'],
+    }
+    const names = Object.keys(expected)
+    const rpcCall = vi.fn(async () => ({ ok: true as const, value: { cursor: 12, activities: [{
+      turn: 2, count: names.length, names, recalls: 0, writes: 0, documentSearches: 0, inspections: 0, failures: 0, retrieved: [], writebacks: [],
+    }] } }))
+    const received: string[] = []
+    const unsubscribe = subscribeMnemonAnchor('session-a', anchor => received.push(anchor.page))
+    render(<MnemonTurnTail turn={{ turn: 2, status: 'closed' }} seq={12} openFile={vi.fn()} sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as ClientConnectionHandle} localeRuntime={localeRuntime} t={translate as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: /turnTail\.label/ }))
+    const chips = screen.getAllByRole('button', { name: 'turnTail.openTool' })
+    for (const chip of chips) fireEvent.click(chip)
+    expect(Object.fromEntries(chips.map((chip, index) => [names[index], [chip.textContent, received[index]]]))).toEqual(expected)
+    unsubscribe()
+  })
+
   it('shows at most three items per tool and counts the rest', async () => {
     const items = Array.from({ length: 5 }, (_, index) => ({ id: `doc-${index}`, title: `Document ${index}` }))
     const retrieved = [{ callId: 'read', toolName: 'mnemon_document_search', operationId: 'search', sourceTypeId: 'documents', items }]
