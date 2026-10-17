@@ -188,9 +188,8 @@ function fixtureRequest(wire) {
 const model = createServer(async (request, response) => {
   let input = ''
   for await (const chunk of request) input += chunk
-  console.log('Fixture model request: ' + ++modelRequests
-    + (logModelRequests ? ' ' + JSON.stringify(describeModelRequest(input === '' ? {} : JSON.parse(input))) : ''))
   const wire = input === '' ? {} : JSON.parse(input)
+  console.log('Fixture model request: ' + ++modelRequests + (logModelRequests ? ' ' + JSON.stringify(describeModelRequest(wire)) : ''))
   const reviewPersona = reviewFailure ? fixtureRequest(wire).messages
     .filter(message => message.role === 'system').map(message => message.content).join('\n') : ''
   if (/Completion protocol: call `mnemon_subagent_result(?:_[^`]+)?`/u.test(reviewPersona)) {
