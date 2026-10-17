@@ -1,0 +1,48 @@
+# 在 DSH 0.2.1 上采集的 v0.5.32 WebUI 图集
+
+[English](./README.md)
+
+记录于 2026-10-17（Asia/Shanghai）。文档使用的图集 [webui-v0.5.19](../../assets/webui-v0.5.19/README.md) 于 2026-09-28 在 DSH 0.1.7-rc.2 上采集，而 dsh-mnemon 已不再支持这个版本；DSH 0.2 也改变了插件周围的界面：侧边栏、插件页与可组合记忆的页面。本次改动在 DSH 0.2.1-rc.2 上由真实的 DeepSeek 模型作答，重新采集同样的流程，得到 [webui-v0.5.32](../../assets/webui-v0.5.32/README.md)（以将发布它的版本命名），并让当前文档改用它。发布说明与 PR 记录仍链接 v0.5.19 图集，它作为带日期的记录保留。代码没有改动；changeset 针对随 `dsh-mnemon` 一起发布到 npm 的两份 README。
+
+## 图集内容
+
+- 每种语言五段录制（召回、存入、纠正、记忆系统、插件），均为 MP4，其中四段另有 GIF；以及 27 张截图：24 张桌面、3 张窄屏。共 72 个文件、21.8 MB，v0.5.19 为 68 个文件、17.7 MB。
+- 流程与截图名称沿用 v0.5.19，因此链接只需改目录。新增两张截图：`chat-save-target`，即“保存到”菜单；`plugins-list`，即 DSH 的插件页，以 1280 × 858 截取，页面标题与可组合记忆一行都完整可见。存入记忆的录制多了第四段，用于展示“保存到”菜单。
+- [图集 README](../../assets/webui-v0.5.32/README.md#what-changed-since-v0519--与-v0519-相比的变化) 列出与 v0.5.19 相比的变化；manifest 记录了每个文件的视口、大小、时长与 SHA-256，以及每一轮读到和写入的内容。
+
+## 采集方式
+
+- 代码修订 `64933532`：本分支合入 `origin/main`（`1fd64eaf`）后的提交，以 Node 24.19.0 与 pnpm 10.13.1 构建，由固定的 DSH 0.2.1-rc.2 提供 WebUI，Mnemon CLI 0.2.10，通过 DevTools 协议驱动的无头 Chrome 155 以 1280 × 800 与 390 × 844、2 倍像素、浅色界面采集。
+- 每种语言在全新的 `node scripts/serve-e2e.mjs --docs-demo --live-model`（英文为 `--docs-demo=en`）上完整走一遍。DeepSeek 密钥只通过该进程的环境变量传入，不出现在任何文件、日志或图像中。与默认安装一样不开启嵌入，因此每次存入都会提示这条记忆暂时没有向量；图集 README 写明了这一点。
+- 驱动 WebUI、录制屏幕与组装图集的脚本与 v0.5.19 一样不放进仓库。截图沿用 v0.5.19 的 JPEG 质量（相同的量化表），MP4 为 CRF 27，GIF 为 880 像素、8 fps；画面中出现的唯一路径是夹具的临时目录。
+
+## 取舍
+
+每条回复、存入记忆的候选内容与回执、每个 Agent 回答都逐一读过，每段录制都抽帧检查。英文采用第一遍。中文共走了四遍，四遍中 Agent 查询拿到的证据完全相同：提到 ClickHouse 的五条记忆中的四条，相关度都是 0.58，不含 9 月 12 日的事故，因此回答说证据中没有事故记录。在第三遍的夹具上，随后用同一问题直接检索，返回的是另外四条；再做一次 Agent 查询，就引用了这次事故：一次召回返回哪四条，每次调用都可能不同。最终采用中文第一遍，它的其余各轮都合格；图集 README 与 manifest 写明了这条回答依据的证据。
+
+在此修订之前的试采集发现了录制工具的两个问题，都已在这几遍之前修好：拼接录制片段时，片段末尾的静止画面（例如存入记忆的回执）会被截掉；每段 MP4 都比最后一帧多出 1.6 秒。
+
+## 采集中发现的问题
+
+三个会改变用户所见内容的行为作为第 12 至 14 项加入[计划](../../plans/review-gaps-2026-10.md)（英文），并加入中英文[路线图](../../zh-CN/roadmap.md#下一步2026-年-10-月审查发现的问题)：
+
+- 关闭嵌入且没有嵌入服务时，每次存入的回执都写着“嵌入没有成功”，在默认安装上读起来像失败；
+- 被替换的运行时记忆条目显示创建时间，从不显示更新时间（`plugins/dsh-mnemon-source-runtime/src/client/pages.tsx:114` 与 `:131`）；
+- 在 390 像素宽度下，英文界面中当前的记忆系统标签可能位于屏幕之外，回合记忆栏的摘要和记忆空间卡片的计数会被截断。
+
+另外观察到、但未列入计划的：上文 Agent 查询的证据；Mnemon CLI 自动提取的实体，例如“2.4”“2.9”“SDK”以及来自 Next.js 的“Next”，出现在实体列表与图谱中；任务 Agent 保留已被取代的记忆，并把新记忆与它关联，这是有意的设计（#148）；以及中文回复进行中，模型的思考行会短暂以英文显示。
+
+## 文档改动
+
+- `README.md` 与 `README.zh-CN.md`：录制与图集链接，以及存入与插件两段录制的替代文本。
+- `docs/assets/README.md`：新增 v0.5.32 一行，v0.5.19 改为带日期的记录。
+- `docs/{en,zh-CN}`：`README.md`、`development/README.md`，入门、记忆 Provider、运维与界面指南，以及兼容性与配置参考。界面指南加入两张新截图，说明纠正时的两次写入、回执中的向量提示，并按 DSH 版本说明插件页；组件列表不再保留 v0.5.19 关于分组条目的说明。已在宿主上核对：DSH 0.2.1-rc.2 列出九个组件，没有分组条目；DSH 0.2.0-rc.2 还会列出 `dsh-mnemon/bundle`，显示为已关闭。
+- `docs/plans/review-gaps-2026-10.md` 与 `docs/{en,zh-CN}/roadmap.md`：第 12 至 14 项。
+
+## 检查
+
+- `node scripts/verify-docs.mjs`：4,756 个本地链接与 352 个 Markdown 锚点、双语路径和官方插件覆盖全部通过。
+- `pnpm exec vitest run tests/docs.spec.mjs tests/package-locales.spec.mjs tests/changesets.spec.mjs`：3 个文件、39 项测试通过。
+- `node scripts/verify-package-contents.mjs`：64 个文件，打包 474,968 字节，解包 2,016,037 字节。
+- 以 `origin/main` 为基准的 `pnpm run release:intent`：changeset 覆盖 `dsh-mnemon`。
+- 新文件中没有 DeepSeek 密钥、WebUI token 或用户主目录路径，每张图像与每段录制也用 `strings` 扫描过。
