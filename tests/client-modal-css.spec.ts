@@ -1,16 +1,19 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const viewCss = readFileSync(new URL('../src/client/MnemonView.module.css', import.meta.url), 'utf8')
 const sidebarCss = readFileSync(new URL('../src/client/MnemonSidebarView.module.css', import.meta.url), 'utf8')
 const saveActionCss = readFileSync(new URL('../src/client/MnemonSaveAction.module.css', import.meta.url), 'utf8')
 const dialogSource = readFileSync(new URL('../src/client/MnemonDialog.tsx', import.meta.url), 'utf8')
-const viewSource = [
-  '../src/client/MnemonWorkbench.tsx',
-  '../plugins/dsh-mnemon-source-runtime/src/client/pages.tsx',
-  '../plugins/dsh-mnemon-source-documents/src/client/pages.tsx',
-  '../plugins/dsh-mnemon-source-memory-spaces/src/client/pages.tsx',
-].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n')
+// Every client source of the Starter and the shipped Sources, so a dialog added in a new module is checked too.
+const root = fileURLToPath(new URL('../', import.meta.url))
+const viewSource = ['src/client', ...['runtime', 'documents', 'memory-spaces'].map(group => `plugins/dsh-mnemon-source-${group}/src/client`)]
+  .flatMap(directory => readdirSync(join(root, directory), { recursive: true })
+    .filter(path => /\.tsx?$/u.test(String(path)))
+    .map(path => readFileSync(join(root, directory, String(path)), 'utf8')))
+  .join('\n')
 
 describe('responsive dialog layout invariants', () => {
   it('keeps the dialog body as the only scrollport and the action footer outside it', () => {
