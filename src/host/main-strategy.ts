@@ -1,10 +1,12 @@
-import type { ResolvedConfig } from './protocol.ts'
+import type { ResolvedConfig } from './config.ts'
 import type { MemoryViewPreferences } from './view-protocol.ts'
 
 // The main Strategy has two stored names: `memoryTopology.strategyId` in the
 // legacy topology config, and `memoryView.strategyTypeId`, the profile's plugin
-// choice, which wins. The Host applies the choice once, with withMainStrategy,
-// and reads the result only through mainStrategyTypeId.
+// choice, which wins. Plugin management applies the choice with
+// withMainStrategy wherever the Host resolves its config (the runtime graph and
+// each View request), and the Host reads the result through mainStrategyTypeId
+// to compose, to decide on idle review and for the View dashboard.
 
 /** The resolved config with the profile's main Strategy choice applied; without a choice the topology's id stays. */
 export function withMainStrategy(config: ResolvedConfig, view: Pick<MemoryViewPreferences, 'strategyTypeId'>): ResolvedConfig {
