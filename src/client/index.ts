@@ -352,7 +352,7 @@ export function apply(rawContext: unknown): void {
   // closed the Memory System the update ran from; reopen it, and Status
   // reopens the version dialog.
   ctx.effect(() => reopenAfterStarterUpdate(seats.workspace), 'dsh-mnemon: reopen after a Starter update')
-  // DSH 0.1.7 edits a plugin's configuration on its own page under Plugins;
+  // DSH edits a plugin's configuration on its own page under Plugins;
   // Settings keeps only the read-only plugin inventory. The whole Mnemon
   // configuration is the dsh-mnemon bundle's page, between its description
   // and its components.

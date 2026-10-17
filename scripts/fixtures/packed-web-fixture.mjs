@@ -41,8 +41,12 @@ export async function servePackedWebFixture(scenario) {
     })
   })
   const require = createRequire(join(profile, 'package.json'))
-  const version = JSON.parse(await readFile(require.resolve('@deepseek-ai/dsh/package.json'))).version
-  assert.equal(version, '0.1.7-rc.2', 'Use the exact official DSH 0.1.7-rc.2 profile')
+  // DSH's own compatibility check: the profile's DSH must be one the Starter states it supports.
+  const dshManifest = require.resolve('@deepseek-ai/dsh/package.json')
+  const version = JSON.parse(await readFile(dshManifest)).version
+  const { evaluatePluginCompatibility } = await import(pathToFileURL(createRequire(dshManifest).resolve('@deepseek-ai/dsh-app-boot')).href)
+  const starterManifest = JSON.parse(await readFile(new URL('../../package.json', import.meta.url)))
+  assert.equal(evaluatePluginCompatibility(starterManifest, {}, version), undefined, `Use an official DSH profile the Starter supports (${starterManifest.engines.dsh}); this one runs DSH ${version}`)
   const packages = new Map()
   for (const filename of await readdir(artifacts)) {
     if (!filename.endsWith('.tgz')) continue

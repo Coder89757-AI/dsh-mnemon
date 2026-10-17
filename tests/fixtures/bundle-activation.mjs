@@ -102,8 +102,8 @@ export async function apply(ctx, config) {
       if (Manager) {
         context.provide('hmr', {
           runExclusive: operation => operation(),
-          // From DSH 0.2.1-alpha.3 the manager applies a change through HMR, which recomposes the profile;
-          // with no changed module to replace, that is app-boot's recomposition. Earlier managers recompose themselves.
+          // DSH 0.2.1's manager applies a change through HMR, which recomposes the profile; with no changed
+          // module to replace, that is app-boot's recomposition. DSH 0.2.0's manager recomposes itself.
           reconcileProfile: async requiredIds => ({ pending: [], ...await app.recomposeProfile(ctx, patches(), 'dsh', { requiredIds }) }),
         })
         await context.plugin(Manager).await()
@@ -158,7 +158,7 @@ export async function apply(ctx, config) {
     const components = (await manager.listBundles()).find(bundle => bundle.name === 'dsh-mnemon').rows
     const plugins = await manager.listPlugins()
     // Native groups are lifecycle containers, deliberately absent from the
-    // manager's inventory. Strict mode reproduces rc.2's bundle-list mismatch
+    // manager's inventory. Strict mode reproduces DSH 0.2.0's bundle-list mismatch
     // without making that upstream defect an accepted lifecycle contract.
     const groups = new Set([...ctx.loader.entries()].filter(entry => entry.options.group).map(entry => entry.options.id))
     const pluginComponents = components.filter(row => !groups.has(row.rowId))

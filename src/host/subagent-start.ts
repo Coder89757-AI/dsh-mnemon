@@ -23,11 +23,11 @@ const composingChild = new AsyncLocalStorage<symbol>()
 
 /**
  * How a provider gives a delegated child its own tools and persona:
- * - `request`: up to DSH 0.2.1-alpha.2 the start request carries both, and DSH
- *   applies them in the child's own scope;
- * - `publication`: DSH 0.2.1-alpha.3 dropped both from the request and from
- *   every provider, and a child joins its parent's composition, so Mnemon
- *   applies them in the child's scope itself while DSH publishes the child.
+ * - `request`: on DSH 0.2.0 the start request carries both, and DSH applies
+ *   them in the child's own scope;
+ * - `publication`: DSH 0.2.1 takes neither, in the request or from any
+ *   provider, and a child joins its parent's composition, so Mnemon applies
+ *   them in the child's scope itself while DSH publishes the child.
  *   Only for a provider whose children DSH creates in this process: one that
  *   prepares local activations, as DSH's spawn and fork do;
  * - undefined: neither, so the provider is not used.
@@ -41,9 +41,9 @@ export function childComposition(subagents: Pick<HostSubagentsService, 'startAct
 }
 
 /**
- * Start one delegated child through the subagent API the running DSH offers.
- * DSH 0.2.1-alpha.2 replaced the one-shot `start` with managed activations
- * (#356); 0.2.0 has only `start`. An activation keeps a run's contract:
+ * Start one delegated child through the subagent API the running DSH offers:
+ * DSH 0.2.0 runs it with the one-shot `start`, DSH 0.2.1 as a managed
+ * activation (#356). An activation keeps a run's contract:
  * - caller delivery returns the result to Mnemon, so the parent conversation
  *   gets no completion notice;
  * - its signal covers only startup, so a later abort disposes the child, which
@@ -51,9 +51,9 @@ export function childComposition(subagents: Pick<HostSubagentsService, 'startAct
  * - the live child in the Agent registry stands in for `localAgent`.
  *
  * The child's tools and persona stay in the request where the provider takes
- * them. Where it does not, from DSH 0.2.1-alpha.3, they are registered in the
- * child's own scope as DSH publishes it, after DSH has composed it and before
- * its first step, which needs `publications`.
+ * them, as on DSH 0.2.0. On DSH 0.2.1 they are registered in the child's own
+ * scope as DSH publishes it, after DSH has composed it and before its first
+ * step, which needs `publications`.
  */
 export async function startSubagent(
   subagents: HostSubagentsService,
@@ -107,8 +107,8 @@ async function startOnHost(
 }
 
 /**
- * Register the child's persona and tool filter in its own scope, as DSH
- * 0.2.1-alpha.3 still does for a child an earlier release recorded with them:
+ * Register the child's persona and tool filter in its own scope, as DSH 0.2.1
+ * still does for a child an earlier release recorded with them:
  * the persona replaces the deployment persona and the filter narrows the tools
  * the child shares with its parent, for that child alone. Its scope releases
  * both with it.

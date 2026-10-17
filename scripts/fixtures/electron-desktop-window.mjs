@@ -3,18 +3,18 @@
 // the official shell registers, and the shell proxies every request to the Host on loopback.
 //   <electron> scripts/fixtures/electron-desktop-window.mjs [--remote-debugging-port=<port>]
 //   DSH_HOST_URL   the launch URL a Host prints, with its one-time token
-//   DSH_TRANSPORT  none (DSH 0.1.7 Desktop, the default) or owns-host (DSH 0.2 Desktop)
+//   DSH_TRANSPORT  owns-host (what DSH Desktop declares, the default) or none (a shell that declares nothing)
 //   DSH_OFFSCREEN  1 renders without showing a window, for DevTools-protocol drivers
 //   DSH_LANG       the interface language, such as zh-CN; the system language otherwise
-// A 0.1.7 window cannot open DSH's WebSocket stream through the scheme, so DSH shows it
-// reconnecting; Mnemon's channels are plain HTTP requests and do not depend on it.
+// A window without a declared stream cannot open DSH's WebSocket stream through the scheme, so DSH
+// shows it reconnecting; Mnemon's channels are plain HTTP requests and do not depend on it.
 import { app, BrowserWindow, protocol, session } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const hostUrl = new URL(process.env.DSH_HOST_URL)
 const base = hostUrl.origin
-const transport = process.env.DSH_TRANSPORT ?? 'none'
+const transport = process.env.DSH_TRANSPORT ?? 'owns-host'
 protocol.registerSchemesAsPrivileged([{ scheme: 'dsh-app', privileges: { standard: true, secure: true, corsEnabled: true, supportFetchAPI: true, stream: true, codeCache: true } }])
 if (process.env.DSH_LANG) app.commandLine.appendSwitch('lang', process.env.DSH_LANG)
 
@@ -32,7 +32,7 @@ const cookie = () => [...jar].map(([name, value]) => `${name}=${value}`).join(';
 app.whenReady().then(async () => {
   app.dock?.hide()
   keep(await fetch(hostUrl, { redirect: 'manual' }))
-  // A 0.2 shell points the WebSocket stream at the Host itself, with the session and no page Origin.
+  // DSH Desktop points the WebSocket stream at the Host itself, with the session and no page Origin.
   for (const [name, value] of jar) await session.defaultSession.cookies.set({ url: base, name, value })
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${base.replace('http', 'ws')}/*`, `${base}/*`] }, (details, done) => {
     delete details.requestHeaders.Origin

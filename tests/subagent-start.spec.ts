@@ -17,7 +17,16 @@ function request(signal = new AbortController().signal) {
   }
 }
 
-/** DSH 0.2.1-alpha.2: `start` is gone and every child is a managed activation. */
+/** A task as Mnemon starts it on DSH 0.2.1, its persona and tool filter already taken into the child's own scope. */
+function task(signal = new AbortController().signal) {
+  const { toolFilter: _toolFilter, persona: _persona, ...rest } = request(signal)
+  return rest
+}
+
+/** DSH 0.2.0's spawn provider, which takes the persona and tool filter in the start request. */
+const dsh020Provider = () => ({ capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true }, prepareContinuable: () => {} })
+
+/** DSH 0.2.1: `start` is gone and every child is a managed activation. */
 function activations() {
   const result = Promise.withResolvers<HostSubagentResult>()
   const dispose = vi.fn(async () => {})
@@ -31,7 +40,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
   it('starts a caller-delivered activation where DSH has replaced start', async () => {
     const host = activations()
     const child = agent('child-1')
-    const input = request()
+    const input = task()
     const agents = { get: vi.fn((id: string) => id === 'child-1' ? child : undefined), isOwnedBy: vi.fn((id: string, owner: HostAgent) => id === 'child-1' && owner === input.parent) }
 
     const run = await startSubagent(host.subagents, agents, 'spawn', input)
@@ -44,8 +53,6 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
         parent: input.parent,
         agentOptions: { maxTokens: 8_192 },
         maxDepth: 1,
-        toolFilter: { allow: ['mnemon_subagent_result'] },
-        persona: 'You are the local USER.md compactor.',
       },
       signal: input.signal,
       delivery: 'caller',
@@ -59,10 +66,10 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
   })
 
   it('keeps the child it found once the activation releases it before settling', async () => {
-    // As on DSH 0.2.1-alpha.2: the child is resident when startActivation resolves and leaves the
+    // As on DSH 0.2.1: the child is resident when startActivation resolves and leaves the
     // registry before the result settles, at least one model turn later.
     const host = activations()
-    const input = request()
+    const input = task()
     const live = new Map([['child-1', agent('child-1')]])
     const agents = { get: (id: string) => live.get(id), isOwnedBy: () => true }
     const run = await startSubagent(host.subagents, agents, 'spawn', input)
@@ -80,7 +87,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
     const start = vi.fn()
     const subagents = { ...host.subagents, start } as HostSubagentsService
 
-    await startSubagent(subagents, undefined, 'spawn', request())
+    await startSubagent(subagents, undefined, 'spawn', task())
 
     expect(host.startActivation).toHaveBeenCalledOnce()
     expect(start).not.toHaveBeenCalled()
@@ -90,7 +97,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
     const host = activations()
     const agents = { get: () => { throw new Error('registry unavailable') } }
 
-    await expect(startSubagent(host.subagents, agents, 'spawn', request())).rejects.toThrow('registry unavailable')
+    await expect(startSubagent(host.subagents, agents, 'spawn', task())).rejects.toThrow('registry unavailable')
     expect(host.dispose).toHaveBeenCalledOnce()
   })
 
@@ -98,7 +105,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
     const host = activations()
     const agents = { get: () => agent('child-1'), isOwnedBy: () => false }
 
-    const run = await startSubagent(host.subagents, agents, 'spawn', request())
+    const run = await startSubagent(host.subagents, agents, 'spawn', task())
 
     expect(run.localAgent).toBeUndefined()
     expect('localAgent' in run).toBe(false)
@@ -107,7 +114,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
   it('disposes a running activation when the caller aborts, as a one-shot run stopped', async () => {
     const host = activations()
     const controller = new AbortController()
-    const run = await startSubagent(host.subagents, undefined, 'spawn', request(controller.signal))
+    const run = await startSubagent(host.subagents, undefined, 'spawn', task(controller.signal))
     expect(host.dispose).not.toHaveBeenCalled()
 
     controller.abort()
@@ -125,7 +132,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
       return { childId: 'child-1', result: host.result.promise, dispose: host.dispose }
     })
 
-    await startSubagent(host.subagents, undefined, 'spawn', request(controller.signal))
+    await startSubagent(host.subagents, undefined, 'spawn', task(controller.signal))
 
     expect(host.dispose).toHaveBeenCalledOnce()
   })
@@ -133,7 +140,7 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
   it('leaves a settled activation alone when the caller aborts later', async () => {
     const host = activations()
     const controller = new AbortController()
-    const run = await startSubagent(host.subagents, undefined, 'spawn', request(controller.signal))
+    const run = await startSubagent(host.subagents, undefined, 'spawn', task(controller.signal))
     host.result.resolve({ output: [], stopReason: 'completed' })
     await run.result
 
@@ -142,14 +149,16 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
     expect(host.dispose).not.toHaveBeenCalled()
   })
 
-  it('starts a one-shot run unchanged on DSH 0.2.0', async () => {
+  it('starts a one-shot run unchanged on DSH 0.2.0, whose provider takes the persona and tool filter in the request', async () => {
     const run = { id: 'child-1', result: Promise.resolve({ output: [], stopReason: 'completed' }), dispose: vi.fn(async () => {}) }
     const start = vi.fn(async () => run)
-    const subagents = { list: () => ['spawn'], getProvider: () => undefined, start } as unknown as HostSubagentsService
+    const subagents = { list: () => ['spawn'], getProvider: dsh020Provider, start } as unknown as HostSubagentsService
+    const on = vi.fn()
     const input = request()
 
-    await expect(startSubagent(subagents, { get: () => agent('child-1') }, 'spawn', input)).resolves.toBe(run)
+    await expect(startSubagent(subagents, { get: () => agent('child-1') }, 'spawn', input, { on })).resolves.toBe(run)
     expect(start).toHaveBeenCalledWith('spawn', input)
+    expect(on).not.toHaveBeenCalled()
   })
 
   it('says why no memory subagent can start on a DSH with neither API', async () => {
@@ -159,13 +168,13 @@ describe('Starting a delegated child on the running DSH (#356)', () => {
   })
 })
 
-/** DSH 0.2.1-alpha.3: no provider takes a persona or tool filter, and a child joins its parent's composition. */
-const ALPHA3_CAPABILITIES = { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true }
+/** DSH 0.2.1: no provider takes a persona or tool filter, and a child joins its parent's composition. */
+const DSH_021_CAPABILITIES = { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true }
 
 type CreatedListener = (payload: { agent: HostAgent }) => unknown
 
-/** DSH's spawn provider on 0.2.1-alpha.3: it prepares local activations, so DSH creates its children in this process. */
-const localProvider = () => ({ capabilities: ALPHA3_CAPABILITIES, prepareContinuable: () => {} })
+/** DSH 0.2.1's spawn provider: it prepares local activations, so DSH creates its children in this process. */
+const localProvider = () => ({ capabilities: DSH_021_CAPABILITIES, prepareContinuable: () => {} })
 
 function composingHost({ publish = true, restrict = true, stranger }: { publish?: boolean; restrict?: boolean; stranger?: HostAgent } = {}) {
   const listeners = new Set<CreatedListener>()
@@ -203,10 +212,10 @@ function composingHost({ publish = true, restrict = true, stranger }: { publish?
 describe('Composing a delegated child where DSH no longer takes its persona and tools', () => {
   it('tells which providers take the composition in the request and which leave it to Mnemon', () => {
     const activations = { startActivation: vi.fn() } as unknown as HostSubagentsService
-    expect(childComposition(activations, { capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true } })).toBe('request')
+    expect(childComposition({} as HostSubagentsService, dsh020Provider())).toBe('request')
     expect(childComposition(activations, localProvider())).toBe('publication')
     // A provider that runs its children elsewhere has nothing for Mnemon to compose here.
-    expect(childComposition(activations, { capabilities: ALPHA3_CAPABILITIES })).toBeUndefined()
+    expect(childComposition(activations, { capabilities: DSH_021_CAPABILITIES })).toBeUndefined()
     // DSH 0.2.0 has no activations: a provider omitting both capabilities is refused there as before.
     expect(childComposition({} as HostSubagentsService, localProvider())).toBeUndefined()
     expect(childComposition(activations, { capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false } })).toBeUndefined()
@@ -266,7 +275,7 @@ describe('Composing a delegated child where DSH no longer takes its persona and 
     expect(failing.dispose).toHaveBeenCalledOnce()
   })
 
-  it('gives the child its persona and tool filter in its own scope as DSH 0.2.1-alpha.3 publishes it', async () => {
+  it('gives the child its persona and tool filter in its own scope as DSH 0.2.1 publishes it', async () => {
     const host = composingHost()
     const input = request()
 
@@ -295,17 +304,6 @@ describe('Composing a delegated child where DSH no longer takes its persona and 
     expect(stranger.ctx.systemPrompt!.section).not.toHaveBeenCalled()
     expect(stranger.ctx.tools!.restrict).not.toHaveBeenCalled()
     expect(host.restrictions).toHaveLength(1)
-  })
-
-  it('keeps the persona and tool filter in the request where the provider takes them', async () => {
-    const host = composingHost()
-    const subagents = { ...host.subagents, getProvider: () => ({ capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true }, prepareContinuable: () => {} }) } as HostSubagentsService
-
-    await startSubagent(subagents, host.agents, 'spawn', request(), host.publications)
-
-    expect(host.startActivation.mock.calls[0]![0].request).toMatchObject({ toolFilter: { allow: ['mnemon_subagent_result'] }, persona: 'You are the local USER.md compactor.' })
-    expect(host.publications.on).not.toHaveBeenCalled()
-    expect(host.sections).toEqual([])
   })
 
   it('disposes and refuses a child it did not see created', async () => {

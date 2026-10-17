@@ -87,7 +87,7 @@ describe('DSH Connection contract', () => {
     }
 
     const endpoint = 'dshMnemon/read'
-    // DSH 0.2.1-alpha.3 dispatches a call for the Peer it speaks for, as the browser's owner Peer; earlier releases take none.
+    // DSH 0.2.1 dispatches a call for the Peer it speaks for, as the browser's owner Peer; DSH 0.2.0 takes none.
     const peer = (connection as unknown as { createPeer?(options: object): unknown }).createPeer?.({ principal: { kind: 'owner' }, interactions: 'none' })
     const handler = connection.createSharedFetchHandler('/api') as unknown as { fetch(request: Request, peer?: unknown): Promise<Response> }
     const response = await handler.fetch(new Request(`http://127.0.0.1/api/${endpoint}`, {

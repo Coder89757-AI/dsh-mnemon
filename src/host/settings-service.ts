@@ -234,7 +234,7 @@ export class ProfileMnemonSettings implements HostSettingsService {
     const profile = this.ctx.get('profileContext') as { home?: string } | undefined
     const entry = this.owner?.entry
     if (!this.writable || profile?.home === undefined || entry === undefined) return
-    // DSH 0.1.7 exposes no completion event for its asynchronous legacy import.
+    // DSH exposes no completion event for its asynchronous import of the removed settings.yaml.
     // Never race that writer: recover its retained backup on the next startup.
     if (this.nativeImportPending) {
       console.warn('dsh-mnemon: DSH is importing settings.yaml; restart once to recover retained Mnemon UI and plugin preferences')
