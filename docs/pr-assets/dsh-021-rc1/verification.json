@@ -1,6 +1,6 @@
 {
   "date": "2026-10-17",
-  "revision": "branch claude/dsh-021-alpha3 at cd999526, on main 7b7efa49 (v0.5.30 and #354); the commit after it changes only the error for a missing subagent provider, documentation and this record",
+  "revision": "branch claude/dsh-021-alpha3 at cd999526, on main 7b7efa49 (v0.5.30 and #354); the commits after it change only the error for a missing subagent provider, the upgrade base of the packed-artifact check, documentation and this record",
   "environment": {
     "os": "macOS 15.6 arm64",
     "node": "24.19.0",
@@ -32,11 +32,13 @@
       "typecheck": "passed",
       "builds": "root and every plugin passed",
       "plugins": "type checks and tests passed",
-      "rootTests": "140 files: 2,040 passed, 6 skipped"
+      "rootTests": "140 files: 2,036 passed, 6 skipped",
+      "verify": "pnpm run verify passed",
+      "verifyPlugins": "17 independent plugin repositories and 18 packed artifacts; the packed Starter installed in a real DSH 0.2.1-rc.1 as an upgrade from dsh-mnemon@0.5.29 (the upgrade base moved from 0.5.15, which DSH 0.2.1-rc.1 refuses)"
     },
     "installed_0.2.0-rc.2": {
       "command": "DSH_HOST_ROOT=<prefix>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed-dsh",
-      "rootTests": "140 files: 2,040 passed, 6 skipped; no spec excluded or adapted",
+      "rootTests": "140 files: 2,036 passed, 6 skipped; no spec excluded or adapted",
       "firstRun": "19 real-host tests failed with 'prompt context \"working-directory:current\" order must be a finite number': under pnpm run, NODE_PATH resolved this repository's DSH 0.2.1 working-directory package from the installed 0.2.0; loadWorkingDirectory now decides by the host's version"
     },
     "releaseIntent": "Verified changeset coverage for dsh-mnemon, dsh-mnemon-source-memory-spaces"

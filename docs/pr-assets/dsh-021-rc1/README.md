@@ -4,7 +4,7 @@
 
 DSH 0.2.1-rc.1 (npm `next`, published 2026-10-17) is the first release candidate of DSH 0.2.1; DSH 0.2.0-rc.2 stays npm `latest`. This change makes those two releases, and the 0.2.0 and 0.2.x releases after them, the hosts dsh-mnemon supports. It moves development to DSH 0.2.1-rc.1, removes what only DSH 0.1.7, 0.2.0-rc.1 and the 0.2.1 alphas needed, and records what was run on both releases.
 
-Tested revision: this branch at `cd999526`, on main `7b7efa49` (v0.5.30 and #354). The commit after it changes only the error for a missing subagent provider, the documentation and this record. The runs took place on 2026-10-17 (Asia/Shanghai):
+Tested revision: this branch at `cd999526`, on main `7b7efa49` (v0.5.30 and #354). The commits after it change only the error for a missing subagent provider, the upgrade base of the packed-artifact check, the documentation and this record. The runs took place on 2026-10-17 (Asia/Shanghai):
 - macOS 15.6 arm64, Node 24.19.0 and pnpm 10.13.1, the CI version;
 - headless Chrome, zh-CN, light;
 - DSH 0.2.1-rc.1 and 0.2.0-rc.2, each in an isolated npm prefix;
@@ -45,8 +45,8 @@ What DSH 0.2.1-rc.1 changes for a plugin, compared with 0.2.1-alpha.3:
 
 | Check | DSH 0.2.1-rc.1 | DSH 0.2.0-rc.2 |
 |---|---|---|
-| Type checks, builds, plugin type checks and plugin tests | passed (the pinned baseline) | — |
-| Root tests | 2,040 passed, 6 skipped (140 files), pinned | 2,040 passed, 6 skipped (140 files), installed, with no excluded or adapted spec |
+| `pnpm run verify` and `pnpm run verify:plugins` (17 plugin repositories, 18 packed artifacts, the packed Starter upgraded from 0.5.29 in a real DSH) | passed (the pinned baseline) | — |
+| Root tests | 2,036 passed, 6 skipped (140 files), pinned | 2,036 passed, 6 skipped (140 files), installed, with no excluded or adapted spec |
 | Headless, with the default composition and with the three optional Strategies | passed | passed |
 | Starter activation contracts: cold start, isolated, another bundle stopped since startup | passed | passed |
 | `--check-declared-rows` | passed | fails on the grouping row, the known listing issue |
