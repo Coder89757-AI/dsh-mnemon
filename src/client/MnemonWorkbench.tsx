@@ -13,7 +13,7 @@ import { VersionDialog } from "./VersionDialog.tsx"
 import { clearStarterUpdate, pendingStarterUpdate } from './starter-update.ts'
 import { translateZh, type MnemonKey, type MnemonTranslate } from "./locales.ts"
 
-import { ProviderIcon } from "./memory-spaces-client.ts"
+import { NATIVE_PROVIDER_ID, ProviderIcon } from "./memory-spaces-client.ts"
 
 import { MNEMON_SOURCE_CONFIGURATION_MUTATE, MNEMON_SOURCE_CONFIGURATION_READ, MNEMON_SOURCE_PAGE_SLOT, type MemorySourcePageDirectory, type MemorySourcePageEntry } from "./source-pages.tsx"
 import type { MnemonSourceManagementClient } from "./dsh-context.ts"
@@ -437,7 +437,7 @@ function NativeProviderRow({ status }: { status: StatusView }): JSX.Element {
     : failed.map(body => `${body.name}: ${body.error ?? t('status.engineUnavailable')}`).join('; ')
   const version = status.version === undefined ? t('status.versionWaiting') : `Mnemon ${status.version}`
   return <article aria-label={t('status.nativeAria')} data-status={state} data-native="">
-    <ProviderIcon providerId="mnemon-native" icon={{ kind: 'brand', value: 'mnemon' }} className={css.providerHealthMark} />
+    <ProviderIcon providerId={NATIVE_PROVIDER_ID} icon={{ kind: 'brand', value: 'mnemon' }} className={css.providerHealthMark} />
     <div className={css.providerHealthCopy}>
       <strong>{t('config.nativeName')}</strong>
       <small>{t(`status.providerState.${state}` as MnemonKey)} · <span>{version}</span></small>

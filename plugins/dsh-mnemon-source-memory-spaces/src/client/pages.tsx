@@ -2,7 +2,7 @@ import { css, sidebarCss, useT } from './presentation.ts'
 import type { JSX } from 'react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { CATEGORIES, normalizeEntityKey, type Category, type EntityMemoriesView, type EntityRelatedView, type EntityView, type Insight, type MemorySpaceCatalog, type MemorySpaceMetadataUpdate, type MemorySpaceProvider, type MemorySpaceRediscovery, type MemorySpaceView, type MemoryGraphNode, type MemoryGraphSnapshot, type MemoryPlacementCapability, type MemoryPlacementPreference, type MemoryListView, type MemoryProviderConfigField, type MemoryProviderConnection, type MemoryProviderDescriptor, type MemoryProviderId, type MemoryReadSource } from '../contracts.ts'
+import { CATEGORIES, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH, NATIVE_PROVIDER_ID, normalizeEntityKey, type Category, type EntityMemoriesView, type EntityRelatedView, type EntityView, type Insight, type MemorySpaceCatalog, type MemorySpaceMetadataUpdate, type MemorySpaceProvider, type MemorySpaceRediscovery, type MemorySpaceView, type MemoryGraphNode, type MemoryGraphSnapshot, type MemoryPlacementCapability, type MemoryPlacementPreference, type MemoryListView, type MemoryProviderConfigField, type MemoryProviderConnection, type MemoryProviderDescriptor, type MemoryProviderId, type MemoryReadSource } from '../contracts.ts'
 import type { MemorySpacesPageClient } from './api.ts'
 import { ProviderIcon } from './ProviderIcon.tsx'
 import { providerSummary } from './provider-presentation.ts'
@@ -651,7 +651,7 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
   const [creatingSpaceOpen, setCreatingSpaceOpen] = useState(false)
   const [spaceName, setSpaceName] = useState('')
   const [spaceDescription, setSpaceDescription] = useState('')
-  const [spaceProviderId, setSpaceProviderId] = useState<MemoryProviderId>('mnemon-native')
+  const [spaceProviderId, setSpaceProviderId] = useState<MemoryProviderId>(NATIVE_PROVIDER_ID)
   const [providerDrafts, setProviderDrafts] = useState<ProviderDrafts>({})
   const [catalogUnavailable, setCatalogUnavailable] = useState(false)
   const [editingSpace, setEditingSpace] = useState<string | null>(null)
@@ -963,16 +963,16 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
   const updateProviderDraft = (providerId: MemoryProviderId, key: string, value: string | number | boolean) => setProviderDrafts(current => ({ ...current, [providerId]: { ...(current[providerId] ?? {}), [key]: value } }))
   const placementReceipt = (body: MemorySpaceView) => body.placement === undefined ? null : <div className={css.placementReceipt} title={body.placement.reason}><span aria-hidden="true">✦</span><div><strong>{t(body.placement.decidedBy === 'llm' ? 'overview.placementByLlm' : 'overview.placementByRules')}</strong><small>{t('overview.placementConfidence', { confidence: t(`overview.confidence.${body.placement.confidence}`) })}</small><p>{body.placement.reason}</p></div></div>
   const spaceEditForm = (body: MemorySpaceView) => <form id={spaceEditFormId} className={css.bodyEdit} onSubmit={event => void saveEdit(event, body)}>
-    <label>{t('overview.editName')}<input aria-label={t('overview.editName')} value={editName} onChange={event => setEditName(event.target.value)} maxLength={100} required /></label>
-    <label>{t('overview.editDescription')}<textarea aria-label={t('overview.editDescription')} value={editDescription} onChange={event => setEditDescription(event.target.value)} rows={4} maxLength={1000} /></label>
+    <label>{t('overview.editName')}<input aria-label={t('overview.editName')} value={editName} onChange={event => setEditName(event.target.value)} maxLength={MEMORY_SPACE_NAME_MAX_LENGTH} required /></label>
+    <label>{t('overview.editDescription')}<textarea aria-label={t('overview.editDescription')} value={editDescription} onChange={event => setEditDescription(event.target.value)} rows={4} maxLength={MEMORY_SPACE_DESCRIPTION_MAX_LENGTH} /></label>
     {!nativeSpaceProvider(body.provider) && (() => { const descriptor = providers.find(provider => provider.id === body.provider.id); return descriptor === undefined ? null : <ProviderMemoryFields provider={descriptor} connection={editConnection} onChange={(key, value) => setEditConnection(current => ({ ...current, [key]: value }))} body={body} clearSecrets={editClearSecrets} onClearSecretsChange={setEditClearSecrets} /> })()}
   </form>
   const spaceCreateForm = <form id={spaceCreateFormId} className={appearanceClass(css.bodyEdit, css.bodyCreateForm)} onSubmit={event => void create(event)}>
     <section className={css.createSection}>
       <div className={css.createSectionHeading}><span>01</span><div><strong>{t('overview.createIdentityTitle')}</strong><small>{t('overview.createIdentityHint')}</small></div></div>
       <div className={css.createIdentityGrid}>
-        <label>{t('overview.createName')}<input data-autofocus aria-label={t('overview.createName')} value={spaceName} onChange={event => setSpaceName(event.target.value)} placeholder={t('overview.createNamePlaceholder')} maxLength={100} required /></label>
-        <label>{t('overview.createDescription')}<textarea aria-label={t('overview.createDescription')} value={spaceDescription} onChange={event => setSpaceDescription(event.target.value)} placeholder={t('overview.createDescriptionPlaceholder')} rows={3} maxLength={1000} required /></label>
+        <label>{t('overview.createName')}<input data-autofocus aria-label={t('overview.createName')} value={spaceName} onChange={event => setSpaceName(event.target.value)} placeholder={t('overview.createNamePlaceholder')} maxLength={MEMORY_SPACE_NAME_MAX_LENGTH} required /></label>
+        <label>{t('overview.createDescription')}<textarea aria-label={t('overview.createDescription')} value={spaceDescription} onChange={event => setSpaceDescription(event.target.value)} placeholder={t('overview.createDescriptionPlaceholder')} rows={3} maxLength={MEMORY_SPACE_DESCRIPTION_MAX_LENGTH} required /></label>
       </div>
     </section>
     <section className={css.createSection}>
@@ -1544,12 +1544,12 @@ export function PersistenceStrategyDialog(props: {
   const strategyFormId = useId()
   const configured = props.config?.persistenceStrategy
   const [mode, setMode] = useState<MemoryPlacementMode>(configured?.mode ?? 'manual')
-  const [providerId, setProviderId] = useState<MemoryProviderId>(configured?.providerId ?? 'mnemon-native')
+  const [providerId, setProviderId] = useState<MemoryProviderId>(configured?.providerId ?? NATIVE_PROVIDER_ID)
   const [prompt, setPrompt] = useState(configured?.prompt ?? '')
   const [dataBoundary, setDataBoundary] = useState<'allow-remote' | 'local-only'>(configured?.rules?.dataBoundary ?? 'allow-remote')
   const [preference, setPreference] = useState<MemoryPlacementPreference>(configured?.rules?.preference ?? 'balanced')
   const [requiredCapabilities, setRequiredCapabilities] = useState<MemoryPlacementCapability[]>(configured?.rules?.requiredCapabilities ?? [])
-  const [automaticProviderIds, setAutomaticProviderIds] = useState<MemoryProviderId[]>(configured?.rules?.allowedProviderIds ?? ['mnemon-native'])
+  const [automaticProviderIds, setAutomaticProviderIds] = useState<MemoryProviderId[]>(configured?.rules?.allowedProviderIds ?? [NATIVE_PROVIDER_ID])
   const [providerDrafts, setProviderDrafts] = useState<ProviderDrafts>(configured?.providerConnections ?? {})
   const [providers, setProviders] = useState<MemoryProviderDescriptor[]>([])
   const [loading, setLoading] = useState(true)
