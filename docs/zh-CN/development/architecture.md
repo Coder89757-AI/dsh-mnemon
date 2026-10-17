@@ -112,7 +112,7 @@ Host 的 `MemoryExecutions` 统一持有 Core 回合及对应的运行时绑定�
 
 Source 自己拥有可选的 `./client` DSH 模块、页面、管理协议与测试，通过公开 Source 页面 SDK 注册到工作台的 `mnemon.source.page` Slot。Client 生命周期与 React 渲染仍由 DSH 管理。
 
-组件自己的设置在它于插件页中的组件页上遵循同样的原则：组件从自己的 `./client` 注册到 `mnemon.component.settings` 区域，记忆空间的 Provider 与嵌入就是这样提供的。这些设置需要 dsh-mnemon 的配置或 Host 操作时，页面借给它们一个限定范围的 `host`，而不是设置服务或传输层。对于尚未自带设置的组件版本，dsh-mnemon 把它的设置注册为后备，组件自己的注册会替代后备；详见[扩展开发](./extensions.md#组件自己的设置与状态卡片)。
+组件自己的设置在它于插件页中的组件页上遵循同样的原则：组件从自己的 `./client` 注册到 `mnemon.component.settings` 区域，记忆空间的 Provider 与嵌入就是这样提供的。这些设置需要 dsh-mnemon 的配置或 Host 操作时，页面借给注册在该组件键下的设置一个限定范围的 `host`，而不是设置服务或传输层。dsh-mnemon 还把记忆空间的设置保留为后备：只要记忆空间自己的客户端没有注册设置（记忆空间关闭时、其客户端加载期间、客户端出错时，以及搭配本身没有设置的旧版本时），页面就由后备绘制，记忆空间自己的注册会替代它；详见[扩展开发](./extensions.md#组件自己的设置与状态卡片)。
 
 Host 交给页面的是限定实例的管理客户端与脱敏元信息，不是裸 RPC、Host Context 或 LLM grant。读取和带确认、修订栅栏的修改指向一个 Source。档案归档到记忆空间等默认协作由 Host 编排，也只调用公开管理协议。
 
