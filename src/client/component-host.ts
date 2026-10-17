@@ -13,6 +13,11 @@ interface Lent {
   /** Host operations on the read and write channels, by the names the Host serves them under. */
   read: readonly string[]
   write: readonly string[]
+  /**
+   * Reads the settings make on their own, which a later mount may join while the same one is
+   * under way at the same configuration revision. A read the user asks for is never joined.
+   */
+  join: readonly string[]
 }
 
 const LENT: Readonly<Record<string, Lent>> = {
@@ -23,6 +28,8 @@ const LENT: Readonly<Record<string, Lent>> = {
     owns: ['embedding'],
     read: ['status-summary', 'embedding-status', 'provider-services'],
     write: ['embedding-fill', 'provider-service-update'],
+    // An embedding test checks the connection as it is now, so it always asks the Host.
+    join: ['status-summary', 'provider-services'],
   },
 }
 
@@ -93,11 +100,14 @@ export function createComponentHosts(services: ComponentHostServices): Component
       if (named.length > 0) return Promise.reject(new Error(`${operation} runs in the page's conversation and workspace; it takes no ${named.join(' or ')}`))
       return client!.componentOperation(mode, operation, input ?? {})
     }
-    // A read the settings start while the same read is under way joins it, as when
-    // the component's own settings replace dsh-mnemon's while those still load.
+    // A read the settings start while the same one is under way joins it, as when the
+    // component's own settings replace dsh-mnemon's while those still load. Only one started
+    // at the configuration's current revision: an older one answers for a configuration that
+    // has since changed, such as another storage scope.
     const reading = new Map<string, Promise<unknown>>()
     const read = (operation: string, input: MemoryJsonValue | undefined): Promise<unknown> => {
-      const key = operation + '\u0000' + JSON.stringify(input ?? {})
+      if (!lent.join.includes(operation)) return call('read', lent.read, operation, input)
+      const key = [operation, services.scope.getSnapshot().revision ?? '', JSON.stringify(input ?? {})].join('\u0000')
       let pending = reading.get(key)
       if (pending === undefined) {
         pending = call('read', lent.read, operation, input).finally(() => { reading.delete(key) })

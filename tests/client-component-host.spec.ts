@@ -123,18 +123,34 @@ describe('what the configuration lends a shipped component\'s settings', () => {
     expect(call).toHaveBeenCalledTimes(1)
   })
 
-  it('joins a read already under way, and keeps what the settings retain across their mounts', async () => {
-    let answer: (value: { ok: true; value: { commandFound: boolean } }) => void = () => {}
-    const call = vi.fn(() => new Promise(resolve => { answer = resolve }))
-    const hosts = createComponentHosts({ scope: settingsScope<Config>(ready({})), connection: { rpc: { call }, isLoopback: true } as unknown as ClientConnectionHandle })
+  it('joins a read the settings make on their own while it is under way at the same configuration revision', async () => {
+    const answers: Array<(value: { ok: true; value: { commandFound: boolean } }) => void> = []
+    const call = vi.fn((_channel: string, _endpoint: string) => new Promise(resolve => { answers.push(resolve) }))
+    const scope = liveSettingsScope<Config>(ready({}))
+    const hosts = createComponentHosts({ scope, connection: { rpc: { call }, isLoopback: true } as unknown as ClientConnectionHandle })
     const host = hosts(MEMORY_SPACES_PACKAGE, 'session-1')!
     const first = host.operations!.read('status-summary')
     const second = host.operations!.read('status-summary')
     expect(call).toHaveBeenCalledTimes(1)
-    answer({ ok: true, value: { commandFound: true } })
-    await expect(Promise.all([first, second])).resolves.toEqual([{ commandFound: true }, { commandFound: true }])
-    // Once it answered, the next read asks the Host again.
+    // Once the configuration moved, a read answers for the new one: it asks the Host again.
+    await scope.mutate([{ op: 'set', path: ['embedding'], value: { enabled: false } }])
     void host.operations!.read('status-summary')
+    expect(call).toHaveBeenCalledTimes(2)
+    answers[0]!({ ok: true, value: { commandFound: true } })
+    await expect(Promise.all([first, second])).resolves.toEqual([{ commandFound: true }, { commandFound: true }])
+    // An embedding test checks the connection as it is now, so it is never joined.
+    void host.operations!.read('embedding-status')
+    void host.operations!.read('embedding-status')
+    expect(call.mock.calls.filter(([, endpoint]) => endpoint === 'embedding-status')).toHaveLength(2)
+  })
+
+  it('keeps what the settings retain across their mounts, one store per conversation and workspace', async () => {
+    const call = vi.fn(async () => ({ ok: true as const, value: { commandFound: true } }))
+    const hosts = createComponentHosts({ scope: settingsScope<Config>(ready({})), connection: { rpc: { call }, isLoopback: true } as unknown as ClientConnectionHandle })
+    const host = hosts(MEMORY_SPACES_PACKAGE, 'session-1')!
+    // Once a read answered, the next one asks the Host again.
+    await host.operations!.read('status-summary')
+    await host.operations!.read('status-summary')
     expect(call).toHaveBeenCalledTimes(2)
     host.retained.set('provider-services', { providers: [] })
     expect(hosts(MEMORY_SPACES_PACKAGE, 'session-1')!.retained.get('provider-services')).toEqual({ providers: [] })

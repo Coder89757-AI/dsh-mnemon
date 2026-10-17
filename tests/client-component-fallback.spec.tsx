@@ -239,6 +239,8 @@ describe('the built Memory Spaces client beside dsh-mnemon 0.5.31', () => {
       '@deepseek-ai/dsh-client-ui-primitives': await import('@deepseek-ai/dsh-client-ui-primitives') }
     const current = loadMemoryClientArtifact<Record<string, unknown>>(bundle('dsh-mnemon/client'), react)
     // A dsh-mnemon/client with exactly the names 0.5.31 exports: every newer one reads as undefined, as it would there.
+    // Those names carry this branch's implementations, not 0.5.31's, so this checks which exports the bundle needs,
+    // not how 0.5.31's behave.
     const old = Object.fromEntries(names.map(name => [name, current[name]]))
     expect(names.every(name => current[name] !== undefined)).toBe(true)
     return loadMemoryClientArtifact<Record<string, unknown>>(bundle('dsh-mnemon-source-memory-spaces/client'), { ...react, 'dsh-mnemon/client': old })
