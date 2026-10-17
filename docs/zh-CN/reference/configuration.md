@@ -154,7 +154,7 @@ mnemon:
 
 运行时记忆页面显示每个文件的已用大小与上限。
 
-![运行时记忆：USER.md 与 MEMORY.md 及其默认上限](../../assets/webui-v0.5.19/zh-CN/memory-runtime.jpg)
+![运行时记忆：USER.md 与 MEMORY.md 及其默认上限](../../assets/webui-v0.5.32/zh-CN/memory-runtime-limits.jpg)
 
 ### Mnemon Native 嵌入
 
@@ -188,7 +188,7 @@ Endpoint 必须是不含凭据、查询参数或片段的 HTTP(S) 绝对 URL。M
 
 每个记忆 Source 在**记忆组合**中有一个开关。它通过 DSH 插件管理器打开或关闭该 Source 的 DSH Entry，并在 profile patch 中保存为对应 Entry 的 `disabled` 行。打开表示允许主策略在需要时使用该 Source，并不强制每一轮召回或写入；关闭会同时停止它的上下文注入、工具、后台任务与数据面 Web/RPC 操作。
 
-![记忆组合：每个记忆来源与增强各有一个开关](../../assets/webui-v0.5.19/zh-CN/plugin-composition.jpg)
+![记忆组合：每个记忆来源与增强各有一个开关](../../assets/webui-v0.5.32/zh-CN/plugin-composition.jpg)
 
 关闭是可逆的路由状态，不是删除。它在记忆系统中的页面会保留并标记为**未运行**，不读取数据面；状态页与管理目录仍可查看。重新打开后使用原来的目录与数据。最后一个运行中的 Source 不能关闭。旧版的 `memoryTopology.layers.<id>.enabled` 标记会随 Source 一起恢复，只在读不到组件时使用。
 

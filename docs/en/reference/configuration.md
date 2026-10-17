@@ -154,7 +154,7 @@ Storage byte limits count entry content and delimiters. The model snapshot's imp
 
 The Runtime memory page shows each file's size against its limit.
 
-![Runtime memory with USER.md and MEMORY.md against their default limits](../../assets/webui-v0.5.19/en/memory-runtime.jpg)
+![Runtime memory with USER.md and MEMORY.md against their default limits](../../assets/webui-v0.5.32/en/memory-runtime-limits.jpg)
 
 ### Mnemon Native embeddings
 
@@ -188,7 +188,7 @@ The endpoint must be an absolute HTTP(S) URL without credentials, query paramete
 
 Each memory Source has one switch in **Memory composition**. It turns the Source's DSH Entry on or off through DSH's plugin manager, which saves the choice as the Entry's `disabled` row in the profile patch. On permits the main strategy to use the Source when needed; it does not force recall or writes on every turn. Off stops that Source's context injection, tools, background work and data-plane Web and RPC operations together.
 
-![Memory composition with one switch per memory Source and enhancement](../../assets/webui-v0.5.19/en/plugin-composition.jpg)
+![Memory composition with one switch per memory Source and enhancement](../../assets/webui-v0.5.32/en/plugin-composition.jpg)
 
 Turning a Source off is reversible routing state, not deletion. Its Memory System page stays, marked **Not running**, and does not read the data plane; Status and the management directories stay observable. Turning it on again uses the original directories and data. The last running Source cannot be turned off. The legacy `memoryTopology.layers.<id>.enabled` flag is turned back on with the Source and is used only when the components cannot be read.
 

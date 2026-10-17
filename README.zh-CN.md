@@ -18,13 +18,13 @@
 
 <p align="center">
   <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#在对话中">
-    <img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.19/zh-CN/recall.gif" alt="提问后，回答同时用到工作记忆、项目档案与记忆空间；展开回合记忆栏，点击读到的档案，直接在项目档案中打开它" width="880" />
+    <img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.32/zh-CN/recall.gif" alt="提问后，回答用到工作记忆与项目档案；展开回合记忆栏，点击读到的档案，直接在项目档案中打开它" width="880" />
   </a>
 </p>
 
 <p align="center">
   <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/installation.md"><strong>安装与启动</strong></a> ·
-  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/assets/webui-v0.5.19/README.md">观看演示</a> ·
+  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/assets/webui-v0.5.32/README.md">观看演示</a> ·
   <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/README.md">文档中心</a> ·
   <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/development/extensions.md">制作插件</a>
 </p>
@@ -42,27 +42,27 @@
 
 ## 看看实际效果
 
-以下录屏来自真实 WebUI，由真实的 DeepSeek 模型作答，项目是预置的虚构项目 Lumen；等待模型的片段加速播放，画面右下角有标记。
+以下录屏来自真实 WebUI，由真实的 DeepSeek 模型作答，项目是预置的虚构项目 Lumen；等待模型的片段加速播放，画面右下角有标记。采集期间没有运行嵌入服务，因此下方存入记忆的回执会提示这条记忆暂时没有向量；语义匹配需要嵌入服务，可在 [Mnemon Native 嵌入设置](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#memory-spaces-page)中配置。
 
 **把新事实存进记忆。** 回复中出现了新的测量结果：点击回复下的脑形图标，把候选内容改成要记住的那一句，交给任务 Agent；回执写明存进了哪个记忆空间，一键即可查看。
 
 <p align="center">
-  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#存入记忆"><img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.19/zh-CN/save.gif" alt="存入记忆：编辑候选内容，交给任务 Agent，收到已存入的回执后在记忆空间中查看新记忆" width="880" /></a>
+  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#存入记忆"><img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.32/zh-CN/save.gif" alt="存入记忆：编辑候选内容，查看可以存到哪里并保留“由 Agent 决定”，交给任务 Agent，收到已存入的回执后在记忆空间中查看新记忆" width="880" /></a>
 </p>
 
 **在一处查看全部记忆。** 状态、运行时记忆、项目档案与记忆空间集中在记忆系统中；图谱按实体把记忆连接起来，Agent 查询给出按内容引用记忆的回答。
 
 <p align="center">
-  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#记忆系统"><img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.19/zh-CN/memory.gif" alt="记忆系统：依次查看状态、运行时记忆、项目档案、记忆空间图谱，再用 Agent 查询得到带引用的回答" width="880" /></a>
+  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#记忆系统"><img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.32/zh-CN/memory.gif" alt="记忆系统：依次查看状态、运行时记忆、项目档案、记忆空间图谱，再用 Agent 查询得到带引用的回答" width="880" /></a>
 </p>
 
 **在插件页组合记忆。** 一个主策略、它的记忆来源与可选增强，每个开关即时生效；每个组件都有自己的页面，存储、备份与界面设置也在这里。
 
 <p align="center">
-  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#在插件页中"><img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.19/zh-CN/plugins.gif" alt="插件页：记忆组合、主策略菜单、分层策略与记忆空间的组件页，以及存储与界面" width="880" /></a>
+  <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md#在插件页中"><img src="https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/webui-v0.5.32/zh-CN/plugins.gif" alt="DSH 的插件页，再进入可组合记忆的页面：记忆组合、主策略菜单、分层策略与记忆空间的组件页，以及存储与界面" width="880" /></a>
 </p>
 
-更多画面与每一步的说明见[界面指南](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md)，全部截图、录屏与采集环境见 [v0.5.19 图集](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/assets/webui-v0.5.19/README.md)。
+更多画面与每一步的说明见[界面指南](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/ui-guide.md)，全部截图、录屏与采集环境见 [v0.5.32 图集](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/assets/webui-v0.5.32/README.md)。
 
 ## 三类记忆
 
