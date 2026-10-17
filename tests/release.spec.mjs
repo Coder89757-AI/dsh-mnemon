@@ -352,6 +352,16 @@ describe('selective, channel-safe official release', () => {
     expect(workflow).not.toContain('seventeen-artifact')
     expect(workflow).not.toContain('sixteen plugins serially')
   })
+
+  it('upgrades from the same earlier release in verification and in publication', async () => {
+    const workflow = await readFile(join(root, '.github/workflows/publish.yml'), 'utf8')
+    const verifier = await readFile(join(root, 'scripts/verify-plugin-artifacts.mjs'), 'utf8')
+    // Both install that release on the pinned DSH first, so a move of the DSH baseline moves them together.
+    const published = /--upgrade-from dsh-mnemon@(\d+\.\d+\.\d+)/u.exec(workflow)?.[1]
+    const verified = /const upgradeBase = '(\d+\.\d+\.\d+)'/u.exec(verifier)?.[1]
+    expect(verified).toMatch(/^\d+\.\d+\.\d+$/u)
+    expect(published).toBe(verified)
+  })
 })
 
 describe('release metadata synchronization', () => {
