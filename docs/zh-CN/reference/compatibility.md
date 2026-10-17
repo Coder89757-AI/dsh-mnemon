@@ -82,7 +82,7 @@ Mnemon 同时在自己的传输注入作用域内注册 Web RPC，已运行的�
 
 ## DSH 0.2.0 上的 bundle 组件列表
 
-与 0.1.7 一样，DSH 0.2.0 的“插件 → dsh-mnemon”详情页会把 `mnemon-bundle` 内部容器列为“已关闭”的组件（0.5.20 起显示为 `dsh-mnemon/bundle`，此前为 `cordis:group`）。9 个实际组件全部运行时，列表显示“共 10 个 · 9 运行中 · 1 已停用”。点击容器开关会返回 `unknown-plugin`，中文界面提示“组件启用失败：找不到该插件”。参见[原始截图](../../pr-assets/sidebar-native-20260926/before-bundle-toggle-error.jpg)与[上游问题 #649](https://github.com/dsh-external/issues/issues/649)。DSH 0.2.1 不再列出这个容器。
+与 0.1.7 一样，DSH 0.2.0 的“插件 → 可组合记忆”详情页会把 `mnemon-bundle` 内部容器列为“已关闭”的组件（0.5.20 起显示为 `dsh-mnemon/bundle`，此前为 `cordis:group`）。9 个实际组件全部运行时，列表显示“共 10 个 · 9 运行中 · 1 已停用”。点击容器开关会返回 `unknown-plugin`，中文界面提示“组件启用失败：找不到该插件”。参见[原始截图](../../pr-assets/sidebar-native-20260926/before-bundle-toggle-error.jpg)与[上游问题 #649](https://github.com/dsh-external/issues/issues/649)。DSH 0.2.1 不再列出这个容器。
 
 这是宿主的展示与管理清单不一致：bundle 声明列表包含原生 group，但可管理插件清单明确排除了 group。该行的“已关闭”不代表 Mnemon 核心或其子插件已停用，也不能据此判断记忆读写是否正常。
 
@@ -129,7 +129,7 @@ DSH 0.1.7 桌面版不为 `dsh-app://app/` 页面声明传输方式。dsh-mnemon
 
 验证方式：模拟桌面壳的 Electron 窗口注册与官方桌面版相同的 `dsh-app` 标准安全协议，把请求代理到只监听 127.0.0.1 的 Host。已发布的 0.5.18 在 DSH 0.1.7-rc.2 上复现了只读（13 次 Mnemon 调用全部经 API Gateway）；修复后在 DSH 0.1.7-rc.2 与 0.2.0-rc.1（`ownsHost: true`）上均可添加运行时记忆，写入经本地 `/dsh-mnemon-write`，记忆空间与插件设置可编辑；通过可信 authority 打开的远程页面仍然只读并显示原因。
 
-### Desktop profile generation
+### 桌面版的 Profile generation
 
 Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用宿主自己的框架版本。Mnemon 使用宿主公开的 Volatile API 构建动态设置 schema，DSH `0.1.7-rc.2` 通过 Cosmokit `1.8.5` 提供这些 API。宿主若携带不含这些 API 的旧版 Cosmokit（例如 `1.8.3`），即属于不受支持的宿主，请在该环境继续使用 dsh-mnemon `v0.5.16`。
 
