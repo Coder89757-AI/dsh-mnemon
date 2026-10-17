@@ -1,0 +1,359 @@
+{
+  "date": "2026-10-17",
+  "pullRequest": 354,
+  "revisions": {
+    "baseline": "main c00e6d7a",
+    "author": [
+      "6e6a4921",
+      "3977b974"
+    ],
+    "mergeOfMain": "1fb83599",
+    "adjustment": "4a40ace5"
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "mnemonCli": "0.2.10",
+    "browser": "headless Chrome, 1280x800, device scale 1, zh-CN, light",
+    "dsh": [
+      "@deepseek-ai/dsh 0.2.0-rc.2 (npm latest and next)",
+      "@deepseek-ai/dsh 0.2.1-alpha.2"
+    ],
+    "fixture": "scripts/serve-e2e.mjs --save-action --live-model, with DEEPSEEK_BASE_URL on harness/stub.mjs (loopback, test key)"
+  },
+  "dshDefaultModel": "A model picked in any conversation is applied to its next request and saved as the DSH new-session default (agentDefaultModel.saveSelection in the session controller), on both hosts.",
+  "webui": {
+    "0.2.0-rc.2": {
+      "main": {
+        "conversationA": "deepseek-v4-pro",
+        "conversationB": "deepseek-flash",
+        "saveWithSwitchOff": [
+          "deepseek-flash"
+        ],
+        "steps": [
+          "conversation A picks DeepSeek-V4-Pro",
+          "reply A1",
+          "conversation B picks DeepSeek-V41-Flash",
+          "reply B1",
+          "the two conversations run on different models",
+          "back in 发布流程（会话 A）",
+          "Save to memory 1 ran a task Agent",
+          "switch off: A's task asks for the DSH default, the model B picked last",
+          "Status has no background task route",
+          "the Layered page has no conversation switch",
+          "browser console errors"
+        ],
+        "allStepsPassed": true,
+        "modelRequests": [
+          {
+            "n": 1,
+            "model": "deepseek-v4-pro",
+            "kind": "conversation"
+          },
+          {
+            "n": 2,
+            "model": "deepseek-v4-pro",
+            "kind": "title"
+          },
+          {
+            "n": 3,
+            "model": "deepseek-flash",
+            "kind": "conversation"
+          },
+          {
+            "n": 4,
+            "model": "deepseek-flash",
+            "kind": "title"
+          },
+          {
+            "n": 5,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 6,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 7,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 8,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          }
+        ]
+      },
+      "branch": {
+        "conversationA": "deepseek-v4-pro",
+        "conversationB": "deepseek-flash",
+        "saveWithSwitchOff": [
+          "deepseek-flash"
+        ],
+        "saveWithSwitchOn": [
+          "deepseek-v4-pro"
+        ],
+        "statusStates": {
+          "Status states the route and where it comes from": [
+            "deepseek-official / deepseek-flash",
+            "DSH 默认模型"
+          ],
+          "Status now states A's own model": [
+            "deepseek-official / deepseek-v4-pro",
+            "会话的模型"
+          ]
+        },
+        "storedSetting": [
+          "taskAgentModel:",
+          "      mode: inherit",
+          "      followConversation: true"
+        ],
+        "steps": [
+          "conversation A picks /^DeepSeek-V4-Pro$/u",
+          "reply A1",
+          "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u",
+          "reply B1",
+          "the two conversations run on different models",
+          "back in 发布流程（会话 A）",
+          "Save to memory 1 ran a task Agent",
+          "switch off: A's task asks for the DSH default, the model B picked last",
+          "Status states the route and where it comes from",
+          "the gear opens the choice with the switch off",
+          "the switch is stored with the inherited route",
+          "Status now states A's own model",
+          "back in 发布流程（会话 A）",
+          "reply A2",
+          "Save to memory 2 ran a task Agent",
+          "switch on: A's task asks for A's own model",
+          "the Layered page reads the same switch",
+          "browser console errors"
+        ],
+        "allStepsPassed": true,
+        "modelRequests": [
+          {
+            "n": 1,
+            "model": "deepseek-v4-pro",
+            "kind": "conversation"
+          },
+          {
+            "n": 2,
+            "model": "deepseek-v4-pro",
+            "kind": "title"
+          },
+          {
+            "n": 3,
+            "model": "deepseek-flash",
+            "kind": "conversation"
+          },
+          {
+            "n": 4,
+            "model": "deepseek-flash",
+            "kind": "title"
+          },
+          {
+            "n": 5,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 6,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 7,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 8,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 9,
+            "model": "deepseek-v4-pro",
+            "kind": "conversation"
+          },
+          {
+            "n": 10,
+            "model": "deepseek-v4-pro",
+            "kind": "delegated task"
+          },
+          {
+            "n": 11,
+            "model": "deepseek-v4-pro",
+            "kind": "delegated task"
+          },
+          {
+            "n": 12,
+            "model": "deepseek-v4-pro",
+            "kind": "delegated task"
+          }
+        ]
+      }
+    },
+    "0.2.1-alpha.2": {
+      "branch": {
+        "conversationA": "deepseek-v4-pro",
+        "conversationB": "deepseek-flash",
+        "saveWithSwitchOff": [
+          "deepseek-flash"
+        ],
+        "saveWithSwitchOn": [
+          "deepseek-v4-pro"
+        ],
+        "statusStates": {
+          "Status states the route and where it comes from": [
+            "deepseek-official / deepseek-flash",
+            "DSH 默认模型"
+          ],
+          "Status now states A's own model": [
+            "deepseek-official / deepseek-v4-pro",
+            "会话的模型"
+          ]
+        },
+        "storedSetting": [
+          "taskAgentModel:",
+          "      mode: inherit",
+          "      followConversation: true"
+        ],
+        "steps": [
+          "conversation A picks /^DeepSeek-V4-Pro$/u",
+          "reply A1",
+          "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u",
+          "reply B1",
+          "the two conversations run on different models",
+          "back in 发布流程（会话 A）",
+          "Save to memory 1 ran a task Agent",
+          "switch off: A's task asks for the DSH default, the model B picked last",
+          "Status states the route and where it comes from",
+          "the gear opens the choice with the switch off",
+          "the switch is stored with the inherited route",
+          "Status now states A's own model",
+          "back in 发布流程（会话 A）",
+          "reply A2",
+          "Save to memory 2 ran a task Agent",
+          "switch on: A's task asks for A's own model",
+          "the Layered page reads the same switch",
+          "browser console errors"
+        ],
+        "allStepsPassed": true,
+        "modelRequests": [
+          {
+            "n": 1,
+            "model": "deepseek-v4-pro",
+            "kind": "conversation"
+          },
+          {
+            "n": 2,
+            "model": "deepseek-v4-pro",
+            "kind": "title"
+          },
+          {
+            "n": 3,
+            "model": "deepseek-flash",
+            "kind": "conversation"
+          },
+          {
+            "n": 4,
+            "model": "deepseek-flash",
+            "kind": "title"
+          },
+          {
+            "n": 5,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 6,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 7,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 8,
+            "model": "deepseek-flash",
+            "kind": "delegated task"
+          },
+          {
+            "n": 9,
+            "model": "deepseek-v4-pro",
+            "kind": "conversation"
+          },
+          {
+            "n": 10,
+            "model": "deepseek-v4-pro",
+            "kind": "delegated task"
+          },
+          {
+            "n": 11,
+            "model": "deepseek-v4-pro",
+            "kind": "delegated task"
+          },
+          {
+            "n": 12,
+            "model": "deepseek-v4-pro",
+            "kind": "delegated task"
+          }
+        ]
+      }
+    }
+  },
+  "unitTests": {
+    "newOrRewritten": [
+      "tests/config.spec.ts: lets an inherited task route follow its conversation only once that is switched on",
+      "tests/lifecycle.spec.ts: keeps the DSH new-session default for an inherited route that does not follow its conversation",
+      "tests/lifecycle.spec.ts: follows the conversation that asked for the work once its inherited route is switched to follow it (reasoning effort included)",
+      "tests/lifecycle.spec.ts: never borrows another open conversation's model, and takes a conversation's creation route before its first request",
+      "tests/lifecycle.spec.ts: two catalog cases now expect the inherited route",
+      "tests/client-settings.spec.tsx: asks for the route of the conversation the page was opened from, and follows it only with the switch on",
+      "tests/client-workbench-background.spec.tsx: nine cases for the stated route and the gear, the switch on and off, a fixed model, a change made elsewhere, giving up a fixed model, reading only the route until the gear opens and the whole directory on Read again, the route without a DSH default and before the settings are read, a failed read, and a page without the settings grant"
+    ],
+    "onFirstVersion": {
+      "revision": "1fb83599",
+      "failing": 14,
+      "note": "12 new or rewritten cases, and the 2 older catalog cases that now expect the inherited route",
+      "examples": [
+        "a task asked from session-2, which is not open, took session-1's ai / space-bunny (source session) instead of deepseek / deepseek-chat",
+        "a fixed route stored on another page did not show on the status page"
+      ]
+    }
+  },
+  "downgrade": {
+    "v0.5.30 schema on { mode: inherit, followConversation: true }": "accepted, key kept",
+    "v0.5.30 resolver": "reads mode, provider and model only, so the route stays the DSH default",
+    "a third mode instead (mode: conversation)": "$.mode expected \"inherit\" | \"fixed\" but got \"conversation\""
+  },
+  "dshDelegatedRoute": "DSH gives a delegated child the provider, model and reasoning effort of its parent's last request, or the parent's creation options before the first (dsh-subagent parentAgentOptionsForDelegation), so idle review and other delegations already follow their conversation; the switch gives task Agents the same route.",
+  "review": {
+    "revision": "1ac2e75d, before the review fixes were folded in",
+    "findings": [
+      "the first wording said the stated model covered review, which follows its conversation: the copy now says task Agents, and names what review does",
+      "giving up a fixed model that was never written turned the switch off",
+      "Read again after a failed read on a fixed route read only the route",
+      "Status read the whole model directory on every visit with a fixed route",
+      "the stated route could differ from the Host's without a DSH default, or before the page had the settings",
+      "the switch took provider and model but not the reasoning effort DSH gives delegated work"
+    ],
+    "failingThereNow": 8
+  },
+  "verify": {
+    "command": "pnpm run verify (Node 24.19.0, pnpm 11.25.0)",
+    "rootTests": "2,025 passed, 6 skipped",
+    "package": "59 files, 1,990,405 unpacked bytes, under the 2,500,000-byte ceiling",
+    "also": [
+      "docs, typecheck and the deterministic build",
+      "every plugin's build, typecheck and tests",
+      "Headless activation and the legacy settings import",
+      "publint and attw"
+    ]
+  }
+}
