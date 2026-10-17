@@ -412,6 +412,7 @@ describe('asynchronous child memory authority', () => {
       expect((await value.coordinator.documentQuery(child, { query: 'probe' }, new AbortController().signal) as { notRun?: boolean }).notRun === true).toBe(false)
     }
     const exhausted = await value.recall(first, 'third query')
+    expect(exhausted).toMatchObject({ query: 'third query', results: [], notRun: true, budgetExhausted: true })
     expect(exhausted.hint).toContain('budget is exhausted')
     expect(value.search).toHaveBeenCalledTimes(2)
     expect(value.lifecycle.snapshot().activeAgents).toBe(1)

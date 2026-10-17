@@ -37,6 +37,7 @@ import {
   type MnemonSyncPullResult,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
+  type MnemonEmbeddingFill,
   type MnemonEmbeddingStatus,
   type StatusView,
   type TaskAgentModelCatalog,
@@ -146,8 +147,9 @@ export class MnemonClient {
     return this.call(operation === 'activation' ? MNEMON_ACTIVATION_CHANNEL : confirmed ? MNEMON_WRITE_CHANNEL : MNEMON_READ_CHANNEL, 'source-assistance', this.scoped({ sourceInstanceKey, operation, input, expectedRevision, confirmed }))
   }
 
+  /** A session-scoped call reports the route that conversation's background work uses. */
   taskAgentModels(includeCatalog?: boolean): Promise<TaskAgentModelCatalog> {
-    return this.call(MNEMON_READ_CHANNEL, 'task-agent-models', includeCatalog === undefined ? {} : { includeCatalog })
+    return this.call(MNEMON_READ_CHANNEL, 'task-agent-models', this.scoped(includeCatalog === undefined ? {} : { includeCatalog }))
   }
 
   versions(): Promise<VersionStatus> {
@@ -166,6 +168,11 @@ export class MnemonClient {
     return this.call(MNEMON_WRITE_CHANNEL, 'provider-service-update', this.scoped(request))
   }
 
+  /** Fill in the vectors a Mnemon Native space lacks (#392). */
+  fillEmbeddings(memoryBodyId: string): Promise<MnemonEmbeddingFill> {
+    return this.call(MNEMON_WRITE_CHANNEL, 'embedding-fill', this.scoped({ memoryBodyId }))
+  }
+
   /** Settled memory-tool activity of one turn, shared across all mounted tails. */
   async turnActivity(turn: number, cursor = 0): Promise<TurnMemoryActivity | null> {
     const snapshot = await loadTurnActivities(this.connection, this.sessionId, cursor)
@@ -177,7 +184,7 @@ export class MnemonClient {
     return this.call(MNEMON_READ_CHANNEL, 'assistant-message', { sessionId: this.sessionId, messageId })
   }
 
-  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[] }> {
+  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[]; unembedded?: Array<{ memoryBodyId?: string; id?: string }> }> {
     return this.call(MNEMON_WRITE_CHANNEL, 'supervise', this.scoped({ content, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) }))
   }
 

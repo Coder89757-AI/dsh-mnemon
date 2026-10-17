@@ -36,9 +36,13 @@ describe('Host document creation protection', () => {
     })
     await f.turn()
     const args = { title: 'Deployment follow-up', content: 'A separate rollout note.', sourcePaths: ['README.md'] }
-    const result = await f.create.execute(args as never, { agent: f.child, signal: f.signal })
-    expect(result).toMatchObject({ action: 'created', document: { title: args.title, content: args.content, sessionIds: [f.child.id] },
-      memoryReceipt: { completion: 'committed' } })
+    const result = await f.create.execute(args as never, { agent: f.child, signal: f.signal }) as { document: { id: string } }
+    // The model reads the Document it wrote and the layer's totals, not every Document with its paths (#390).
+    expect(result).toMatchObject({ action: 'created', document: { title: args.title, sourcePaths: ['README.md'] },
+      documents: { active: 2, archived: 0 }, memoryReceipt: { completion: 'committed' } })
+    expect(result).not.toHaveProperty('snapshot')
+    expect(result.document).not.toHaveProperty('content')
+    expect(await f.documents.read<DocumentView>('document', { id: result.document.id })).toMatchObject({ content: args.content, sessionIds: [f.child.id] })
     expect(await f.documents.read<DocumentView>('document', { id: original.document.id })).toMatchObject({
       content: original.document.content, contentHash: original.document.contentHash, revision: original.document.revision,
     })
@@ -66,6 +70,40 @@ describe('Host document creation protection', () => {
     expect(() => f.create.execute({ title: 'Blocked', content: 'Blocked candidate.' } as never, { agent: f.child, signal: f.signal })).toThrow()
     expect(f.coordinator.document).not.toHaveBeenCalled()
     expect(f.coordinator.archiveDocument).not.toHaveBeenCalled()
+  })
+
+  it('hands the model a compact receipt for root Document writes too (#390)', async () => {
+    const f = await fixture()
+    const written = await f.documents.mutate<DocumentMutationResult>('mutate', { action: 'create', title: 'Runbook', content: '# Runbook' })
+    vi.mocked(f.coordinator.document).mockResolvedValue(written as never)
+    const manage = f.registered.find(tool => tool.name === 'mnemon_document_manage')!
+    const result = await manage.execute({ action: 'update', id: written.document.id, content: '# Runbook v2' } as never, { agent: f.root, signal: f.signal })
+    expect(result).toEqual({
+      success: true, action: 'created',
+      document: expect.objectContaining({ id: written.document.id, title: 'Runbook', contentHash: written.document.contentHash }),
+      documents: { active: 1, archived: 0, activeBytes: written.snapshot.activeBytes, limitBytes: written.snapshot.limitBytes },
+    })
+    // Neither the body the model wrote nor a path, in the workspace or under the storage root, comes back.
+    expect((result as { document: object }).document).not.toHaveProperty('relativePath')
+    expect(JSON.stringify(result)).not.toContain('# Runbook')
+    expect(JSON.stringify(result)).not.toContain(f.workspace)
+    expect(JSON.stringify(result)).not.toContain(f.config.dataDir!)
+  })
+
+  it('keeps the lineage of an archive, whose digest names the content hash the model was handed (#390)', async () => {
+    const f = await fixture()
+    const written = await f.documents.mutate<DocumentMutationResult>('mutate', { action: 'create', title: 'Runbook', content: '# Runbook' })
+    const lineage = [{ source: { layerId: 'documents', reference: written.document.id, digest: written.document.contentHash } }]
+    vi.mocked(f.coordinator.archiveDocument).mockResolvedValue({ ...written, action: 'archived', document: { ...written.document, status: 'archived' }, lineage } as never)
+    await f.turn()
+    const manage = f.registered.find(tool => tool.name === 'mnemon_document_manage')!
+    const archived = await manage.execute({ action: 'archive', id: written.document.id } as never, { agent: f.root, signal: f.signal }) as {
+      lineage: typeof lineage; document: { contentHash: string; status: string; revision: number }
+    }
+    // What the --document-archive e2e model checks: the lineage digest is the hash of the Document it wrote.
+    expect(archived).toMatchObject({ document: { status: 'archived', revision: written.document.revision } })
+    expect(archived.lineage[0]!.source.digest).toBe(archived.document.contentHash)
+    expect(archived).not.toHaveProperty('snapshot')
   })
 
   it('keeps explicit root document updates on the coordinated management path', async () => {

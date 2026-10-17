@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import { Button, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DEFAULT_EMBEDDING_ENDPOINT,
@@ -10,10 +10,11 @@ import {
   type ClientConnectionHandle,
   type ClientSettingsScope,
   type Config,
+  type MnemonEmbeddingFill,
+  type MnemonEmbeddingSpaceStatus,
   type MnemonEmbeddingStatus,
   type ResolvedIdleReviewConfig,
   type SettingsOperation,
-  type TaskAgentModelCatalog,
 } from '../host/protocol.ts'
 import { MnemonClient } from './api.ts'
 import type { MnemonChangeSignal } from './change-signal.ts'
@@ -27,6 +28,7 @@ import { ProviderSettingsSection } from './ProviderSettingsSection.tsx'
 import { SelectRow, ToggleRow, type SettingOption } from './settings-controls.tsx'
 import { SelectField } from './page-controls.tsx'
 import { PanelActions, useLive, useScope, useStaged, WriteFailure } from './settings-panel.tsx'
+import { TaskAgentModelRows, useTaskAgentModel } from './task-agent-model.tsx'
 
 /** The packages whose own settings dsh-mnemon supplies, through the same region an installed component uses. */
 export const RUNTIME_PACKAGE = 'dsh-mnemon-source-runtime'
@@ -161,6 +163,7 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
   const form = useStaged(saved, async draft => { await scope.mutate([{ op: 'set', path: ['embedding'], value: embeddingValue(managedSaved, draft) } as SettingsOperation]) })
   const [nativeCliFound, setNativeCliFound] = useState<boolean | undefined>(undefined)
   const [status, setStatus] = useState<{ state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }>({ state: 'idle' })
+  const [fill, setFill] = useState<EmbeddingFillState | undefined>(undefined)
   const statusRequest = useRef(0)
   const on = page.component.enabled
 
@@ -173,6 +176,7 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
   useEffect(() => {
     statusRequest.current += 1
     setStatus({ state: 'idle' })
+    setFill(undefined)
   }, [client, snapshot.revision])
 
   // Providers are read only while their Source runs; the page's switch turns it on.
@@ -182,10 +186,21 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
     if (client === undefined) return
     const request = statusRequest.current + 1
     statusRequest.current = request
-    setStatus({ state: 'loading' })
+    // The list stays while it is counted again, so a fill's refresh does not make it jump.
+    setStatus(previous => ({ state: 'loading', ...(previous.value === undefined ? {} : { value: previous.value }) }))
     void client.embeddingStatus().then(
       value => { if (statusRequest.current === request) setStatus({ state: 'ready', value }) },
       reason => { if (statusRequest.current === request) setStatus({ state: 'error', error: message(reason) }) },
+    )
+  }
+  // A fill runs through the Host, with its data directory and embedding settings; the counts are read again after it.
+  const fillSpace = (space: MnemonEmbeddingSpaceStatus): void => {
+    if (client === undefined || fill?.state === 'running') return
+    const target = { memoryBodyId: space.memoryBodyId, name: space.name }
+    setFill({ ...target, state: 'running' })
+    void client.fillEmbeddings(space.memoryBodyId).then(
+      result => { setFill({ ...target, state: 'done', result }); test() },
+      reason => { setFill({ ...target, state: 'failed', error: message(reason) }); test() },
     )
   }
   const activeScope = isWorkspaceStorageScope(snapshot.value?.storageScope ?? 'global') ? 'workspace' : 'global'
@@ -208,7 +223,8 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
       t={t}
       leading={<NativeProviderCard activeScope={activeScope} cliMissing={cliMissing} t={t}>
         <EmbeddingEditor managed={managed.value} draft={form.draft} disabled={disabled} connectionAvailable={client !== undefined} cliMissing={cliMissing} changing={form.dirty}
-          status={status} t={t} onEdit={form.edit} onTest={test}
+          status={status} t={t} onEdit={form.edit} onTest={() => { setFill(undefined); test() }}
+          canFill={!disabled && !readOnly} fill={fill} onFill={fillSpace}
           onManaged={on => { if (!on) form.discard(); managed.set(on) }}
           actions={<>
             <WriteFailure error={managed.failed} t={t} />
@@ -253,6 +269,10 @@ function EmbeddingEditor(props: {
   cliMissing: boolean
   changing: boolean
   status: { state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }
+  /** Whether this page may fill in a space's vectors: it is writable and Mnemon takes writes. */
+  canFill: boolean
+  fill: EmbeddingFillState | undefined
+  onFill: (space: MnemonEmbeddingSpaceStatus) => void
   t: MnemonTranslate
   actions: ReactNode
   onManaged: (managed: boolean) => void
@@ -295,21 +315,77 @@ function EmbeddingEditor(props: {
     {props.actions}
     <div className={css.embeddingTest} aria-live="polite">
       <span className={status.state === 'error' ? css.error : undefined} role={status.state === 'error' ? 'alert' : undefined}>{feedback}</span>
-      <Button variant="outline" size="sm" disabled={props.disabled || !props.connectionAvailable || props.cliMissing || props.changing || status.state === 'loading'} onClick={props.onTest}>
+      <Button variant="outline" size="sm" disabled={props.disabled || !props.connectionAvailable || props.cliMissing || props.changing || status.state === 'loading' || props.fill?.state === 'running'}
+        onClick={props.onTest}>
         {t('config.embeddingTest')}
       </Button>
     </div>
+    {!props.cliMissing && !props.changing && (status.state === 'ready' || status.state === 'loading') && (status.value?.spaces ?? []).length > 0
+      && <EmbeddingSpaces spaces={status.value!.spaces!} available={status.value!.available} canFill={props.canFill} counting={status.state === 'loading'}
+        fill={props.fill} onFill={props.onFill} t={t} />}
+    <EmbeddingFillOutcome fill={props.fill} t={t} />
   </section>
+}
+
+/** A fill of one space's vectors: running, done with what it did, or failed with its reason (#392). */
+type EmbeddingFillState = { memoryBodyId: string; name: string }
+  & ({ state: 'running' } | { state: 'done'; result: MnemonEmbeddingFill } | { state: 'failed'; error: string })
+
+/**
+ * Each Mnemon Native space's vectors under the status line. Mnemon counts one Store at a
+ * time, so the total alone could read as every space's health while one lacked vectors (#392).
+ * A space that lacks them can have them filled in here while the embedding service answers.
+ */
+function EmbeddingSpaces(props: {
+  spaces: readonly MnemonEmbeddingSpaceStatus[]
+  available: boolean
+  canFill: boolean
+  /** The counts are being read again; the list stays, its buttons wait. */
+  counting: boolean
+  fill: EmbeddingFillState | undefined
+  onFill: (space: MnemonEmbeddingSpaceStatus) => void
+  t: MnemonTranslate
+}): JSX.Element {
+  const { t, fill } = props
+  const missing = (space: MnemonEmbeddingSpaceStatus): boolean => space.error === undefined && space.embedded < space.totalInsights
+  const fillable = props.available && props.canFill
+  const running = fill?.state === 'running' ? fill.memoryBodyId : undefined
+  return <div className={css.embeddingSpaces}>
+    <small id="mnemon-embedding-spaces">{t('config.embeddingSpaces')}</small>
+    <ul aria-labelledby="mnemon-embedding-spaces">
+      {props.spaces.map(space => <li key={space.memoryBodyId} data-missing={missing(space) ? '' : undefined} data-failed={space.error === undefined ? undefined : ''}>
+        <span className={css.embeddingSpaceName} title={space.name}>{space.name}</span>
+        {!space.active && <span className={css.embeddingSpaceState}>{t('common.inactive')}</span>}
+        <span className={css.embeddingSpaceCount}>{space.error === undefined
+          ? t('config.embeddingSpaceCounts', { embedded: space.embedded, total: space.totalInsights, coverage: space.coverage })
+          : t('config.embeddingSpaceFailed', { error: space.error })}</span>
+        {fillable && missing(space) && <Button variant="ghost" size="sm" disabled={running !== undefined || props.counting} aria-busy={running === space.memoryBodyId}
+          aria-label={t(running === space.memoryBodyId ? 'config.embeddingFillingLabel' : 'config.embeddingFillLabel', { name: space.name })}
+          onClick={() => props.onFill(space)}>{running === space.memoryBodyId ? t('config.embeddingFilling') : t('config.embeddingFill')}</Button>}
+      </li>)}
+    </ul>
+    {props.spaces.some(missing) && <p>{t(!props.canFill ? 'config.embeddingMissing' : props.available ? 'config.embeddingMissingFill' : 'config.embeddingMissingOffline')}</p>}
+    {props.spaces.some(space => space.error !== undefined) && <p>{t('config.embeddingSpacesUnread')}</p>}
+  </div>
+}
+
+/** What the last fill did. It stays while the counts are read again, and reads as a failure when it wrote no vector. */
+function EmbeddingFillOutcome(props: { fill: EmbeddingFillState | undefined; t: MnemonTranslate }): JSX.Element | null {
+  const { fill, t } = props
+  if (fill === undefined || fill.state === 'running') return null
+  const failure = (text: string): JSX.Element => <p className={`${css.embeddingFillOutcome} ${css.error}`} role="alert">{text}</p>
+  if (fill.state === 'failed') return failure(t('config.embeddingFillFailed', { name: fill.name, error: fill.error }))
+  const { filled, remaining, model, stopped } = fill.result
+  const name = fill.name
+  if (remaining > 0 && stopped === 'refused' && filled === 0) return failure(t('config.embeddingFillRefused', { name, model }))
+  const text = remaining === 0
+    ? filled > 0 ? t('config.embeddingFillDone', { name, filled }) : undefined
+    : stopped === 'refused' ? t('config.embeddingFillPartly', { name, filled, remaining }) : t('config.embeddingFillMore', { name, filled, remaining })
+  return text === undefined ? null : <p className={css.embeddingFillOutcome} role="status">{text}</p>
 }
 
 // ---- Layered strategy: the background tasks it drives ----
 
-/** Where the background task Agents run: DSH's new-session route, or a fixed Provider and model. */
-interface Route {
-  mode: 'inherit' | 'fixed'
-  provider: string
-  model: string
-}
 type ReviewChoice = Pick<ResolvedIdleReviewConfig, 'enabled' | 'runtimeMemory' | 'provider' | 'fallback' | 'agentTeams'>
 type ReviewLimits = Pick<ResolvedIdleReviewConfig, 'minIntervalMs' | 'maxPerSession' | 'maxContextChars' | 'maxTokens'>
 
@@ -320,14 +396,6 @@ const LIMITS: ReadonlyArray<{ key: keyof ReviewLimits; min: number; max: number;
   { key: 'maxContextChars', min: 1_000, max: 1_000_000, scale: 1 },
   { key: 'maxTokens', min: 128, max: 131_072, scale: 1 },
 ]
-
-function routeOf(value: Config | undefined): Route {
-  return {
-    mode: value?.taskAgentModel?.mode === 'fixed' ? 'fixed' : 'inherit',
-    provider: value?.taskAgentModel?.provider?.trim() ?? '',
-    model: value?.taskAgentModel?.model?.trim() ?? '',
-  }
-}
 
 function reviewOf(value: Config | undefined): ResolvedIdleReviewConfig {
   return { ...DEFAULT_IDLE_REVIEW, ...value?.idleReview }
@@ -354,16 +422,6 @@ function reviewWrite<T extends Partial<ResolvedIdleReviewConfig>>(configured: Co
   return [{ op: 'set', path: ['idleReview'], value: { ...configured, ...Object.fromEntries(changed.map(key => [key, next[key]])) } }]
 }
 
-/** The route choosing a fixed model starts from: the saved one, else DSH's default, else the first listed. */
-function startingRoute(catalog: TaskAgentModelCatalog, current: Route): { provider: string; model: string } | undefined {
-  const listed = (provider: string): boolean => catalog.groups.some(group => group.id === provider)
-  const provider = (listed(current.provider) ? current.provider : '') || catalog.defaultSelection?.provider || catalog.groups[0]?.id || ''
-  const models = catalog.groups.find(group => group.id === provider)?.models ?? []
-  const model = (current.provider === provider ? current.model : '')
-    || (catalog.defaultSelection?.provider === provider ? catalog.defaultSelection.model : '') || models[0]?.id || ''
-  return provider === '' || model === '' ? undefined : { provider, model }
-}
-
 /**
  * The Layered strategy's own settings: the model its background task Agents use,
  * and the idle review that keeps its layers in shape. Choices apply at once;
@@ -373,9 +431,8 @@ export function ThreeTierSettings(props: ShippedSettingsServices & { page: Memor
   const { scope, connection, page, t } = props
   const snapshot = useScope(scope)
   const savedReview = reviewOf(snapshot.value)
-  const route = useLive(routeOf(snapshot.value), async next => {
-    await scope.mutate([{ op: 'set', path: ['taskAgentModel'], value: next.mode === 'inherit' ? { mode: 'inherit' } : { mode: 'fixed', provider: next.provider, model: next.model } }])
-  })
+  // The page belongs to one conversation, so the route it states is the one that conversation's tasks take.
+  const taskAgent = useTaskAgentModel({ scope, connection, sessionId: page.sessionId, workspaceId: page.workspace?.id })
   const configured = snapshot.value?.idleReview
   const choice = useLive(choiceOf(savedReview), async next => {
     const operations = reviewWrite(configured, next, choiceOf(savedReview))
@@ -387,123 +444,22 @@ export function ThreeTierSettings(props: ShippedSettingsServices & { page: Memor
     const operations = reviewWrite(configured, next, before)
     if (operations.length > 0) await scope.mutate(operations)
   })
-  const [catalog, setCatalog] = useState<{ state: 'unavailable' | 'loading' | 'ready' | 'error'; value: TaskAgentModelCatalog | null; error: string | null; full: boolean }>(
-    { state: connection === undefined ? 'unavailable' : 'loading', value: null, error: null, full: false })
-  const request = useRef(0)
-  // What the catalog read so far: DSH's route alone, or every Provider's models too.
-  const loaded = useRef<'none' | 'route' | 'full'>('none')
-  const load = useCallback((full: boolean): void => {
-    if (connection === undefined) return
-    const current = ++request.current
-    setCatalog(value => ({ ...value, state: 'loading', error: null }))
-    void new MnemonClient(connection).taskAgentModels(full).then(value => {
-      if (request.current !== current) return
-      loaded.current = full ? 'full' : 'route'
-      setCatalog({ state: 'ready', value, error: null, full })
-    }, reason => {
-      if (request.current === current) setCatalog(value => ({ ...value, state: 'error', error: message(reason) }))
-    })
-  }, [connection])
-  useEffect(() => () => { request.current += 1 }, [])
-  // A fixed route shows every Provider's models; what was read already is not read again.
-  const configuredMode = snapshot.value?.taskAgentModel?.mode === 'fixed' ? 'fixed' : 'inherit'
-  useEffect(() => {
-    if (configuredMode === 'fixed' ? loaded.current === 'full' : loaded.current !== 'none') return
-    load(configuredMode === 'fixed')
-  }, [configuredMode, load])
-  // Choosing a fixed model before the full catalog arrived takes its first choices once it does.
-  const [choosing, setChoosing] = useState(false)
-  useEffect(() => {
-    if (!choosing) return
-    if (catalog.state === 'error') { setChoosing(false); return }
-    if (!catalog.full || catalog.value === null) return
-    setChoosing(false)
-    const start = startingRoute(catalog.value, route.value)
-    if (start !== undefined) route.set({ mode: 'fixed', ...start })
-  }, [choosing, catalog])
-  const chooseMode = (mode: Route['mode']): void => {
-    if (mode === 'inherit') { setChoosing(false); route.set({ mode: 'inherit', provider: '', model: '' }); return }
-    const start = catalog.full && catalog.value !== null ? startingRoute(catalog.value, route.value) : undefined
-    if (start !== undefined) { route.set({ mode: 'fixed', ...start }); return }
-    setChoosing(true)
-    load(true)
-  }
   const disabled = !page.writable || snapshot.status === 'loading' || !snapshot.writable
   return <section className={css.panelSection} aria-labelledby="mnemon-three-tier-background">
     <div className={css.panelHeading}>
       <h3 id="mnemon-three-tier-background">{t('config.backgroundTitle')}</h3>
       <p>{t('config.backgroundDescription')}</p>
-      {catalog.state === 'loading' && <span className={css.miniSpinner} aria-hidden="true" />}
+      {taskAgent.catalog.state === 'loading' && <span className={css.miniSpinner} aria-hidden="true" />}
     </div>
     {!page.component.enabled && <p className={css.panelNote}>{t('threeTier.offNote')}</p>}
     <div className={css.rows}>
-      <TaskAgentModelRows mode={choosing ? 'fixed' : route.value.mode} route={route.value} choosing={choosing} catalog={catalog.value} state={catalog.state} error={catalog.error}
-        disabled={disabled} onMode={chooseMode} onRoute={next => route.set({ mode: 'fixed', ...next })} t={t} />
+      <TaskAgentModelRows mode={taskAgent.choosing ? 'fixed' : taskAgent.route.mode} route={taskAgent.route} settled={taskAgent.settled} choosing={taskAgent.choosing}
+        catalog={taskAgent.catalog.value} state={taskAgent.catalog.state} error={taskAgent.catalog.error} retry={taskAgent.retry}
+        disabled={disabled} onMode={taskAgent.setMode} onRoute={taskAgent.setRoute} t={t} />
       <IdleReviewRows choice={choice.value} limits={limits} disabled={disabled} onChoice={next => choice.set({ ...choice.value, ...next })} t={t} />
     </div>
-    <WriteFailure error={route.failed ?? choice.failed} t={t} />
+    <WriteFailure error={taskAgent.failed ?? choice.failed} t={t} />
   </section>
-}
-
-function TaskAgentModelRows(props: {
-  mode: Route['mode']
-  route: Route
-  /** A fixed model was chosen and waits for the catalog to pick its first route. */
-  choosing: boolean
-  catalog: TaskAgentModelCatalog | null
-  state: 'unavailable' | 'loading' | 'ready' | 'error'
-  error: string | null
-  disabled: boolean
-  onMode: (mode: Route['mode']) => void
-  onRoute: (route: { provider: string; model: string }) => void
-  t: MnemonTranslate
-}): JSX.Element {
-  const { route, t } = props
-  const groups = props.catalog?.groups ?? []
-  const group = groups.find(candidate => candidate.id === route.provider)
-  const inherited = props.catalog?.defaultSelection
-    ?? (props.catalog?.effective?.source === 'fixed' ? undefined : props.catalog?.effective)
-  const fixed = props.mode === 'fixed' && !props.choosing
-  const effective = props.mode === 'fixed'
-    ? (!fixed || route.provider === '' || route.model === '' ? undefined : { provider: route.provider, model: route.model })
-    : inherited
-  // A saved route the catalog no longer lists stays selectable, so it can be read and changed.
-  // Two Providers by the same name are told apart by their ids.
-  const shared = (name: string): boolean => groups.filter(candidate => candidate.name === name).length > 1
-  const providers: SettingOption<string>[] = [
-    ...(route.provider !== '' && group === undefined ? [{ value: route.provider, label: route.provider }] : []),
-    ...groups.map(candidate => ({ value: candidate.id, label: candidate.name, ...(shared(candidate.name) ? { detail: candidate.id } : {}) })),
-  ]
-  const models: SettingOption<string>[] = [
-    ...(route.model !== '' && group?.models.some(model => model.id === route.model) !== true ? [{ value: route.model, label: route.model }] : []),
-    ...(group?.models ?? []).map(model => ({ value: model.id, label: model.name, ...(model.inputModalities?.includes('image') === true ? { detail: t('config.taskAgentImageInput') } : {}) })),
-  ]
-  const chooseProvider = (provider: string): void => {
-    const model = groups.find(candidate => candidate.id === provider)?.models[0]?.id
-    if (model !== undefined) props.onRoute({ provider, model })
-  }
-  return <>
-    <SelectRow id="mnemon-task-agent" label={t('config.taskAgentTitle')} value={props.mode} disabled={props.disabled} onChange={props.onMode}
-      options={[
-        { value: 'inherit', label: t('config.taskAgentInherit'), detail: t('config.taskAgentInheritHint') },
-        { value: 'fixed', label: t('config.taskAgentFixed'), detail: t('config.taskAgentFixedHint'), ...(props.state === 'unavailable' ? { disabled: true } : {}) },
-      ]} />
-    {fixed && <>
-      <SelectRow id="mnemon-task-agent-provider" label={t('config.taskAgentProvider')} value={route.provider} disabled={props.disabled || props.state !== 'ready'} options={providers} onChange={chooseProvider} />
-      <SelectRow id="mnemon-task-agent-model" label={t('config.taskAgentModel')} value={route.model} disabled={props.disabled || props.state !== 'ready' || group === undefined} options={models}
-        onChange={model => props.onRoute({ provider: route.provider, model })} />
-    </>}
-    <div className={css.rowDetail}>
-      <span className={css.effectiveRoute}>
-        <span>{t('config.taskAgentEffective')}</span>
-        {effective === undefined
-          ? <small>{props.state === 'loading' || props.choosing ? t('config.taskAgentLoading') : t('config.taskAgentUnavailable')}</small>
-          : <code>{effective.provider} / {effective.model}</code>}
-      </span>
-      {props.state === 'error' && <p className={css.warning}>{t('config.taskAgentLoadFailed', { error: props.error ?? '' })}</p>}
-      {(props.catalog?.failures.length ?? 0) > 0 && groups.length > 0 && <p className={css.warning}>{t('config.taskAgentPartial', { count: props.catalog!.failures.length })}</p>}
-    </div>
-  </>
 }
 
 function IdleReviewRows(props: {

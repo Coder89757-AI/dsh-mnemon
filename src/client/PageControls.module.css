@@ -92,3 +92,10 @@
 }
 .receipt > :first-child { flex: none; margin-top: 1px; }
 .receiptAction { flex: none; margin-left: auto; }
+/* A fact about the write the summary may leave out, under the row, in a caution tone. */
+.receipt > .receiptNote {
+  flex-basis: 100%;
+  color: var(--dsw-alias-state-warn-label, var(--dsw-alias-label-secondary));
+  font-size: 12px;
+  line-height: 18px;
+}

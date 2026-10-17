@@ -175,6 +175,17 @@ describe('Mnemon RPC Source boundaries', () => {
     expect(await write('provider-services', {})).toMatchObject({ ok: false, error: { code: 'bad-request' } })
   })
 
+  it('fills in a space\'s vectors through the write channel only (#392)', async () => {
+    const f = await fixture()
+    const body = await f.memorySpace()
+    const execute = vi.spyOn(f.graph.memoryComposition.current()!, 'executeManagement')
+    const result = await createWriteHandler(f.live)('embedding-fill', { memoryBodyId: body.id })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'embedding-fill', input: expect.objectContaining({ memoryBodyId: body.id }) }))
+    // The fixture's space is not Mnemon Native, so it keeps no vectors to fill in.
+    expect(result).toMatchObject({ ok: false, error: { message: expect.stringContaining('keeps no Mnemon vectors to fill in') } })
+    expect(await createReadHandler(f.live)('embedding-fill', { memoryBodyId: body.id })).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+
   it('validates enum values before Provider I/O', async () => {
     const f = await fixture()
     expect(await createReadHandler(f.live)('search', { query: 'x', mode: 'anything' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('mode') } })
@@ -511,7 +522,9 @@ describe('Host assistance and channels', () => {
     const turnActivities = vi.fn(() => ({ cursor: 12, activities: [{ turn: 2, recalls: 1 }] }))
     const read = createReadHandler(f.runtime, lifecycle({ taskAgentModels, turnActivities }))
     expect(await read('task-agent-models', { includeCatalog: false })).toMatchObject({ ok: true })
-    expect(taskAgentModels).toHaveBeenCalledWith(false)
+    expect(taskAgentModels).toHaveBeenCalledWith(false, undefined)
+    expect(await read('task-agent-models', { includeCatalog: false, sessionId: 's1' })).toMatchObject({ ok: true })
+    expect(taskAgentModels).toHaveBeenLastCalledWith(false, 's1')
     expect(await read('turn-activities', { sessionId: 's1' })).toMatchObject({ ok: true, value: { cursor: 12 } })
     expect(await read('turn-activity', { sessionId: 's1', turn: 2 })).toMatchObject({ ok: true, value: { recalls: 1 } })
     expect(f.graph.source).not.toHaveBeenCalled()

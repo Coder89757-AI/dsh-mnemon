@@ -91,6 +91,7 @@ const TaskAgentModelSchema: z<TaskAgentModelConfig> = z.object({
   mode: z.union(['inherit', 'fixed'] as const),
   provider: z.string(),
   model: z.string(),
+  followConversation: z.boolean(),
 })
 
 const MnemonEmbeddingSchema = z.object({
@@ -260,7 +261,10 @@ function resolveCustomPacks(value: CustomPackConfig[] | undefined, legacyDataDir
 function resolveTaskAgentModel(value: TaskAgentModelConfig | undefined): ResolvedTaskAgentModelConfig {
   const mode = value?.mode ?? 'inherit'
   if (mode !== 'inherit' && mode !== 'fixed') throw new Error(`dsh-mnemon: unsupported task Agent model mode: ${String(mode)}`)
-  if (mode === 'inherit') return { mode }
+  const follow = value?.followConversation
+  if (follow !== undefined && typeof follow !== 'boolean') throw new Error('dsh-mnemon: taskAgentModel.followConversation must be a boolean')
+  // A fixed route names its own model, so only an inherited one can follow a conversation.
+  if (mode === 'inherit') return follow === true ? { mode, followConversation: true } : { mode }
   const provider = optionalText(value?.provider)
   const model = optionalText(value?.model)
   if (provider === undefined || model === undefined) throw new Error('dsh-mnemon: a fixed task Agent model requires both provider and model')

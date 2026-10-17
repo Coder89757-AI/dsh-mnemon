@@ -38,6 +38,22 @@ describe('Memory Spaces health for model tools', () => {
     expect(disabled.notice).toBe(blocked.notice)
   })
 
+  it('says what the aggregate sums, so per-space counts can be squared with it (#390)', () => {
+    const stats = { totalInsights: 108, deletedInsights: 3, edgeCount: 3879, oplogCount: 40, dbSizeBytes: 3_547_136, byCategory: {}, topEntities: [] }
+    const value = modelStatus(status({ memoryBodies: [
+      { id: 'default', name: 'Default', active: true, providerEnabled: true, healthy: true, stats },
+      // A Provider that keeps no statistics, such as Mem0, counts as healthy and adds nothing.
+      { id: 'mem0', name: 'Mem0', active: true, providerEnabled: true, healthy: true },
+      { id: 'archive', name: 'Archive', active: false, providerEnabled: true, healthy: true, stats },
+    ] as never, stats } as never))
+    expect(value.memorySpaces).toMatchObject({ active: 2, healthy: 2 })
+    expect(value.aggregate).toEqual({
+      scope: 'Sums over the active, healthy Memory Spaces whose Provider reports statistics (spaces); the others add nothing. totalInsights counts live memories, and deletedInsights the forgotten ones a Provider keeps, as Mnemon Native does.',
+      spaces: 1,
+      totalInsights: 108, deletedInsights: 3, edgeCount: 3879, oplogCount: 40, dbSizeBytes: 3_547_136,
+    })
+  })
+
   it('adds nothing once a Memory Space exists', () => {
     const value = modelStatus(status({ memoryBodies: [{ id: 'default', name: 'Default', active: true, providerEnabled: true, healthy: true }] as never }))
     expect(value).not.toHaveProperty('notice')

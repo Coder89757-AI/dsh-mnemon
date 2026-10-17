@@ -25,6 +25,7 @@ import { createStorageRoot, type StorageRoot } from './storage-root.ts'
 import { MNEMON_PACK_COMPONENTS, type MnemonEntryOrigin, type MnemonMachineIdentity, type MnemonPackComponent, type MnemonPackComponentSummary, type MnemonPackExport, type MnemonPackImportMode, type MnemonPackImportResult, type MnemonPackManifest, type MnemonPackPreview, type MnemonPackScope, type MnemonPackTarget, type MnemonRuntimeMergeReport, type MnemonTombstone, type MnemonTombstoneFile } from "./protocol.ts"
 import { MnemonMachineStore } from './machine-identity.ts'
 import { MemorySpaceIdentity } from './space-identity.ts'
+import { pluginPackageVersion } from './version-updates.ts'
 
 export type { MnemonPackComponent, MnemonPackComponentSummary, MnemonPackExport, MnemonPackImportMode, MnemonPackImportResult, MnemonPackManifest, MnemonPackPreview, MnemonPackScope } from "./protocol.ts"
 
@@ -54,6 +55,12 @@ const STATE_TOMBSTONE_FILE = 'tombstones.json'
 const STATE_RUNTIME_INDEX_FILE = 'runtime-index.json'
 const COMPONENT_ORDER = MNEMON_PACK_COMPONENTS
 const BODY_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
+/**
+ * Every content hash this format writes is `sha256(...)` in hex, so one rule decides the shape.
+ * The digest of a Runtime entry's text and the digest of a Document's body are the same kind of
+ * value, and a second, drifting copy of the rule is how one of them ends up unchecked.
+ */
+const CONTENT_HASH = /^[a-f0-9]{64}$/u
 const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'binary')
 
 interface ChecksumFile {
@@ -313,7 +320,7 @@ export function parseTombstones(value: unknown): MnemonTombstoneFile {
   const tombstones = source.tombstones.map((raw): MnemonTombstone => {
     const tombstone = record(raw)
     if (tombstone?.target !== 'memory' && tombstone?.target !== 'user') throw new Error('runtime tombstones.json contains an invalid entry')
-    if (typeof tombstone.contentHash !== 'string' || !/^[a-f0-9]{64}$/u.test(tombstone.contentHash) || typeof tombstone.deletedAt !== 'string') {
+    if (typeof tombstone.contentHash !== 'string' || !CONTENT_HASH.test(tombstone.contentHash) || typeof tombstone.deletedAt !== 'string') {
       throw new Error('runtime tombstones.json contains an invalid entry')
     }
     return {
@@ -381,20 +388,34 @@ function validDatabase(bytes: Uint8Array, path: string): void {
   if (bytes.length < 100 || !Buffer.from(bytes.subarray(0, SQLITE_HEADER.length)).equals(SQLITE_HEADER)) throw new Error(`${path} is not a SQLite mnemon.db`)
 }
 
-function validatePackPayload(files: Unzipped, components: MnemonPackComponent[], runtimeLimits: RuntimeMemoryLimits): void {
+/**
+ * One document's payload entry, judged against the index that describes it.
+ *
+ * A document's body lives in its own file while its digest lives in `index.json`, so the two can
+ * disagree while neither looks malformed: an index a person edited, a write that stopped halfway,
+ * or a store an older version repaired by hand. The import path and the publish path judge that
+ * pair by this one rule, so a payload this machine would refuse from another machine is never one
+ * this machine produces. Reading the index does not judge the digest's shape: a ZIP backup reads
+ * the same index, and a store that needs repair still has to download as one.
+ */
+function assertDocumentPayload(document: DocumentRecord, bytes: Uint8Array): void {
+  if (!CONTENT_HASH.test(document.contentHash)) throw new Error(`Documents index records a content hash that is not a sha256 digest for ${document.relativePath}`)
+  if (bytes.length !== document.sizeBytes) throw new Error(`Documents payload size does not match ${document.relativePath}`)
+  const markdown = utf8(bytes, `payload/${document.relativePath}`)
+  const frontmatterEnd = markdown.startsWith('---\n') ? markdown.indexOf('\n---\n', 4) : -1
+  if (frontmatterEnd < 0 || !markdown.slice(4, frontmatterEnd).split('\n').includes(`id: ${JSON.stringify(document.id)}`)) throw new Error(`Documents payload identity does not match ${document.relativePath}`)
+  const body = markdown.slice(frontmatterEnd + 5).trim()
+  if (sha256(body) !== document.contentHash) throw new Error(`Documents payload content hash does not match ${document.relativePath}`)
+}
+
+function validatePackPayload(files: Record<string, Uint8Array>, components: MnemonPackComponent[], runtimeLimits: RuntimeMemoryLimits): void {
   if (components.includes('runtime')) parseRuntime(json(files['payload/runtime/memories.json'] ?? new Uint8Array(), 'payload/runtime/memories.json'), runtimeLimits)
   if (components.includes('documents')) {
     const index = parseDocumentIndex(json(files['payload/documents/index.json'] ?? new Uint8Array(), 'payload/documents/index.json'))
     for (const document of index.documents) {
-      const path = `payload/${document.relativePath}`
-      const bytes = files[path]
+      const bytes = files[`payload/${document.relativePath}`]
       if (bytes === undefined) throw new Error(`Documents payload is missing ${document.relativePath}`)
-      if (bytes.length !== document.sizeBytes) throw new Error(`Documents payload size does not match ${document.relativePath}`)
-      const markdown = utf8(bytes, path)
-      const frontmatterEnd = markdown.startsWith('---\n') ? markdown.indexOf('\n---\n', 4) : -1
-      if (frontmatterEnd < 0 || !markdown.slice(4, frontmatterEnd).split('\n').includes(`id: ${JSON.stringify(document.id)}`)) throw new Error(`Documents payload identity does not match ${document.relativePath}`)
-      const body = markdown.slice(frontmatterEnd + 5).trim()
-      if (sha256(body) !== document.contentHash) throw new Error(`Documents payload content hash does not match ${document.relativePath}`)
+      assertDocumentPayload(document, bytes)
     }
   }
   if (components.includes('memory-spaces')) {
@@ -861,7 +882,10 @@ function mergeDocuments(root: string, pack: ParsedPack, base?: Readonly<Record<s
   }
   for (const source of incoming.index.documents) {
     const existing = ids.get(source.id)
-    const agreed = existing !== undefined && base !== undefined && Object.hasOwn(base, source.id) ? base[source.id] : undefined
+    const recorded = existing !== undefined && base !== undefined && Object.hasOwn(base, source.id) ? base[source.id] : undefined
+    // A version this machine agreed on is one it held, so it is never above this machine's own
+    // revision: one that is was never held here, and the merge goes on as without an agreement.
+    const agreed = recorded !== undefined && documentVersion(source) === recorded && source.revision > existing!.revision ? undefined : recorded
     if (existing !== undefined && agreed !== undefined) {
       if (documentVersion(source) === agreed) continue
       const at = current.index.documents.indexOf(existing)
@@ -1170,10 +1194,15 @@ export class MnemonPackManager {
       return withLocks(this.root, components, () => {
         const exportedAt = this.now().toISOString()
         const payload = collectExport(this.root, components, this.runtimeLimits, options.stamp === true ? { machine: this.identity(), at: exportedAt } : undefined)
+        // Publishing is what makes a payload the branch's truth: `pushOnce` imports the branch's
+        // own payload before it can publish anything else, so an archive another machine would
+        // refuse must never leave this one. The ZIP path stays exempt on purpose: a person backing
+        // up a store that needs repair still has to be able to download one.
+        if (options.stamp === true) validatePackPayload(payload, components, this.runtimeLimits)
         const summary = summaryFor(components, payload, this.runtimeLimits)
         const manifest: MnemonPackManifest = {
           format: MNEMON_PACK_FORMAT, version: MNEMON_PACK_VERSION, scope, exportedAt,
-          source: { plugin: 'dsh-mnemon', pluginVersion: '0.1.0' }, components, summary,
+          source: { plugin: 'dsh-mnemon', pluginVersion: pluginPackageVersion() }, components, summary,
         }
         const checksums: ChecksumFile = { algorithm: 'sha256', files: Object.fromEntries(Object.entries(payload).map(([path, bytes]) => [path, sha256(bytes)])) }
         const entries: Zippable = {

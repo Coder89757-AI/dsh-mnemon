@@ -100,7 +100,7 @@ const SPACE_READ_CAPABILITIES: Record<string, MemoryCapability> = {
 }
 const SPACE_WRITE_CAPABILITIES: Record<string, MemoryCapability> = {
   remember: 'write', link: 'link', forget: 'forget', 'body-create': 'write', 'body-update': 'write',
-  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain',
+  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain', 'embedding-fill': 'maintain',
 }
 
 // Optional product workflows. They are not Source or Core operations and are
@@ -224,7 +224,10 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
       }
       if (endpoint === 'task-agent-models') {
         if (lifecycle === undefined) throw new Error('Mnemon task Agent model directory is unavailable')
-        return success(await lifecycle.taskAgentModels(payload.includeCatalog !== false))
+        // The settings page asks from one conversation, so its effective route
+        // is that conversation's route rather than a session-less guess.
+        const requested = requestedScope(payload)
+        return success(await lifecycle.taskAgentModels(payload.includeCatalog !== false, requested.sessionId))
       }
       const runtime = scoped(input, payload, lifecycle)
       if (Object.hasOwn(SPACE_READ_CAPABILITIES, endpoint)) {

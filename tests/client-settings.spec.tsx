@@ -48,6 +48,18 @@ type PageOptions = Parameters<typeof page>[1]
 const spaces = (scope: ClientSettingsScope<Config>, connection?: ClientConnectionHandle, options: PageOptions = {}, t: MnemonTranslate = translateZh, componentChanges?: { bump: () => void }) =>
   <MemorySpacesSettings scope={scope} {...(connection === undefined ? {} : { connection })} t={t} page={page(MEMORY_SPACES_PACKAGE, options)} {...(componentChanges === undefined ? {} : { componentChanges })} />
 /** The Layered strategy's own settings: the background tasks it drives. */
+/** What the Host reports for a page opened from a conversation on a model other than DSH's new-session one. */
+const conversationDirectory = {
+  effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' as const },
+  defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+  session: { provider: 'ai', model: 'space-bunny' },
+  inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' as const },
+  groups: [
+    { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] },
+    { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-5', name: 'GPT-5' }] },
+  ],
+  failures: [],
+}
 const threeTier = (scope: ClientSettingsScope<Config>, connection?: ClientConnectionHandle, options: PageOptions = {}, t: MnemonTranslate = translateZh) =>
   <ThreeTierSettings scope={scope} {...(connection === undefined ? {} : { connection })} t={t} page={page(THREE_TIER_PACKAGE, options)} />
 /** Runtime Memory's own setting: where its user profile lives. */
@@ -247,6 +259,158 @@ describe('MnemonSettingsCard', () => {
 
     expect(await screen.findByText('嵌入服务可用 · qwen3-embedding:0.6b · 已嵌入 6/8（75%）')).toBeTruthy()
     expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'embedding-status', {})
+  })
+
+  it('lists the vectors of each Mnemon Native space, so a full count for one never reads as all of them (#392)', async () => {
+    const snapshot = {
+      status: 'ready' as const,
+      value: { storageScope: 'global' as const },
+      base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
+    }
+    const scope = settingsScope(snapshot)
+    const space = (memoryBodyId: string, name: string, totalInsights: number, embedded: number, coverage: string, active = true) => ({ memoryBodyId, name, active, totalInsights, embedded, coverage })
+    let filled = false
+    const fill = Promise.withResolvers<void>()
+    const call = vi.fn(async (channel: string, endpoint: string, payload?: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
+        ok: true as const,
+        value: {
+          available: true, model: 'nomic-embed-text', totalInsights: 158, embedded: filled ? 158 : 127, coverage: filled ? '100%' : '80%',
+          spaces: [
+            space('default', 'Lumen 项目', 94, 94, '100%'),
+            filled ? space('7b3da8e7', '工具实测', 64, 64, '100%') : space('7b3da8e7', '工具实测', 64, 33, '51%'),
+            space('archive', '调研归档', 0, 0, '0%', false),
+            { ...space('broken', '损坏的空间', 0, 0, '0%'), error: 'database disk image is malformed' },
+          ],
+        },
+      }
+      if (channel === '/dsh-mnemon-write' && endpoint === 'embedding-fill') {
+        expect(payload).toEqual({ memoryBodyId: '7b3da8e7' })
+        await fill.promise
+        filled = true
+        return { ok: true as const, value: { memoryBodyId: '7b3da8e7', filled: 31, remaining: 0, model: 'nomic-embed-text' } }
+      }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(spaces(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    expect(screen.getByText('尚未检查嵌入服务的连接与各 Mnemon Native 空间的覆盖率。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+
+    expect(await screen.findByText('嵌入服务可用 · nomic-embed-text · 已嵌入 127/158（80%）')).toBeTruthy()
+    const rows = () => within(screen.getByRole('list', { name: '各 Mnemon Native 空间' })).getAllByRole('listitem')
+    expect(rows().map(item => item.textContent)).toEqual([
+      'Lumen 项目已嵌入 94/94（100%）',
+      '工具实测已嵌入 33/64（51%）补齐',
+      '调研归档未激活已嵌入 0/0（0%）',
+      '损坏的空间无法读取：database disk image is malformed',
+    ])
+    // The marker is not part of the name, which is what shortens in a narrow card.
+    expect(within(rows()[2]!).getByText('调研归档').getAttribute('title')).toBe('调研归档')
+    // Only a space that lacks vectors is marked and can be filled in.
+    expect(rows().map(item => item.hasAttribute('data-missing'))).toEqual([false, true, false, false])
+    expect(screen.getByText('没有向量的记忆不参与语义匹配；点空间旁的「补齐」即可生成缺少的向量。')).toBeTruthy()
+    expect(screen.getByText('无法读取的空间没有计入合计。')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '补齐「工具实测」的向量' }))
+    const running = await screen.findByRole('button', { name: '正在补齐「工具实测」的向量' })
+    expect(running.textContent).toBe('补齐中…')
+    expect(running.getAttribute('aria-busy')).toBe('true')
+    // A test would wait for the fill's lock; it waits for the fill instead.
+    expect(screen.getByRole('button', { name: '测试状态' })).toHaveProperty('disabled', true)
+    fill.resolve()
+    // The counts are read again once the Host has filled the space in, and the line says what it did.
+    expect((await screen.findByRole('status')).textContent).toBe('已为「工具实测」补齐 31 条向量。')
+    expect(await screen.findByText('嵌入服务可用 · nomic-embed-text · 已嵌入 158/158（100%）')).toBeTruthy()
+    expect(rows()[1]!.textContent).toBe('工具实测已嵌入 64/64（100%）')
+    expect(screen.queryByRole('button', { name: /补齐「工具实测」的向量/u })).toBeNull()
+    expect(call.mock.calls.filter(([, endpoint]) => endpoint === 'embedding-status')).toHaveLength(2)
+  })
+
+  it('says why a fill failed, and offers none while the embedding service is down (#392)', async () => {
+    const snapshot = {
+      status: 'ready' as const,
+      value: { storageScope: 'global' as const },
+      base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
+    }
+    const scope = settingsScope(snapshot)
+    let available = true
+    const call = vi.fn(async (channel: string, endpoint: string) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
+        ok: true as const,
+        value: { available, model: 'nomic-embed-text', totalInsights: 64, embedded: 33, coverage: '51%',
+          spaces: [{ memoryBodyId: 'tools', name: '工具实测', active: true, totalInsights: 64, embedded: 33, coverage: '51%' }] },
+      }
+      if (channel === '/dsh-mnemon-write' && endpoint === 'embedding-fill') {
+        available = false
+        return { ok: false as const, error: { message: 'Ollama embedding provider not available at http://127.0.0.1:11434' } }
+      }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(spaces(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    fireEvent.click(await screen.findByRole('button', { name: '补齐「工具实测」的向量' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('「工具实测」的向量没有补齐：Ollama embedding provider not available at http://127.0.0.1:11434')
+    // The status read again finds the service down: no fill is offered, and the hint says when one will be.
+    expect(await screen.findByText('嵌入服务不可达 · nomic-embed-text · 已嵌入 33/64（51%）')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '补齐「工具实测」的向量' })).toBeNull()
+    expect(screen.getByText('没有向量的记忆不参与语义匹配；嵌入服务可用后，可以在这里补齐。')).toBeTruthy()
+    // A new test starts clean.
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('says what a fill that stopped early did, and promises no fill a read-only Host cannot make (#392)', async () => {
+    const snapshot = (writeEnabled: boolean) => ({
+      status: 'ready' as const,
+      value: { storageScope: 'global' as const, writeEnabled },
+      base: {}, user: {}, revision: 1, writable: true, mode: 'host' as const,
+    })
+    const results = [
+      // The service answers Mnemon's probe and returns no vector, as when its model is not pulled.
+      { memoryBodyId: 'tools', filled: 0, remaining: 64, model: 'nomic-embed-text', stopped: 'refused' },
+      { memoryBodyId: 'tools', filled: 50, remaining: 14, model: 'nomic-embed-text', stopped: 'time' },
+      { memoryBodyId: 'tools', filled: 10, remaining: 4, model: 'nomic-embed-text', stopped: 'refused' },
+    ]
+    const call = vi.fn(async (channel: string, endpoint: string) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'embedding-status') return {
+        ok: true as const,
+        value: { available: true, model: 'nomic-embed-text', totalInsights: 64, embedded: 0, coverage: '0%',
+          spaces: [{ memoryBodyId: 'tools', name: '工具实测', active: true, totalInsights: 64, embedded: 0, coverage: '0%' }] },
+      }
+      if (channel === '/dsh-mnemon-write' && endpoint === 'embedding-fill') return { ok: true as const, value: results.shift()! }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'provider-services') return { ok: true as const, value: { providers: [], items: [], generatedAt: '' } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+    const connection = { rpc: { call }, isLoopback: true } as ClientConnectionHandle
+    const view = render(spaces(settingsScope(snapshot(true)), connection))
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    const fillIn = async (): Promise<void> => {
+      const button = await screen.findByRole('button', { name: '补齐「工具实测」的向量' })
+      await waitFor(() => expect(button).toHaveProperty('disabled', false))
+      fireEvent.click(button)
+    }
+    await fillIn()
+    expect((await screen.findByRole('alert')).textContent).toBe('嵌入服务没有为「工具实测」返回向量，请确认它在运行并提供模型 nomic-embed-text。')
+    await fillIn()
+    expect((await screen.findByRole('status')).textContent).toBe('已为「工具实测」补齐 50 条向量，还缺 14 条，再点「补齐」继续。')
+    await fillIn()
+    expect((await screen.findByRole('status')).textContent).toBe('已为「工具实测」补齐 10 条向量；其余 4 条嵌入服务没有返回向量，可以稍后再点「补齐」。')
+    view.unmount()
+
+    render(spaces(settingsScope(snapshot(false)), connection))
+    fireEvent.click(screen.getByRole('button', { name: '测试状态' }))
+    expect(await screen.findByText('没有向量的记忆不参与语义匹配。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /补齐/u })).toBeNull()
   })
 
   it('renders one switch per live Catalog layer and persists only its enabled state', async () => {
@@ -451,7 +615,7 @@ describe('MnemonSettingsCard', () => {
     expect(screen.getByRole('alert').textContent).toContain('无法加载记忆系统设置')
   })
 
-  it('inherits the new-session route by default and applies a chosen Provider and model at once', async () => {
+  it('follows global by default and applies a custom Provider and model at once', async () => {
     const mutate = vi.fn(async () => {})
     const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
     const call = vi.fn(async (channel: string, endpoint: string, _payload: unknown) => {
@@ -481,11 +645,11 @@ describe('MnemonSettingsCard', () => {
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
 
-    expect(selector('任务 Agent 模型').textContent).toBe('跟随主链路')
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随全局')
     expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
     expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: false })
-    // Choosing a fixed model applies at once, starting from DSH's default route.
-    choose('任务 Agent 模型', '指定模型')
+    // Choosing a custom model applies at once, starting from DSH's new-session model.
+    choose('任务 Agent 模型', '自定义')
     await waitFor(() => expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: true }))
     await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'fixed', provider: 'deepseek', model: 'deepseek-chat' } }]))
     // Providers sharing a name are told apart by their ids; a Provider starts from its first model.
@@ -498,6 +662,92 @@ describe('MnemonSettingsCard', () => {
     await waitFor(() => expect(mutate).toHaveBeenLastCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'fixed', provider: 'openai', model: 'gpt-5' } }]))
     expect(rowSelector('mnemon-task-agent-model').textContent).toBe('GPT-5')
     expect(screen.getByText('openai / gpt-5')).toBeTruthy()
+  })
+
+  it('follows the conversation the page was opened from only once that is chosen, and reads a choice stored elsewhere', async () => {
+    const mutate = vi.fn(async () => {})
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
+    const call = vi.fn(async (channel: string, endpoint: string, _payload: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: conversationDirectory }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle, { sessionId: 'session-7', workspaceId: 'workspace-3' }))
+
+    // Following global keeps DSH's new-session model whatever the conversation runs on.
+    expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
+    expect(screen.getByText('新会话模型')).toBeTruthy()
+    expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: false, sessionId: 'session-7', workspaceId: 'workspace-3' })
+    choose('任务 Agent 模型', '跟随会话')
+    await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'inherit', followConversation: true } }]))
+    // The conversation's model reads before the Host is asked again.
+    expect(await screen.findByText('ai / space-bunny')).toBeTruthy()
+    expect(screen.getByText('当前会话')).toBeTruthy()
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随会话')
+
+    // A choice stored elsewhere reads here at once.
+    await act(async () => { await scope.mutate([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'inherit' } }]) })
+    expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随全局')
+  })
+
+  it('keeps following the conversation when a custom model is given up before it was written', async () => {
+    const mutate = vi.fn(async () => {})
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const, taskAgentModel: { mode: 'inherit', followConversation: true } }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
+    // The whole directory never arrives, so choosing a custom model waits.
+    const call = vi.fn(async (channel: string, endpoint: string, payload: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') {
+        return (payload as { includeCatalog: boolean }).includeCatalog ? new Promise(() => {}) : { ok: true as const, value: conversationDirectory }
+      }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle, { sessionId: 'session-7' }))
+    expect(await screen.findByText('ai / space-bunny')).toBeTruthy()
+    choose('任务 Agent 模型', '自定义')
+    choose('任务 Agent 模型', '跟随会话')
+
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随会话')
+    expect(screen.getByText('ai / space-bunny')).toBeTruthy()
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('reads the whole directory again for a custom route after a failed read', async () => {
+    let full = 0
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const, taskAgentModel: { mode: 'fixed', provider: 'openai', model: 'gpt-5' } }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, vi.fn(async () => {}))
+    const call = vi.fn(async (channel: string, endpoint: string, payload: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') {
+        if ((payload as { includeCatalog: boolean }).includeCatalog && ++full === 1) return { ok: false as const, error: { code: 'unavailable', message: 'the model directory is down' } }
+        return { ok: true as const, value: conversationDirectory }
+      }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    expect(await screen.findByText(/模型目录读取失败/u)).toBeTruthy()
+    // A failed read is a statement with its retry, not an alert to dismiss.
+    fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
+    await waitFor(() => expect(full).toBe(2))
+    // With the directory read, the custom route can be changed in place.
+    await waitFor(() => expect(rowSelector('mnemon-task-agent-model').disabled).toBe(false))
+    expect(rowSelector('mnemon-task-agent-model').textContent).toBe('GPT-5')
+  })
+
+  it('states the route the Host takes without a DSH default, and the Host\'s route before the settings are read', async () => {
+    const without = { ...conversationDirectory, defaultSelection: undefined, inherited: { provider: 'ai', model: 'starter', source: 'active-agent' as const }, effective: { provider: 'ai', model: 'starter', source: 'active-agent' as const } }
+    const call = vi.fn(async (_channel: string, _endpoint: string, _payload: unknown) => ({ ok: true as const, value: without }))
+    const ready = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, vi.fn(async () => {}))
+    const { unmount } = render(threeTier(ready, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    expect(await screen.findByText('ai / starter')).toBeTruthy()
+    expect(screen.getByText('已打开的会话')).toBeTruthy()
+    unmount()
+
+    // Until the page has the settings, only the Host knows the stored choice.
+    const stored = { ...conversationDirectory, effective: { provider: 'openai', model: 'gpt-5', source: 'fixed' as const } }
+    const loading = settingsScope<Config>({ status: 'loading' as const, writable: false, mode: 'host' as const } as never)
+    render(threeTier(loading, { rpc: { call: vi.fn(async () => ({ ok: true as const, value: stored })) }, isLoopback: true } as ClientConnectionHandle))
+    expect(await screen.findByText('openai / gpt-5')).toBeTruthy()
+    expect(screen.getByText('自定义')).toBeTruthy()
   })
 
   it('keeps rapid route-mode switches stable while model requests finish out of order', async () => {
@@ -521,9 +771,9 @@ describe('MnemonSettingsCard', () => {
     })
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
-    // A fixed model chosen before the catalog arrives waits for it; choosing to inherit again cancels it.
-    choose('任务 Agent 模型', '指定模型')
-    choose('任务 Agent 模型', '跟随主链路')
+    // A custom model chosen before the catalog arrives waits for it; following global again cancels it.
+    choose('任务 Agent 模型', '自定义')
+    choose('任务 Agent 模型', '跟随全局')
 
     await act(async () => {
       resolveCatalog({ ok: true, value: catalog })
@@ -532,10 +782,10 @@ describe('MnemonSettingsCard', () => {
       await route
     })
 
-    expect(selector('任务 Agent 模型').textContent).toBe('跟随主链路')
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随全局')
     const writes = mutate.mock.calls as unknown as Array<[Array<{ value: { mode: string } }>]>
     expect(writes.every(([operations]) => operations[0]!.value.mode === 'inherit')).toBe(true)
-    choose('任务 Agent 模型', '指定模型')
+    choose('任务 Agent 模型', '自定义')
     await waitFor(() => expect(rowSelector('mnemon-task-agent-provider').disabled).toBe(false))
     expect(rowSelector('mnemon-task-agent-provider').textContent).toBe('DeepSeek')
     // The catalog read once in full is not read again.
@@ -570,7 +820,7 @@ describe('MnemonSettingsCard', () => {
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
 
-    expect(selector('任务 Agent 模型').textContent).toBe('指定模型')
+    expect(selector('任务 Agent 模型').textContent).toBe('自定义')
     await waitFor(() => expect(rowSelector('mnemon-task-agent-provider').disabled).toBe(false))
     expect(rowSelector('mnemon-task-agent-provider').textContent).toBe('OpenAI')
     expect(rowSelector('mnemon-task-agent-model').textContent).toBe('GPT-5')

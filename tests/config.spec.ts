@@ -130,6 +130,17 @@ describe('Mnemon config and resolution', () => {
       .toThrow('provider and model')
   })
 
+  it('lets an inherited task route follow its conversation only once that is switched on', () => {
+    expect(resolveConfig({ taskAgentModel: { mode: 'inherit', followConversation: true } }).taskAgentModel).toEqual({ mode: 'inherit', followConversation: true })
+    expect(resolveConfig({ taskAgentModel: { followConversation: false } }).taskAgentModel).toEqual({ mode: 'inherit' })
+    // A fixed route names its own model, so the switch has nothing to follow there.
+    expect(resolveConfig({
+      taskAgentModel: { mode: 'fixed', provider: 'deepseek', model: 'deepseek-chat', followConversation: true },
+    }).taskAgentModel).toEqual({ mode: 'fixed', provider: 'deepseek', model: 'deepseek-chat' })
+    expect(() => resolveConfig({ taskAgentModel: { mode: 'inherit', followConversation: 'yes' as unknown as boolean } }))
+      .toThrow('taskAgentModel.followConversation must be a boolean')
+  })
+
   it('migrates the settings schema empty candidate list to the conservative manual default', () => {
     expect(resolveConfig({ persistenceStrategy: { mode: 'manual', rules: { allowedProviderIds: [] } } }).persistenceStrategy.rules.allowedProviderIds)
       .toEqual(['mnemon-native'])

@@ -259,6 +259,8 @@
 .effectiveRoute { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
 .effectiveRoute code { min-width: 0; overflow: hidden; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-xs); padding: 1px 6px; color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .effectiveRoute small { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* The route and where it comes from read as one value. */
+.routeValue { display: inline-flex; min-width: 0; align-items: center; gap: 8px; }
 .warning { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 
 .advanced { min-width: 0; padding: 12px 0 2px; }
@@ -326,6 +328,24 @@ details[open] > summary .providerChevron { transform: rotate(180deg); }
 .embeddingTest { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
 .embeddingTest > span { min-width: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .embeddingTest > span.error { color: var(--dsw-alias-state-error-primary); }
+/* The status line wraps; the button keeps its label on one line. */
+.embeddingTest > button { flex: none; white-space: nowrap; }
+/* Each Mnemon Native space's vectors under the status line (#392). */
+.embeddingSpaces { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.embeddingSpaces > small,
+.embeddingSpaces > p { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.embeddingSpaces > ul { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+/* The name gives way first; once fewer than about six characters of it would show, the count and the button take a line of their own. */
+.embeddingSpaces li { display: flex; min-width: 0; min-height: 28px; flex-wrap: wrap; align-items: center; gap: 0 12px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 20px; }
+.embeddingSpaceName { min-width: 0; flex: 1 1 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.embeddingSpaceState { flex: none; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
+.embeddingSpaceCount { flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
+.embeddingSpaces li > button { flex: none; white-space: nowrap; }
+.embeddingSpaces li[data-missing] > .embeddingSpaceCount { color: var(--dsw-alias-state-warn-label, var(--dsw-alias-label-secondary)); }
+/* A space that could not be read keeps its name, with the reason on a line of its own. */
+.embeddingSpaces li[data-failed] > .embeddingSpaceCount { min-width: 0; flex: 1 1 100%; margin-left: 0; color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
+.embeddingFillOutcome { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.embeddingFillOutcome.error { color: var(--dsw-alias-state-error-primary); }
 .globalLocationSetting { display: flex; min-width: 0; flex-direction: column; }
 .providerServiceLocation { border-bottom: .5px solid var(--dsw-alias-border-l3); padding-bottom: 12px; }
 .providerServiceLocation > .nativeLocation { padding: 0 0 12px; }
