@@ -22,10 +22,12 @@
 各处都读取自己已有的信息，`src/host/protocol.ts` 没有新增任何内容。
 
 - **对话中的存入记忆**从它为写入检查而持有的设置快照中读取 `embedding.enabled`，与记忆空间自己的设置通过 `host.configuration` 读取的是同一项 `embedding` 设置。它在写入返回时取值，并随回执一起保存，因此重新打开对话框查看之前的结果时，措辞与写入当时一致。尚未读到设置值时它不传任何值，回执保持提醒。
-- **记忆空间页面**从所属 Source 自己的状态中读取。`status-summary` 和 `status` 现在报告 `embeddingManaged`，即该 Source 运行所用配置中的 `embedding.enabled`，与它们早已报告的 `writeEnabled`、`timeoutMs` 等生效设置并列。默认实例报告的是 Host 传给它的配置，其他实例报告各自的配置。这个字段在记忆空间 `./contracts` 的 `MemorySpacesStatus` 中是可选的。
+- **记忆空间页面**从所属 Source 自己的状态中读取。`status-summary` 和 `status` 现在报告 `embeddingManaged`，即该 Source 运行所用配置中的 `embedding.enabled`，与它们早已报告的 `writeEnabled`、`timeoutMs` 等生效设置并列。默认实例报告的是 Host 传给它的配置，除非记忆空间自己的插件配置覆盖了它（见下文）；其他实例报告各自的配置。这个字段在记忆空间 `./contracts` 的 `MemorySpacesStatus` 中是可选的。
 - **`/mnemon remember`** 读取 Host 解析后的配置，即处理该命令的图的 `embedding.enabled`。
 
 两个对话框都使用 `dsh-mnemon/client` 中的 `WriteReceipt` 绘制回执，它通过新的可选属性 `embeddingManaged` 接收这个值。`false` 显示中性说明，带 `data-tone="neutral"`；`true` 或不传则显示提醒，带 `data-tone="caution"`。Host 的 `status` 读取会把记忆空间的状态展开到自己的应答中，因此这个字段也会出现在那里，但不在声明的 `StatusView` 之内，那里也没有任何代码读取它。
+
+对话中的对话框和 `/mnemon remember` 读取 Starter 的 `embedding`，记忆空间页面读取的则是其 Source 运行所用的配置，其中记忆空间自己的插件配置会覆盖 Host 传入的值（记忆空间 `src/source.ts` 中的 `create`）。如果某个 Profile 在记忆空间插件自己的 YAML 中设置了 `embedding`，两处的措辞就可能不同；默认实例没有这种覆盖时（Starter 就是这样安装的），两者一致。
 
 ## 改动前后
 
@@ -110,16 +112,16 @@ Profile 可以自行维护一份记忆空间，版本可能比 Starter 固定的
 
 ## 验证
 
-在 `2a6dd501` 上、文档就位时，使用 Node 24.19.0 与 pnpm 10.13.1：
+在合并 `main` 的 `bd70979f`（#426）之后、文档就位时，使用 Node 24.19.0 与 pnpm 10.13.1。合并之前，同样的检查在 `2a6dd501` 上也已通过。
 
-- `pnpm run verify` 用时 150 秒通过：文档中的 4,865 个本地链接与 366 个锚点、55 个文件的确定性构建、每个插件的构建、类型检查与测试（记忆空间 295 个通过、2 个跳过）、根测试（148 个文件中 2,109 个通过、7 个跳过）、包含 38 个工具的 Headless Profile，以及包的 65 个文件、公开入口、publint 与 attw。
-- `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` 用时 270 秒通过：17 个独立插件仓库与 18 个打包产物，包括记忆空间针对本改动打包出的 Starter 的独立类型检查。
-- `DSH_HOST_ROOT=<DSH 0.2.0-rc.2> pnpm run test:installed-dsh` 用时 101 秒通过：在已安装的 DSH 0.2.0-rc.2 上，2,106 个根测试通过、10 个跳过。
+- `pnpm run verify` 用时 149 秒通过：文档中的 4,875 个本地链接与 370 个锚点、56 个文件的确定性构建、每个插件的构建、类型检查与测试（记忆空间 296 个通过、2 个跳过）、根测试（150 个文件中 2,120 个通过、7 个跳过）、包含 38 个工具的 Headless Profile，以及包的 66 个文件、公开入口、publint 与 attw。
+- `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` 用时 286 秒通过：17 个独立插件仓库与 18 个打包产物，包括记忆空间针对本改动打包出的 Starter 的独立类型检查。
+- `DSH_HOST_ROOT=<DSH 0.2.0-rc.2> pnpm run test:installed-dsh` 用时 84 秒通过：在已安装的 DSH 0.2.0-rc.2 上，2,117 个根测试通过、10 个跳过。
 - 针对 `main` 的 `pnpm run release:intent`：覆盖了 `dsh-mnemon` 与 `dsh-mnemon-source-memory-spaces`，即发布产物有变化的两个包，由 `.changeset/neutral-vector-note.md` 声明。
 
 ## 限制
 
-- 只在 Mnemon CLI 继承的环境中配置了服务（例如 `MNEMON_EMBED_ENDPOINT`）、而 DSH 不管理嵌入配置时，服务没有响应也会显示中性说明：WebUI 看不到 Host 的环境，而说明给出的做法同样适用。默认地址上的 Ollama 缺少模型时也是如此；**测试状态**可以区分这些情况。
+- 这一行只按 `embedding.enabled` 决定措辞，这是本改动获批的范围；不会探测嵌入服务，也不读取 Mnemon CLI 继承的环境。因此，不由 DSH 管理的服务没有生成向量时也会显示中性说明，例如只在该环境中配置的服务（如通过 `MNEMON_EMBED_ENDPOINT`），或 Mnemon 默认地址上没有运行或缺少模型的 Ollama。说明给出的做法对它们同样适用，**测试状态**可以区分这些情况。
 - [v0.5.32 图集](../../assets/webui-v0.5.32/README.md)中的回执在重新采集之前仍显示提醒。
 - 任务 Agent 是脚本化的，因此回执中的摘要是夹具的文本。
 - Mnemon Native 以外的 Provider 不报告 `embedded` 字段，它们的回执与之前相同。

@@ -4,7 +4,8 @@
   "plan": "docs/plans/review-gaps-2026-10.md item 12",
   "revisions": {
     "baseline": "main 7a7e1ae1",
-    "change": "2a6dd501"
+    "change": "2a6dd501",
+    "merged": "origin/main bd70979f (#426) merged"
   },
   "environment": {
     "os": "macOS 15.6 arm64",
@@ -248,31 +249,37 @@
     "failingWithMainSources": 14
   },
   "verification": {
-    "revision": "2a6dd501, documentation in place",
+    "revision": "the merge with origin/main bd70979f (#426), documentation in place; the same checks passed on 2a6dd501 before the merge",
     "command": "pnpm run verify; MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins; DSH_HOST_ROOT=<DSH 0.2.0-rc.2 installation> pnpm run test:installed-dsh (Node 24.19.0, pnpm 10.13.1)",
     "verify": {
       "exit": 0,
-      "seconds": 150,
-      "docs": "4865 local links, 366 anchors",
-      "deterministicBuildFiles": 55,
-      "memorySpacesTests": "295 passed, 2 skipped",
-      "rootTests": "2109 passed, 7 skipped (148 files passed, 2 skipped)",
+      "seconds": 149,
+      "docs": "4875 local links, 370 anchors",
+      "deterministicBuildFiles": 56,
+      "memorySpacesTests": "296 passed, 2 skipped",
+      "rootTests": "2120 passed, 7 skipped (150 files passed, 2 skipped)",
       "headlessTools": 38,
-      "packageFiles": 65
+      "packageFiles": 66
     },
     "verifyPlugins": {
       "exit": 0,
-      "seconds": 270,
+      "seconds": 286,
       "result": "17 independent plugin repositories and 18 packed artifacts"
     },
     "installedDsh020rc2": {
       "exit": 0,
-      "seconds": 101,
-      "rootTests": "2106 passed, 10 skipped (146 files passed, 4 skipped)"
+      "seconds": 84,
+      "rootTests": "2117 passed, 10 skipped (148 files passed, 4 skipped)"
     },
     "releaseIntent": {
       "exit": 0,
       "result": "Verified changeset coverage for dsh-mnemon, dsh-mnemon-source-memory-spaces."
+    },
+    "beforeMerge": {
+      "revision": "2a6dd501",
+      "verify": "150 s, root 2109 passed / 7 skipped",
+      "verifyPlugins": "270 s",
+      "installedDsh020rc2": "101 s, 2106 passed / 10 skipped"
     }
   }
 }

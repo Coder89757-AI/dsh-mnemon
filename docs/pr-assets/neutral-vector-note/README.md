@@ -22,10 +22,12 @@ It applies wherever the line appears: **Save to memory** in a conversation, thro
 Each reads what it already has; `src/host/protocol.ts` gains nothing.
 
 - **Save to memory in a conversation** reads `embedding.enabled` from the settings snapshot it already holds for its write check: the same `embedding` setting Memory Spaces' own settings read through `host.configuration`. It takes the value when the write answers and keeps it with the receipt, so a dialog opened again on an earlier result words it as it was saved. With no settings value read, it passes nothing and the receipt keeps the caution.
-- **The Memory Spaces page** reads it from its Source's own status. `status-summary` and `status` now report `embeddingManaged`, the `embedding.enabled` of the configuration the Source runs with, beside `writeEnabled`, `timeoutMs` and the other effective settings they already report. For the default instance that is the configuration the Host passes it; another instance reports its own. The field is optional in `MemorySpacesStatus`, Memory Spaces' `./contracts`.
+- **The Memory Spaces page** reads it from its Source's own status. `status-summary` and `status` now report `embeddingManaged`, the `embedding.enabled` of the configuration the Source runs with, beside `writeEnabled`, `timeoutMs` and the other effective settings they already report. For the default instance that is the configuration the Host passes it, unless Memory Spaces' own plugin configuration overrides it (see below); another instance reports its own. The field is optional in `MemorySpacesStatus`, Memory Spaces' `./contracts`.
 - **`/mnemon remember`** reads the Host's resolved configuration, `embedding.enabled` of the graph that served the command.
 
 `WriteReceipt`, the receipt both dialogs draw from `dsh-mnemon/client`, takes the value as a new optional prop, `embeddingManaged`. `false` gives the neutral note with `data-tone="neutral"`; `true`, or nothing, gives the caution with `data-tone="caution"`. The Host's `status` read spreads Memory Spaces' status into its answer, so the field reaches that answer too, outside the declared `StatusView`; nothing reads it there.
+
+The conversation's dialog and `/mnemon remember` read the Starter's `embedding`, while the Memory Spaces page reads the configuration its Source runs with, in which Memory Spaces' own plugin configuration overrides what the Host passes (`create` in Memory Spaces' `src/source.ts`). A profile that sets `embedding` in the Memory Spaces plugin's own YAML would therefore see the two word the line differently; for the default instance without such an override, as the Starter installs it, they match.
 
 ## Before and after
 
@@ -110,16 +112,16 @@ With the sources this change touches put back at `main` and the tests kept, 14 o
 
 ## Verification
 
-On `2a6dd501` with the documentation in place, with Node 24.19.0 and pnpm 10.13.1:
+On the merge with `main` at `bd70979f` (#426), with the documentation in place, Node 24.19.0 and pnpm 10.13.1. The same checks passed on `2a6dd501` before the merge.
 
-- `pnpm run verify` passed in 150 s: 4,865 local links and 366 anchors in the documentation, the deterministic build of 55 files, every plugin's build, typecheck and tests (Memory Spaces 295 passed, 2 skipped), the root tests (2,109 passed, 7 skipped, in 148 files), the Headless profile with 38 tools, and the package's 65 files, public entries, publint and attw.
-- `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` passed in 270 s: 17 independent plugin repositories and 18 packed artifacts, Memory Spaces' standalone typecheck against the packed Starter of this change included.
-- `DSH_HOST_ROOT=<DSH 0.2.0-rc.2> pnpm run test:installed-dsh` passed in 101 s: 2,106 root tests passed and 10 skipped on the installed DSH 0.2.0-rc.2.
+- `pnpm run verify` passed in 149 s: 4,875 local links and 370 anchors in the documentation, the deterministic build of 56 files, every plugin's build, typecheck and tests (Memory Spaces 296 passed, 2 skipped), the root tests (2,120 passed, 7 skipped, in 150 files), the Headless profile with 38 tools, and the package's 66 files, public entries, publint and attw.
+- `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` passed in 286 s: 17 independent plugin repositories and 18 packed artifacts, Memory Spaces' standalone typecheck against the packed Starter of this change included.
+- `DSH_HOST_ROOT=<DSH 0.2.0-rc.2> pnpm run test:installed-dsh` passed in 84 s: 2,117 root tests passed and 10 skipped on the installed DSH 0.2.0-rc.2.
 - `pnpm run release:intent` against `main`: it covers `dsh-mnemon` and `dsh-mnemon-source-memory-spaces`, the two packages whose published artifacts change, through `.changeset/neutral-vector-note.md`.
 
 ## Limits
 
-- A service set up only in the environment the Mnemon CLI inherits, such as `MNEMON_EMBED_ENDPOINT`, without DSH managing the settings, also gets the neutral note when it does not answer: the WebUI cannot see the Host's environment, and the note's advice holds for it. The same goes for an Ollama at the default endpoint that lacks the model; **Test status** tells them apart.
+- The line is worded by `embedding.enabled` alone, the scope approved for this change; nothing probes the service or reads the environment the Mnemon CLI inherits. A service DSH does not manage therefore also gets the neutral note when it produces no vector: one set up only in that environment, such as through `MNEMON_EMBED_ENDPOINT`, and an Ollama at Mnemon's default endpoint that is down or lacks the model. The note's advice holds for them, and **Test status** tells them apart.
 - The receipts of the [v0.5.32 gallery](../../assets/webui-v0.5.32/README.md) still show the caution until the gallery is captured again.
 - The task Agent is scripted, so its summaries are the fixture's text.
 - A Provider other than Mnemon Native reports no `embedded` field, and its receipts read as before.
