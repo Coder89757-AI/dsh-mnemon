@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { HostRpcHandler } from '../src/host/dsh.ts'
+import { MNEMON_RPC_ENDPOINTS, MNEMON_SETTINGS_CHANNEL } from '../src/host/protocol.ts'
 import { MnemonRemoteService } from '../src/host/remote-rpc.ts'
 
 function handler(value: string): HostRpcHandler {
@@ -48,5 +49,24 @@ describe('Mnemon API Gateway service', () => {
     expect(handlers.pack).toHaveBeenCalledWith('export', {}, signal)
     expect(handlers.viewWrite).toHaveBeenCalledWith('apply', {}, signal)
     expect(handlers.settings).toHaveBeenCalledWith('mutate', {}, signal)
+  })
+
+  it('reaches exactly the settings endpoints the Host serves, and writes only with the grant', async () => {
+    const reader = fixture(false)
+    const manager = fixture(true)
+    for (const endpoint of MNEMON_RPC_ENDPOINTS[MNEMON_SETTINGS_CHANNEL]) {
+      await expect(manager.service.settings(endpoint, {}, manager.signal)).resolves.toEqual({ ok: true, value: `settings:${endpoint}` })
+    }
+    await expect(reader.service.settings('get', {}, reader.signal)).resolves.toEqual({ ok: true, value: 'settings:get' })
+    await expect(reader.service.settings('mutate', {}, reader.signal)).resolves.toMatchObject({ ok: false, error: { message: 'remote Mnemon management requires remoteAccess: trusted-host' } })
+    for (const endpoint of ['reset', 'Get', 'constructor', 'toString', '__proto__']) {
+      for (const { service, signal } of [reader, manager]) {
+        await expect(service.settings(endpoint, {}, signal)).resolves.toEqual({
+          ok: false, error: { code: 'bad-request', message: `unknown remote Mnemon settings endpoint: ${endpoint}`, details: { issues: [] } },
+        })
+      }
+    }
+    expect(reader.handlers.settings).toHaveBeenCalledTimes(1)
+    expect(manager.handlers.settings).toHaveBeenCalledTimes(2)
   })
 })

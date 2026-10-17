@@ -48,6 +48,9 @@ import {
 } from "../host/protocol.ts"
 import { callMnemonRpc } from './remote-rpc.ts'
 
+/** The channel a component's read or write operation goes on. */
+type ComponentChannel<Mode extends 'read' | 'write'> = Mode extends 'read' ? typeof MNEMON_READ_CHANNEL : typeof MNEMON_WRITE_CHANNEL
+
 interface TurnActivityCacheEntry {
   cursor: number
   activities: Map<number, TurnMemoryActivity>
@@ -159,7 +162,7 @@ export class MnemonClient {
    * endpoint name (component-host.ts): Memory Spaces reads its Providers and
    * embedding through these.
    */
-  componentOperation<T>(mode: 'read' | 'write', endpoint: MnemonRpcEndpoint<typeof MNEMON_READ_CHANNEL | typeof MNEMON_WRITE_CHANNEL>, payload: object): Promise<T> {
+  componentOperation<T, Mode extends 'read' | 'write' = 'read' | 'write'>(mode: Mode, endpoint: MnemonRpcEndpoint<ComponentChannel<Mode>>, payload: object): Promise<T> {
     return this.call(mode === 'read' ? MNEMON_READ_CHANNEL : MNEMON_WRITE_CHANNEL, endpoint, this.scoped(payload))
   }
 
