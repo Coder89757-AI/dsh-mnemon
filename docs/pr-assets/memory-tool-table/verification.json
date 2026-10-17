@@ -1,0 +1,184 @@
+{
+  "date": "2026-10-17",
+  "audit": "M4",
+  "revisions": {
+    "baseline": "main 4996a796",
+    "change": "c89ab542"
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "pnpm": "10.13.1",
+    "dsh": "0.2.1-rc.1",
+    "installedDsh": "0.2.0-rc.2"
+  },
+  "equivalence": {
+    "modulesFromMain": [
+      "src/host/tools.ts",
+      "src/host/activity-presentation.ts",
+      "src/host/activity.ts",
+      "src/host/view-presentation.ts",
+      "src/client/MnemonTurnTail.tsx",
+      "src/host/subagent.ts",
+      "src/host/review-tools.ts"
+    ],
+    "command": "pnpm exec vitest run tests/memory-tools.spec.ts tests/client-interaction-surfaces.spec.tsx tests/activity.spec.ts tests/review-tools.spec.ts",
+    "tests": {
+      "tests/memory-tools.spec.ts": 6,
+      "tests/client-interaction-surfaces.spec.tsx": 37,
+      "tests/activity.spec.ts": 5,
+      "tests/review-tools.spec.ts": 19
+    },
+    "passed": {
+      "change": 67,
+      "mainModules": 67
+    },
+    "failed": {
+      "change": 0,
+      "mainModules": 0
+    }
+  },
+  "schemaFindings": {
+    "probe": "harness/schema-findings.probe.ts",
+    "run": "copied into tests/ as schema-findings.probe.spec.ts and run with vitest, on the change and with the seven modules taken from main",
+    "sameOutcomesWithMainModules": true,
+    "outcomes": [
+      {
+        "strategy": "layered",
+        "call": "mnemon_recall with scope",
+        "outcome": "memory Route input contains unsupported property: scope"
+      },
+      {
+        "strategy": "layered",
+        "call": "mnemon_document_search with sort",
+        "outcome": "memory Route input contains unsupported property: sort"
+      },
+      {
+        "strategy": "layered",
+        "call": "mnemon_remember with confidence, from a delegated writer",
+        "outcome": "memory Action input contains unsupported property: confidence"
+      },
+      {
+        "strategy": "layered",
+        "call": "mnemon_memory_body_update with reason, from a delegated writer",
+        "outcome": "memory Action input contains unsupported property: reason"
+      },
+      {
+        "strategy": "layered",
+        "call": "Recall Route with limit 50",
+        "outcome": "answered"
+      },
+      {
+        "strategy": "layered",
+        "call": "Recall Route with limit 0",
+        "outcome": "value must be an integer within 1..20"
+      },
+      {
+        "strategy": "layered",
+        "call": "remember Action with importance 3.6",
+        "outcome": "value must be an integer within 1..5"
+      },
+      {
+        "strategy": "layered",
+        "call": "remember Action with importance 9",
+        "outcome": "value must be an integer within 1..5"
+      },
+      {
+        "strategy": "layered",
+        "call": "mnemon_document_search with limit 10",
+        "outcome": "answered with 4 of 6 matching Documents"
+      },
+      {
+        "strategy": "general",
+        "call": "mnemon_recall with limit 50",
+        "outcome": "value must be an integer within 1..20"
+      },
+      {
+        "strategy": "general",
+        "call": "mnemon_recall with limit 10",
+        "outcome": "answered"
+      },
+      {
+        "strategy": "general",
+        "call": "mnemon_document_search with limit 10",
+        "outcome": "answered with 6 of 6 matching Documents"
+      }
+    ]
+  },
+  "publicExports": {
+    "command": "node docs/pr-assets/remove-dead-code/harness/public-exports.mjs \"$PWD\" MEMORY_TOOLS memoryTool memoryTools MemoryToolEntry MemoryToolName MemoryToolLabel MemoryToolPage namedToolPresentation memoryPageStyles",
+    "notPublic": [
+      "MEMORY_TOOLS",
+      "memoryTool",
+      "memoryTools",
+      "MemoryToolEntry",
+      "MemoryToolName",
+      "MemoryToolLabel",
+      "MemoryToolPage",
+      "namedToolPresentation"
+    ],
+    "control": {
+      "memoryPageStyles": "src/client/page-kit.tsx via dsh-mnemon/client"
+    }
+  },
+  "checks": {
+    "verify": {
+      "exit": 0,
+      "documentation": {
+        "links": 4529,
+        "anchors": 320
+      },
+      "deterministicFiles": 50,
+      "memorySpacesTests": {
+        "passed": 250,
+        "skipped": 2
+      },
+      "rootTests": {
+        "files": {
+          "passed": 140,
+          "skipped": 2
+        },
+        "tests": {
+          "passed": 2061,
+          "skipped": 6
+        }
+      },
+      "headless": "Verified Headless profile activation with 38 total tools and 8 representative Mnemon tools",
+      "package": {
+        "files": 60,
+        "packedBytes": 470302,
+        "unpackedBytes": 2006412
+      }
+    },
+    "verifyPlugins": {
+      "exit": 0,
+      "env": {
+        "MNEMON_CLI_PATH": "/nonexistent/mnemon",
+        "MNEMON_PLUGIN_VERIFY_CONCURRENCY": "1"
+      },
+      "summary": "Passed: 17 independent plugin repositories and 18 packed artifacts, public SDK-only composition and Client tests; in a real DSH, the packed Starter installed alone with its plugins activated, and three optional packed Strategy plugins activated together"
+    },
+    "installedDsh": {
+      "version": "0.2.0-rc.2",
+      "exit": 0,
+      "files": 140,
+      "passed": 2061,
+      "skipped": 6
+    },
+    "releaseIntent": {
+      "base": "4996a796",
+      "covered": [
+        "dsh-mnemon"
+      ]
+    },
+    "verifyDocsAfterResults": {
+      "links": 4533,
+      "anchors": 320
+    }
+  },
+  "changesets": {
+    "memory-tool-table": {
+      "dsh-mnemon": "patch"
+    }
+  }
+}
