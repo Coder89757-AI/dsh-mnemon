@@ -4,7 +4,7 @@
 
 Status: planned; item 12 is done ([record](../pr-assets/neutral-vector-note/README.md)), and nothing else here has shipped. Written on 2026-10-17 against `main` at `f41a121f` (v0.5.31 with #414, #415 and #416); file references are to that revision.
 
-After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421). Items 12 to 14 were found while capturing the [v0.5.32 gallery](../assets/webui-v0.5.32/README.md), and items 15 to 18 while reviewing it. The file references of items 13 to 18 are to `main` at `44a3cfc8`, after the client and Host module splits (#425, #428); item 12's, written before its fix, are to `03dd40a4`. The gallery was later [captured again with an embedding service](../pr-assets/webui-gallery-embedding/README.md), so these items name the screen or recording that shows each behavior, and say so where they quote the [first capture](../pr-assets/webui-gallery-v0532/README.md).
+After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421). Items 12 to 14 were found while capturing the [v0.5.32 gallery](../assets/webui-v0.5.32/README.md), and items 15 to 18 while reviewing it. The file references of items 13 to 18 are to `main` at `44a3cfc8`, after the client and Host module splits (#425, #428); item 12's, written before its fix, are to `03dd40a4`. The gallery was later [captured again with an embedding service](../pr-assets/webui-gallery-embedding/README.md), so these items name the screen or recording that shows each behavior, and say so where they quote the [first capture](../pr-assets/webui-gallery-v0532/README.md). Items 19 to 23 were found at the end of the batch, while the endpoints were listed, the client modules split and the gallery captured, and their file references are to `main` at `44a3cfc8`; 21 and 22 are build maintenance that changes nothing users see.
 
 ## 1. Backups and Git sync drop a Native space's placement decision
 
@@ -162,3 +162,43 @@ After v0.5.31, a review of the code, the documentation and the Host's compatibil
 **Change.** Place a label to the left of its node when it would cross the right edge, and leave out a label that would overlap one already placed; the selected node always keeps its label.
 
 **Tests.** A dense graph at the Overview's size, and the same graph after Natural spread and Uniform reset: no label crosses the edge of the view or overlaps another, and the selected node's label shows.
+
+## 19. The Git sync form and the Host disagree on some local paths
+
+**Today.** Found while giving the sync checks one owner (#426). The settings form and the Host run the same rules (`src/host/sync-rules.ts`), but each kept its old answer where they differed: the form checks a local repository path with a portable rule (`portableAbsolutePath`), the Host with its own platform's `isAbsolute` (`src/host/sync-config.ts`). On a POSIX Host the form accepts `C:\repo`, `C:/repo` and `\\server\share`, which the Host then refuses; on a Windows Host the Host accepts `\repo`, which the form refuses. In the repository address and the directory, only the Host refuses a NUL byte (the branch and machine-name rules refuse it on both sides).
+
+**Change.** One answer per Host platform: the form checks a local path by the rule of the platform the Host reports, and both sides refuse a NUL byte in the repository address and the directory. Stored settings keep loading; a stored path the new form rule refuses is shown with its problem, never dropped.
+
+**Tests.** Each path form on a POSIX and a Windows Host, in the form and in the Host, and a NUL byte on both.
+
+## 20. Host endpoints the shipped client no longer calls
+
+**Today.** Found while listing the Host's endpoints in one place (#426). The Host serves 28 endpoints the shipped client no longer calls (`SERVED_FOR_OTHER_CALLERS` in `tests/rpc-endpoints.spec.ts`): 14 reads such as `runtime-memory`, `documents`, `search` and `graph`, 10 writes such as `remember` and `body-update`, the activation `body`, and the View's `preview`, `inspect-plugin` and `install-plugin`. The workbench moved to Source management and Host assistance in September 2026; the Interfaces reference still lists the direct endpoints, and scripts such as `verify-sync-git.mjs` use `runtime-memory`.
+
+**Change.** Decide which stay as a documented interface and say so in the Interfaces reference, move the repository's scripts to the operations the client uses, and deprecate the rest with a removal named in the release notes ahead of time.
+
+**Tests.** The endpoint spec follows the decision; every kept endpoint has a caller or a documented use.
+
+## 21. Client bundles carry the path of the machine that built them
+
+**Today.** Found while comparing bundles in #426. The CSS-module region comments in the built `lib/client.js` of the Starter and of Memory Spaces include the absolute checkout path, so the published packages carry the CI runner's path and the bytes depend on where the repository is checked out. Build maintenance only; nothing users see.
+
+**Change.** Strip the region comments from client builds, or write the paths relative to the package.
+
+**Tests.** Two builds from different checkout paths give identical client bundles.
+
+## 22. ByteRover's published declarations lose their types
+
+**Today.** Found while splitting the client modules (#425). With the workspace cycle ignored, `pnpm -r build` can build `dsh-mnemon-provider-byterover` before Memory Spaces, and its `lib/index.d.ts` then types its definition and module as `any`; the published 0.5.5 has the `any` types. A later build resolves them. Build maintenance only; nothing users see at run time.
+
+**Change.** Build Memory Spaces and the SDK entries the Providers import before the Providers, or break the cycle, and check the packed declarations.
+
+**Tests.** A packed-artifact check that each Provider's declarations carry no `any` (the published 0.5.5 also types `scoreSemantics` as `any`).
+
+## 23. A recall can keep a different set of tied memories each time
+
+**Today.** Found while capturing the v0.5.32 gallery (#424). Ask Agent's recall kept four of five memories that matched equally, and a later call on the same store kept a different four. When all spaces use one Provider, Memory Spaces sorts candidates by score alone (`plugins/dsh-mnemon-source-memory-spaces/src/service.ts:895`) before each recall-quality policy cuts the list to the requested limit (`src/recall-quality/policies.ts`), so ties keep the order they arrive in, and the order the Mnemon CLI returns them in is not fixed. With several Providers, candidates are ordered by federated rank, then by space.
+
+**Change.** Break ties where the limit cuts by a stable key (for example the newer memory first, then the id), in Memory Spaces and, upstream, in the Mnemon CLI's recall.
+
+**Tests.** A recall over memories with equal scores and a limit below their number keeps the same memories on every call.
