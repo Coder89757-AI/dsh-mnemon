@@ -35,9 +35,12 @@ export function openVikingWriteModel(report) {
       const body = selectBody(receipts.findLast(value => Array.isArray(value.items)))
       if (stage === 1) return { name: 'mnemon_remember', args: { memoryBodyId: body.id, content: openVikingCanary, category: 'decision', importance: 4 } }
       const written = receipts.findLast(value => ['stored', 'skipped', 'failed'].includes(value.action))
-      assert(written, 'Delegated writer requires an actual Provider receipt')
-      report({ event: 'provider-receipt', receipt: written })
-      return { name: terminal.name, args: terminal.wrap({ action: written.action, summary: `Synthetic OpenViking Provider receipt: ${JSON.stringify(written)}`, memoryBodyIds: [body.id] }) }
+      // A Provider that throws leaves its error as the tool result, not a receipt: the write failed, and says why.
+      const error = written === undefined ? (request.messages ?? []).filter(message => message.role === 'tool').map(messageText).at(-1) : undefined
+      assert(written ?? error, 'Delegated writer requires an actual Provider answer')
+      report({ event: 'provider-receipt', receipt: written ?? { action: 'failed', error } })
+      const summary = written === undefined ? `Synthetic OpenViking Provider error: ${error}` : `Synthetic OpenViking Provider receipt: ${JSON.stringify(written)}`
+      return { name: terminal.name, args: terminal.wrap({ action: written?.action ?? 'failed', summary, memoryBodyIds: [body.id] }) }
     }
     const messages = request.messages ?? []
     const commandIndex = messages.findLastIndex(message => message.role === 'user' && messageText(message).includes('openviking-write-233'))

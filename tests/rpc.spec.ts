@@ -175,6 +175,17 @@ describe('Mnemon RPC Source boundaries', () => {
     expect(await write('provider-services', {})).toMatchObject({ ok: false, error: { code: 'bad-request' } })
   })
 
+  it('fills in a space\'s vectors through the write channel only (#392)', async () => {
+    const f = await fixture()
+    const body = await f.memorySpace()
+    const execute = vi.spyOn(f.graph.memoryComposition.current()!, 'executeManagement')
+    const result = await createWriteHandler(f.live)('embedding-fill', { memoryBodyId: body.id })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'embedding-fill', input: expect.objectContaining({ memoryBodyId: body.id }) }))
+    // The fixture's space is not Mnemon Native, so it keeps no vectors to fill in.
+    expect(result).toMatchObject({ ok: false, error: { message: expect.stringContaining('keeps no Mnemon vectors to fill in') } })
+    expect(await createReadHandler(f.live)('embedding-fill', { memoryBodyId: body.id })).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+
   it('validates enum values before Provider I/O', async () => {
     const f = await fixture()
     expect(await createReadHandler(f.live)('search', { query: 'x', mode: 'anything' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('mode') } })

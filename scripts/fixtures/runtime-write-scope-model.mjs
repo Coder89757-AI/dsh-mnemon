@@ -36,7 +36,7 @@ export function runtimeWriteScopeModel(report) {
         return { name: 'mnemon_memory_body_create', args: { name, description: 'Disposable synthetic archive destination for issue 250.' } }
       }
       if (prompt.includes('Execute this update-memory-body request now')) {
-        const memoryBodyId = prompt.match(/^- Preferred Memory Space ID: (.+)$/m)?.[1]
+        const memoryBodyId = prompt.match(/^- (?:Preferred )?Memory Space ID: (.+)$/m)?.[1]
         assert(memoryBodyId, 'update worker requires the actual Source-created id')
         return { name: 'mnemon_memory_body_update', args: { memoryBodyId, active: true } }
       }

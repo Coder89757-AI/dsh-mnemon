@@ -39,6 +39,6 @@ dsh-mnemon gives DeepSeek Harness three kinds of memory: **runtime memory** in e
 
 ## What is new
 
-[v0.5.25](./releases/v0.5.25.md) keeps memory working when no Memory Space can take an archive, and lets Save to memory choose where the text goes. [v0.5.24](./releases/v0.5.24.md) made the Entities page count and list every memory that carries an entity, show them as soon as one is selected, and find related memories only when asked. [All releases](./releases/README.md) · [Roadmap](./roadmap.md) · [Historical evidence](../pr-assets/README.md)
+[v0.5.30](./releases/v0.5.30.md) saves memories into the Memory Space a write names, shows and fills in the vectors of every space, stops Git sync from adding space copies or failing on untracked files, and makes Recall and the other tools say what they did not do. [v0.5.29](./releases/v0.5.29.md) stops Git sync from multiplying Memory Spaces and carries document edits across machines, finds Provider namespaces created after their settings were saved, and fixes large Packs, GitHub sign-in, OpenViking and Hindsight edge cases. [All releases](./releases/README.md) · [Roadmap](./roadmap.md) · [Historical evidence](../pr-assets/README.md)
 
 Guides describe the current release. Screenshots and recordings come from the [v0.5.19 gallery](../assets/webui-v0.5.19/README.md), and the installation steps from the [installation gallery](../assets/install-v0.5.19/README.md); dated PR records establish only their named revisions and environments. Internal Host RPCs are not an external plugin SDK.

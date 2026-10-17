@@ -71,7 +71,8 @@ describe('standalone OpenViking data plane', () => {
       id: 'viking://user/team/memories/preferences/style.md',
       externalUri: 'viking://user/team/memories/preferences/style.md',
       content: '用户偏好简洁中文回答。',
-      category: 'preferences',
+      // A file written before the category was in its name reads back by its folder, as a category.
+      category: 'preference',
       source: 'external',
       score: 0.86,
     })])
@@ -97,7 +98,7 @@ describe('standalone OpenViking data plane', () => {
     const { body, provider } = await bodyAndRegistry(fetchMock)
 
     await expect(provider.list(body, { limit: 10 })).resolves.toEqual([
-      expect.objectContaining({ content: '偏好简洁回答。', category: 'preferences' }),
+      expect.objectContaining({ content: '偏好简洁回答。', category: 'preference' }),
     ])
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('recursive=true')
   })
@@ -109,6 +110,7 @@ describe('standalone OpenViking data plane', () => {
       if (path === '/api/v1/content/read') return ok('发布必须先通过灰度验证。')
       const input = JSON.parse(String(init?.body)) as Record<string, unknown>
       requests.push({ path, body: input })
+      if (path === '/api/v1/content/set_tags') return ok({ uri: input.uri, tags_updated: true })
       if (path === '/api/v1/content/write') {
         return ok({
           uri: input.uri,
@@ -130,17 +132,15 @@ describe('standalone OpenViking data plane', () => {
       provider: 'openviking',
       vectorStatus: 'complete',
       writtenBytes: Buffer.byteLength('发布必须先通过灰度验证。'),
+      tagsApplied: true,
     })
 
-    expect(requests).toHaveLength(1)
-    expect(requests[0]?.path).toBe('/api/v1/content/write')
-    expect(requests[0]?.body).toMatchObject({
-      mode: 'create',
-      wait: true,
-      content: '发布必须先通过灰度验证。',
-      tags: ['source=mnemon', 'category=decision', 'importance=4'],
-    })
-    expect(String(requests[0]?.body.uri)).toMatch(/^viking:\/\/user\/team\/memories\/experiences\/.*\.md$/u)
+    // The write carries only what OpenViking's content API accepts; the tags follow in their own call.
+    expect(requests.map(request => request.path)).toEqual(['/api/v1/content/write', '/api/v1/content/set_tags'])
+    expect(Object.keys(requests[0]!.body).sort()).toEqual(['content', 'mode', 'timeout', 'uri', 'wait'])
+    expect(requests[0]?.body).toMatchObject({ mode: 'create', wait: true, content: '发布必须先通过灰度验证。' })
+    expect(requests[1]?.body).toEqual({ uri: requests[0]?.body.uri, tags: ['source=mnemon', 'category=decision', 'importance=4'], mode: 'replace' })
+    expect(String(requests[0]?.body.uri)).toMatch(/^viking:\/\/user\/team\/memories\/experiences\/.*_decision-[0-9a-f-]{36}\.md$/u)
   })
 
   it('routes each memory category into its OpenViking memory folder', async () => {
@@ -150,6 +150,7 @@ describe('standalone OpenViking data plane', () => {
       const parsed = new URL(String(url))
       if (parsed.pathname === '/api/v1/content/read') return ok(files.get(parsed.searchParams.get('uri')!))
       const request = JSON.parse(String(init?.body)) as { uri: string; content: string }
+      if (parsed.pathname === '/api/v1/content/set_tags') return ok({ uri: request.uri, tags_updated: true })
       uris.push(request.uri)
       files.set(request.uri, request.content)
       return ok({ uri: request.uri, mode: 'create', context_type: 'memory', content_updated: true,
@@ -165,6 +166,91 @@ describe('standalone OpenViking data plane', () => {
     await provider.remember(body, { content: 'General', category: 'general' })
 
     expect(uris.map(uri => uri.split('/').at(-2))).toEqual(['preferences', 'experiences', 'entities', 'events', 'experiences', 'entities'])
+    // Each folder holds two categories, so the file name says which one.
+    expect(uris.map(uri => /_([a-z]+)-[0-9a-f-]{36}\.md$/u.exec(uri)?.[1])).toEqual(['preference', 'decision', 'fact', 'context', 'insight', 'general'])
+  })
+
+  it('keeps every file name within the 255 bytes a Linux server allows', async () => {
+    const uris: string[] = []
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const parsed = new URL(String(url))
+      const request = JSON.parse(String(init?.body ?? '{}')) as { uri: string; content: string }
+      if (parsed.pathname === '/api/v1/content/read') return ok(['𝐀'.repeat(60), '中'.repeat(60), 'a'.repeat(60)][uris.length - 1])
+      if (parsed.pathname === '/api/v1/content/set_tags') return ok({ uri: request.uri, tags_updated: true })
+      uris.push(request.uri)
+      return ok({ uri: request.uri, mode: 'create', context_type: 'memory', content_updated: true,
+        written_bytes: Buffer.byteLength(request.content), semantic_status: 'skipped', vector_status: 'complete' })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    for (const content of ['𝐀'.repeat(60), '中'.repeat(60), 'a'.repeat(60)]) await provider.remember(body, { content, category: 'preference' })
+    const names = uris.map(uri => uri.split('/').at(-1)!)
+    expect(names.map(name => Buffer.byteLength(name) <= 255)).toEqual([true, true, true])
+    // Only characters of four bytes cost the slug any of its 48 characters.
+    expect(names.map(name => Array.from(name.slice(15, name.lastIndexOf('_'))).length)).toEqual([45, 48, 48])
+  })
+
+  it('reads every category back as it was written, and an unknown one as general (#353)', async () => {
+    const files = new Map<string, string>()
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const parsed = new URL(String(url))
+      if (parsed.pathname === '/api/v1/content/read') return ok(files.get(parsed.searchParams.get('uri')!))
+      if (parsed.pathname === '/api/v1/fs/ls') return ok([...files.keys()].map(uri => ({ uri, isDir: false })))
+      // Whatever category the server reports, here one of Mnemon's own names, the file name decides.
+      if (parsed.pathname === '/api/v1/search/find') return ok({ memories: [...files.keys()].map(uri => ({ uri, category: 'general', score: 0.5 })) })
+      const request = JSON.parse(String(init?.body)) as { uri: string; content: string }
+      if (parsed.pathname === '/api/v1/content/set_tags') return ok({ uri: request.uri, tags_updated: true })
+      files.set(request.uri, request.content)
+      return ok({ uri: request.uri, mode: 'create', context_type: 'memory', content_updated: true,
+        written_bytes: Buffer.byteLength(request.content), semantic_status: 'skipped', vector_status: 'complete' })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    const asked = ['preference', 'decision', 'fact', 'insight', 'context', 'general', 'bogus']
+    for (const category of asked) await provider.remember(body, { content: `memory ${category}`, category: category as 'general' })
+    const expected = asked.map(category => category === 'bogus' ? 'general' : category)
+    const byContent = (items: Array<{ content: string; category?: string }>) => asked.map(category => items.find(item => item.content === `memory ${category}`)?.category)
+    expect(byContent(await provider.list(body, { limit: 20 }))).toEqual(expected)
+    expect(byContent((await provider.search(body, { query: 'memory', limit: 20 })).results)).toEqual(expected)
+    // No folder of its own for a category Mnemon does not know.
+    expect(new Set([...files.keys()].map(uri => uri.split('/').at(-2)))).toEqual(new Set(['preferences', 'experiences', 'entities', 'events']))
+  })
+
+  it('leaves out a memory the server lists but can no longer read, and says so', async () => {
+    // The index still lists a file that is gone, as a write the server refused or a removal elsewhere can leave it.
+    const gone = 'viking://user/team/memories/entities/gone.md'
+    const kept = 'viking://user/team/memories/entities/kept.md'
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      const parsed = new URL(String(url))
+      if (parsed.pathname === '/api/v1/search/find') return ok({ memories: [{ uri: gone, score: 0.9 }, { uri: kept, score: 0.8 }] })
+      if (parsed.pathname === '/api/v1/fs/ls') return ok([{ uri: gone, isDir: false }, { uri: kept, isDir: false }])
+      if (parsed.searchParams.get('uri') === gone) return new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND', message: `File not found: ${gone}` } }), { status: 404 })
+      return ok('The memory that is still there.')
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+
+    await expect(provider.search(body, { query: 'memory', limit: 5 })).resolves.toEqual({
+      results: [expect.objectContaining({ id: kept, content: 'The memory that is still there.' })],
+      hint: expect.stringMatching(/^1 OpenViking result could not be read and was left out/u),
+    })
+    expect((await provider.list(body, { limit: 10 })).map(item => [item.id, item.content])).toEqual([[kept, 'The memory that is still there.']])
+    expect((await provider.graph(body)).nodes.map(node => node.id)).toEqual([kept])
+  })
+
+  it('reports why when no listed memory can be read, and stops a cancelled read', async () => {
+    const uri = 'viking://user/team/memories/entities/only.md'
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const parsed = new URL(String(url))
+      if (parsed.pathname === '/api/v1/search/find') return ok({ memories: [{ uri, score: 0.9 }] })
+      if (parsed.pathname === '/api/v1/fs/ls') return ok([{ uri, isDir: false }])
+      if (init?.signal?.aborted === true) throw init.signal.reason
+      return new Response(JSON.stringify({ status: 'error', error: { message: 'Synthetic read failure' } }), { status: 500 })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    // A server that answers no read is not an empty space.
+    await expect(provider.search(body, { query: 'memory', limit: 5 })).rejects.toThrow('Synthetic read failure')
+    await expect(provider.list(body, { limit: 10 })).rejects.toThrow('Synthetic read failure')
+    const controller = new AbortController()
+    controller.abort(new Error('turn cancelled'))
+    await expect(provider.search(body, { query: 'memory', limit: 5 }, controller.signal)).rejects.toThrow('turn cancelled')
   })
 
   it('forgets only an exact non-generated memory file inside the configured root', async () => {

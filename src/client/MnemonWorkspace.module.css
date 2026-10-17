@@ -43,6 +43,13 @@
   padding-block-start: var(--dsh-frame-top-clearance, 0px);
 }
 
+/* Covers the clearance above, which has no height where DSH reserves none. */
+.windowDragBand {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--dsh-frame-top-clearance, 0px);
+}
+
 .nativeWorkspace[hidden] {
   display: none;
 }

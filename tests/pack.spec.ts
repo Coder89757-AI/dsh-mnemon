@@ -1,15 +1,16 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import { resolveConfig } from "../src/host/config.ts"
-import { MnemonPackManager, MNEMON_PACK_FORMAT, MNEMON_PACK_MIME } from "../src/host/pack.ts"
+import { MnemonPackManager, MNEMON_PACK_FORMAT, MNEMON_PACK_MIME, documentVersion } from "../src/host/pack.ts"
 import { createStorageRoot } from '../src/host/storage-root.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import { RUNTIME_ENTRY_DELIMITER } from 'dsh-mnemon-source-runtime/contracts'
+import { sqlite as nodeSqlite, writeSpace, type SpaceInsight } from './helpers/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []
@@ -50,6 +51,34 @@ async function fixture(label: string, seed: number, bodyId = 'project') {
   }, null, 2)}\n`)
   writeFileSync(join(root, 'active'), `${bodyId}\n`)
   return { root, workspace, ...created, manager: new MnemonPackManager(created.runner, created.config, undefined, now) }
+}
+
+/** Replace a fixture's Memory Spaces with real databases, as Mnemon writes them. */
+function spaces(root: string, bodies: Array<{ id: string; name: string; insights: SpaceInsight[]; reads?: number; edges?: Parameters<typeof writeSpace>[1]['edges'] }>): void {
+  const data = join(root, 'data')
+  rmSync(data, { recursive: true, force: true })
+  mkdirSync(data, { recursive: true })
+  for (const body of bodies) {
+    mkdirSync(join(data, body.id), { recursive: true })
+    writeSpace(join(data, body.id, 'mnemon.db'), { insights: body.insights, ...(body.reads === undefined ? {} : { reads: body.reads }), ...(body.edges === undefined ? {} : { edges: body.edges }) })
+  }
+  const at = '2026-10-05T08:37:12.218Z'
+  writeFileSync(join(data, '.dsh-memory-bodies.json'), `${JSON.stringify({
+    version: 1, bodies: bodies.map(body => ({ id: body.id, name: body.name, description: '', active: true, createdAt: at, updatedAt: at })),
+  }, null, 2)}\n`)
+}
+
+function registryOf(root: string): Array<{ id: string; name: string }> {
+  return (JSON.parse(readFileSync(join(root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: Array<{ id: string; name: string }> }).bodies
+}
+
+/** Two memories as both machines first held them; `reads` bumps the counters a recall writes. */
+function memories(reads = 0, extra: SpaceInsight[] = []): SpaceInsight[] {
+  return [
+    { id: 'i-1', content: 'The gateway routes by model family', accessCount: reads * 3, accessedAt: reads === 0 ? null : '2026-10-1' + String(reads % 10) + 'T04:11:13Z' },
+    { id: 'i-2', content: 'Accounts warm up for a week before routing', accessCount: reads, accessedAt: reads === 0 ? null : '2026-10-1' + String(reads % 10) + 'T04:11:41Z' },
+    ...extra,
+  ]
 }
 
 afterEach(async () => {
@@ -205,6 +234,27 @@ describe('Mnemon Pack', () => {
     expect(existsSync(registryPath)).toBe(true)
   })
 
+  it('reads and imports a payload of several megabytes without overflowing the stack (#368)', async () => {
+    const source = await fixture('pack-large-source', 42)
+    // An incompressible Memory Space, so the archive's base64 is well past the 4.5 MB the old check failed at.
+    writeFileSync(join(source.root, 'data', 'project', 'mnemon.db'), Buffer.concat([sqlite(42), randomBytes(5 * 1024 * 1024)]))
+    const exported = await source.manager.exportPack('memory-spaces')
+    expect(exported.base64.length).toBeGreaterThan(6 * 1024 * 1024)
+    expect(() => source.manager.inspectPack(exported.base64)).not.toThrow()
+
+    const target = await fixture('pack-large-target', 43, 'other')
+    await target.manager.importPack(exported.base64, { mode: 'merge' })
+    expect(readFileSync(join(target.root, 'data', 'project', 'mnemon.db')).length).toBe(4096 + 5 * 1024 * 1024)
+
+    // Still strict: padding in the middle or a length that is not a whole group is refused.
+    expect(() => source.manager.inspectPack(exported.base64.slice(0, 100) + '=' + exported.base64.slice(101))).toThrow('base64')
+    expect(() => source.manager.inspectPack(exported.base64.slice(0, -1))).toThrow('base64')
+    // The largest payload the transport allows passes the check and fails only as a ZIP, and a
+    // string holding a character above U+00FF is refused as base64 rather than by the stack.
+    expect(() => source.manager.inspectPack('A'.repeat(64 * 1024 * 1024))).toThrow('invalid zip data')
+    expect(() => source.manager.inspectPack('A'.repeat(9 * 1024 * 1024 - 1) + '中')).toThrow('base64')
+  })
+
   it('rejects checksum tampering, unsafe paths, and malformed transport data', async () => {
     const source = await fixture('pack-tamper', 3)
     const exported = await source.manager.exportPack('runtime')
@@ -217,6 +267,160 @@ describe('Mnemon Pack', () => {
     const unsafe = Buffer.from(zipSync({ '../escape': strToU8('x') })).toString('base64')
     expect(() => source.manager.inspectPack(unsafe)).toThrow('unsafe Pack entry path')
     expect(() => source.manager.inspectPack('not-base64')).toThrow('base64')
+  })
+
+  describe.skipIf(nodeSqlite === undefined)('Memory Spaces synced between two machines (#370)', () => {
+    /** The memories a space's database holds, by id. */
+    const held = (root: string, id: string): string[] => {
+      const database = new nodeSqlite!.DatabaseSync(join(root, 'data', id, 'mnemon.db'))
+      try {
+        return (database.prepare('SELECT id FROM insights ORDER BY id').all() as Array<{ id: string }>).map(row => row.id)
+      } finally {
+        database.close()
+      }
+    }
+
+    it('keeps one space however many syncs bring back a space the other machine only read', async () => {
+      const source = await fixture('pack-reads-source', 60)
+      const target = await fixture('pack-reads-target', 61)
+      spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories() }])
+      spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(2), reads: 2 }])
+      const local = readFileSync(join(target.root, 'data', 'gateway', 'mnemon.db'))
+      for (let round = 1; round <= 3; round += 1) {
+        // The source recalls between syncs, as the reporter's machines did: 2, then 4, then 8 spaces before.
+        spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round * 5), reads: round }])
+        await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(target.root).map(body => body.id)).toEqual(['gateway'])
+      }
+      // This machine's own copy stays, read counts included.
+      expect(readFileSync(join(target.root, 'data', 'gateway', 'mnemon.db')).equals(local)).toBe(true)
+    })
+
+    it('takes in what the other machine only added, and keeps its own version when that is the newer one', async () => {
+      const writer = await fixture('pack-writer', 66)
+      const reader = await fixture('pack-reader', 67)
+      spaces(writer.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories() }])
+      spaces(reader.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories() }])
+      const learned: SpaceInsight[] = []
+      for (let round = 1; round <= 3; round += 1) {
+        // One machine remembers something each round, the other only recalls: before, both gained a space a round.
+        learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
+        spaces(writer.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round }])
+        const written = readFileSync(join(writer.root, 'data', 'gateway', 'mnemon.db'))
+        await reader.manager.importPack((await writer.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(reader.root).map(body => body.id)).toEqual(['gateway'])
+        expect(held(reader.root, 'gateway')).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)].sort())
+        spaces(reader.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round + 4, learned), reads: 1 }])
+        await writer.manager.importPack((await reader.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(writer.root).map(body => body.id)).toEqual(['gateway'])
+        expect(readFileSync(join(writer.root, 'data', 'gateway', 'mnemon.db')).equals(written)).toBe(true)
+      }
+      // An older version that comes back adds nothing either.
+      spaces(reader.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(9), reads: 2 }])
+      await writer.manager.importPack((await reader.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+      expect(registryOf(writer.root).map(body => body.id)).toEqual(['gateway'])
+      expect(held(writer.root, 'gateway')).toHaveLength(5)
+    })
+
+    it('merges a space both machines added to into one, round after round', async () => {
+      const left = await fixture('pack-both-left', 62)
+      const right = await fixture('pack-both-right', 63)
+      // What each machine holds, by id: both start from the same two memories and learn one each round.
+      const contents = new Map(memories().map(insight => [insight.id, insight.content]))
+      const write = (root: string, ids: string[], reads: number) => {
+        spaces(root, [{ id: 'gateway', name: 'AI Gateway routing', reads, insights: ids.map(id => ({ id, content: contents.get(id)!, accessCount: reads })) }])
+      }
+      let leftIds = ['i-1', 'i-2']
+      let rightIds = ['i-1', 'i-2']
+      for (let round = 1; round <= 3; round += 1) {
+        for (const [side, ids] of [['left', leftIds], ['right', rightIds]] as const) {
+          const id = side + '-' + String(round)
+          contents.set(id, 'Learned on the ' + side + ' machine in round ' + String(round))
+          ids.push(id)
+        }
+        write(left.root, leftIds, round)
+        write(right.root, rightIds, round + 3)
+        await right.manager.importPack((await left.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        await left.manager.importPack((await right.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        for (const machine of [left, right]) expect(registryOf(machine.root).map(body => body.id)).toEqual(['gateway'])
+        leftIds = held(left.root, 'gateway')
+        rightIds = held(right.root, 'gateway')
+        expect(leftIds).toEqual([...contents.keys()].sort())
+        expect(rightIds).toEqual(leftIds)
+      }
+    })
+
+    it('keeps one space when a merge here rewrote the edges the branch still holds as published (#391)', async () => {
+      const source = await fixture('pack-edges-source', 70)
+      const target = await fixture('pack-edges-target', 71)
+      const published = { weight: 0.86, metadata: '{"sub_type":"similar_topic"}' }
+      // Merging a copy back into this machine's space wrote every edge again: weight 0.5, the
+      // reason as the only note, and the time of the merge.
+      const rewritten = { weight: 0.5, metadata: '{"reason":"semantic"}', createdAt: '2026-10-16T10:35:00Z' }
+      spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(2), reads: 2, edges: [['i-1', 'i-2', rewritten]] }])
+      const learned: SpaceInsight[] = []
+      for (let round = 1; round <= 3; round += 1) {
+        // The other machine still holds the edge as it was published, and keeps learning.
+        learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
+        spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round,
+          edges: [['i-1', 'i-2', published], ['i-2', 'i-' + String(round + 2), published]] }])
+        await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        expect(registryOf(target.root).map(body => body.id)).toEqual(['gateway'])
+        expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)])
+      }
+      const database = new nodeSqlite!.DatabaseSync(join(target.root, 'data', 'gateway', 'mnemon.db'))
+      try {
+        // This machine's values stay on the edge both hold; the edges only the other machine made arrive.
+        expect(database.prepare("SELECT weight, metadata FROM edges WHERE source_id = 'i-1' AND target_id = 'i-2'").get()).toEqual({ weight: 0.5, metadata: '{"reason":"semantic"}' })
+        expect(database.prepare('SELECT count(*) AS n FROM edges').get()).toEqual({ n: 4 })
+      } finally {
+        database.close()
+      }
+    })
+
+    it('keeps one copy of a space whose memory was forgotten on one side, and moves that copy on as the other side writes', async () => {
+      const source = await fixture('pack-forgotten-source', 68)
+      const target = await fixture('pack-forgotten-target', 69)
+      // This machine forgot i-2, as Mnemon's forget does; the other machine still holds it and keeps learning.
+      spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: [memories()[0]!, { ...memories()[1]!, deletedAt: '2026-10-13T01:00:00Z', updatedAt: '2026-10-13T01:00:00Z' }] }])
+      const learned: SpaceInsight[] = []
+      for (let round = 1; round <= 3; round += 1) {
+        learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
+        spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round }])
+        await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+        const bodies = registryOf(target.root)
+        expect(bodies).toHaveLength(2)
+        expect(bodies.map(body => body.name)).toEqual(['AI Gateway routing', 'AI Gateway routing'])
+        // The forgotten memory stays forgotten here; the copy holds the other machine's version, as it grows.
+        expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2'])
+        expect(held(target.root, bodies.find(body => body.id !== 'gateway')!.id)).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)])
+      }
+    })
+
+    it('does not add again a copy held under another id or name, and keeps different spaces apart', async () => {
+      const source = await fixture('pack-copies-source', 64)
+      const target = await fixture('pack-copies-target', 65)
+      const edited = { ...memories()[1]!, content: 'Accounts warm up for two weeks before routing', updatedAt: '2026-10-13T01:00:00Z' }
+      // This machine edited i-2, holds the other machine's version as a copy it has since renamed,
+      // and an empty space of each of two names.
+      spaces(target.root, [
+        { id: 'gateway', name: 'AI Gateway routing', insights: [memories(1)[0]!, edited] },
+        { id: 'copy-here', name: 'AI Gateway routing, the other one', insights: memories(2, [{ id: 'i-3', content: 'Only one machine learned this' }]) },
+        { id: 'ideas', name: 'Ideas', insights: [] },
+        { id: 'drafts-here', name: 'Drafts', insights: [] },
+      ])
+      // The other machine's version of the space is the copy held here; its own copy of it has another id.
+      spaces(source.root, [
+        { id: 'gateway', name: 'AI Gateway routing', insights: memories(4, [{ id: 'i-3', content: 'Only one machine learned this' }]) },
+        { id: 'copy-there', name: 'AI Gateway routing', insights: [memories(7)[0]!, edited], reads: 3 },
+        { id: 'notes', name: 'Notes', insights: [] },
+        { id: 'drafts-there', name: 'Drafts', insights: [] },
+      ])
+      await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
+      // Nothing new arrived but Notes: an empty space of another name is still a space of its own.
+      expect(registryOf(target.root).map(body => body.id).sort()).toEqual(['copy-here', 'drafts-here', 'gateway', 'ideas', 'notes'])
+      expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2'])
+    })
   })
 
   it('keeps a valid branch scope and origin through an import and drops malformed ones', async () => {
@@ -265,6 +469,139 @@ describe('Mnemon Pack', () => {
     expect(readdirSync(target.root).some(name => name.startsWith('.dsh-pack-stage-') || name.startsWith('.dsh-pack-backup-'))).toBe(false)
   })
 
+  describe('Project Documents merged against what a sync last agreed on', () => {
+    /** A machine with its own Documents Source to edit them, and its Pack manager. */
+    async function documents(label: string) {
+      const root = temporary(label)
+      const created = runner(root)
+      const sources = await sourceFixture({ dataDir: root, workspace: temporary(`${label}-workspace`) })
+      releases.push(sources.dispose)
+      return { root, sources, manager: new MnemonPackManager(created.runner, created.config, undefined, now) }
+    }
+    const indexOf = (root: string) => (JSON.parse(readFileSync(join(root, 'documents', 'index.json'), 'utf8')) as { documents: Array<Parameters<typeof documentVersion>[0]> }).documents
+    const textOf = (root: string, id: string) => readFileSync(join(root, indexOf(root).find(document => document.id === id)!.relativePath), 'utf8')
+    const edit = async (machine: Awaited<ReturnType<typeof documents>>, id: string, content: string) => {
+      await machine.sources.documents.read('snapshot')
+      await machine.sources.documents.mutate('mutate', { action: 'update', id, content }, { confirmed: true })
+    }
+
+    it('takes the branch version of a document only the branch changed, and keeps an edit made only here', async () => {
+      const here = await documents('pack-agreed-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-agreed-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await edit(there, first!.id, '# Release plan\n\nVersion 2 from there')
+      // Only the branch changed it: the document here moves on, no copy beside it.
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).map(document => [document.id, document.revision])).toEqual([[first!.id, 2]])
+      // Only this machine changed it: the branch's older version adds nothing.
+      await edit(there, first!.id, '# Release plan\n\nVersion 3 from there')
+      const branch = (await here.manager.exportPack('documents')).base64
+      const moved = { [first!.id]: documentVersion(indexOf(here.root)[0]!) }
+      await there.manager.importPack(branch, { mode: 'merge', documentsBase: moved })
+      expect(indexOf(there.root).map(document => [document.id, document.revision])).toEqual([[first!.id, 3]])
+    })
+
+    it('keeps one copy of a document both sides changed, as a merge without an agreement does', async () => {
+      const here = await documents('pack-both-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-both-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await edit(here, first!.id, '# Release plan\n\nHere')
+      await edit(there, first!.id, '# Release plan\n\nThere')
+      const branch = (await there.manager.exportPack('documents')).base64
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root)).toHaveLength(2)
+    })
+
+    it('brings back a document this machine no longer holds, as a merge without an agreement does', async () => {
+      const source = await documents('pack-removed-source')
+      await source.sources.documents.mutate('mutate', { action: 'create', title: 'Old notes', content: '# Old notes' }, { confirmed: true })
+      const [old] = indexOf(source.root)
+      const target = await documents('pack-removed-target')
+      await target.manager.importPack((await source.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: { [old!.id]: documentVersion(old!) } })
+      expect(indexOf(target.root).map(document => document.id)).toEqual([old!.id])
+    })
+
+    it('keeps both versions of a document both sides changed, this one at a revision above both', async () => {
+      const here = await documents('pack-both-revisions-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-both-revisions-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await edit(here, first!.id, '# Release plan\n\nHere, once')
+      await edit(here, first!.id, '# Release plan\n\nHere, twice')
+      await edit(there, first!.id, '# Release plan\n\nThere, once')
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: agreed })
+      const [mine, theirs] = indexOf(here.root)
+      // Revision 3 here and 2 there: this version moves above both, so the other machine takes it as the newer one.
+      expect([mine!.id, mine!.revision]).toEqual([first!.id, 4])
+      expect(textOf(here.root, first!.id)).toContain('Here, twice')
+      expect(textOf(here.root, theirs!.id)).toContain('There, once')
+    })
+
+    it('keeps an archive here and a rename there of the same text, one beside the other', async () => {
+      const here = await documents('pack-both-meta-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-both-meta-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await here.sources.documents.read('snapshot')
+      await here.sources.documents.mutate('archive', { id: first!.id, summary: 'Shipped' } as never, { confirmed: true })
+      await there.sources.documents.read('snapshot')
+      await there.sources.documents.mutate('mutate', { action: 'update', id: first!.id, title: 'Release plan, renamed there' }, { confirmed: true })
+      const branch = (await there.manager.exportPack('documents')).base64
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      // Merging the same version again, as a retried sync does, adds no second copy.
+      await here.manager.importPack(branch, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).map(document => [document.id === first!.id, document.title, document.status, document.archiveSummary])).toEqual([
+        [true, 'Release plan', 'archived', 'Shipped'],
+        [false, 'Release plan, renamed there', 'active', undefined],
+      ])
+    })
+
+    it('takes a title only the branch changed, and keeps a rename made here beside a text the branch changed', async () => {
+      const here = await documents('pack-meta-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const [first] = indexOf(here.root)
+      const agreed = { [first!.id]: documentVersion(first!) }
+      const there = await documents('pack-meta-there')
+      await there.manager.importPack((await here.manager.exportPack('documents')).base64, { mode: 'merge' })
+      await there.sources.documents.read('snapshot')
+      await there.sources.documents.mutate('mutate', { action: 'update', id: first!.id, title: 'Release plan, renamed there' }, { confirmed: true })
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).map(document => [document.id, document.title])).toEqual([[first!.id, 'Release plan, renamed there']])
+
+      // Now both sides changed it: here its title, there its text. Neither replaces the other.
+      const renamed = { [first!.id]: documentVersion(indexOf(here.root)[0]!) }
+      await here.sources.documents.read('snapshot')
+      await here.sources.documents.mutate('mutate', { action: 'update', id: first!.id, title: 'Release plan, renamed here' }, { confirmed: true })
+      await edit(there, first!.id, '# Release plan\n\nVersion 2 from there')
+      await here.manager.importPack((await there.manager.exportPack('documents')).base64, { mode: 'merge', documentsBase: renamed })
+      expect(indexOf(here.root).map(document => [document.id === first!.id, document.title])).toEqual([[true, 'Release plan, renamed here'], [false, 'Release plan, renamed there']])
+      expect(textOf(here.root, first!.id)).toContain('Version 1')
+    })
+
+    it('never replaces a document with a lower revision from the branch, as an older dsh-mnemon republishes', async () => {
+      const here = await documents('pack-revision-here')
+      await here.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+      const older = (await here.manager.exportPack('documents')).base64
+      const [first] = indexOf(here.root)
+      await edit(here, first!.id, '# Release plan\n\nVersion 2')
+      const agreed = { [first!.id]: documentVersion(indexOf(here.root)[0]!) }
+      await here.manager.importPack(older, { mode: 'merge', documentsBase: agreed })
+      expect(indexOf(here.root).find(document => document.id === first!.id)?.revision).toBe(2)
+      expect(textOf(here.root, first!.id)).toContain('Version 2')
+    })
+  })
+
   it('merges components without overwriting a divergent Memory Space id', async () => {
     const source = await fixture('pack-merge-source', 6, 'shared')
     const target = await fixture('pack-merge-target', 7, 'shared')
@@ -280,6 +617,11 @@ describe('Mnemon Pack', () => {
     expect(runtime.entries).toHaveLength(1)
     const documents = JSON.parse(readFileSync(join(target.root, 'documents', 'index.json'), 'utf8')) as { documents: unknown[] }
     expect(documents.documents).toHaveLength(2)
+
+    // Merging the same pack again, as a retried sync does, keeps the one copy it made.
+    await target.manager.importPack(exported.base64, { mode: 'merge' })
+    expect((JSON.parse(readFileSync(join(target.root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: unknown[] }).bodies).toHaveLength(2)
+    expect((JSON.parse(readFileSync(join(target.root, 'documents', 'index.json'), 'utf8')) as { documents: unknown[] }).documents).toHaveLength(2)
   })
 
   it('imports only the requested component from a complete Pack', async () => {

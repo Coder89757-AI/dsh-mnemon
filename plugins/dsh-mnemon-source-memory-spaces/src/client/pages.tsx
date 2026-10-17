@@ -2,7 +2,7 @@ import { css, sidebarCss, useT } from './presentation.ts'
 import type { JSX } from 'react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { CATEGORIES, normalizeEntityKey, type Category, type EntityMemoriesView, type EntityRelatedView, type EntityView, type Insight, type MemorySpaceCatalog, type MemorySpaceMetadataUpdate, type MemorySpaceProvider, type MemorySpaceView, type MemoryGraphNode, type MemoryGraphSnapshot, type MemoryPlacementCapability, type MemoryPlacementPreference, type MemoryListView, type MemoryProviderConfigField, type MemoryProviderConnection, type MemoryProviderDescriptor, type MemoryProviderId, type MemoryReadSource } from '../contracts.ts'
+import { CATEGORIES, normalizeEntityKey, type Category, type EntityMemoriesView, type EntityRelatedView, type EntityView, type Insight, type MemorySpaceCatalog, type MemorySpaceMetadataUpdate, type MemorySpaceProvider, type MemorySpaceRediscovery, type MemorySpaceView, type MemoryGraphNode, type MemoryGraphSnapshot, type MemoryPlacementCapability, type MemoryPlacementPreference, type MemoryListView, type MemoryProviderConfigField, type MemoryProviderConnection, type MemoryProviderDescriptor, type MemoryProviderId, type MemoryReadSource } from '../contracts.ts'
 import type { MemorySpacesPageClient } from './api.ts'
 import { ProviderIcon } from './ProviderIcon.tsx'
 import { providerFieldLabel, providerOptionLabel, providerSummary } from './provider-presentation.ts'
@@ -670,6 +670,9 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
   const [metadataSelection, setMetadataSelection] = useState<string[]>([])
   const [metadataTasks, setMetadataTasks] = useState<Record<string, { status: 'running' | 'success' | 'error'; error?: string }>>({})
   const [lastFullSyncAt, setLastFullSyncAt] = useState<number | null>(null)
+  const [rediscovering, setRediscovering] = useState(false)
+  const [pageRediscovery, setPageRediscovery] = useState<MemorySpaceRediscovery | null>(null)
+  const [seenRediscovery, setSeenRediscovery] = useState<string | null>(readSeenRediscovery)
   const [syncClock, setSyncClock] = useState(() => Date.now())
   const loadRequest = useRef(0)
   const initialSyncStarted = useRef(false)
@@ -748,6 +751,23 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
   }, [])
   // A new space starts with a provider that can take it now.
   useEffect(() => { setSpaceProviderId(current => readyProviderId(catalog?.providers ?? [], current) ?? current) }, [catalog])
+  // A pass the Host started while this page is open: read the directory again until it ends, then
+  // show what it found. The read also brings the Source's new revision, so the switches keep working.
+  const hostRediscovering = catalog?.rediscovery?.running === true && !rediscovering
+  useEffect(() => {
+    if (!hostRediscovering) return
+    let active = true
+    const timer = window.setInterval(() => {
+      void props.client.bodyDirectory().then(next => {
+        if (!active || next.rediscovery?.running === true) return
+        active = false
+        window.clearInterval(timer)
+        void load(true)
+        if (next.rediscovery?.last?.results.some(result => result.added.length > 0)) props.onMutate()
+      }).catch(() => {})
+    }, REDISCOVERY_POLL_MS)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [hostRediscovering, load, props.client, props.onMutate])
 
   const toggle = async (body: MemorySpaceView) => {
     setChanging(body.id); setError(null)
@@ -832,6 +852,22 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
     } catch (reason) { setError(message(reason)) } finally { setCreating(false) }
   }
 
+  // Providers are asked again for namespaces they gained; the new spaces start inactive (#373).
+  const rediscover = async () => {
+    if (props.client.rediscoverBodies === undefined || rediscovering) return
+    setRediscovering(true); setError(null)
+    try {
+      const outcome = await props.client.rediscoverBodies()
+      setPageRediscovery(outcome)
+      await load(true)
+      if (outcome.results.some(result => result.added.length > 0)) props.onMutate()
+    } catch (reason) { setError(message(reason)) } finally { setRediscovering(false) }
+  }
+  const dismissRediscovery = (at: string) => {
+    setSeenRediscovery(at)
+    writeSeenRediscovery(at)
+  }
+
   const deleteBody = async (body: MemorySpaceView) => {
     setDeletingSpace(body.id); setError(null)
     try {
@@ -912,6 +948,19 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
         return t('overview.fullSyncDays', { count: Math.floor(hours / 24) })
       })()
   const selectedProvider = providers.find(provider => provider.id === spaceProviderId)
+  // The latest pass: one started here answers even when it found nothing; one from start-up
+  // speaks only when it has news.
+  const directoryRediscovery = catalog?.rediscovery?.last ?? null
+  const rediscovery = pageRediscovery !== null && (directoryRediscovery === null || pageRediscovery.at >= directoryRediscovery.at) ? pageRediscovery : directoryRediscovery
+  const rediscoveryAdded = rediscovery?.results.flatMap(result => result.added) ?? []
+  const rediscoveryDisconnected = rediscovery?.results.reduce((sum, result) => sum + result.disconnected, 0) ?? 0
+  const rediscoveryFailures = rediscovery?.results.filter(result => result.error !== undefined) ?? []
+  const rediscoveryShown = rediscovery !== null && rediscovery.at !== seenRediscovery
+    && (rediscovery === pageRediscovery || rediscoveryAdded.length > 0 || rediscoveryFailures.length > 0)
+  const newSpaceIds = new Set(rediscoveryShown ? rediscoveryAdded.map(body => body.id) : [])
+  const canRediscover = props.writeEnabled && !catalogUnavailable && props.client.rediscoverBodies !== undefined
+    && providers.some(provider => provider.origin !== 'native' && provider.serviceConfigured === true)
+  const rediscoveryRunning = rediscovering || catalog?.rediscovery?.running === true
   const nativeSpaceCount = catalog?.items.filter(body => nativeSpaceProvider(body.provider)).length ?? 0
   const canDeleteSpace = (body: MemorySpaceView): boolean => !nativeSpaceProvider(body.provider) || nativeSpaceCount > 1
   const updateProviderDraft = (providerId: MemoryProviderId, key: string, value: string | number | boolean) => setProviderDrafts(current => ({ ...current, [providerId]: { ...(current[providerId] ?? {}), [key]: value } }))
@@ -957,10 +1006,22 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
           <div><h3>{t('overview.directory')}</h3><p>{t('overview.directory.description')}</p>{catalogUnavailable && <code className={css.bodyDirectoryPath}>{t('overview.directory.unsynced')}</code>}</div>
           <div className={appearanceClass(css.bodyDirectoryControls, sidebarCss.bodyDirectoryActions)}>
             <strong>{catalogUnavailable ? t('overview.directory.unsyncedBadge') : `${catalog?.activeCount ?? '—'} / ${catalog?.total ?? '—'} ${t('common.active')}`}</strong>
+            {canRediscover && <button type="button" className={spaceEditActionClass} title={t('overview.rediscoverHint')} aria-busy={rediscoveryRunning || undefined} onClick={() => void rediscover()}>{rediscoveryRunning ? t('overview.rediscovering') : t('overview.rediscoverAction')}</button>}
             {props.writeEnabled && !catalogUnavailable && <button type="button" className={spaceEditActionClass} title={!props.agentAvailable ? t('overview.metadataUnavailable') : undefined} onClick={() => { setMetadataSelection([]); setMetadataTasks({}); setMetadataOpen(true); if (!props.agentAvailable) props.onAgentRefresh() }}>{t('overview.metadataAction')}</button>}
             {props.writeEnabled && !catalogUnavailable && <button type="button" className={spaceEditActionClass} onClick={() => setCreatingSpaceOpen(true)}>{t('overview.createTitle')}</button>}
           </div>
         </div>
+        {/* Present before it has anything to say, so assistive technology announces what it says. */}
+        <div role="status">{rediscoveryShown && <div className={css.rediscoveryNotice}>
+          <div>
+            <p>{rediscoveryAdded.length > 0 ? t('overview.rediscoveryAdded', { count: rediscoveryAdded.length }) : t('overview.rediscoveryNone')}</p>
+            {rediscoveryDisconnected > 0 && <p>{t('overview.rediscoveryDisconnected', { count: rediscoveryDisconnected })}</p>}
+            {rediscoveryFailures.map(result => <p key={result.providerId} data-failed="">{result.timedOut === true
+              ? t('overview.rediscoveryTimedOut', { provider: result.label })
+              : t('overview.rediscoveryFailed', { provider: result.label, error: result.error ?? '' })}</p>)}
+          </div>
+          <button type="button" className={spaceEditActionClass} onClick={() => dismissRediscovery(rediscovery.at)}>{t('overview.rediscoveryDismiss')}</button>
+        </div>}</div>
         <div className={css.bodyGrid}>
           {catalog?.items.map(body => (
             <article key={body.id} className={css.bodyCard} data-provider={body.provider.id} data-active={body.active || undefined} data-healthy={!body.statusLoading && body.healthy || undefined} data-status-loading={body.statusLoading || undefined} data-reconnectable="" data-reconnecting={reconnectingSpace === body.id || undefined} data-mnemon-default={body.mnemonDefault || undefined} data-editing={undefined} tabIndex={0} aria-label={t('overview.reconnectAria', { name: body.name })} title={reconnectingSpace === body.id ? t('overview.reconnecting') : body.error ?? t('overview.reconnectHint')} onClick={event => {
@@ -970,7 +1031,7 @@ export function OverviewPage(props: { client: MemorySpacesPageClient; metadataCl
               if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
               event.preventDefault(); void reconnect(body)
             }}>
-              {<><div className={sidebarCss.bodyCardHeader}><div className={sidebarCss.bodyCardIdentity}><span className={css.bodySignal} /><div><strong title={body.id}>{body.name}</strong><div className={sidebarCss.bodyCardMeta}><MemoryProviderBadge providerId={body.provider.id} label={body.provider.label} /><small className={css.bodyHealth}>{reconnectingSpace === body.id ? t('overview.reconnecting') : body.statusLoading ? t('overview.storageChecking') : body.healthy ? t('overview.storageHealthy') : t('overview.storageUnhealthy')}</small>{body.mnemonDefault && <small className={css.mnemonDefaultBadge}>{t('overview.mnemonDefault')}</small>}</div></div></div>{spaceToggle(body)}</div><p title={body.description || t('overview.noDescription')}>{body.description || t('overview.noDescription')}</p>{placementReceipt(body)}<footer className={sidebarCss.bodyCardFooter}><div className={sidebarCss.bodyCardStats}>{!nativeSpaceProvider(body.provider) ? <><span className={css.bodyFooterBlock} title={t(body.provider.kind === 'remote' ? 'overview.providerRemote' : 'overview.providerLocal')}>{t(body.provider.kind === 'remote' ? 'overview.providerRemote' : 'overview.providerLocal')}</span><span className={`${css.bodyFooterBlock} ${css.bodyFooterGrow}`} title={body.provider.location || body.provider.label}>{body.provider.location || body.provider.label}</span></> : <><span className={css.bodyFooterBlock} title={t('common.memories', { count: body.stats?.totalInsights ?? 0 })}>{t('common.memories', { count: body.stats?.totalInsights ?? 0 })}</span><span className={css.bodyFooterBlock} title={t('common.edges', { count: body.stats?.edgeCount ?? 0 })}>{t('common.edges', { count: body.stats?.edgeCount ?? 0 })}</span><span className={css.bodyFooterBlock} title={humanBytes(body.stats?.dbSizeBytes ?? 0)}>{humanBytes(body.stats?.dbSizeBytes ?? 0)}</span></>}</div><div className={css.bodyCardActions}><button type="button" className={spaceEditActionClass} aria-label={t('overview.editSpaceAria', { name: body.name })} disabled={!props.writeEnabled || deletingSpace === body.id} onClick={() => beginEdit(body)}>{t('overview.editSpace')}</button><button type="button" className={spaceDeleteActionClass} aria-label={t(!nativeSpaceProvider(body.provider) ? 'overview.disconnectSpaceAria' : 'overview.deleteSpaceAria', { name: body.name })} title={canDeleteSpace(body) ? undefined : t('overview.lastStoreDeleteHint')} disabled={!props.writeEnabled || deletingSpace === body.id || !canDeleteSpace(body)} onClick={() => setConfirmingDeleteSpace(body.id)}>{!nativeSpaceProvider(body.provider) ? t('overview.disconnectSpace') : t('overview.deleteSpace')}</button></div></footer></>}
+              {<><div className={sidebarCss.bodyCardHeader}><div className={sidebarCss.bodyCardIdentity}><span className={css.bodySignal} /><div><strong title={body.id}>{body.name}</strong><div className={sidebarCss.bodyCardMeta}><MemoryProviderBadge providerId={body.provider.id} label={body.provider.label} /><small className={css.bodyHealth}>{reconnectingSpace === body.id ? t('overview.reconnecting') : body.statusLoading ? t('overview.storageChecking') : body.healthy ? t('overview.storageHealthy') : t('overview.storageUnhealthy')}</small>{body.mnemonDefault && <small className={css.mnemonDefaultBadge}>{t('overview.mnemonDefault')}</small>}{newSpaceIds.has(body.id) && <small className={css.newSpaceBadge}>{t('overview.newSpace')}</small>}</div></div></div>{spaceToggle(body)}</div><p title={body.description || t('overview.noDescription')}>{body.description || t('overview.noDescription')}</p>{placementReceipt(body)}<footer className={sidebarCss.bodyCardFooter}><div className={sidebarCss.bodyCardStats}>{!nativeSpaceProvider(body.provider) ? <><span className={css.bodyFooterBlock} title={t(body.provider.kind === 'remote' ? 'overview.providerRemote' : 'overview.providerLocal')}>{t(body.provider.kind === 'remote' ? 'overview.providerRemote' : 'overview.providerLocal')}</span><span className={`${css.bodyFooterBlock} ${css.bodyFooterGrow}`} title={body.provider.location || body.provider.label}>{body.provider.location || body.provider.label}</span></> : <><span className={css.bodyFooterBlock} title={t('common.memories', { count: body.stats?.totalInsights ?? 0 })}>{t('common.memories', { count: body.stats?.totalInsights ?? 0 })}</span><span className={css.bodyFooterBlock} title={t('common.edges', { count: body.stats?.edgeCount ?? 0 })}>{t('common.edges', { count: body.stats?.edgeCount ?? 0 })}</span><span className={css.bodyFooterBlock} title={humanBytes(body.stats?.dbSizeBytes ?? 0)}>{humanBytes(body.stats?.dbSizeBytes ?? 0)}</span></>}</div><div className={css.bodyCardActions}><button type="button" className={spaceEditActionClass} aria-label={t('overview.editSpaceAria', { name: body.name })} disabled={!props.writeEnabled || deletingSpace === body.id} onClick={() => beginEdit(body)}>{t('overview.editSpace')}</button><button type="button" className={spaceDeleteActionClass} aria-label={t(!nativeSpaceProvider(body.provider) ? 'overview.disconnectSpaceAria' : 'overview.deleteSpaceAria', { name: body.name })} title={canDeleteSpace(body) ? undefined : t('overview.lastStoreDeleteHint')} disabled={!props.writeEnabled || deletingSpace === body.id || !canDeleteSpace(body)} onClick={() => setConfirmingDeleteSpace(body.id)}>{!nativeSpaceProvider(body.provider) ? t('overview.disconnectSpace') : t('overview.deleteSpace')}</button></div></footer></>}
             </article>
           ))}
           {catalog?.total === 0 && <div className={css.bodyDirectoryEmpty}><span>◇</span><div><strong>{catalogUnavailable ? t('overview.unsyncedTitle') : t('overview.emptyTitle')}</strong><p>{catalogUnavailable ? t('overview.unsyncedShort') : t('overview.emptyShort')}</p></div></div>}
@@ -1153,6 +1214,21 @@ export function ExplorePage(props: { client: MemorySpacesPageClient; agentClient
       </div>
     </div>
   )
+}
+
+/** The rediscovery a person last dismissed on this browser, so the same news is not shown twice. */
+const REDISCOVERY_SEEN_KEY = 'dsh-mnemon.memory-spaces.rediscovery-seen'
+/** How often an open page looks again while the Host asks the Providers. */
+const REDISCOVERY_POLL_MS = 2_000
+
+function readSeenRediscovery(): string | null {
+  try { return globalThis.localStorage?.getItem(REDISCOVERY_SEEN_KEY) ?? null } catch { return null }
+}
+
+function writeSeenRediscovery(at: string): void {
+  try { globalThis.localStorage?.setItem(REDISCOVERY_SEEN_KEY, at) } catch {
+    // A browser that keeps nothing shows the news again next time.
+  }
 }
 
 /** Show a loading placeholder only when a read outlasts this, so a quick read never flashes one. */
@@ -1594,7 +1670,7 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
   const [memoryBodyId, setMemoryBodyId] = useState('')
   const [supervising, setSupervising] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [outcome, setOutcome] = useState<{ content: string; action?: string; summary?: string; error?: string } | null>(null)
+  const [outcome, setOutcome] = useState<{ content: string; action?: string; summary?: string; unembedded?: boolean; error?: string } | null>(null)
   useEffect(() => { if (props.seed !== '') setContent(props.seed) }, [props.seed])
   useEffect(() => {
     if (memoryBodyId === '' && props.memoryBodies.length > 0) setMemoryBodyId((props.memoryBodies.find(body => body.active) ?? props.memoryBodies[0])!.id)
@@ -1611,7 +1687,7 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
     setSupervising(true); setOutcome(null)
     try {
       const response = await props.client.supervise(candidate)
-      setOutcome({ content: candidate, action: response.action, summary: response.summary })
+      setOutcome({ content: candidate, action: response.action, summary: response.summary, unembedded: (response.unembedded ?? []).length > 0 })
       props.onMutate()
     } catch (reason) { setOutcome({ content: candidate, error: message(reason) }) } finally { setSupervising(false) }
   }
@@ -1622,7 +1698,8 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
     setSaving(true); setOutcome(null)
     try {
       const response = await props.client.remember({ content: candidate, category, importance, tags: tags.split(',').map(value => value.trim()).filter(Boolean), entities: entities.split(',').map(value => value.trim()).filter(Boolean), source: 'user', ...(memoryBodyId === '' ? {} : { memoryBodyId }) })
-      setOutcome({ content: candidate, action: typeof response.action === 'string' ? response.action : 'stored', summary: typeof response.summary === 'string' ? response.summary : '' })
+      // Mnemon Native says embedded: false for a memory it saved without a vector (#388).
+      setOutcome({ content: candidate, action: typeof response.action === 'string' ? response.action : 'stored', summary: typeof response.summary === 'string' ? response.summary : '', unembedded: response.embedded === false })
       props.onMutate()
     } catch (reason) { setOutcome({ content: candidate, error: message(reason) }) } finally { setSaving(false) }
   }
@@ -1632,7 +1709,7 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
       <div className={css.candidateHeading}><label htmlFor={candidateId}>{t('remember.candidate')}</label><TaskAgentTag available={props.agentAvailable} /></div>
       <textarea id={candidateId} value={content} onChange={event => setContent(event.target.value)} maxLength={8000} rows={8} placeholder={t('remember.placeholder')} />
       {!props.agentAvailable && <p className={css.sessionHint}>{t('remember.taskAgentHint')}</p>}
-      {outcome !== null && <WriteReceipt action={outcome.action} summary={outcome.summary} error={outcome.error} onView={props.onView} />}
+      {outcome !== null && <WriteReceipt action={outcome.action} summary={outcome.summary} error={outcome.error} unembedded={outcome.unembedded} onView={props.onView} />}
     </form>
     <details className={css.advancedWrite}>
       <summary><span><strong>{t('remember.advanced')}</strong><small>{t('remember.advancedHint')}</small></span><span>{t('remember.expand')}</span></summary>

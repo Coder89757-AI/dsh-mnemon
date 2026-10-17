@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -6,11 +6,12 @@ import { unzipSync } from 'fflate'
 import { resolveConfig } from '../src/host/config.ts'
 import { MnemonPackManager } from '../src/host/pack.ts'
 import { createStorageRoot } from '../src/host/storage-root.ts'
-import { MnemonGitSync, gitEnvironment } from '../src/host/git-sync.ts'
+import { MnemonGitSync, gitEnvironment, remoteIssueOf } from '../src/host/git-sync.ts'
 import type { MnemonGitHubAuth } from '../src/host/github-auth.ts'
-import { MnemonMachineStore } from '../src/host/machine-identity.ts'
+import { MnemonMachineStore, defaultMachineLabel } from '../src/host/machine-identity.ts'
 import { runProcess, type ProcessRunner } from '../src/host/process.ts'
 import { sourceFixture } from './fixtures/sources.ts'
+import { sqlite as nodeSqlite, writeSpace } from './helpers/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []
@@ -65,7 +66,7 @@ function identityOf(root: string): { id: string; label: string } {
 }
 
 /** One machine: a storage root, its pack manager and the sync channel over it. */
-async function machine(label: string, repository?: string, clock: () => Date = now) {
+async function machine(label: string, repository?: string, clock: () => Date = now, run?: ProcessRunner) {
   const root = temporary(label)
   const workspace = temporary(label + '-workspace')
   // Git sync is opt-in, so the suite switches it on exactly where the product does.
@@ -74,10 +75,39 @@ async function machine(label: string, repository?: string, clock: () => Date = n
   const sources = await sourceFixture({ dataDir: root, workspace })
   releases.push(sources.dispose)
   const packs = new MnemonPackManager(runner, config, undefined, clock)
-  const sync = new MnemonGitSync(runner, config, packs, undefined, clock)
+  const sync = new MnemonGitSync(runner, config, packs, run, clock)
   if (repository !== undefined) sync.configure({ repoUrl: repository })
   return { root, workspace, runner, config, packs, sync, sources }
 }
+
+/** One Memory Space as Mnemon writes it, so the payload carries a `mnemon.db`. */
+function seedSpace(root: string): void {
+  const data = join(root, 'data')
+  mkdirSync(join(data, 'default'), { recursive: true })
+  writeSpace(join(data, 'default', 'mnemon.db'), { insights: [{ id: 'i-1', content: 'The gateway routes by model family' }] })
+  const at = '2026-10-05T08:37:12.218Z'
+  writeFileSync(join(data, '.dsh-memory-bodies.json'), JSON.stringify({ version: 1, bodies: [{ id: 'default', name: 'Default', description: '', active: true, createdAt: at, updatedAt: at }] }, null, 2) + '\n')
+}
+
+/** Run with these environment variables set, or removed where the value is undefined. */
+async function withEnvironment(values: Record<string, string | undefined>, run: () => Promise<void>): Promise<void> {
+  const saved = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]))
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+  try {
+    await run()
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
+
+/** A process id no system hands out, as a Host that stopped long ago left it. */
+const GONE_PID = 2 ** 22 + 12_345
 
 /**
  * Run with the Git identity of a machine that has one configured. Git reads the same
@@ -97,6 +127,29 @@ async function withGitIdentity(name: string, email: string, run: () => Promise<v
       else process.env[key] = value
     })
   }
+}
+
+interface DocumentEntry { id: string; title: string; status: string; revision: number; relativePath: string; archiveSummary?: string }
+
+/** The Project Documents a storage root holds, as its index lists them. */
+function documentsOf(root: string): DocumentEntry[] {
+  return (JSON.parse(readFileSync(join(root, 'documents', 'index.json'), 'utf8')) as { documents: DocumentEntry[] }).documents
+}
+
+/** One document's Markdown as a storage root holds it. */
+function textOf(root: string, id: string): string {
+  return readFileSync(join(root, documentsOf(root).find(document => document.id === id)!.relativePath), 'utf8')
+}
+
+/** What a storage root last agreed on with its branch, as an older dsh-mnemon never records. */
+function agreementOf(root: string): string {
+  return join(root, 'state', 'sync', 'base.json')
+}
+
+/** Edit one document as its Source would, after reading what changed underneath it. */
+async function editDocument(machine: { sources: { documents: { read: (operation: string) => Promise<unknown>; mutate: (operation: string, input: never, options: { confirmed: true }) => Promise<unknown> } } }, id: string, content: string): Promise<void> {
+  await machine.sources.documents.read('snapshot')
+  await machine.sources.documents.mutate('mutate', { action: 'update', id, content } as never, { confirmed: true })
 }
 
 async function repository(label: string): Promise<string> {
@@ -448,6 +501,101 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(readFileSync(join(machineB.root, 'runtime', 'memories.json'), 'utf8')).not.toContain('Published profile')
   })
 
+  /**
+   * The state the reported store was left in: one document's digest carries a stray character.
+   * A first push is the dangerous one, because the import check that guards every later push
+   * has nothing to read yet, so the bad payload would go straight to the branch and lock the
+   * channel behind it.
+   */
+  it('refuses a first push whose document digest is not a sha256', async () => {
+    const origin = await repository('sync-index-shape-remote')
+    const machineA = await machine('sync-index-shape', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Hermes image generation', content: '# Hermes\n\nDirect upstream call.' }, { confirmed: true })
+    const indexPath = join(machineA.root, 'documents', 'index.json')
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as { documents: Array<{ contentHash: string }> }
+    index.documents[0]!.contentHash += '6'
+    writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`)
+
+    await expect(machineA.sync.push({ message: 'First push' })).rejects.toThrow('Documents index records a content hash that is not a sha256 digest')
+    // The branch is where the damage would have landed, and nothing reached it.
+    expect((await git(['branch', '--list', 'mnemon-sync'], origin)).trim()).toBe('')
+    expect(await git(['status', '--porcelain'], join(machineA.root, 'state', 'sync', 'git'))).toBe('')
+  })
+
+  /**
+   * Sixty-four lowercase hex characters, so the shape check reads it as a digest and only a
+   * comparison against the body can tell that it is not this document's.
+   */
+  it('refuses a first push whose document digest does not match its body', async () => {
+    const origin = await repository('sync-index-value-remote')
+    const machineA = await machine('sync-index-value', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Hermes image generation', content: '# Hermes\n\nDirect upstream call.' }, { confirmed: true })
+    const indexPath = join(machineA.root, 'documents', 'index.json')
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as { documents: Array<{ contentHash: string }> }
+    index.documents[0]!.contentHash = '0'.repeat(64)
+    writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`)
+
+    await expect(machineA.sync.push({ message: 'First push' })).rejects.toThrow('Documents payload content hash does not match')
+    expect((await git(['branch', '--list', 'mnemon-sync'], origin)).trim()).toBe('')
+    expect(await git(['status', '--porcelain'], join(machineA.root, 'state', 'sync', 'git'))).toBe('')
+  })
+
+  it.skipIf(nodeSqlite === undefined)('reads the payload the branch holds, not files the mirror does not track (#396)', async () => {
+    const origin = await repository('sync-untracked-remote')
+    const machineA = await machine('sync-untracked', origin)
+    seedSpace(machineA.root)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Published profile', importance: 'normal' }, { confirmed: true })
+    await machineA.sync.push({ message: 'Publish' })
+    const mirror = join(machineA.root, 'state', 'sync', 'git')
+    expect(await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)).toContain('mnemon/payload/data/default/mnemon.db')
+    // SQLite leaves -wal and -shm beside a database something opened in place, and Git
+    // tracks neither, here ignores them even. A reset keeps such files, so every later sync
+    // read them as payload and failed until someone deleted them by hand.
+    writeFileSync(join(mirror, '.git', 'info', 'exclude'), '*-shm\n*-wal\n')
+    writeFileSync(join(mirror, 'notes.txt'), 'outside the sync directory')
+    const stray = [join('mnemon', 'payload', 'data', 'default', 'mnemon.db-shm'), join('mnemon', 'payload', 'data', 'default', 'mnemon.db-wal'),
+      join('mnemon', 'payload', 'runtime', 'scratch', 'left-over.json')]
+    for (const path of stray) {
+      mkdirSync(join(mirror, path, '..'), { recursive: true })
+      writeFileSync(join(mirror, path), 'not part of the payload')
+    }
+    await expect(machineA.sync.preview()).resolves.toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/u) })
+    for (const path of stray) expect(existsSync(join(mirror, path))).toBe(false)
+    expect(existsSync(join(mirror, 'mnemon', 'payload', 'data', 'default', 'mnemon.db'))).toBe(true)
+    for (const path of stray) {
+      mkdirSync(join(mirror, path, '..'), { recursive: true })
+      writeFileSync(join(mirror, path), 'not part of the payload')
+    }
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Second profile entry', importance: 'normal' }, { confirmed: true })
+    await expect(machineA.sync.push({ message: 'Publish again' })).resolves.toMatchObject({ committed: true, pushed: true })
+    expect(await git(['status', '--porcelain'], mirror)).toBe('?? notes.txt\n')
+    const published = await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)
+    expect(published).toContain('mnemon/payload/runtime/USER.md')
+    expect(published).not.toMatch(/-shm|-wal|left-over/u)
+    expect(await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)).toContain('Second profile entry')
+    // Only the sync directory is brought back to the branch.
+    expect(readFileSync(join(mirror, 'notes.txt'), 'utf8')).toBe('outside the sync directory')
+  })
+
+  it.skipIf(nodeSqlite === undefined)('publishes payload files the ignore rules on this machine match, and syncs again (#396)', async () => {
+    const origin = await repository('sync-ignored-remote')
+    const machineA = await machine('sync-ignored-a', origin)
+    seedSpace(machineA.root)
+    // A global ignore file, as many machines have one, that matches every Memory Space database.
+    const home = temporary('sync-ignored-home')
+    writeFileSync(join(home, 'ignore'), '*.db\n')
+    writeFileSync(join(home, 'gitconfig'), '[core]\n\texcludesFile = ' + join(home, 'ignore') + '\n')
+    await withEnvironment({ GIT_CONFIG_GLOBAL: join(home, 'gitconfig') }, async () => {
+      await machineA.sync.push({ message: 'Publish' })
+      expect(await git(['ls-tree', '-r', '--name-only', 'mnemon-sync'], origin)).toContain('mnemon/payload/data/default/mnemon.db')
+      await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Second profile entry', importance: 'normal' }, { confirmed: true })
+      await expect(machineA.sync.push({ message: 'Publish again' })).resolves.toMatchObject({ committed: true, pushed: true })
+      const machineB = await machine('sync-ignored-b', origin)
+      await expect(machineB.sync.pull({ mode: 'merge' })).resolves.toBeDefined()
+      expect(existsSync(join(machineB.root, 'data', 'default', 'mnemon.db'))).toBe(true)
+    })
+  })
+
   it('reports an empty remote instead of importing an empty payload', async () => {
     const origin = await repository('sync-empty-remote')
     const machineA = await machine('sync-empty', origin)
@@ -476,6 +624,510 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(published).toContain('Prefers table output')
   })
 
+  it('keeps one Project Document on a machine that edits it between syncs', async () => {
+    const origin = await repository('sync-document-solo-remote')
+    const machineA = await machine('sync-document-solo', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+    await machineA.sync.push({ message: 'Version 1' })
+    const id = documentsOf(machineA.root)[0]!.id
+    for (const version of [2, 3]) {
+      await editDocument(machineA, id, '# Release plan\n\nVersion ' + String(version))
+      // Every push folds the branch in first, and the branch holds the previous version.
+      await machineA.sync.push({ message: 'Version ' + String(version) })
+    }
+    expect(documentsOf(machineA.root).map(document => [document.title, document.revision])).toEqual([['Release plan', 3]])
+    const published = JSON.parse(await git(['show', 'mnemon-sync:mnemon/payload/documents/index.json'], origin)) as { documents: unknown[] }
+    expect(published.documents).toHaveLength(1)
+  })
+
+  it('brings an edit made on one machine to the same document on the other', async () => {
+    const origin = await repository('sync-document-edit-remote')
+    const machineA = await machine('sync-document-edit-a', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+    await machineA.sync.push({ message: 'From A' })
+    const machineB = await machine('sync-document-edit-b', origin)
+    await machineB.sync.push({ message: 'From B' })
+    const id = documentsOf(machineB.root)[0]!.id
+    for (const version of [2, 3]) {
+      await editDocument(machineA, id, '# Release plan\n\nVersion ' + String(version))
+      await machineA.sync.push({ message: 'Version ' + String(version) })
+      await machineB.sync.pull()
+      // The document B held is the one that changed, not a copy beside it.
+      expect(documentsOf(machineB.root).map(document => [document.id, document.revision])).toEqual([[id, version]])
+      expect(readFileSync(join(machineB.root, documentsOf(machineB.root)[0]!.relativePath), 'utf8')).toContain('Version ' + String(version))
+      await machineB.sync.push({ message: 'B folds in' })
+      expect(documentsOf(machineA.root)).toHaveLength(1)
+    }
+  })
+
+  it('keeps one copy of a document both machines changed since they last agreed, and both end alike', async () => {
+    const origin = await repository('sync-document-both-remote')
+    const machineA = await machine('sync-document-both-a', origin)
+    await machineA.sources.documents.mutate('mutate', { action: 'create', title: 'Release plan', content: '# Release plan\n\nVersion 1' }, { confirmed: true })
+    await machineA.sync.push({ message: 'From A' })
+    const machineB = await machine('sync-document-both-b', origin)
+    await machineB.sync.push({ message: 'From B' })
+    const id = documentsOf(machineA.root)[0]!.id
+    await editDocument(machineA, id, '# Release plan\n\nA wants a canary first')
+    await editDocument(machineB, id, '# Release plan\n\nB wants a staged rollout')
+    await machineA.sync.push({ message: 'A edits' })
+    await machineB.sync.push({ message: 'B edits' })
+    for (let round = 0; round < 2; round += 1) {
+      await machineA.sync.push({ message: 'A again' })
+      await machineB.sync.push({ message: 'B again' })
+    }
+    const contents = (root: string) => documentsOf(root).map(document => readFileSync(join(root, document.relativePath), 'utf8').match(/(A wants|B wants)[^\n]*/u)?.[0]).sort()
+    // Neither edit is lost: one of them is the document, the other its single copy, on both machines.
+    expect(contents(machineA.root)).toEqual(['A wants a canary first', 'B wants a staged rollout'])
+    expect(documentsOf(machineA.root).map(document => document.id).sort()).toEqual(documentsOf(machineB.root).map(document => document.id).sort())
+    expect(contents(machineB.root)).toEqual(contents(machineA.root))
+  })
+
+  describe('Project Documents when a sync does not go as planned', () => {
+    const create = (target: Awaited<ReturnType<typeof machine>>, title = 'Release plan') =>
+      target.sources.documents.mutate('mutate', { action: 'create', title, content: '# ' + title + '\n\nVersion 1' }, { confirmed: true })
+
+    /** A machine whose pushes Git refuses while `refusing` says so, as a 403 does. */
+    function refusal() {
+      const state = { refusing: false, always: false }
+      const run: ProcessRunner = async (command, args, options) => {
+        if (state.refusing && args.includes('push')) {
+          if (!state.always) state.refusing = false
+          return { stdout: '', stderr: 'fatal: unable to access the remote: The requested URL returned error: 403', exitCode: 128 }
+        }
+        return runProcess(command, args, options)
+      }
+      return { state, run }
+    }
+
+    /** A takes B's version 2 in, but cannot publish the result. */
+    async function unpublishedMerge(label: string) {
+      const origin = await repository(label + '-remote')
+      const refused = refusal()
+      const machineA = await machine(label + '-a', origin, now, refused.run)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine(label + '-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineB, id, '# Release plan\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B, version 2' })
+      refused.state.refusing = true
+      const result = await machineA.sync.push({ message: 'A, refused' })
+      expect(result.pushed).toBe(false)
+      expect(documentsOf(machineA.root).map(document => document.id)).toEqual([id])
+      expect(textOf(machineA.root, id)).toContain('Version 2 from B')
+      return { machineA, machineB, id }
+    }
+
+    const alike = (machines: Array<Awaited<ReturnType<typeof machine>>>, id: string, text: string) => {
+      for (const target of machines) {
+        expect(documentsOf(target.root).map(document => document.id)).toEqual([id])
+        expect(textOf(target.root, id)).toContain(text)
+      }
+    }
+
+    it('takes the newest version on the retry after another machine published meanwhile', async () => {
+      const origin = await repository('sync-document-race-remote')
+      let machineB: Awaited<ReturnType<typeof machine>> | undefined
+      let id = ''
+      let race = false
+      const racing: ProcessRunner = async (command, args, options) => {
+        if (race && args.includes('push')) {
+          race = false
+          await editDocument(machineB!, id, '# Release plan\n\nVersion 3 from B')
+          await machineB!.sync.push({ message: 'B, during the race' })
+        }
+        return runProcess(command, args, options)
+      }
+      const machineA = await machine('sync-document-race-a', origin, now, racing)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      machineB = await machine('sync-document-race-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineB, id, '# Release plan\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B, version 2' })
+      race = true
+      const result = await machineA.sync.push({ message: 'A, raced' })
+      expect(race).toBe(false)
+      expect(result.failure).toBeUndefined()
+      await machineB.sync.push({ message: 'B again' })
+      alike([machineA, machineB], id, 'Version 3 from B')
+    })
+
+    it('catches up with the branch after a merge it could not publish', async () => {
+      const { machineA, machineB, id } = await unpublishedMerge('sync-document-catch-up')
+      await editDocument(machineB, id, '# Release plan\n\nVersion 3 from B')
+      await machineB.sync.push({ message: 'B, version 3' })
+      await machineA.sync.push({ message: 'A again' })
+      await machineB.sync.push({ message: 'B again' })
+      alike([machineA, machineB], id, 'Version 3 from B')
+    })
+
+    it('adds no copy for an edit made on top of a merge it could not publish', async () => {
+      const { machineA, machineB, id } = await unpublishedMerge('sync-document-edit-after')
+      await editDocument(machineA, id, '# Release plan\n\nVersion 3 from A, on top of version 2')
+      await machineA.sync.push({ message: 'A publishes its edit' })
+      await machineB.sync.push({ message: 'B again' })
+      alike([machineA, machineB], id, 'Version 3 from A, on top of version 2')
+    })
+
+    it('adds no copy on a machine that can read the branch but never publish to it', async () => {
+      const origin = await repository('sync-document-read-only-remote')
+      const machineB = await machine('sync-document-read-only-b', origin)
+      await create(machineB)
+      await machineB.sync.push({ message: 'From B' })
+      const refused = refusal()
+      const machineA = await machine('sync-document-read-only-a', origin, now, refused.run)
+      await machineA.sync.push({ message: 'A joins' })
+      refused.state.refusing = true
+      refused.state.always = true
+      const id = documentsOf(machineB.root)[0]!.id
+      for (const version of [2, 3, 4]) {
+        await editDocument(machineB, id, '# Release plan\n\nVersion ' + String(version))
+        await machineB.sync.push({ message: 'B, version ' + String(version) })
+        expect((await machineA.sync.push({ message: 'A' })).pushed).toBe(false)
+        alike([machineA], id, 'Version ' + String(version))
+      }
+    })
+
+    it('keeps its own version when the branch is published again from an older history', async () => {
+      const origin = await repository('sync-document-recreated-remote')
+      const machineA = await machine('sync-document-recreated-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-recreated-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2, only on A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      // The branch is deleted, and B, which never saw version 2, publishes again first.
+      await git(['update-ref', '-d', 'refs/heads/mnemon-sync'], origin)
+      await machineB.sync.push({ message: 'B starts the branch again' })
+      await machineA.sync.push({ message: 'A again' })
+      expect(textOf(machineA.root, id)).toContain('Version 2, only on A')
+      // B's older version is kept beside it, as a merge without an agreement keeps it.
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
+
+    it('keeps the newer version when the other machine runs a dsh-mnemon that records no agreement', async () => {
+      const origin = await repository('sync-document-older-remote')
+      const machineA = await machine('sync-document-older-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-older-b', origin)
+      // No release up to 0.5.28 used either record in a merge; one before 0.5.28 kept neither.
+      const older = async (message: string) => {
+        for (const path of [agreementOf(machineB.root), join(machineB.root, 'state', 'sync', 'last-run.json')]) rmSync(path, { force: true })
+        await machineB.sync.push({ message })
+        for (const path of [agreementOf(machineB.root), join(machineB.root, 'state', 'sync', 'last-run.json')]) rmSync(path, { force: true })
+      }
+      await older('B joins')
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      // B keeps version 1 under the same id and version 2 as a copy, and publishes both.
+      await older('B, as before this change')
+      expect(documentsOf(machineB.root)).toHaveLength(2)
+      await machineA.sync.push({ message: 'A again' })
+      expect(textOf(machineA.root, id)).toContain('Version 2 from A')
+    })
+
+    it('carries an edit made before the first sync after an update from 0.5.28 as an edit (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-remote')
+      const machineA = await machine('sync-document-upgrade', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'Version 1' })
+      // dsh-mnemon 0.5.28 remembered the commit of its last sync, but no agreement.
+      rmSync(agreementOf(machineA.root), { force: true })
+      expect(existsSync(join(machineA.root, 'state', 'sync', 'last-run.json'))).toBe(true)
+      const id = documentsOf(machineA.root)[0]!.id
+      for (const version of [2, 3]) await editDocument(machineA, id, '# Release plan\n\nVersion ' + String(version))
+      await machineA.sync.push({ message: 'The first sync after the update' })
+      expect(documentsOf(machineA.root).map(document => [document.id, document.revision])).toEqual([[id, 3]])
+      expect(textOf(machineA.root, id)).toContain('Version 3')
+      const published = JSON.parse(await git(['show', 'mnemon-sync:mnemon/payload/documents/index.json'], origin)) as { documents: DocumentEntry[] }
+      expect(published.documents.map(document => [document.id, document.revision])).toEqual([[id, 3]])
+    })
+
+    it('takes the branch\'s newer version after an update from 0.5.28 whose last run was a merge (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-merge-remote')
+      const machineA = await machine('sync-document-upgrade-merge-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-upgrade-merge-b', origin)
+      await machineB.sync.pull()
+      rmSync(agreementOf(machineB.root), { force: true })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      await machineB.sync.push({ message: 'B, the first sync after the update' })
+      alike([machineA, machineB], id, 'Version 2 from A')
+    })
+
+    it('keeps a copy after an update from 0.5.28 when the branch no longer descends from the last sync (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-rewritten-remote')
+      const machineA = await machine('sync-document-upgrade-rewritten-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-upgrade-rewritten-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2, only on A')
+      rmSync(agreementOf(machineA.root), { force: true })
+      // The branch is deleted, and B publishes it again from a history of its own.
+      await git(['update-ref', '-d', 'refs/heads/mnemon-sync'], origin)
+      await machineB.sync.push({ message: 'B starts the branch again' })
+      await machineA.sync.push({ message: 'A again' })
+      expect(textOf(machineA.root, id)).toContain('Version 2, only on A')
+      // Without a common history to agree on, B's version is kept beside A's, as before.
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
+
+    const branchTexts = async (origin: string, subdir = 'mnemon/') => {
+      const index = JSON.parse(await git(['show', 'mnemon-sync:' + subdir + 'payload/documents/index.json'], origin)) as { documents: DocumentEntry[] }
+      return Promise.all(index.documents.map(document => git(['show', 'mnemon-sync:' + subdir + 'payload/' + document.relativePath], origin)))
+    }
+    const texts = (target: Awaited<ReturnType<typeof machine>>) => documentsOf(target.root).map(document => textOf(target.root, document.id))
+
+    it('keeps the version a runtime-only merge on 0.5.28 never took in (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-runtime-remote')
+      const machineA = await machine('sync-document-upgrade-runtime-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-upgrade-runtime-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      // A merge of runtime memory only is a run 0.5.28 recorded all the same, though no document came in.
+      await machineB.sync.pull({ components: ['runtime'] })
+      rmSync(agreementOf(machineB.root), { force: true })
+      await machineB.sync.push({ message: 'B, the first sync after the update' })
+      expect(texts(machineB).some(text => text.includes('Version 2 from A'))).toBe(true)
+      expect((await branchTexts(origin)).some(text => text.includes('Version 2 from A'))).toBe(true)
+    })
+
+    it('takes no agreement from the last sync of another directory (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-subdir-remote')
+      const machineA = await machine('sync-document-upgrade-subdir-a', origin)
+      await machineA.sync.configure({ subdir: 'team/' })
+      await create(machineA)
+      await machineA.sync.push({ message: 'A in team/' })
+      const machineB = await machine('sync-document-upgrade-subdir-b', origin)
+      await machineB.sync.configure({ subdir: 'team/' })
+      await machineB.sync.push({ message: 'B in team/' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineB, id, '# Release plan\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B, version 2 in team/' })
+      // A, on 0.5.28, syncs another directory of the branch, edits, comes back and updates.
+      await machineA.sync.configure({ subdir: 'mnemon/' })
+      await machineA.sync.push({ message: 'A in mnemon/' })
+      rmSync(agreementOf(machineA.root), { force: true })
+      await editDocument(machineA, id, '# Release plan\n\nA, first edit')
+      await editDocument(machineA, id, '# Release plan\n\nA, second edit')
+      await machineA.sync.configure({ subdir: 'team/' })
+      await machineA.sync.push({ message: 'A back in team/' })
+      await machineB.sync.push({ message: 'B again' })
+      // B's version 2 is never lost: without an agreement for team/, it is kept as a copy.
+      for (const held of [texts(machineA), texts(machineB), await branchTexts(origin, 'team/')]) expect(held.some(text => text.includes('Version 2 from B'))).toBe(true)
+      expect(texts(machineA).some(text => text.includes('A, second edit'))).toBe(true)
+    })
+
+    it('agrees on the documents of a last run where the branch already held the payload (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-held-remote')
+      const machineA = await machine('sync-document-upgrade-held', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'Version 1' })
+      expect((await machineA.sync.push({ message: 'Nothing new' })).committed).toBe(false)
+      rmSync(agreementOf(machineA.root), { force: true })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2')
+      await machineA.sync.push({ message: 'A again' })
+      expect(documentsOf(machineA.root).map(document => [document.id, document.revision])).toEqual([[id, 2]])
+    })
+
+    it('keeps copies when the last run\'s commit holds no documents to agree on (#385)', async () => {
+      const origin = await repository('sync-document-upgrade-empty-remote')
+      // The branch starts with a commit of its own, which holds no Mnemon payload.
+      await unrelatedCommit(origin)
+      const empty = (await git(['rev-parse', 'mnemon-sync'], origin)).trim()
+      const machineA = await machine('sync-document-upgrade-empty', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'Version 1' })
+      rmSync(agreementOf(machineA.root), { force: true })
+      const lastRun = join(machineA.root, 'state', 'sync', 'last-run.json')
+      writeFileSync(lastRun, JSON.stringify({ ...JSON.parse(readFileSync(lastRun, 'utf8')) as Record<string, unknown>, commit: empty }))
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2')
+      await expect(machineA.sync.push({ message: 'A again' })).resolves.toMatchObject({ pushed: true })
+      // An ancestor without a Documents index is no agreement: a copy is kept, as before.
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
+
+    it('keeps a rename and an archive made on one machine when the other changed the text', async () => {
+      const origin = await repository('sync-document-metadata-remote')
+      const machineA = await machine('sync-document-metadata-a', origin)
+      await create(machineA, 'Plan')
+      await create(machineA, 'Notes')
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-metadata-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const [plan, notes] = documentsOf(machineA.root)
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('mutate', { action: 'update', id: plan!.id, title: 'Plan, renamed on A' } as never, { confirmed: true })
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('archive', { id: notes!.id, summary: 'Archived on A' } as never, { confirmed: true })
+      await editDocument(machineB, plan!.id, '# Plan\n\nVersion 2 from B')
+      await editDocument(machineB, notes!.id, '# Notes\n\nVersion 2 from B')
+      await machineB.sync.push({ message: 'B edits both' })
+      await machineA.sync.push({ message: 'A again' })
+      const byId = new Map(documentsOf(machineA.root).map(document => [document.id, document]))
+      expect(byId.get(plan!.id)?.title).toBe('Plan, renamed on A')
+      expect(byId.get(notes!.id)).toMatchObject({ status: 'archived', archiveSummary: 'Archived on A' })
+      // B's two texts are kept beside them.
+      expect(byId.size).toBe(4)
+    })
+
+    it('brings a title changed on one machine to the other', async () => {
+      const origin = await repository('sync-document-title-remote')
+      const machineA = await machine('sync-document-title-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-title-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('mutate', { action: 'update', id, title: 'Release plan, renamed on A' } as never, { confirmed: true })
+      await machineA.sync.push({ message: 'A renames it' })
+      await machineB.sync.push({ message: 'B again' })
+      expect(documentsOf(machineB.root).map(document => [document.id, document.title])).toEqual([[id, 'Release plan, renamed on A']])
+    })
+
+    it('agrees with the branch after Merge here only, so an edit published later adds no copy', async () => {
+      const origin = await repository('sync-document-pull-remote')
+      const machineA = await machine('sync-document-pull-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-pull-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      await machineB.sync.pull()
+      await editDocument(machineB, id, '# Release plan\n\nVersion 3 from B, after the merge')
+      await machineB.sync.push({ message: 'B publishes' })
+      await machineA.sync.push({ message: 'A again' })
+      alike([machineA, machineB], id, 'Version 3 from B, after the merge')
+    })
+
+    it('leaves the agreement as it was when a merge takes runtime memory only', async () => {
+      const origin = await repository('sync-document-runtime-remote')
+      const machineA = await machine('sync-document-runtime-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-runtime-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const agreed = readFileSync(agreementOf(machineB.root), 'utf8')
+      await editDocument(machineA, documentsOf(machineA.root)[0]!.id, '# Release plan\n\nVersion 2 from A')
+      await machineA.sync.push({ message: 'A, version 2' })
+      await machineB.sync.pull({ components: ['runtime'] })
+      expect(readFileSync(agreementOf(machineB.root), 'utf8')).toBe(agreed)
+    })
+
+    it('starts without an agreement it cannot read, and keeps one through a disconnect', async () => {
+      const origin = await repository('sync-document-unreadable-remote')
+      const machineA = await machine('sync-document-unreadable-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      writeFileSync(agreementOf(machineA.root), 'not an agreement')
+      expect((await machineA.sync.push({ message: 'A again' })).failure).toBeUndefined()
+      const id = documentsOf(machineA.root)[0]!.id
+      expect(JSON.parse(readFileSync(agreementOf(machineA.root), 'utf8'))).toMatchObject({ version: 1, documents: { [id]: expect.any(String) } })
+      // Disconnected, edited, connected to the same repository again: the edit travels, with no copy.
+      await machineA.sync.configure({ repoUrl: null })
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2, edited while disconnected')
+      await machineA.sync.configure({ repoUrl: origin })
+      await machineA.sync.push({ message: 'A reconnected' })
+      alike([machineA], id, 'Version 2, edited while disconnected')
+    })
+
+    it('keeps both versions when two machines changed a document at different revisions, and both end alike', async () => {
+      const origin = await repository('sync-document-revisions-remote')
+      const machineA = await machine('sync-document-revisions-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-revisions-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await editDocument(machineA, id, '# Release plan\n\nA, first edit')
+      await editDocument(machineA, id, '# Release plan\n\nA, second edit')
+      await editDocument(machineB, id, '# Release plan\n\nB, one edit')
+      for (const round of [1, 2]) {
+        await machineA.sync.push({ message: 'A, round ' + String(round) })
+        await machineB.sync.push({ message: 'B, round ' + String(round) })
+      }
+      const texts = (target: Awaited<ReturnType<typeof machine>>) => documentsOf(target.root).map(document => textOf(target.root, document.id).match(/(A, second edit|B, one edit)/u)?.[0]).sort()
+      expect(texts(machineA)).toEqual(['A, second edit', 'B, one edit'])
+      expect(texts(machineB)).toEqual(texts(machineA))
+      expect(documentsOf(machineB.root).map(document => document.id).sort()).toEqual(documentsOf(machineA.root).map(document => document.id).sort())
+    })
+
+    it('keeps an archive and a rename two machines made to the same text', async () => {
+      const origin = await repository('sync-document-both-meta-remote')
+      const machineA = await machine('sync-document-both-meta-a', origin)
+      await create(machineA, 'Plan')
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-both-meta-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('archive', { id, summary: 'Archived on A' } as never, { confirmed: true })
+      await machineB.sources.documents.read('snapshot')
+      await machineB.sources.documents.mutate('mutate', { action: 'update', id, title: 'Plan, renamed on B' } as never, { confirmed: true })
+      for (const round of [1, 2]) {
+        await machineA.sync.push({ message: 'A, round ' + String(round) })
+        await machineB.sync.push({ message: 'B, round ' + String(round) })
+      }
+      for (const target of [machineA, machineB]) {
+        const states = documentsOf(target.root).map(document => [document.title, document.status, document.archiveSummary ?? ''].join(' | ')).sort()
+        expect(states).toEqual(['Plan | archived | Archived on A', 'Plan, renamed on B | active | '])
+      }
+    })
+
+    it('brings an archive made on one machine to the other', async () => {
+      const origin = await repository('sync-document-archive-remote')
+      const machineA = await machine('sync-document-archive-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const machineB = await machine('sync-document-archive-b', origin)
+      await machineB.sync.push({ message: 'From B' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sources.documents.read('snapshot')
+      await machineA.sources.documents.mutate('archive', { id, summary: 'Shipped' } as never, { confirmed: true })
+      await machineA.sync.push({ message: 'A archives it' })
+      await machineB.sync.push({ message: 'B again' })
+      expect(documentsOf(machineB.root).map(document => [document.id, document.status, document.archiveSummary])).toEqual([[id, 'archived', 'Shipped']])
+    })
+
+    it('never uses what it agreed on with another branch', async () => {
+      const origin = await repository('sync-document-branch-remote')
+      const machineA = await machine('sync-document-branch-a', origin)
+      await create(machineA)
+      await machineA.sync.push({ message: 'From A' })
+      const id = documentsOf(machineA.root)[0]!.id
+      await machineA.sync.configure({ branch: 'mnemon-sync-other' })
+      await machineA.sync.push({ message: 'A on another branch' })
+      await editDocument(machineA, id, '# Release plan\n\nVersion 2')
+      await machineA.sync.configure({ branch: 'mnemon-sync' })
+      await machineA.sync.push({ message: 'A back on the first branch' })
+      // The first sync back has no agreement for this branch, so the branch's version is kept beside the edit.
+      expect(textOf(machineA.root, id)).toContain('Version 2')
+      expect(documentsOf(machineA.root)).toHaveLength(2)
+    })
+  })
+
   it('reports the identity of this machine on every status', async () => {
     const machineA = await machine('sync-machine-identity')
     const status = await machineA.sync.status()
@@ -485,6 +1137,33 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(status.machine).toEqual({ id: stored.id, label: stored.label, createdAt: stored.createdAt })
     expect(stored.id).toMatch(/^[0-9a-f-]{36}$/u)
     expect(stored.label.length).toBeGreaterThan(0)
+  })
+
+  it('publishes the name a person gives this machine, and goes back to the host name', async () => {
+    const origin = await repository('sync-machine-name-remote')
+    const machineA = await machine('sync-machine-name-a', origin)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'memory', content: 'Named machine note', importance: 'normal' }, { confirmed: true })
+
+    // The name is kept with the identity; the channel settings stay as they were.
+    expect((await machineA.sync.configure({ machineLabel: 'Studio' })).repoUrl).toBe(origin)
+    const status = await machineA.sync.status()
+    expect(status.machine?.label).toBe('Studio')
+    expect(status.machineLabel).toEqual({ source: 'custom', hostname: defaultMachineLabel() })
+    const first = await machineA.sync.push({ message: 'Publish as Studio' })
+    expect((await machineA.sync.backups()).commits[0]).toMatchObject({ commit: first.commit, machine: { label: 'Studio' } })
+
+    // A refused name changes nothing else the same request carried.
+    await expect(machineA.sync.configure({ branch: 'elsewhere', machineLabel: 'two\nlines' })).rejects.toThrow(/machine name/u)
+    const unchanged = await machineA.sync.status()
+    expect(unchanged.config.branch).toBe('mnemon-sync')
+    expect(unchanged.machine?.label).toBe('Studio')
+
+    // Back to the host name: the next sync records the new name in a version of its own.
+    await machineA.sync.configure({ machineLabel: null })
+    expect((await machineA.sync.status()).machineLabel?.source).toBe('hostname')
+    const second = await machineA.sync.push({ message: 'Publish under the host name' })
+    expect(second.committed).toBe(true)
+    expect((await machineA.sync.backups()).commits[0]).toMatchObject({ commit: second.commit, machine: { label: defaultMachineLabel() } })
   })
 
   it('drives Git with an environment that cannot relocate the repository', async () => {
@@ -511,6 +1190,8 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
   it('never waits on a prompt a person would have to answer', () => {
     // No terminal is watched on the Host: a missing credential has to fail, not hang a push.
     expect(gitEnvironment({ PATH: '/bin', GIT_TERMINAL_PROMPT: '1' })).toEqual({ PATH: '/bin', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' })
+    // Nor does it change how Git reads the paths it is given.
+    expect(gitEnvironment({ PATH: '/bin', GIT_LITERAL_PATHSPECS: '1', GIT_ICASE_PATHSPECS: '1' })).toEqual({ PATH: '/bin', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' })
   })
 
   it('offers the GitHub sign-in to github.com and to no other host', async () => {
@@ -538,18 +1219,29 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
 
   it('refuses a payload directory that a symbolic link in the mirror leads out of it', async () => {
     const origin = await repository('sync-link-remote')
+    // The branch exists, so the mirror is brought to its tip rather than started afresh,
+    // which would clear everything the branch does not hold, the link included.
+    await (await machine('sync-link-other', origin)).sync.push({ message: 'Existing branch' })
     const machineA = await machine('sync-link', origin)
     await machineA.sync.configure({ subdir: 'nested/mnemon/' })
     const outside = temporary('sync-link-outside')
     writeFileSync(join(outside, 'canary.txt'), 'outside the mirror\n')
-    // A mirror an older build checked out, with a link where a payload parent should be.
+    // A mirror of this very repository, with a link where a payload parent should be.
     const mirror = join(machineA.root, 'state', 'sync', 'git')
     mkdirSync(mirror, { recursive: true })
     await git(['init', '--quiet', mirror])
+    await git(['config', 'mnemon.origin', origin], mirror)
     symlinkSync(outside, join(mirror, 'nested'))
 
     await expect(machineA.sync.push({ message: 'Through a link' })).rejects.toThrow('crosses a symbolic link')
     expect(readFileSync(join(outside, 'canary.txt'), 'utf8')).toBe('outside the mirror\n')
+    expect(readdirSync(outside)).toEqual(['canary.txt'])
+
+    // A mirror that names no repository, as an older build left it, is rebuilt rather
+    // than trusted, and the link goes with it without following it.
+    await git(['config', '--unset', 'mnemon.origin'], mirror)
+    await expect(machineA.sync.push({ message: 'Into a rebuilt mirror' })).resolves.toMatchObject({ pushed: true })
+    expect(lstatSync(join(mirror, 'nested')).isSymbolicLink()).toBe(false)
     expect(readdirSync(outside)).toEqual(['canary.txt'])
   })
 
@@ -633,6 +1325,192 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     expect(pushed).toMatchObject({ branch: 'memory/user', subdir: 'nested/mnemon/' })
     expect(await git(['show', 'memory/user:nested/mnemon/manifest.json'], origin)).toContain('"mnemonpack"')
     expect((await git(['branch', '--list'], origin)).trim()).toBe('memory/user')
+  })
+
+  it('starts a new history in another repository instead of publishing the old one there', async () => {
+    const first = await repository('sync-switch-first')
+    const second = await repository('sync-switch-second')
+    const machineA = await machine('sync-switch', first)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Written for the first repository', importance: 'normal' }, { confirmed: true })
+    await machineA.sync.push({ message: 'First repository' })
+
+    await machineA.sync.configure({ repoUrl: second })
+    const pushed = await machineA.sync.push({ message: 'Second repository' })
+    expect(pushed).toMatchObject({ committed: true, pushed: true })
+    // The second repository holds one root commit; the first one's history stays where it was.
+    expect((await git(['rev-list', '--count', 'mnemon-sync'], second)).trim()).toBe('1')
+    expect((await git(['log', '--format=%s', 'mnemon-sync'], second)).trim()).toBe('Second repository')
+  })
+
+  it('starts over when the remote branch was deleted, rather than publishing what it held', async () => {
+    const origin = await repository('sync-deleted-remote')
+    const machineA = await machine('sync-deleted', origin)
+    await machineA.sync.push({ message: 'Before the deletion' })
+    await git(['update-ref', '-d', 'refs/heads/mnemon-sync'], origin)
+
+    const pushed = await machineA.sync.push({ message: 'After the deletion' })
+    expect(pushed).toMatchObject({ committed: true, pushed: true })
+    expect((await git(['log', '--format=%s', 'mnemon-sync'], origin)).trim()).toBe('After the deletion')
+  })
+
+  it('folds in a branch that moved during the push and publishes again', async () => {
+    const origin = await repository('sync-race-remote')
+    const machineB = await machine('sync-race-b', origin)
+    await machineB.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'B wrote this first', importance: 'normal' }, { confirmed: true })
+    await machineB.sync.push({ message: 'B first' })
+
+    // Machine A's Git pushes only after B published again, as a machine racing it would.
+    let raced = false
+    const racing: ProcessRunner = async (command, args, options) => {
+      if (!raced && args.includes('push')) {
+        raced = true
+        await machineB.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'B wrote this during the race', importance: 'normal' }, { confirmed: true })
+        await machineB.sync.push({ message: 'B during the race' })
+      }
+      return runProcess(command, args, options)
+    }
+    const machineA = await machine('sync-race-a', origin, now, racing)
+    await machineA.sources.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'A wrote this', importance: 'normal' }, { confirmed: true })
+    const pushed = await machineA.sync.push({ message: 'A after the race' })
+
+    expect(raced).toBe(true)
+    expect(pushed).toMatchObject({ committed: true, pushed: true })
+    expect(pushed.failure).toBeUndefined()
+    // Both attempts merged one of B's entries, and the answer counts both.
+    expect(pushed.merged?.runtime?.added).toBe(2)
+    const published = await git(['show', 'mnemon-sync:mnemon/payload/runtime/USER.md'], origin)
+    expect(published).toContain('B wrote this during the race')
+    expect(published).toContain('A wrote this')
+  })
+
+  it('takes over a lock its owner left behind and removes the token files it left', async () => {
+    const origin = await repository('sync-stale-remote')
+    const machineA = await machine('sync-stale', origin)
+    const state = join(machineA.root, 'state')
+    // A Host that stopped mid-push: its lock and its one-command credential file remain.
+    mkdirSync(join(state, '.sync.lock'), { recursive: true })
+    writeFileSync(join(state, '.sync.lock', 'owner.json'), JSON.stringify({ pid: GONE_PID, startedAt: '2026-08-14T11:00:00.000Z' }))
+    const stale = join(state, '.credentials.' + String(GONE_PID) + '.1.tmp')
+    const live = join(state, '.credentials.' + String(process.pid) + '.99.tmp')
+    writeFileSync(stale, 'https://x-access-token:stale@example.com\n')
+    writeFileSync(live, 'in use\n')
+
+    await expect(machineA.sync.push({ message: 'After a stale lock' })).resolves.toMatchObject({ pushed: true })
+    expect(existsSync(join(state, '.sync.lock'))).toBe(false)
+    expect(existsSync(stale)).toBe(false)
+    // A file this very process may still be using is left alone.
+    expect(existsSync(live)).toBe(true)
+
+    // A lock an older build left without an owner record is taken over once no run could still hold it.
+    mkdirSync(join(state, '.sync.lock'))
+    const past = new Date(Date.now() - 20 * 60_000)
+    utimesSync(join(state, '.sync.lock'), past, past)
+    await expect(machineA.sync.push({ message: 'After an ownerless lock' })).resolves.toMatchObject({ committed: false })
+  })
+
+  it('names what kept a remote out of reach', async () => {
+    const machineA = await machine('sync-missing', join(temporary('sync-missing-parent'), 'absent.git'))
+    const status = await machineA.sync.status()
+    expect(status.remote).toMatchObject({ reachable: false, issue: 'not-found' })
+    await expect(machineA.sync.push({ message: 'Nowhere' })).rejects.toMatchObject({ reason: 'remote-not-found' })
+    await expect(machineA.sync.preview()).rejects.toMatchObject({ reason: 'remote-not-found' })
+  })
+
+  it('commits under the channel identity on a machine that has none', async () => {
+    const empty = join(temporary('sync-no-identity-config'), 'gitconfig')
+    writeFileSync(empty, '')
+    await withEnvironment({
+      GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: '1', EMAIL: undefined,
+      GIT_AUTHOR_NAME: undefined, GIT_AUTHOR_EMAIL: undefined, GIT_COMMITTER_NAME: undefined, GIT_COMMITTER_EMAIL: undefined,
+    }, async () => {
+      const origin = await repository('sync-no-identity-remote')
+      const machineA = await machine('sync-no-identity', origin)
+      await machineA.sync.configure({ authorName: '', authorEmail: '' })
+      const pushed = await machineA.sync.push({ message: 'No identity here' })
+      expect(pushed).toMatchObject({ committed: true, pushed: true })
+      expect(await git(['log', '-1', '--format=%an <%ae>', 'mnemon-sync'], origin)).toBe('dsh-mnemon sync <mnemon@localhost>\n')
+    })
+  })
+
+  it('remembers the last sync and forgets it for another repository', async () => {
+    const origin = await repository('sync-last-run-remote')
+    const machineA = await machine('sync-last-run', origin)
+    expect((await machineA.sync.status()).lastRun).toBeUndefined()
+
+    const pushed = await machineA.sync.push({ message: 'Remembered' })
+    expect((await machineA.sync.status()).lastRun).toEqual({ at: now().toISOString(), kind: 'sync', commit: pushed.commit, pushed: true })
+    await machineA.sync.pull()
+    expect((await machineA.sync.status()).lastRun).toMatchObject({ kind: 'merge', commit: pushed.commit, pushed: false, added: 0 })
+
+    await machineA.sync.configure({ repoUrl: await repository('sync-last-run-other') })
+    expect((await machineA.sync.status()).lastRun).toBeUndefined()
+  })
+
+  it('counts payload files, not the manifest a read stamps anew', async () => {
+    const origin = await repository('sync-preview-files-remote')
+    const machineA = await machine('sync-preview-files', origin, tickingClock().now)
+    await machineA.sync.push({ message: 'Published' })
+
+    const preview = await machineA.sync.preview()
+    expect(preview.components.every(component => !component.changed)).toBe(true)
+    expect(preview.files).toMatchObject({ changed: 0, added: 0, removed: 0 })
+  })
+
+  it('forgets a saved token when the repository moves to another host', async () => {
+    const machineA = await machine('sync-token-host')
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-for-example' })).toMatchObject({ hasToken: true, credentialSource: 'token' })
+    // Another repository on the same host keeps it.
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/other.git' })).toMatchObject({ hasToken: true })
+    // Another host does not receive it.
+    expect(await machineA.sync.configure({ repoUrl: 'https://github.com/me/memory.git' })).toMatchObject({ hasToken: false, credentialSource: 'none' })
+    expect(readFileSync(join(machineA.root, 'state', 'sync-git.json'), 'utf8')).not.toContain('token-for-example')
+    // A token that comes with the move is the one kept.
+    expect(await machineA.sync.configure({ repoUrl: 'https://git.example.com/me/memory.git', token: 'token-again' })).toMatchObject({ hasToken: true })
+  })
+
+  it('gives the status probe 20 seconds and an operation the full Git timeout', async () => {
+    const timeouts: Array<{ command: string; timeoutMs: number }> = []
+    const recording: ProcessRunner = async (command, args, options) => {
+      const name = ['ls-remote', 'push', 'fetch'].find(candidate => args.includes(candidate))
+      if (name !== undefined) timeouts.push({ command: name, timeoutMs: options.timeoutMs })
+      return runProcess(command, args, options)
+    }
+    const origin = await repository('sync-timeout-remote')
+    const machineA = await machine('sync-timeout', origin, now, recording)
+    await machineA.sync.status()
+    expect(timeouts).toEqual([{ command: 'ls-remote', timeoutMs: 20_000 }])
+    timeouts.length = 0
+    await machineA.sync.push({ message: 'Timed' })
+    expect(timeouts.every(entry => entry.timeoutMs === 120_000)).toBe(true)
+    expect(timeouts.map(entry => entry.command)).toContain('push')
+  })
+
+  it('initializes the mirror without the option Git 2.28 introduced', async () => {
+    const calls: string[][] = []
+    const recording: ProcessRunner = async (command, args, options) => {
+      calls.push([...args])
+      return runProcess(command, args, options)
+    }
+    const origin = await repository('sync-init-remote')
+    const machineA = await machine('sync-init', origin, now, recording)
+    await machineA.sync.push({ message: 'Initialized' })
+
+    const init = calls.find(args => args.includes('init'))
+    expect(init).toBeDefined()
+    expect(init?.some(argument => argument.startsWith('--initial-branch'))).toBe(false)
+    expect((await git(['branch', '--list'], origin)).trim()).toBe('mnemon-sync')
+  })
+})
+
+describe('Mnemon Git sync failures', () => {
+  it('states the failure kinds Git reports in its own words', () => {
+    expect(remoteIssueOf("fatal: '/x.git' does not appear to be a git repository")).toBe('not-found')
+    expect(remoteIssueOf("remote: Repository not found.\nfatal: repository 'https://github.com/o/r.git/' not found")).toBe('not-found')
+    expect(remoteIssueOf("fatal: could not read Username for 'https://github.com': terminal prompts disabled")).toBe('auth')
+    expect(remoteIssueOf('git@github.com: Permission denied (publickey).')).toBe('auth')
+    expect(remoteIssueOf("fatal: unable to access 'https://example.invalid/x.git/': Could not resolve host: example.invalid")).toBe('network')
+    expect(remoteIssueOf('git did not respond within 20000ms')).toBe('timeout')
+    expect(remoteIssueOf('fatal: something else entirely')).toBe('unknown')
   })
 })
 

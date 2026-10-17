@@ -355,7 +355,17 @@
     "overview.deletingSpace": "删除中…",
     "common.score": "相关度 {value}",
     "overview.providerEnableHint": "未启用的 Provider 可在“插件 → 可组合记忆”的“记忆空间”页面中启用。",
-    "search.citations": "引用"
+    "search.citations": "引用",
+    "overview.rediscoverAction": "重新发现",
+    "overview.rediscovering": "正在发现…",
+    "overview.rediscoverHint": "再次询问已启用的 Provider；新出现的空间会挂载，但不加入召回",
+    "overview.rediscoveryAdded": "发现 {count} 个新空间，尚未加入召回，打开开关即可启用。",
+    "overview.rediscoveryNone": "没有新的空间。",
+    "overview.rediscoveryDisconnected": "{count} 个断开过的空间保持断开；重新保存对应 Provider 的设置可以恢复。",
+    "overview.rediscoveryFailed": "{provider} 无法完成发现：{error}",
+    "overview.rediscoveryTimedOut": "{provider} 没有按时响应，稍后可以再次发现。",
+    "overview.rediscoveryDismiss": "知道了",
+    "overview.newSpace": "新发现"
   },
   "en": {
     "term.space": "Memory Space",
@@ -713,6 +723,16 @@
     "overview.deletingSpace": "Deleting…",
     "common.score": "Score {value}",
     "overview.providerEnableHint": "Turn on more Providers on Memory Spaces’ page under Plugins → dsh-mnemon.",
-    "search.citations": "Cites"
+    "search.citations": "Cites",
+    "overview.rediscoverAction": "Rediscover",
+    "overview.rediscovering": "Rediscovering…",
+    "overview.rediscoverHint": "Ask the enabled Providers again; new spaces are added without joining recall",
+    "overview.rediscoveryAdded": "New spaces found: {count}. They join recall once you switch them on.",
+    "overview.rediscoveryNone": "No new spaces.",
+    "overview.rediscoveryDisconnected": "Spaces you disconnected stay disconnected: {count}. Save the Provider’s settings again to bring them back.",
+    "overview.rediscoveryFailed": "{provider} could not finish discovery: {error}",
+    "overview.rediscoveryTimedOut": "{provider} did not answer in time; try Rediscover later.",
+    "overview.rediscoveryDismiss": "Dismiss",
+    "overview.newSpace": "New"
   }
 }

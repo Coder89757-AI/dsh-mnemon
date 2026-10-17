@@ -83,4 +83,18 @@ describe('standalone hindsight data plane', () => {
     })
     expect(JSON.parse(String(requests[7]?.init?.body))).toEqual({ state: 'invalidated', reason: 'Forgotten from dsh-mnemon' })
   })
+  it('reads entity names without their notes, and a name of many "(" at once', async () => {
+    const notes = 'x' + '('.repeat(120_000)
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ results: [
+      { id: 'hs-1', text: 'Alice ships TypeScript.', type: 'world', entities: 'Alice (person),  TypeScript (language) , Node.js, (only a note), Atlas ((nested), Beta (a) (b)' },
+      { id: 'hs-2', text: 'A name the server garbled.', type: 'world', entities: notes },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const { registry, body } = await providerBody('hindsight', { endpoint: 'https://api.hindsight.vectorize.io', apiKey: 'hs-secret', bankId: 'alice/profile', budget: 'high' })
+    const provider = new HindsightProvider(registry, { fetch: fetchMock })
+    const found = await provider.search(body, { query: 'language', limit: 3 })
+    expect(found.results.map(result => result.entities)).toEqual([
+      ['Alice', 'TypeScript', 'Node.js', 'Atlas', 'Beta (a)'],
+      [notes],
+    ])
+  })
 })

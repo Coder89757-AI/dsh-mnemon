@@ -159,7 +159,7 @@ export function apply(ctx: Context): void {
 
 扩展不另建后台调度器；对话内写入仍通过已有 Host 工具、授权和 Source 回执。`capture` 不能把 `manage-spaces` 等一般写操作自动当成记录：作者必须指定实际记录用的 Action id。共享检索预算仍按整个执行回合计算，不按 Source 数量倍增；缓存和 Related 准入带 Source 身份，避免同名空间串用证据。停用贡献后重建失败时，不继续使用已撤销策略：新回合不带记忆 View 运行，对话本身照常进行；已固定的旧回合仍按原租约完成。
 
-可选的 `createTurn(view)` 返回执行级 `query(request, read)` 策略。它只获得绑定当前 Route 和私有 grant 的 `read(input, narrowerLimits?)`，Core 仍校验输入、有效上限、已分派次数和生命周期。策略可以筛选、重放结果，并用 `Evidence.output` 提供简洁模型输出，但不会获得 Source 对象、写入回调或新增权限。即使继承同一个不可变 View，不同执行轮次也拥有独立策略状态。不提供此钩子时，读取仍经过 Core 边界直接进入 Source。
+可选的 `createTurn(view)` 返回执行级 `query(request, read)` 策略。它只获得绑定当前 Route 和私有 grant 的 `read(input, narrowerLimits?)`，Core 仍校验输入、有效上限、已分派次数和生命周期。策略可以筛选、重放结果，并用 `Evidence.output` 提供简洁模型输出，但不会获得 Source 对象、写入回调或新增权限。策略不调用 `read` 就回答的读取（例如超出预算的读取）应以 `output.notRun: true` 说明，并且不返回条目；Host 不会把它计为一次记忆空间召回。即使继承同一个不可变 View，不同执行轮次也拥有独立策略状态。不提供此钩子时，读取仍经过 Core 边界直接进入 Source。
 
 分层策略插件用此钩子实现旧版 Documents 单次查询、Recall 两次查询的共享证据预算、去重与 Related 准入。命名工具和通用 View Route 共用这套策略。Source 保留原始检索、存储和维护能力；显式的 DSH 辅助写入/归档仍由 Host 工作流执行，不成为 Core 的通用后台任务。
 
@@ -209,7 +209,7 @@ Provider 还可以实现可选的 `get(body, id, signal)`：返回空间中这�
 
 需要显示某个元素时，将 Source 自有 ref 中的元素传给可选的 `onRevealElement(element, topInset)` 回调。不传 `topInset` 时，元素会停在锁定的页面标题下方；自己固定头部的 Source 则传入实测的头部高度。Host 只滚动所属 canvas，并忽略区域外的元素；不要使用全局 ID 或会移动 DSH 祖先节点的 `scrollIntoView`。关闭选择或卸载 Source 时取消待执行的动画帧。两个滚动回调均为可选：新 Source 仍支持现有 Root peer 最低版本，旧 Host 不提供回调时可手动滚动。
 
-用户每次点击工作区顶栏的**刷新**，`refreshKey` 都会变化；页面应在它变化时重新读取数据，而不是自己放置刷新或同步按钮。只有对话中的锚点（例如回合记忆栏里的一条内容）打开页面时，`navigationInput` 才是 `{ seed, nonce }`；点击标签页打开时没有它。默认 Source 把 seed 分别理解为档案 id（项目档案选中它）、召回查询（记忆空间打开后立即执行）或条目文本（运行时记忆高亮并滚动到它）。新的 `nonce` 表示对同一 seed 的又一次请求。
+用户每次点击工作区顶栏的**刷新**，`refreshKey` 都会变化；配置页改变了页面要显示的内容时也会变化，例如切换组件、保存 Provider、同步、合并、导入 ZIP 或执行整理方案，页面隐藏时也可能变化。页面应在它变化时重新读取数据，而不是自己放置刷新或同步按钮。只有对话中的锚点（例如回合记忆栏里的一条内容）打开页面时，`navigationInput` 才是 `{ seed, nonce }`；点击标签页打开时没有它。默认 Source 把 seed 分别理解为档案 id（项目档案选中它）、召回查询（记忆空间打开后立即执行）或条目文本（运行时记忆高亮并滚动到它）。新的 `nonce` 表示对同一 seed 的又一次请求。
 
 `dsh-mnemon/client` 还导出默认 Source 使用的控件，让安装的 Source 与它们外观和行为一致：`SearchField`（带搜索图标的 DSH 输入框）、`SelectField`（带标签的 DSH 选择菜单，支持 `inline`、`size: 'sm'`、`hideLabel` 与 `ariaLabel`）、`WriteReceipt`（写入的结果、摘要与可选的查看操作）和 `TaskAgentTag`（任务 Agent 能否接手）。它们遵循[交互约定](../guides/ui-guide.md#交互约定)。导入这些控件或读取 `refreshKey` 的 Source，应把 `dsh-mnemon` peer 最低版本声明为首个导出它们的 Starter 0.5.19。
 

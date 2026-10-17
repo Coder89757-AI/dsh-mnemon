@@ -40,6 +40,8 @@ interface SaveOutcome {
   action?: string
   summary?: string
   note?: SaveNote
+  /** A memory was saved without a vector (#388). */
+  unembedded?: boolean
   error?: string
 }
 
@@ -90,7 +92,7 @@ function placeSource<Source extends { sourceInstanceKey: string; sourceTypeId: s
 }
 
 /** Write the text to the place the user chose, through that Source's own operation, with a fresh revision. */
-async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDestination, 'agent'>, place: string, content: string, t: Translate): Promise<{ action: string; note: SaveNote }> {
+async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDestination, 'agent'>, place: string, content: string, t: Translate): Promise<{ action: string; note: SaveNote; unembedded?: boolean }> {
   const source = placeSource(await client.sourceManagementCatalog(), isRuntimePlace(destination) ? 'runtime' : 'memory-spaces')
   if (source === undefined) throw new Error(t('saveAction.unavailable'))
   if (isRuntimePlace(destination)) {
@@ -106,7 +108,7 @@ async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDesti
     return { action: 'added', note: { key: result.maintenance === undefined ? 'saveAction.saved.runtime' : 'saveAction.saved.runtimeMaintained', params: { count: result.entryCount }, place: RUNTIME_PLACES[destination] } }
   }
   const result = (await client.mutateSourceManagement(source.sourceInstanceKey, 'remember',
-    { content, memoryBodyId: destination.slice('space:'.length), source: 'user' }, source.revision, true)).value as { action?: unknown }
+    { content, memoryBodyId: destination.slice('space:'.length), source: 'user' }, source.revision, true)).value as { action?: unknown; embedded?: unknown }
   const answered = typeof result.action === 'string' ? result.action : 'stored'
   // A Provider that queues its writes confirms them later.
   const action = answered === 'queued' ? 'accepted' : answered
@@ -114,7 +116,7 @@ async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDesti
   const key: MnemonKey = outcome === 'skipped' ? 'saveAction.saved.duplicate'
     : outcome === 'pending' ? 'saveAction.saved.spacePending'
       : outcome === 'written' || outcome === 'updated' ? 'saveAction.saved.space' : 'saveAction.saved.spaceOther'
-  return { action, note: { key, params: { space: place, action: answered } } }
+  return { action, note: { key, params: { space: place, action: answered } }, ...(result.embedded === false ? { unembedded: true } : {}) }
 }
 
 /**
@@ -280,7 +282,7 @@ export const MnemonSaveAction = memo(function MnemonSaveAction({ messageId, sess
     setOutcome(null)
     const client = new MnemonClient(connection, sessionId)
     const written: Promise<Omit<SaveOutcome, 'content' | 'destination'>> = target === 'agent'
-      ? client.supervise(content, messageId).then(result => ({ action: result.action, summary: result.summary }))
+      ? client.supervise(content, messageId).then(result => ({ action: result.action, summary: result.summary, unembedded: (result.unembedded ?? []).length > 0 }))
       : saveDirectly(client, target, selected?.label ?? target, content, t)
     void written
       .then(result => ({ content, destination: target, ...result }), (reason: unknown) => ({ content, destination: target, error: message(reason) }))
@@ -366,7 +368,7 @@ export const MnemonSaveAction = memo(function MnemonSaveAction({ messageId, sess
             {writeEnabled === true && status !== undefined && usable.length === 0 && <small className={css.placeNote} data-tone="blocked">{t('saveAction.noPlace')}</small>}
           </div>
         )}
-        {outcome !== null && <WriteReceipt t={t} action={outcome.action} summary={receiptSummary} error={outcome.error} onView={viewMemory}
+        {outcome !== null && <WriteReceipt t={t} action={outcome.action} summary={receiptSummary} error={outcome.error} unembedded={outcome.unembedded} onView={viewMemory}
           {...(isRuntimePlace(outcome.destination) ? { viewLabel: t('receipt.viewRuntime') } : {})} />}
       </Modal>
     </div>

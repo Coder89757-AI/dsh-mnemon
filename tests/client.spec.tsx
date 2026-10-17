@@ -455,6 +455,19 @@ describe('MnemonWorkbench', () => {
     expect(screen.queryByRole('button', { name: '前往配置' })).toBeNull()
   })
 
+  it('marks the header as the window\'s drag area only where the page is the window\'s top edge', async () => {
+    const { connection } = createConnection({ layerSwitches: { runtime: true, documents: true, 'memory-spaces': true } })
+    const top = render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" titleBar />)
+    await screen.findByText('已连接')
+    // DSH Desktop moves the window by [data-window-drag]; its controls stay clickable there.
+    expect(top.container.querySelector('[data-dsh-part="mnemon-view"] > header')?.hasAttribute('data-window-drag')).toBe(true)
+    top.unmount()
+
+    const embedded = render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
+    await screen.findByText('已连接')
+    expect(embedded.container.querySelector('[data-dsh-part="mnemon-view"] > header')?.hasAttribute('data-window-drag')).toBe(false)
+  })
+
   it('keeps the tab of a layer whose component is off and says why', async () => {
     const { connection, call } = createConnection({ layerSwitches: { runtime: true, documents: true, 'memory-spaces': true }, componentsOff: ['documents'] })
     const configuration = new MnemonActionSeat()
@@ -541,6 +554,7 @@ describe('MnemonWorkbench', () => {
     const { connection, call } = createConnection()
     const components = new MnemonChangeSignal()
     const statusReads = () => call.mock.calls.filter(([, endpoint]) => endpoint === 'status-summary').length
+    const directoryReads = () => call.mock.calls.filter(([, endpoint]) => endpoint === 'body-directory').length
     const { rerender } = render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" componentChanges={components} />)
     await screen.findByText('已连接')
     const initial = statusReads()
@@ -551,6 +565,18 @@ describe('MnemonWorkbench', () => {
     rerender(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" componentChanges={components} active={false} />)
     rerender(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" componentChanges={components} active />)
     await waitFor(() => expect(statusReads()).toBe(initial + 2))
+
+    // A change elsewhere, such as a Provider saved under Plugins, reloads the open page too;
+    // only returning to it does not, since that would query every Provider again.
+    await selectWorkspaceTab('记忆空间')
+    await waitFor(() => expect(directoryReads()).toBeGreaterThan(0))
+    const directory = directoryReads()
+    rerender(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" componentChanges={components} active={false} />)
+    rerender(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" componentChanges={components} active />)
+    await waitFor(() => expect(statusReads()).toBeGreaterThan(initial + 2))
+    expect(directoryReads()).toBe(directory)
+    act(() => components.bump())
+    await waitFor(() => expect(directoryReads()).toBeGreaterThan(directory))
   })
 
   it('reads the full status for the CLI version a summary does not carry yet', async () => {
@@ -2001,6 +2027,39 @@ describe('MnemonWorkbench', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '存入记忆' })).toBeNull())
     expect(screen.getByRole('tab', { name: '内容' }).getAttribute('aria-selected')).toBe('true')
     expect(call).not.toHaveBeenCalledWith(expect.anything(), 'remember', expect.anything())
+  })
+
+  it('says when the task Agent or a write with constraints saved a memory without a vector (#388)', async () => {
+    const { connection, call } = createConnection()
+    const domain = call.getMockImplementation()!
+    call.mockImplementation(async (...args: Parameters<typeof domain>) => {
+      const endpoint = args[1]
+      if (endpoint === 'supervise') return { ok: true, value: { delegated: true, sessionId: 'session-1', runId: 'child-1', provider: 'spawn', summary: '已存入项目记忆空间。', action: 'added', memoryBodyIds: ['project'], unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }] } }
+      // Mnemon Native's own receipt for a memory saved while embedding did not succeed, then one with its vector.
+      if (endpoint === 'remember') return { ok: true, value: { action: 'added', id: 'memory-2', memoryBodyId: 'project', embedded: call.mock.calls.filter(entry => entry[1] === 'remember').length > 1 } }
+      return domain(...args)
+    })
+    render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
+    await waitFor(() => expect(screen.getByText('已连接')).toBeTruthy())
+    const note = '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
+
+    await openRememberDialog()
+    fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Grafana 在 3300 端口。' } })
+    fireEvent.click(await screen.findByRole('button', { name: '交给任务 Agent' }))
+    await waitFor(() => expect(screen.getByText('已存入项目记忆空间。')).toBeTruthy())
+    expect(screen.getByText(note)).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Prometheus 在 9090 端口。' } })
+    fireEvent.click(await screen.findByRole('button', { name: '按约束交给任务 Agent' }))
+    await waitFor(() => expect(call).toHaveBeenCalledWith(expect.anything(), 'remember', expect.objectContaining({ content: '预发集群的 Prometheus 在 9090 端口。' })))
+    await waitFor(() => expect(screen.getByText(note)).toBeTruthy())
+    expect(screen.queryByText('已存入项目记忆空间。')).toBeNull()
+    // A memory saved with its vector reads as before.
+    fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Loki 在 3100 端口。' } })
+    fireEvent.click(await screen.findByRole('button', { name: '按约束交给任务 Agent' }))
+    await waitFor(() => expect(call.mock.calls.filter(entry => entry[1] === 'remember')).toHaveLength(2))
+    await screen.findByText('已存入')
+    expect(screen.queryByText(note)).toBeNull()
   })
 
   it('renders a usable empty overview when no memory spaces exist', async () => {

@@ -53,6 +53,8 @@ Headless 会获得完整模型工具面。它把命令行任务作为普通用�
 
 “只读”表示不修改受管正文或长期语义内容。`mnemon_document_search` 命中后仍会更新 `lastAccessedAt`，用于 LRU 排序，因此功能只读不等于磁盘只读。
 
+`mnemon_recall` 搜索记忆空间中的记忆，`mnemon_document_search` 搜索项目档案；各自的工具说明写明了这一点，也写明对于冷归档的档案，召回只能找到归档时留在空间里的索引记忆。在 Mnemon Native 空间中，`mnemon_related` 标明每个关联记忆经由哪种边得到（`edgeType`）；时间边和实体边由系统自动添加，数量远多于其他边，所以可以传入 `edge` 只沿一种边查找。其他 Provider 不标明边的类型，也不按 `edge` 筛选。`mnemon_status` 的 `aggregate` 只合计已激活、正常且 Provider 提供统计数据的空间，在 `aggregate.spaces` 中给出空间数，并在 `aggregate.scope` 中说明；`totalInsights` 统计未遗忘的记忆，`deletedInsights` 统计 Provider 保留下来的已遗忘记忆（Mnemon Native 会保留）。
+
 ### `writeEnabled=true` 时的工具
 
 | 工具 | 用途 | Root Agent 路径 |
@@ -69,6 +71,8 @@ Headless 会获得完整模型工具面。它把命令行任务作为普通用�
 
 worker 内调用同名工具时直接进入服务层，不再递归委派。
 
+写入项目档案后，返回给模型的是它写入的那份档案（带 `contentHash`，不含刚发送的正文，也不含路径）以及 `documents` 中该层的合计：未归档与已归档的数量、未归档的字节数和上限。包含摘录和路径的全部档案目录留在 WebUI 读取的控制面；经由 `mnemon_view_action` 写入项目档案时，返回的也是这样的结果。`mnemon_view_route` 与 `mnemon_view_action` 拒绝 View 未提供的 id 时，会说出提供该操作的工具、简写所对应的完整 id，或 `MNEMON VIEW ROUTES` 列出的 id，不会说出它没有展示的 id。`mnemon_forget` 因本回合的 View 不读取某个空间而被拒绝时，会说出是哪个空间以及原因：空间未激活（是否激活由用户决定，激活后从下一回合起才能遗忘）；它的 Provider 已关闭或未安装；或者它是在本回合开始之后才激活的。
+
 自主 write worker（蒸馏与 supervised writeback 运行）自行决定写入内容，因此宿主在其硬性工具白名单中排除了 `mnemon_forget`：遇到重复或冲突时只能跳过或写入修正后的条目，不能删除已有记忆。请求目标由用户或用户侧流程显式给出的操作（`/mnemon forget`、`mnemon_link` 与记忆空间管理）保留完整 write 工具面。
 
 后台审查可以搜索档案并调用 `mnemon_document_create`，不能调用 `mnemon_document_manage` 或 `mnemon_view_action`。已有档案覆盖候选时跳过；有新增知识时，新建一份独立档案并引用相关已有档案 ID。Source 的 `create` Action 接收 `title`、`content`，以及可选的 `description`、`sourcePaths`、`sessionIds`；拒绝 `action`、`id` 等额外字段。容量不足时拒绝创建，不归档已有档案。已有的用户档案和 Agent 创建档案都受此保护；显式编辑继续使用原有管理路径。
@@ -83,6 +87,28 @@ worker 内调用同名工具时直接进入服务层，不再递归委派。
 - **跳过**：问题、猜测、临时进度、完成日志、原始输出、秘密和可轻易从仓库重新发现的普通事实。
 
 `mnemon_forget` 是破坏性语义操作；只有用户明确要求，或内容已确认错误 / 过时时才应执行。宿主通过把该工具排除出自主 worker 的白名单来强制这一点；用户明确要求时主代理仍可调用。
+
+## 模型工具与 Mnemon CLI
+
+模型工具和 Mnemon CLI 通过不同的路径访问同一份 Mnemon Native 记忆。工具作用于当前 View 固定的空间，使用 dsh-mnemon 的存储根目录，以及 DSH 管理嵌入时的地址、模型和密钥。CLI 每次只作用于一个 Store：`--store <id>`，否则是 `MNEMON_STORE`，再否则是它的 active 文件；所在的数据目录由 `--data-dir` 决定，否则是 `MNEMON_DATA_DIR`，再否则是 `~/.mnemon`。dsh-mnemon 的全局范围使用同一个目录，所以只要两边看到的 `MNEMON_DATA_DIR` 相同，在终端运行的命令就能访问它的记忆；工作区范围或自定义数据目录需要把该目录作为 `--data-dir` 传入。只有带上对应的 `--store`，才能找到另一个 Store 里的记忆。
+
+| 任务 | 模型工具 | Mnemon CLI |
+|---|---|---|
+| 召回记忆 | `mnemon_recall`：View 中每个已激活的空间 | `mnemon recall` 或 `search`：一个 Store |
+| 搜索项目档案 | `mnemon_document_search` | 无：项目档案是 dsh-mnemon 自己的层 |
+| 沿图谱查看关联记忆 | `mnemon_related`：在 Mnemon Native 空间中每条结果标明 `edgeType`，`edge` 只沿一种边 | `mnemon related <id>` |
+| 保存记忆 | `mnemon_remember`，经由写入任务 Agent | `mnemon remember` |
+| 关联两条记忆 | `mnemon_link` | `mnemon link` |
+| 遗忘记忆 | `mnemon_forget`：View 读取的空间；未激活的空间要等用户激活后的下一回合 | 在指定的 Store 中 `mnemon forget <id>` |
+| 新建空间 | `mnemon_memory_body_create`：一个 Store 及其 dsh-mnemon 登记 | `mnemon store create`：只有 Store；它位于 dsh-mnemon 的数据目录中时，dsh-mnemon 会把它列为未激活的空间 |
+| 重命名、修改说明、激活或取消激活 | `mnemon_memory_body_update` | 无：这些属于 dsh-mnemon |
+| 合并空间 | `mnemon_memory_body_merge` | 导入草稿的 `mnemon import` |
+| 删除空间 | 无：在 WebUI 的记忆空间页面删除 | `mnemon store remove`，dsh-mnemon 的登记仍会留下，它下一次检查状态时会在原处创建一个空的 Store |
+| 查看健康状况与数量 | `mnemon_status`：已激活、正常且 Provider 提供统计数据的空间的合计 | `mnemon status`：一个 Store |
+| 向量覆盖率 | 无：Mnemon Native 嵌入设置中的「测试状态」 | `mnemon embed --status` 与 `--all`：一个 Store |
+| 选择 active Store | 无：View 每个回合固定空间 | `mnemon store set`：只影响 CLI 自己的默认值 |
+
+模型从不删除空间，也不切换 Mnemon 的 active Store；这些由用户决定。
 
 ## `/mnemon` 命令
 
@@ -163,7 +189,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `graph` / `bodies` / `body-directory` | active 多空间图谱投影、含 Provider 能力的记忆空间目录与快速目录投影 |
 | `body-reconnect` | 清除短期健康状态并刷新单个记忆空间，不修改持久数据 |
 | `provider-services` | 脱敏的 Provider 服务目录；可包含已配置的凭据字段名，绝不包含凭据值 |
-| `embedding-status` | Mnemon 嵌入模型、可用性与默认 Store 覆盖率 |
+| `embedding-status` | Mnemon 嵌入模型与可用性，以及每个 Mnemon Native 空间的向量覆盖率和合计 |
 | `list` / `entities` | 内容列表与实体聚合 |
 | `search` / `agent-search` / `related` | 直接检索、证据回答与关系遍历 |
 | `turn-activities` / `turn-activity` | 会话或单回合的记忆工具活动 |
@@ -185,6 +211,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `body-create` / `body-update` / `body-delete` / `body-merge` | 创建或连接、编辑、确认后的 Native 删除或远程断开，以及合并记忆空间 |
 | `body-metadata-maintain` | 由任务 Agent 刷新 1 到 20 个 active 记忆空间的名称与说明 |
 | `provider-service-update` | 更新单个 Provider 服务；凭据仅在 Host 保存，响应脱敏 |
+| `embedding-fill` | 为一个 Mnemon Native 空间补齐缺少的向量，使用 Host 的存储根目录与嵌入设置；最多运行一分钟，每步最多十秒，返回补齐与仍缺少的数量 |
 | `source-management-mutate` / `source-assistance` | 通用 Source 管理 mutation，以及按 Source 当前修订确认的 Host 辅助操作 |
 | `version-update` | 更新明确组件；Host 固定命令与参数 |
 
@@ -224,7 +251,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 
 同步载荷始终是完整的 Mnemon Pack：Pack manifest 的 `scope` 只能是 `full` 或恰好一个组件，因此无法表示持久化的组件选择，组件筛选只作为 `pull` 的一次性参数存在。仓库地址是唯一没有默认值的配置项：分支、远端目录、提交者姓名或邮箱留空时，分别回落到默认分支、默认目录，或本机 Git 已有的提交身份。`configure`、`push`、`pull` 以及每个会改动状态的 `github-` endpoint 都要求 `writeEnabled: true`，否则返回与 pack 导入相同的只读拒绝。
 
-token 不会出现在任何响应或错误信息中。通道在每次网络操作时解析一个凭据，顺序为：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中保存的 token，最后是 GitHub 登录写入 DSH 凭据存储（键 `dsh-mnemon/github`）的凭据。`credentialSource` 指出生效的那一个——`environment`、`token`、`github` 或 `none`——前三者都让 `hasToken` 为 `true`，因此已登录的账号完全不需要填 token。GitHub 请求先走环境自带的 `fetch`（与版本检查相同的接缝），启动器配置的代理策略对它同样生效。当这次请求完全连不上时，通道会用从 `HTTPS_PROXY`、`http_proxy`、`all_proxy` 发现的代理——Windows 上还会读系统代理设置——以 Node 自带模块搭建的 CONNECT 隧道重试一次；应答成功的代理会被记住，失效的代理会被丢弃，因此换网络后无需重启即可恢复。失败只报告 GitHub 的错误码与 HTTP 状态，绝不回显响应体；完全没到达 GitHub 的请求会报告传输层原因，且在没找到代理时直接指出应设置 `HTTPS_PROXY`。
+token 不会出现在任何响应或错误信息中。通道在每次网络操作时解析一个凭据，顺序为：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中保存的 token，最后是 GitHub 登录写入 DSH 凭据存储（键 `dsh-mnemon/github`）的凭据。`credentialSource` 指出生效的那一个——`environment`、`token`、`github` 或 `none`——前三者都让 `hasToken` 为 `true`，因此已登录的账号完全不需要填 token。GitHub 请求先走环境自带的 `fetch`（与版本检查相同的接缝），启动器配置的代理策略对它同样生效。当这次请求完全连不上时，通道会用从 `HTTPS_PROXY`、`http_proxy`、`all_proxy` 发现的代理——Windows 上还会读系统代理设置——以 Node 自带模块搭建的 CONNECT 隧道重试一次；应答成功的代理会被记住，失效的代理会被丢弃，因此换网络后无需重启即可恢复。失败只报告 GitHub 的错误码与 HTTP 状态，不回显响应体的其他内容；无法使用的设备码回应还会给出它的 content type 与字段名，但不含字段值。`accept: application/json` 请求头没有到达 GitHub 时（例如被其他插件对 `fetch` 的改写丢掉），GitHub 会以表单编码回应，通道按同样的方式读取。完全没到达 GitHub 的请求会报告传输层原因，且在没找到代理时直接指出应设置 `HTTPS_PROXY`。
 
 配置、凭据与失败语义见[备份与恢复](../guides/operations.md#git-仓库同步)。
 
@@ -272,7 +299,7 @@ Core 发布 `ctx.mnemonMemory: MnemonMemoryService`，实际服务只提供 `ins
 | `dsh-mnemon-source-memory-spaces/provider-sdk` | Memory Spaces 自己的 Provider 子模块协议 |
 | `dsh-mnemon-source-memory-spaces/testing` | Provider 驱动测试夹具 |
 
-通用模型工具 `mnemon_view_route`、`mnemon_view_action` 只执行当前 View 内的 route/offer；原有具名工具保留默认工作流。浏览器管理使用 `source-management-catalog`、`source-management-read`、`source-management-mutate` 与可选 `source-assistance`，Host/Source 检查实例、确认、修订与当前权限。内部 RPC 名称不是插件 SDK，页面应使用限定实例的管理客户端。见[插件开发](../development/extensions.md)。
+通用模型工具 `mnemon_view_route`、`mnemon_view_action` 只执行当前 View 内的 route/offer；原有具名工具保留默认工作流。具名工具作用于其 Source 类型的 Starter 实例（Entry `mnemon-source-<type>`，嵌套在 include 下时也是），或该类型唯一的 Source。多个运行时 Source 都提供 `mutate` 时，`mnemon_runtime_memory` 写入 Starter 的运行时 Source；否则写入 View 唯一允许它写的那个。其他实例的 offer 由 View 列出，供 `mnemon_view_action` 使用。浏览器管理使用 `source-management-catalog`、`source-management-read`、`source-management-mutate` 与可选 `source-assistance`，Host/Source 检查实例、确认、修订与当前权限。内部 RPC 名称不是插件 SDK，页面应使用限定实例的管理客户端。见[插件开发](../development/extensions.md)。
 
 ## 国际化范围
 

@@ -4,6 +4,7 @@
 // Set MNEMON_E2E_PORT to keep one WebUI address across SIGUSR2 restarts.
 // --live-model answers with the real DeepSeek API instead: it reads DEEPSEEK_API_KEY
 // (and DEEPSEEK_BASE_URL when set) from the caller's environment and never stores them.
+// Set MNEMON_E2E_DSH to another DSH installation's lib/bin.js to serve the WebUI on that release.
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -23,8 +24,11 @@ import { reviewLayersModel } from './fixtures/review-layers-model.mjs'
 import { strictTemplateModel } from './fixtures/strict-template-model.mjs'
 import { generalStrategyModel } from './fixtures/general-strategy-model.mjs'
 import { exactIdModel } from './fixtures/exact-id-model.mjs'
+import { rememberTargetModel } from './fixtures/remember-target-model.mjs'
 import { saveActionModel } from './fixtures/save-action-model.mjs'
+import { profileCompactionModel } from './fixtures/profile-compaction-model.mjs'
 import { DOCS_DEMO_LANGUAGES, docsDemoAssistant, docsDemoModel, seedDocsDemo } from './fixtures/docs-demo.mjs'
+import { recallBudgetModel } from './fixtures/recall-budget-model.mjs'
 import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies, slowEmbeddingServer } from './fixtures/archive-copies.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -52,12 +56,16 @@ for (const flag of flags) {
   if (flag === '--review-layers') continue
   if (flag === '--strict-template') continue
   if (flag === '--general-strategy') continue
+  if (flag === '--second-runtime') continue
   if (flag === '--exact-id') continue
   if (flag === '--archive-copies') continue
   if (flag === '--save-action') continue
+  if (flag === '--remember-target') continue
+  if (flag === '--profile-compaction') continue
   if (flag === '--without-mnemon-cli') continue
   if (flag === '--remote-management') continue
   if (flag === '--live-model') continue
+  if (flag === '--recall-budget') continue
   if (flag === '--docs-demo' || flag.startsWith('--docs-demo=')) {
     docsDemo = flag === '--docs-demo' ? 'zh-CN' : flag.slice('--docs-demo='.length)
     if (!DOCS_DEMO_LANGUAGES.includes(docsDemo)) throw new Error('--docs-demo accepts ' + DOCS_DEMO_LANGUAGES.join(' or '))
@@ -89,6 +97,8 @@ for (const flag of flags) {
   }
   throw new Error('Unknown option: ' + flag)
 }
+// The Layered strategy composes one Source per role, so a second runtime track needs the General one.
+if (flags.has('--second-runtime') && !flags.has('--general-strategy')) throw new Error('--second-runtime requires --general-strategy')
 const extensionNames = ['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture']
 // Strategy packages that also register themselves as bundles; the Starter row owns them.
 const selfRegistering = new Set([...extensionNames, 'dsh-mnemon-strategy-general'])
@@ -100,7 +110,10 @@ const fixture = await mkdtemp(join(tmpdir(), 'mnemon-web-e2e-'))
 const dshHome = join(fixture, 'dsh-home')
 const dataDir = join(fixture, 'data')
 const workspace = join(fixture, 'workspace')
-await Promise.all([dshHome, dataDir, workspace].map(path => mkdir(path)))
+// DSH creates its first-use workspace under the system Documents folder, which on
+// macOS it asks the OS for, whatever HOME is; keep that inside the fixture too.
+const documents = join(fixture, 'documents')
+await Promise.all([dshHome, dataDir, workspace, documents].map(path => mkdir(path)))
 let modelRequests = 0
 let archiveWrites = 0
 const archiveProvider = runtimeArchive ? createServer(async (request, response) => {
@@ -134,10 +147,13 @@ const scriptedModel = liveModel ? undefined : flags.has('--runtime-routing') ? r
   : flags.has('--general-strategy') ? generalStrategyModel(event => console.log('General strategy: ' + JSON.stringify(event)))
   : flags.has('--exact-id') ? exactIdModel(event => console.log('Exact id: ' + JSON.stringify(event)))
   : flags.has('--save-action') ? saveActionModel(event => console.log('Save action: ' + JSON.stringify(event)))
+  : flags.has('--remember-target') ? rememberTargetModel(event => console.log('Remember target: ' + JSON.stringify(event)))
+  : flags.has('--profile-compaction') ? profileCompactionModel(event => console.log('Profile compaction: ' + JSON.stringify(event)))
   : flags.has('--runtime-write-scope') ? runtimeWriteScopeModel(event => console.log('Runtime write scope: ' + JSON.stringify(event)))
   : flags.has('--result-tool-cache') ? resultToolCacheModel(event => console.log('Result tool cache: ' + JSON.stringify(event)))
   : flags.has('--legacy-session-replay') ? legacySessionReplayModel(event => console.log('Legacy replay: ' + JSON.stringify(event)))
   : flags.has('--document-archive') ? documentArchiveModel(event => console.log('Document archive: ' + JSON.stringify(event)))
+  : flags.has('--recall-budget') ? recallBudgetModel(event => console.log('Recall budget: ' + JSON.stringify(event)))
   : docsDemo !== undefined ? docsDemoModel(docsDemo, event => console.log('Docs demo: ' + JSON.stringify(event))) : reviewModel ?? protectionModel
 const reviewFailure = flags.has('--review-failure')
 /**
@@ -212,7 +228,7 @@ const env = {
   ...(liveModel ? {} : { DEEPSEEK_API_KEY: 'isolated-test-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${model.address().port}` }),
   MNEMON_DATA_DIR: dataDir,
 }
-const dshBin = join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
+const dshBin = process.env.MNEMON_E2E_DSH ? resolve(process.env.MNEMON_E2E_DSH) : join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
 let web
 let stopping = false
 let restarting = false
@@ -307,6 +323,7 @@ try {
   const reviewFixture = join(fixture, 'review-evidence-plugin.mjs')
   if (reviewModel !== undefined) await writeFile(reviewFixture, scopedOverviewPlugin)
   await writeFile(join(dshHome, 'profiles/web/cordis.patch.yml'), disabled.map(id => `- id: ${id}\n  disabled: true\n`).join('') + browsePicker
+    + '- id: workspace-controller\n  config:\n    documentsDirectory: ' + JSON.stringify(documents) + '\n'
     + (protectionModel === undefined && reviewModel === undefined && !reviewFailure ? '' : '- id: mnemon\n  config:\n    idleReviewMs: 5000\n')
     + (runtimeArchive ? '- id: mnemon\n  config:\n    persistenceStrategy:\n      mode: manual\n    runtimeMemory:\n      memoryLimitBytes: 300\n' : '')
     + (flags.has('--idle-review') || flags.has('--review-layers') || flags.has('--strict-template') ? '- id: mnemon\n  config:\n    idleReviewMs: 5000\n    idleReview:\n      minIntervalMs: 5000\n      maxPerSession: 1\n' : '')
@@ -314,8 +331,13 @@ try {
     // An explicit cliPath is authoritative, so a missing file hides any installed Mnemon CLI.
     + (flags.has('--without-mnemon-cli') ? '- id: mnemon\n  config:\n    cliPath: ' + JSON.stringify(join(fixture, 'no-mnemon-cli', 'mnemon')) + '\n' : '')
     + (flags.has('--remote-management') ? '- id: mnemon\n  config:\n    remoteAccess: trusted-host\n' : '')
+    // Two short USER.md entries fill it, so the third write needs the compaction child.
+    + (flags.has('--profile-compaction') ? '- id: mnemon\n  config:\n    runtimeMemory:\n      userLimitBytes: 100\n    idleReview:\n      enabled: false\n' : '')
     + (slowEmbedder === undefined ? '' : `- id: mnemon\n  config:\n    runtimeMemory:\n      memoryLimitBytes: ${archiveCopiesLimitBytes}\n    embedding:\n      enabled: true\n      endpoint: http://127.0.0.1:${slowEmbedder.address().port}/v1\n      model: fixture-embed\n      protocol: openai\n`)
     + (flags.has('--general-strategy') ? '- id: mnemon-strategy-general\n  disabled: false\n- id: mnemon-strategy-default-three-tier\n  disabled: true\n- id: mnemon\n  config:\n    memoryView:\n      strategyTypeId: general\n' : '')
+    // A second runtime track beside the Starter's, with its own directory, as a profile can mount one (#397).
+    + (flags.has('--second-runtime') ? '- insert:\n    - id: mnemon-source-runtime-global\n      name: dsh-mnemon-source-runtime\n      config:\n        dataDir: '
+      + JSON.stringify(join(fixture, 'global-runtime')) + '\n        userDataDir: ' + JSON.stringify(join(fixture, 'global-runtime')) + '\n' : '')
     + (flags.has('--runtime-write-scope') ? '- id: mnemon\n  config:\n    persistenceStrategy:\n      mode: manual\n      providerId: mnemon-native\n    runtimeMemory:\n      memoryLimitBytes: 512\n' : '')
     + (reviewModel === undefined ? '' : '- insert:\n    - id: review-evidence-fixture\n      name: ' + JSON.stringify(reviewFixture) + '\n')
     + (extensionsEnabled ? extensionNames.map(name => `- id: ${name.slice(4)}\n  disabled: false\n`).join('') : ''))
@@ -325,9 +347,19 @@ try {
     console.log(`Archive copies seeded: working memory is full and Memory Space ${memoryBodyId} holds an exact copy of each entry; embeddings answer after ${embeddingDelayMs} ms.`)
     console.log('Add this working-memory entry on the Runtime Memory page: ' + archiveCopiesPending)
   }
+  // The docs demo's spaces, one of them switched off, for a memory saved into a named space (#387).
+  if (flags.has('--remember-target') && docsDemo === undefined) {
+    await seedDocsDemo({ dataDir, workspace, language: 'zh-CN' })
+    console.log('Remember target seeded; send remember-target-check.')
+  }
   if (docsDemo !== undefined) {
     await seedDocsDemo({ dataDir, workspace, language: docsDemo })
     console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target.'))
+  }
+  // The docs demo's memory, read by a model that asks three different Recall questions in one turn (#389).
+  if (flags.has('--recall-budget') && docsDemo === undefined) {
+    await seedDocsDemo({ dataDir, workspace, language: 'zh-CN' })
+    console.log('Recall budget seeded; send recall-budget-check.')
   }
   console.log('Fixture: ' + fixture)
   console.log('Workspace: ' + workspace)

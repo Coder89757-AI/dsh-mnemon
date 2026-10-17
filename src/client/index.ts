@@ -16,6 +16,7 @@ import { MnemonTurnTail } from './MnemonTurnTail.tsx'
 import { MnemonPluginActions, MNEMON_PACKAGE_NAME } from './MnemonPluginActions.tsx'
 import { MnemonSaveAction } from './MnemonSaveAction.tsx'
 import { MnemonActionSeat } from './action-seat.ts'
+import { MnemonComponentListSeat } from './component-list-seat.ts'
 import { reopenAfterStarterUpdate } from './starter-update.ts'
 import { MnemonChangeSignal } from './change-signal.ts'
 import { en, zh, type MnemonKey } from './locales.ts'
@@ -101,13 +102,15 @@ function enabledOf(value: unknown, key: 'turnBar' | 'saveAction'): boolean {
 
 /**
  * What one surface offers or tells another: the configuration page under
- * Plugins, the workspace in its placement, and component changes made through
- * DSH's plugin manager, which Mnemon's own reads cannot see.
+ * Plugins, the workspace in its placement, and changes the workspace cannot
+ * see by itself: components switched through DSH's plugin manager, and memory
+ * a sync, a merge, an import or an applied plan on the configuration page wrote.
  */
 interface MnemonSeats {
   configuration: MnemonActionSeat
   workspace: MnemonActionSeat
   components: MnemonChangeSignal
+  componentList: MnemonComponentListSeat
 }
 
 /** The DSH describe revision of one Host entry, as `ctx.configForms` reports it. */
@@ -293,7 +296,7 @@ export function apply(rawContext: unknown): void {
   const ctx = rawContext as MnemonClientContext
   const settings = new MnemonSettingsScope<Config>(ctx.connection, MNEMON_SETTINGS_NAMESPACE)
   const interactionSettings = new MnemonSettingsScope<InteractionConfig>(ctx.connection, MNEMON_UI_SETTINGS_NAMESPACE)
-  const seats: MnemonSeats = { configuration: new MnemonActionSeat(), workspace: new MnemonActionSeat(), components: new MnemonChangeSignal() }
+  const seats: MnemonSeats = { configuration: new MnemonActionSeat(), workspace: new MnemonActionSeat(), components: new MnemonChangeSignal(), componentList: new MnemonComponentListSeat() }
   const namespace: MnemonNamespace = 'mnemon'
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'dsh-mnemon: locale dictionaries')
   const translate = ctx.locale.bind(namespace)
@@ -365,6 +368,7 @@ export function apply(rawContext: unknown): void {
     currentSession: ctx.uiSession.adapter.current,
     localeRuntime: ctx.locale,
     componentChanges: seats.components,
+    componentList: seats.componentList,
     t: translate,
   })
   // A child slot has one declaring entry, the configuration below. A page that
@@ -393,13 +397,13 @@ export function apply(rawContext: unknown): void {
     }, MnemonComponentRowHost))
   }
   // The shipped components' own settings and Status cards arrive the way an installed component's do.
-  ctx.effect(() => installShippedComponentSettings(ctx, { scope: settings, connection: ctx.connection, t: translate }), 'dsh-mnemon: shipped component settings')
+  ctx.effect(() => installShippedComponentSettings(ctx, { scope: settings, connection: ctx.connection, t: translate, componentChanges: seats.components }), 'dsh-mnemon: shipped component settings')
   ctx.effect(() => installShippedComponentStatus(ctx), 'dsh-mnemon: shipped component status')
   ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
     name: 'plugins.detail.actions',
     id: 'dsh-mnemon/open-workspace',
     locale: namespace,
-    inject: () => ({ workspace: seats.workspace, t: translate }),
+    inject: () => ({ workspace: seats.workspace, componentList: seats.componentList, t: translate }),
   }, MnemonPluginActions))
 
   // In-conversation interaction surfaces default on and are bound live: each

@@ -152,7 +152,8 @@ describe.skipIf(!available)('Mnemon Git sync over RPC', { timeout: 90_000 }, () 
     expect(await host.sync('push', {})).toMatchObject({ ok: false, error: { message: 'Publishing the sync branch requires confirmation' } })
     expect(await host.sync('pull', {})).toMatchObject({ ok: false, error: { message: 'Importing the remote Mnemon payload requires confirmation' } })
     // Nothing is configured yet, so the refusal is decided before any Git process starts.
-    expect(await host.sync('push', { confirmed: true })).toMatchObject({ ok: false, error: { message: expect.stringContaining('no sync repository is configured') } })
+    // The refusal carries its name, so the page can state it rather than quote the Host.
+    expect(await host.sync('push', { confirmed: true })).toMatchObject({ ok: false, error: { message: expect.stringContaining('no sync repository is configured'), details: { reason: 'no-repository' } } })
     expect(await host.sync('preview', {})).toMatchObject({ ok: false, error: { message: expect.stringContaining('no sync repository is configured') } })
 
     expect(await host.sync('configure', { repoUrl: remote, token: TOKEN })).toMatchObject({ ok: true })
@@ -164,11 +165,11 @@ describe.skipIf(!available)('Mnemon Git sync over RPC', { timeout: 90_000 }, () 
     const unreachable = await machine()
     expect(await unreachable.sync('configure', { repoUrl: 'https://127.0.0.1:1/owner/repo.git', token: TOKEN })).toMatchObject({ ok: true })
     const offline = await unreachable.sync('status', {})
-    expect(offline).toMatchObject({ ok: true, value: { configured: true, config: { hasToken: true }, remote: { reachable: false, branchExists: false } } })
+    expect(offline).toMatchObject({ ok: true, value: { configured: true, config: { hasToken: true }, remote: { reachable: false, branchExists: false, issue: 'network' } } })
     expect(typeof (offline as { value: { remote: { error?: string } } }).value.remote.error).toBe('string')
     expect(JSON.stringify(offline)).not.toContain(TOKEN)
     const refused = await unreachable.sync('push', { confirmed: true })
-    expect(refused).toMatchObject({ ok: false, error: { code: 'internal' } })
+    expect(refused).toMatchObject({ ok: false, error: { code: 'internal', details: { reason: 'remote-network' } } })
     expect(JSON.stringify(refused)).not.toContain(TOKEN)
 
     expect(await host.sync('nope', {})).toMatchObject({ ok: false, error: { code: 'bad-request', message: 'unknown sync endpoint: nope' } })

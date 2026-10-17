@@ -121,7 +121,7 @@ pnpm --workspace-concurrency=1 -r build
 pnpm e2e:serve
 ```
 
-夹具输出临时工作区及 loopback URL，隔离 `DSH_HOME`、`MNEMON_DATA_DIR`、工作区和模型端点。会话选择 **Mnemon E2E**：该测试自有 preset 去除 Shell 依赖，保留 Host 记忆工具。模型固定回复，因此这里只检查 UI/传输，不评价真实模型沉淀质量。Ctrl-C 停止并清理合成测试数据。
+夹具输出临时工作区及 loopback URL，隔离 `DSH_HOME`、`MNEMON_DATA_DIR`、工作区和模型端点，并把 DSH 创建首个工作区所在的“文稿”目录也指向夹具内部。会话选择 **Mnemon E2E**：该测试自有 preset 去除 Shell 依赖，保留 Host 记忆工具。模型固定回复，因此这里只检查 UI/传输，不评价真实模型沉淀质量。Ctrl-C 停止并清理合成测试数据。
 
 `pnpm e2e:serve --review-evidence --strategy-extensions` 添加按 Agent 注册的合成概览工具及固定的父会话 / 审查调用，检查五个完整分块的继承，并在修复前后尝试相同的外部工具读取；见 [Issue #211 验证记录](../../pr-assets/issue-211-20260911/README.zh-CN.md)。`tests/review-evidence-host.spec.ts` 还覆盖真实 DSH native 与 Code Mode 中，在 Provider 的 start Promise 返回前发生的工具执行。
 
@@ -154,17 +154,27 @@ Runtime 写入范围回归使用 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm 
 
 `pnpm e2e:serve --general-strategy` 启动时已选中通用策略，并停用分层策略。先发送 `general-strategy-check remember`，下一回合再发送 `general-strategy-check recall`。脚本模型检查系统提示中包含通用记忆协议，且 Runtime、项目档案和记忆空间三个 Source 均已接入；随后通过具名 Runtime 工具保存一条事实，并且只有当这条事实以常驻记忆投影出现时，第二回合才答出它。夹具以 `General strategy:` 行输出每项检查。只有模型决策是脚本化的；策略、其 View、Runtime 写入和浏览器均为真实运行。
 
+在 `--general-strategy` 之外再加 `--second-runtime`，会像 profile patch 那样在 Starter 的运行时 Source 旁再挂载一个 `mnemon-source-runtime-global`，数据目录放在夹具内（[#397](https://github.com/omdsh-dev/dsh-mnemon/issues/397)）。此时 `general-strategy-check remember` 把事实写入 Starter 的 MEMORY.md（见 **记忆系统 → 运行时记忆**）；另一条轨的 `mutate` offer 留在 View 的路由信封里时，夹具的 `General strategy:` 组合行会输出 `otherRuntimeOffer: true`。不带 `--general-strategy` 的 `--second-runtime` 会被拒绝：分层策略每个角色只组合一个 Source。没有修复的构建会以 "Runtime Action is ambiguous" 让这次写入失败。见[双语复现与证据](../../pr-assets/issue-397-default-runtime-instance/README.zh-CN.md)。
+
 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --exact-id` 用于检查按精确 id 遗忘（[#337](https://github.com/omdsh-dev/dsh-mnemon/issues/337)）。在 Mnemon E2E 对话中依次运行 `/mnemon remember <内容>`、用 `/mnemon recall <关键词>` 读到它的 id，再运行 `/mnemon forget <ID>`。脚本化的工作 Agent 写入收到的内容、遗忘收到的精确 id，各自在自己的 View 中运行；夹具以 `Exact id:` 行输出每一步。修复后这条记忆会被软删除；没有修复的构建会报告遗忘需要 View 已接纳的证据。只有工作 Agent 的决策是脚本化的；命令、工具和 Native 存储都是真实运行。见[双语复现与证据](../../pr-assets/issue-337-exact-id-actions/README.zh-CN.md)。
 
 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --archive-copies` 用于复现 [#339](https://github.com/omdsh-dev/dsh-mnemon/issues/339)。Host 启动前，它把工作记忆写到接近 640 字节的上限，并把每个条目逐字写入一个 Native 记忆空间，就像此前一次失败的归档留下的那样。嵌入请求发往本机一个 12 秒后才响应的服务（可用 `MNEMON_E2E_EMBEDDING_DELAY_MS` 调整），比 CLI 默认的 10 秒超时更长。在运行时记忆页面添加夹具输出的那一条。修复后，Host 不经检索即可归档并添加；没有修复的构建会为每个副本检索，第一次检索超时，归档随之失败。夹具以 `Archive copies:` 行输出每次嵌入请求。见[双语复现与证据](../../pr-assets/issue-339-archive-receipt-evidence/README.zh-CN.md)。
 
 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --save-action` 用于检查**存入记忆**（[#342](https://github.com/omdsh-dev/dsh-mnemon/issues/342)）。每轮对话都会收到一条值得保存的回复。点击其下的**存入记忆**并提交候选内容，再修改已有回执的候选内容后再次提交。脚本化的任务 Agent 先读取记忆空间目录，没有空间时创建一个 Native 空间，写入收到的候选内容并汇报 Provider 回执；夹具以 `Save action:` 行输出每一步。两次提交都会写入，原样再次提交则返回第一次的回执。只有模型决策是脚本化的；对话框、任务 Agent 的工具与 Native 写入均为真实运行。见[双语复现与证据](../../pr-assets/issue-342-edited-save/README.zh-CN.md)。
 
+`pnpm e2e:serve --remember-target` 预置同一个中文 Lumen 项目（其中「调研归档」空间已停用），并使用一个脚本模型，把记忆存入指定的空间（[#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387)）。发送 `remember-target-check` 后，根 Agent 先列出空间，再带着「Lumen 项目」的 id 调用 `mnemon_remember` 保存一条调研结论；写入任务 Agent 先尝试描述更贴切的「调研归档」，再写入它被指定的空间。回复会引用回执中的空间。修复后守卫会拒绝第一次尝试，「调研归档」保持停用；没有修复的构建会把记忆存进「调研归档」并把它重新激活。发送 `remember-archive-check` 后，根 Agent 自己指定「调研归档」：修复后 Host 会在任何写入任务 Agent 运行之前拒绝这个已停用的空间，回复会引用原因；没有修复的构建会把记忆存进去并把它打开。夹具以 `Remember target:` 行输出每一步。见[双语复现与证据](../../pr-assets/issue-387-explicit-space-target/README.zh-CN.md)。
+
+`pnpm e2e:serve --profile-compaction` 用于复现 [#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356)：USER.md 写满后，再写入会启动压缩用的子 Agent。这个 profile 把 USER.md 上限设为 100 字节，并关闭空闲审查。在 Mnemon E2E 对话中分三条消息发送 `记住：回答尽量简洁，不要冗长的开场白。`、`记住：回答使用简体中文。` 和 `记住：汇报时先列出阻塞项。`。脚本模型用 `mnemon_runtime_memory` 保存每条事实。第三条写入时 USER.md 已满，压缩子 Agent 先合并已保存的两条，再加入新条目。夹具以 `Profile compaction:` 行输出每一步。只有模型决策是脚本化的；工具、子 Agent 及其结果工具和 Runtime 写入都是真实运行。
+
+要在另一个 DSH 版本上启动 WebUI，先用 `npm install -g --prefix <目录> @deepseek-ai/dsh@0.2.1-alpha.2` 安装，再设置 `MNEMON_E2E_DSH=<目录>/lib/node_modules/@deepseek-ai/dsh/lib/bin.js`。见[双语复现与证据](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)。同一个变量也让 `node scripts/verify-headless-profile.mjs` 与 `node scripts/verify-sync-git.mjs` 改用该版本；请用 `node` 而不是 `pnpm` 运行，以免继承 `NODE_PATH`。要在该安装上运行根测试，使用 [DSH 0.2.1-alpha.2 测试配置](../../pr-assets/dsh-021-alpha2/README.zh-CN.md#在已安装的-dsh-上运行测试)。
+
 `pnpm e2e:serve --plugin=<包目录>` 会再把一个测试用插件链接进 profile，可重复使用以链接多个。[issue #340 证据](../../pr-assets/issue-340-settings-outside-slots/README.zh-CN.md)用它加入一个设置分区，像某些外壳那样不经过 DSH 的 slot 渲染器绘制 `dsh-mnemon` 配置页。
 
 `pnpm e2e:serve --without-mnemon-cli` 把 `cliPath` 指向不存在的文件，即使 PATH 中有 Mnemon CLI，Host 也按未安装处理。用它确认：状态页不显示 Mnemon Native 卡片，版本对话框把 CLI 列为可选，插件页停用向量测试，新建记忆空间从已就绪的 Provider 开始。先连接一个 Provider，例如在“插件 → 可组合记忆”页面中连接 Provider Lab 的服务。
 
-`pnpm e2e:serve --docs-demo`（中文）或 `--docs-demo=en` 会预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间，都在宿主启动前通过各 Source 自己的管理操作写入。包含“结账”的消息会经真实 View 工具完成一次档案检索与两次记忆空间召回后作答；随后包含“记住”的消息（例如新的 LCP 目标）会替换对应的工作记忆条目。脚本只决定模型调用哪些工具，不涉及任何个人数据。加上 `--live-model` 则改由 DeepSeek API 作答，密钥从 `DEEPSEEK_API_KEY` 读取；此时提问会经过真实的模型、任务 Agent 与 Agent 查询，图集即以这种方式采集。界面变化后应使用该夹具重新采集截图集。
+`pnpm e2e:serve --docs-demo`（中文）或 `--docs-demo=en` 会预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间，都在宿主启动前通过各 Source 自己的管理操作写入。包含“结账”（英文演示为 “checkout”）的消息会经真实 View 工具完成一次档案检索与两次记忆空间召回后作答；随后包含“记住”（英文演示为 “remember”）的消息（例如新的 LCP 目标）会替换对应的工作记忆条目。脚本只决定模型调用哪些工具，不涉及任何个人数据。加上 `--live-model` 则改由 DeepSeek API 作答，密钥从 `DEEPSEEK_API_KEY` 读取；此时提问会经过真实的模型、任务 Agent 与 Agent 查询，图集即以这种方式采集。界面变化后应使用该夹具重新采集截图集。
+
+`pnpm e2e:serve --recall-budget` 预置同一个中文 Lumen 项目，并使用一个脚本模型：发送 `recall-budget-check` 后，它在同一回合内提出三个不同的召回问题（[#389](https://github.com/omdsh-dev/dsh-mnemon/issues/389)）。分层策略每回合允许两次；回复会说明第三次调用返回了什么，也就是不读提示的模型会怎样理解它。修复后第三次查询不会执行，并如实说明（`notRun`、`budgetExhausted`）；没有修复的构建会返回第二次查询的 evidence。夹具以 `Recall budget:` 行输出第三次的结果。见[双语复现与证据](../../pr-assets/issue-389-recall-budget/README.zh-CN.md)。
 
 `pnpm e2e:serve --trusted-host=memory.test:4331` 把该授权主机加入 DSH 的浏览器信任边界，用于以远程页面身份检查 WebUI；再加 `--remote-management` 即设置 `remoteAccess: trusted-host`。同时设置 `MNEMON_E2E_PORT=4331` 使端口一致，在测试浏览器中把该名称解析到 127.0.0.1（Chrome 可用 `--host-resolver-rules="MAP memory.test 127.0.0.1"` 并加 `--no-proxy-server`），再把打印出的启动 URL 中的回环地址换成 `memory.test:4331` 打开。未授权时“插件 → 可组合记忆”页面为只读；授权后，保存会经 API Gateway 持久化。
 

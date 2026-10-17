@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemorySpaceProviderFixture } from 'dsh-mnemon-source-memory-spaces/testing'
 import { OpenVikingProvider, descriptor } from '../src/index.ts'
 
@@ -16,6 +16,7 @@ function writeFixture(options: {
     if (path.pathname === '/api/v1/system/status') return ok({ initialized: true, user: 'resolved-owner' })
     if (path.pathname === '/api/v1/content/read') return ok(options.readback ?? files.get(path.searchParams.get('uri')!))
     const input = JSON.parse(String(init?.body)) as { uri: string; content: string }
+    if (path.pathname === '/api/v1/content/set_tags') return ok({ uri: input.uri, tags_updated: true })
     files.set(input.uri, input.content)
     return ok({ uri: input.uri, mode: 'create', context_type: 'memory', content_updated: true,
       written_bytes: Buffer.byteLength(input.content), semantic_status: 'skipped', vector_status: 'complete',
@@ -29,6 +30,8 @@ function writeFixture(options: {
 }
 
 describe('OpenViking issue 233 durable writes', () => {
+  afterEach(() => { vi.useRealTimers() })
+
   it('stores the requested text even when one-turn extraction makes no durable change', async () => {
     const files = new Map<string, string>()
     const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
@@ -82,6 +85,96 @@ describe('OpenViking issue 233 durable writes', () => {
     expect(f.fetchMock.mock.calls[0]?.[1]?.method).toBe('POST')
   })
 
+  it('writes only the fields OpenViking 0.4.16 accepts, then tags the memory in its own call (#353)', async () => {
+    const files = new Map<string, { content: string; tags?: string[] }>()
+    // As OpenViking 0.4.16 validates: WriteContentRequest and SetTagsRequest forbid any other field.
+    const strict = (fields: string[], input: Record<string, unknown>) => {
+      const extra = Object.keys(input).filter(name => !fields.includes(name))
+      return extra.length === 0 ? undefined : new Response(JSON.stringify({ status: 'error', error: { code: 'INVALID_ARGUMENT',
+        message: `Invalid request parameters: body.${extra[0]}: Extra inputs are not permitted`,
+        details: { validation_errors: extra.map(name => ({ loc: ['body', name], message: 'Extra inputs are not permitted', type: 'extra_forbidden' })) } } }), { status: 400 })
+    }
+    const f = writeFixture({ fetch: async (url, init) => {
+      const path = new URL(String(url))
+      if (path.pathname === '/api/v1/content/read') return ok(files.get(path.searchParams.get('uri')!)?.content)
+      const input = JSON.parse(String(init?.body)) as Record<string, unknown>
+      if (path.pathname === '/api/v1/content/write') {
+        const refusal = strict(['uri', 'content', 'mode', 'wait', 'timeout', 'telemetry', 'processing_mode'], input)
+        if (refusal !== undefined) return refusal
+        files.set(String(input.uri), { content: String(input.content) })
+        return ok({ uri: input.uri, mode: 'create', context_type: 'memory', content_updated: true,
+          written_bytes: Buffer.byteLength(String(input.content)), semantic_status: 'skipped', vector_status: 'complete' })
+      }
+      if (path.pathname === '/api/v1/content/set_tags') {
+        const refusal = strict(['uri', 'tags', 'mode', 'recursive', 'telemetry'], input)
+        if (refusal !== undefined) return refusal
+        files.get(String(input.uri))!.tags = input.tags as string[]
+        return ok({ uri: input.uri, tags_updated: true })
+      }
+      throw new Error('unexpected request ' + path.pathname)
+    } })
+    const receipt = await f.provider.remember(f.body, { content: 'Exact canary', category: 'fact', importance: 4 })
+    expect(receipt).toMatchObject({ action: 'stored', tagsApplied: true })
+    expect([...files.values()]).toEqual([{ content: 'Exact canary', tags: ['source=mnemon', 'category=fact', 'importance=4'] }])
+  })
+
+  it('keeps a verified memory a server cannot tag, and says so', async () => {
+    const f = writeFixture({ fetch: async (url, init) => {
+      const path = new URL(String(url))
+      if (path.pathname === '/api/v1/content/read') return ok('Exact canary')
+      if (path.pathname === '/api/v1/content/set_tags') return new Response(JSON.stringify({ status: 'error', error: { message: 'Not Found' } }), { status: 404 })
+      const input = JSON.parse(String(init?.body)) as { uri: string; content: string }
+      return ok({ uri: input.uri, mode: 'create', context_type: 'memory', content_updated: true,
+        written_bytes: Buffer.byteLength(input.content), semantic_status: 'skipped', vector_status: 'complete' })
+    } })
+    await expect(f.provider.remember(f.body, { content: 'Exact canary', category: 'fact' })).resolves.toMatchObject({ action: 'stored', tagsApplied: false })
+  })
+
+  it('says nothing was stored when OpenViking refuses the write as sent', async () => {
+    const f = writeFixture({ fetch: async () => new Response(JSON.stringify({ status: 'error', error: { code: 'INVALID_ARGUMENT',
+      message: 'Invalid request parameters: body.tags: Extra inputs are not permitted' } }), { status: 400 }) })
+    const error = await f.provider.remember(f.body, { content: 'Canary', category: 'fact' }).then(() => new Error('stored'), (reason: unknown) => reason as Error)
+    expect(error.message).toMatch(/^OpenViking refused the write at viking:\/\/user\/team\/memories\/entities\/.+; nothing was stored\. Invalid request parameters/u)
+    expect(error.message).not.toContain('remote content may remain')
+    expect(f.fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['an empty result', () => ok({})],
+    ['no result', () => ok(null)],
+    ['a page instead of JSON', () => new Response('<html>ok</html>', { status: 200 })],
+    ['a refusal of the tags', () => ok({ uri: 'viking://user/team/memories/entities/x.md', tags_updated: false })],
+  ])('counts a memory as tagged only when the server confirms it: %s', async (_name, answer) => {
+    const f = writeFixture({ fetch: async (url, init) => {
+      const path = new URL(String(url))
+      if (path.pathname === '/api/v1/content/read') return ok('Exact canary')
+      if (path.pathname === '/api/v1/content/set_tags') return answer()
+      const input = JSON.parse(String(init?.body)) as { uri: string; content: string }
+      return ok({ uri: input.uri, mode: 'create', context_type: 'memory', content_updated: true,
+        written_bytes: Buffer.byteLength(input.content), semantic_status: 'skipped', vector_status: 'complete' })
+    } })
+    await expect(f.provider.remember(f.body, { content: 'Exact canary', category: 'fact' })).resolves.toMatchObject({ action: 'stored', tagsApplied: false })
+  })
+
+  it('waits at most five seconds for the tags of a memory it already verified', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const f = writeFixture({ requestTimeoutMs: 60_000, fetch: async (url, init) => {
+      const path = new URL(String(url))
+      if (path.pathname === '/api/v1/content/read') return ok('Exact canary')
+      if (path.pathname === '/api/v1/content/set_tags') {
+        return new Promise<Response>((_resolve, reject) => { init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true }) })
+      }
+      const input = JSON.parse(String(init?.body)) as { uri: string; content: string }
+      return ok({ uri: input.uri, mode: 'create', context_type: 'memory', content_updated: true,
+        written_bytes: Buffer.byteLength(input.content), semantic_status: 'skipped', vector_status: 'complete' })
+    } })
+    const receipt = f.provider.remember(f.body, { content: 'Exact canary', category: 'fact' })
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(await Promise.race([receipt, Promise.resolve('waiting')])).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await Promise.race([receipt, Promise.resolve('waiting')])).toMatchObject({ action: 'stored', tagsApplied: false })
+  })
+
   it('requires exact readback even after completed indexing', async () => {
     const f = writeFixture({ readback: 'A summary is not the exact original.' })
     await expect(f.provider.remember(f.body, { content: 'Exact original', category: 'fact' })).rejects.toThrow('stored content does not match')
@@ -94,9 +187,18 @@ describe('OpenViking issue 233 durable writes', () => {
     expect(await f.provider.remember(f.body, request)).toMatchObject({ id: expect.stringContaining('/memories/entities/') })
   })
 
-  it.each([404, 409, 500])('does not retry, extract, or delete after HTTP %s', async status => {
+  it.each([
+    [404, 'nothing was stored'],
+    [408, 'remote content may remain'],
+    [409, 'remote content may remain'],
+    [429, 'nothing was stored'],
+    [500, 'remote content may remain'],
+  ])('does not retry, extract, or delete after HTTP %s', async (status, outcome) => {
     const f = writeFixture({ fetch: async () => new Response(JSON.stringify({ status: 'error', error: { message: `Synthetic HTTP ${status}` } }), { status }) })
-    await expect(f.provider.remember(f.body, { content: 'Canary', category: 'fact' })).rejects.toThrow(`Synthetic HTTP ${status}`)
+    const error = await f.provider.remember(f.body, { content: 'Canary', category: 'fact' }).then(() => new Error('stored'), (reason: unknown) => reason as Error)
+    // A timeout or a conflict can follow a write that happened; any other 4xx is refused before one.
+    expect(error.message).toContain(`Synthetic HTTP ${status}`)
+    expect(error.message).toContain(outcome)
     expect(f.fetchMock).toHaveBeenCalledTimes(1)
   })
 

@@ -13,6 +13,8 @@ export interface MnemonReviewSectionProps {
   sessionId?: string
   workspaceId?: string
   disabled: boolean
+  /** A plan was applied, in full or in part, and wrote memory. */
+  onApplied?: () => void
   t: MnemonTranslate
 }
 
@@ -156,7 +158,9 @@ export function MnemonReviewSection(props: MnemonReviewSectionProps): JSX.Elemen
   const apply = (entry: MnemonReviewEntry): void => {
     const selection = selectionOf(entry)
     if (selection.length === 0) { setComplaint(t('review.noSelection')); return }
-    submit(entry.id, api => api.applyReview(entry.id, selection).then(result => {
+    // A plan stops at the first operation that fails and keeps the ones that ran, so
+    // the memory views read again whether or not it finished.
+    submit(entry.id, api => api.applyReview(entry.id, selection).finally(() => props.onApplied?.()).then(result => {
       setNotice(t('review.applied', { count: result.applied }))
       // What ran is what the ledger now records; the ledger is re-read, so the plan keeps
       // only the positions still left to decide.
@@ -269,17 +273,6 @@ export function MnemonReviewSection(props: MnemonReviewSectionProps): JSX.Elemen
           onClick={() => { submit('load', refresh) }}>{t('review.refresh')}</Button>
       </div>
     </SettingRow>
-    {/* What the background actually does, in the order it does it: the two lines
-        above are buttons, and a reader who cannot tell a timer from a plan will
-        wait for a proposal that nothing scheduled. */}
-    <div className={css.reviewRules}>
-      <strong>{t('review.rulesTitle')}</strong>
-      <ul>
-        <li>{t('review.rulesPull')}</li>
-        <li>{t('review.rulesDiff')}</li>
-        <li>{t('review.rulesPlan')}</li>
-      </ul>
-    </div>
     <div className={css.reviewGuidance}>
       <label htmlFor="mnemon-review-guidance">{t('review.guidanceLabel')}</label>
       <input id="mnemon-review-guidance" type="text" value={guidance} placeholder={t('review.guidancePlaceholder')}

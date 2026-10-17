@@ -85,7 +85,10 @@ function requestedLimit(value: unknown): number | undefined {
 }
 function success(value: unknown): RpcResult<unknown> { return { ok: true, value } }
 function failure(error: unknown): RpcResult<unknown> {
-  return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} } }
+  // A named failure, such as a sync remote that refused the credentials, carries its
+  // reason so the page can state it in its own language; the message stays as written.
+  const reason = error instanceof Error ? (error as { reason?: unknown }).reason : undefined
+  return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: typeof reason === 'string' ? { reason } : {} } }
 }
 function badRequest(message: string): RpcResult<unknown> {
   return { ok: false, error: { code: 'bad-request', message, details: { issues: [] } } }
@@ -97,7 +100,7 @@ const SPACE_READ_CAPABILITIES: Record<string, MemoryCapability> = {
 }
 const SPACE_WRITE_CAPABILITIES: Record<string, MemoryCapability> = {
   remember: 'write', link: 'link', forget: 'forget', 'body-create': 'write', 'body-update': 'write',
-  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain',
+  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain', 'embedding-fill': 'maintain',
 }
 
 // Optional product workflows. They are not Source or Core operations and are

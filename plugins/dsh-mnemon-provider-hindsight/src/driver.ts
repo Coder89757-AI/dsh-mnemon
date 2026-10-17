@@ -16,6 +16,20 @@ import type {
 import { HttpMemoryProvider, firstArray, jsonArray, jsonNumber, jsonObject, jsonString, type HttpProviderOptions } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
 import { NORMALIZED_RELEVANCE_SCORE, type MemoryProviderAdapter, type ProviderBodyStatus as ProviderSpaceStatus, type ProviderMemorySpace, type ProviderSearchResult } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
 
+/**
+ * An entity name without the note Hindsight may append in parentheses, `Alice (person)`. The same
+ * result as removing /\s*\([^)]*\)\s*$/u, in one pass: that pattern took quadratic time on a
+ * name of many "(" without a ")", and the name comes from the server.
+ */
+function withoutTrailingNote(entry: string): string {
+  const trimmed = entry.trimEnd()
+  if (!trimmed.endsWith(')')) return entry.trim()
+  const close = trimmed.length - 1
+  // The leftmost "(" after the last ")" before the closing one: a note holds no ")" of its own.
+  const open = trimmed.indexOf('(', trimmed.lastIndexOf(')', close - 1) + 1)
+  return open < 0 || open >= close ? entry.trim() : trimmed.slice(0, open).trim()
+}
+
 function insight(value: unknown): Insight | undefined {
   const item = jsonObject(value)
   const id = jsonString(item?.id)
@@ -28,7 +42,7 @@ function insight(value: unknown): Insight | undefined {
   const entities = Array.isArray(rawEntities)
     ? rawEntities.filter((entry): entry is string => typeof entry === 'string')
     : typeof rawEntities === 'string'
-      ? rawEntities.split(',').map(entry => entry.replace(/\s*\([^)]*\)\s*$/u, '').trim()).filter(Boolean)
+      ? rawEntities.split(',').map(withoutTrailingNote).filter(Boolean)
       : []
   const tags = jsonArray(item?.tags).filter((entry): entry is string => typeof entry === 'string')
   return {

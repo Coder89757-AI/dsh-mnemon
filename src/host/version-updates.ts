@@ -92,6 +92,16 @@ const PACKAGE_MANIFEST_PATH = [new URL('../package.json', import.meta.url), new 
  * these same files while the loaded modules stay in memory until DSH restarts.
  */
 const LOADED_VERSION = manifest(PACKAGE_MANIFEST_PATH)?.version
+/**
+ * The version of the package this process loaded, for anything that has to name the build it came
+ * from — a Pack manifest, a backup a person keeps. Resolving `package.json` relative to this
+ * module is what makes it work from `src/` under a test runner and from `lib/` once built: the
+ * candidate list steps up to the root that holds the manifest either way. A harness that imports
+ * these sources without a package root reads none, so `0.0.0` stands in rather than failing.
+ */
+export function pluginPackageVersion(): string {
+  return LOADED_VERSION ?? '0.0.0'
+}
 const CHECK_TIMEOUT_MS = 10_000
 const UPDATE_TIMEOUT_MS = 10 * 60_000
 /** A check waits this long for an update that is finishing, within the browser's 15 s check deadline. */

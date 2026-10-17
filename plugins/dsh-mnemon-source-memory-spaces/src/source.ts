@@ -131,6 +131,31 @@ function placementDecision(value: MemoryJsonValue | undefined): MemoryPlacementD
   }
 }
 
+/**
+ * Why this turn's View cannot forget from a Memory Space it does not read (#390). The View is
+ * pinned for the turn, so switching a space on reaches a forget from the next turn only, and
+ * whether a space is on stays the user's choice.
+ */
+function outsideView(service: MemorySpacesService, memoryBodyId: string): string {
+  const catalog = service.spaceDirectory()
+  const body = catalog.items.find(candidate => candidate.id === memoryBodyId)
+  if (body === undefined) return `Memory Space ${JSON.stringify(memoryBodyId)} does not exist`
+  const space = `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name})`
+  if (!body.active) return `${space} is switched off, so this turn's View does not read it and cannot forget from it. Whether it is on is the user's choice, on the Memory Spaces page; once it is on, a forget there works from the next turn`
+  if (body.providerEnabled === false) return `${space} uses ${body.provider.label}, which is turned off on the dsh-mnemon page under Plugins`
+  const provider = catalog.providers.find(candidate => candidate.id === body.provider.id)
+  if (provider?.serviceConfigured === false) return `${space} uses ${body.provider.label}, which is not available here${(provider.typeId ?? provider.id) === 'mnemon-native' ? ': the Mnemon CLI is not installed' : ''}`
+  return `${space} was switched on after this turn began, so this turn's View does not read it yet; a forget there works from the next turn`
+}
+
+/** The switched-off spaces a forget cannot reach this turn, named only when there are some (#390). */
+function switchedOffSpaces(service: MemorySpacesService): string {
+  const off = service.spaceDirectory().items.filter(body => !body.active)
+  if (off.length === 0) return ''
+  const names = off.slice(0, 5).map(body => JSON.stringify(body.name)).join(', ')
+  return `. Switched-off spaces (${names}${off.length > 5 ? ` and ${off.length - 5} more` : ''}) are outside this View; one the user switches on is read from the next turn`
+}
+
 function managementResult(service: MemorySpacesService, value: unknown): MemorySourceManagementResult {
   return { revision: service.memoryRevision(), value: value as MemoryJsonValue }
 }
@@ -208,6 +233,7 @@ async function manageMemorySpaces(service: MemorySpacesService, request: MemoryS
 
   if (!request.confirmed) throw new Error('Memory Spaces management mutation requires explicit confirmation')
   switch (request.operation) {
+    case 'embedding-fill': return managementResult(service, await service.embedMissing(text(input.memoryBodyId, 'memoryBodyId', 300)!, request.signal))
     case 'provider-service-update': {
       const providerId = text(input.providerId, 'providerId', 128)!
       await service.updateProviderService(
@@ -277,6 +303,8 @@ async function manageMemorySpaces(service: MemorySpacesService, request: MemoryS
       input.deactivateSources !== false, request.signal,
     ))
     case 'reload': service.memorySpaces.reload(); return managementResult(service, { reloaded: true })
+    // Namespaces a Provider gained since its settings were saved, mounted inactive (#373).
+    case 'provider-rediscover': return managementResult(service, await service.rediscoverProviders(input.trigger === 'startup' ? 'startup' : 'manual', request.signal))
     case 'body-delete': return managementResult(service, await service.deleteSpace(text(input.memoryBodyId, 'memoryBodyId', 300)!, request.signal))
     default: throw new Error(`unsupported Memory Spaces management mutation operation: ${request.operation}`)
   }
@@ -644,9 +672,12 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           result = await service.link(sourceId, targetId, edge, weight, text(input.reason, 'reason', 1_000, false), request.signal, bodyId) as MemoryJsonValue
         } else if (request.offer.sourceActionId === 'forget') {
           const id = text(input.id, 'id', 2_000)!
+          // A space this View does not read says why, rather than looking like a missing memory (#390).
+          const named = text(input.memoryBodyId, 'memoryBodyId', 300, false)
+          if (named !== undefined && !allowedBodies.includes(named)) throw new Error(outsideView(service, named))
           bodyId = await admittedOwner(id)
           if (bodyId === undefined || !allowedBodies.includes(bodyId)) {
-            throw new Error('forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it')
+            throw new Error(`forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it${switchedOffSpaces(service)}`)
           }
           result = await service.forget(id, request.signal, bodyId) as MemoryJsonValue
         } else {

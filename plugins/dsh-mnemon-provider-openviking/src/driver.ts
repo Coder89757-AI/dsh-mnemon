@@ -11,7 +11,7 @@ import type {
   RememberRequest,
   SearchRequest,
 } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
-import { NORMALIZED_RELEVANCE_SCORE, type MemoryProviderAdapter, type ProviderBodyStatus as ProviderSpaceStatus, type ProviderMemorySpace, type ProviderSearchResult } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
+import { CATEGORIES, NORMALIZED_RELEVANCE_SCORE, type MemoryProviderAdapter, type ProviderBodyStatus as ProviderSpaceStatus, type ProviderMemorySpace, type ProviderSearchResult } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
 
 interface OpenVikingEnvelope {
   status?: string
@@ -44,6 +44,14 @@ function number(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+/** The categories Mnemon writes; anything else is stored, and read back, as general. */
+const CATEGORY_NAMES = new Set<string>(CATEGORIES)
+
+function categoryOf(value: unknown): string {
+  const category = string(value)?.trim().toLowerCase()
+  return category !== undefined && CATEGORY_NAMES.has(category) ? category : 'general'
+}
+
 // Agent-authored memories use the content API; extraction counters cannot
 // prove that a one-turn session stored the caller's text.
 const MEMORY_FOLDERS: Record<string, string> = {
@@ -55,12 +63,22 @@ const MEMORY_FOLDERS: Record<string, string> = {
   general: 'entities',
 }
 
+/**
+ * The slug's share of a file name, which Linux caps at 255 bytes: the stamp, the longest
+ * category, the UUID and the separators take 66, so 48 characters of four bytes would not fit.
+ */
+const SLUG_BYTES = 180
+
 function memoryUri(root: string, category: string, content: string): string {
   const folder = Object.hasOwn(MEMORY_FOLDERS, category) ? MEMORY_FOLDERS[category] : 'entities'
   const firstLine = content.split('\n').find(line => line.trim().length > 0) ?? 'memory'
-  const slug = Array.from(firstLine.replace(/^#+\s*/u, '').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/gu, '')).slice(0, 48).join('').toLowerCase() || 'memory'
+  const characters = Array.from(firstLine.replace(/^#+\s*/u, '').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/gu, '')).slice(0, 48)
+  while (Buffer.byteLength(characters.join('').toLowerCase()) > SLUG_BYTES) characters.pop()
+  const slug = characters.join('').toLowerCase() || 'memory'
   const stamp = new Date().toISOString().replace(/[-:T]/gu, '').slice(0, 14)
-  return `${root}/${folder}/${stamp}-${slug}-${randomUUID()}.md`
+  // Folders hold two categories each, so the category travels in the file name too. The slug
+  // never contains '_' and a UUID never does, so `_<category>-<uuid>.md` reads back exactly.
+  return `${root}/${folder}/${stamp}-${slug}_${category}-${randomUUID()}.md`
 }
 
 function safeUser(user: string): boolean {
@@ -89,10 +107,24 @@ function queueFailed(value: unknown): boolean {
   })
 }
 
-function categoryFromUri(uri: string): string {
+/** What a folder holds, for files written before the category was in the name or by OpenViking itself. */
+const FOLDER_CATEGORIES: Record<string, string> = { preferences: 'preference', experiences: 'insight', events: 'context', entities: 'fact' }
+
+/** The category in the file name Mnemon wrote, else one the server reports, else the folder's. */
+function categoryFromUri(uri: string, reported?: unknown): string {
+  const named = /_([a-z]+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$/u.exec(uri)?.[1]
+  if (named !== undefined && CATEGORY_NAMES.has(named)) return named
+  const stated = string(reported)
+  if (stated !== undefined && CATEGORY_NAMES.has(stated)) return stated
   const marker = '/memories/'
-  const suffix = uri.includes(marker) ? uri.slice(uri.indexOf(marker) + marker.length) : ''
-  return suffix.split('/')[0]?.replace(/\.md$/u, '') || 'general'
+  const folder = (uri.includes(marker) ? uri.slice(uri.indexOf(marker) + marker.length) : '').split('/')[0] ?? ''
+  return Object.hasOwn(FOLDER_CATEGORIES, folder) ? FOLDER_CATEGORIES[folder]! : 'general'
+}
+
+/** Whether the server turned the request down as sent, so it wrote nothing: not a timeout or a server fault. */
+function refused(error: unknown): boolean {
+  const status = (error as { status?: unknown } | undefined)?.status
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 409
 }
 
 export class OpenVikingProvider implements MemoryProviderAdapter {
@@ -181,12 +213,16 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
           id: uri,
           externalUri: uri,
           content: string(item?.overview) ?? string(item?.abstract) ?? uri,
-          category: string(item?.category) ?? categoryFromUri(uri),
+          category: categoryFromUri(uri, item?.category),
           source: 'external',
           ...(score === undefined ? {} : { score }),
         }]
       }).slice(0, request.limit)
-    return { results: await Promise.all(matches.map(async item => ({ ...item, content: await this.readContent(body, item.id, signal) }))) }
+    const { read, skipped } = await this.readAll(body, matches, signal)
+    return {
+      results: read,
+      ...(skipped === 0 ? {} : { hint: `${skipped} OpenViking ${skipped === 1 ? 'result' : 'results'} could not be read and ${skipped === 1 ? 'was' : 'were'} left out; the server's index can list a file it no longer holds.` }),
+    }
   }
 
   async graph(body: MemorySpace, signal?: AbortSignal): Promise<MemoryGraphSnapshot> {
@@ -211,33 +247,55 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
       const uri = string(item?.uri)
       return item === undefined || uri === undefined || item.isDir === true || !isMemoryFile(uri, memoryRoot) ? [] : [{ item, uri }]
     }).slice(0, limit)
-    return Promise.all(files.map(async ({ item, uri }): Promise<Insight> => {
-      const content = await this.readContent(body, uri, signal)
+    const { read } = await this.readAll(body, files.map(({ item, uri }) => ({ id: uri, item })), signal)
+    return read.map(({ item, id, content }): Insight => {
       const createdAt = string(item.modTime)
       return {
-        id: uri,
-        externalUri: uri,
+        id,
+        externalUri: id,
         content,
-        category: categoryFromUri(uri),
+        category: categoryFromUri(id),
         source: 'external',
         ...(createdAt === undefined ? {} : { createdAt }),
       }
-    }))
+    })
+  }
+
+  /**
+   * Each listed memory with its full content, leaving out one the server cannot read: its index
+   * can still list a file it no longer holds. When none can be read, the first failure is the
+   * answer, so a server that cannot be reached is never shown as an empty space, and a cancelled
+   * turn stops at once.
+   */
+  private async readAll<T extends { id: string }>(body: MemorySpace, items: readonly T[], signal?: AbortSignal): Promise<{ read: Array<T & { content: string }>; skipped: number }> {
+    const settled = await Promise.allSettled(items.map(async item => ({ ...item, content: await this.readContent(body, item.id, signal) })))
+    signal?.throwIfAborted()
+    const read = settled.flatMap(outcome => outcome.status === 'fulfilled' ? [outcome.value] : [])
+    const failed = settled.find(outcome => outcome.status === 'rejected')
+    if (read.length === 0 && failed !== undefined) throw failed.reason
+    return { read, skipped: settled.length - read.length }
   }
 
   async remember(body: MemorySpace, request: RememberRequest, signal?: AbortSignal): Promise<JsonValue> {
     const root = await this.memoryRoot(body, signal)
-    const category = string(request.category) ?? 'general'
+    const category = categoryOf(request.category)
     const uri = memoryUri(root, category, request.content)
     const tags = ['source=mnemon', `category=${category}`]
     const importance = number(request.importance)
     if (importance !== undefined) tags.push(`importance=${importance}`)
     const writtenBytes = Buffer.byteLength(request.content, 'utf8')
+    let written: Record<string, unknown> | undefined
     try {
-      const written = object(await this.request(body, '/api/v1/content/write', {
+      written = object(await this.request(body, '/api/v1/content/write', {
         method: 'POST',
-        body: JSON.stringify({ uri, content: request.content, mode: 'create', wait: true, timeout: this.requestTimeoutMs / 1000, tags }),
+        // WriteContentRequest takes these fields alone and refuses any other with HTTP 400 (OpenViking 0.4.16, #353).
+        body: JSON.stringify({ uri, content: request.content, mode: 'create', wait: true, timeout: this.requestTimeoutMs / 1000 }),
       }, { signal }))
+    } catch (error) {
+      if (refused(error)) throw new Error(`OpenViking refused the write at ${uri}; nothing was stored. ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+      throw new Error(`OpenViking write was not verified at ${uri}; remote content may remain. Inspect this URI before retrying. ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+    }
+    try {
       if (written?.uri !== uri || written.content_updated !== true || written.written_bytes !== writtenBytes
         || written.mode !== 'create' || written.context_type !== 'memory'
         || written.vector_status !== 'complete' || !['complete', 'skipped'].includes(String(written.semantic_status))
@@ -262,6 +320,24 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
       summary: `OpenViking stored the memory at ${uri} (category ${category}).`,
       writtenBytes,
       vectorStatus: 'complete',
+      tagsApplied: await this.tag(body, uri, tags, signal),
+    }
+  }
+
+  /**
+   * Label a verified memory. Tags only describe it - its category is in the URI too - so a server
+   * without the endpoint, one that refuses or does not confirm the call, or one that is slow to
+   * answer leaves an exact memory that is just untagged. The wait is short, as for `/health`:
+   * the receipt is already true.
+   */
+  private async tag(body: MemorySpace, uri: string, tags: string[], signal?: AbortSignal): Promise<boolean> {
+    try {
+      const result = object(await this.request(body, '/api/v1/content/set_tags', { method: 'POST', body: JSON.stringify({ uri, tags, mode: 'replace' }) }, {
+        signal, timeoutMs: Math.min(this.requestTimeoutMs, 5_000),
+      }))
+      return result?.tags_updated === true
+    } catch {
+      return false
     }
   }
 
@@ -358,7 +434,7 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
       const envelope = await response.json().catch(() => ({})) as OpenVikingEnvelope
       if (!response.ok || envelope.status === 'error') {
         const trace = envelope.error?.trace_id ?? envelope.trace_id
-        throw new Error(`${envelope.error?.message ?? `OpenViking HTTP ${response.status}`}${trace === undefined ? '' : ` (trace ${trace})`}`)
+        throw Object.assign(new Error(`${envelope.error?.message ?? `OpenViking HTTP ${response.status}`}${trace === undefined ? '' : ` (trace ${trace})`}`), { status: response.status })
       }
       return envelope.result ?? envelope
     } catch (error) {

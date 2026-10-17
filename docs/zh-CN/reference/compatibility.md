@@ -6,7 +6,7 @@ Starter 固定经过测试的官方插件组合。下表记录验证范围，不
 
 | 组件 | 基线 | 已验证的范围 |
 |---|---|---|
-| DSH | `0.2.0-rc.2`（npm `latest` 与 `next`）、`0.1.7-rc.2` | 两个受支持的宿主；`0.2.0-rc.1` 也可安装。0.1.7-rc.2 是锁定的开发基线：正式发布的契约、WebUI 与隔离 Headless 激活、profile 设置与旧设置恢复、Session V4 中的生产者专属消息、插件管理器激活以及 Agent Teams 审查矩阵。DSH 0.2 的验证范围见[下文](#dsh-02) |
+| DSH | `0.2.0-rc.2`（npm `latest` 与 `next`）、`0.1.7-rc.2` | 两个受支持的宿主；`0.2.0-rc.1` 也可安装；`0.2.1-alpha.2`（npm `alpha`）通过了[下文](#dsh-02)所列的检查。0.1.7-rc.2 是锁定的开发基线：正式发布的契约、WebUI 与隔离 Headless 激活、profile 设置与旧设置恢复、Session V4 中的生产者专属消息、插件管理器激活以及 Agent Teams 审查矩阵。DSH 0.2 的验证范围见[下文](#dsh-02) |
 | Node.js | `22.19`、`24` | 分别用于源码 CI 与打包制品 CI；开发要求 `^22.19.0 || >=24.0.0` |
 | Node.js 20 | 仅公开包入口导入 | 不代表 DSH Host 能在 Node 20 运行 |
 | Mnemon Native CLI | `0.2.9` | 显式启用的真实 CLI 与临时数据测试；CLI 需要另外安装 |
@@ -22,13 +22,27 @@ Root 的 DSH peer（`dsh-app-boot` 为可选）与记忆空间 Source 的 `dsh-c
 
 ## DSH 0.2
 
-DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查插件所有 `@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` peer 范围，预发布版本也参与比较。`^0.1.7-rc.2` 不包含 0.2.0，因此 dsh-mnemon 0.5.18 及更早的版本在 DSH 0.2 上安装时会被判为不兼容而拒绝，已安装的会在启动时停用。0.5.19 起，这些 peer 同时接受 `^0.2.0-rc.1`；`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的检查，覆盖 0.1.7-rc.2、0.2.0-rc.1 与 0.2.0-rc.2。
+DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查插件所有 `@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` peer 范围，预发布版本也参与比较。`^0.1.7-rc.2` 不包含 0.2.0，因此 dsh-mnemon 0.5.18 及更早的版本在 DSH 0.2 上安装时会被判为不兼容而拒绝，已安装的会在启动时停用。0.5.19 起，这些 peer 同时接受 `^0.2.0-rc.1`；`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的检查，覆盖 0.1.7-rc.2、0.2.0-rc.1、0.2.0-rc.2 与 0.2.1-alpha.2。
 
 **升级顺序。** 先在现有 DSH 中把 dsh-mnemon 更新到 0.5.19 或更新的版本，再升级 DSH。若先升级了 DSH，旧版本会被停用，记忆数据不受影响；更新插件后即可恢复。不要用 `allow-version` 为旧版本放行。
 
 **已验证的范围（0.2.0-rc.2）。** [v0.5.22 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)在全新的 0.2.0-rc.2 profile 上通过**添加插件**安装发布包，无需重启即可启用，并检查状态页、运行时记忆、Native 空间以及 CLI 与 WebUI 共享的检索。[侧栏入口记录](../../pr-assets/issue-318-sidebar-entry/README.zh-CN.md)显示其面板行与图标尺寸与 0.1.7-rc.2 相同。
 
 **已验证的范围（0.2.0-rc.1）。** 全局安装正式 DSH 0.2.0-rc.1 后，从空白 profile 通过命令行与插件页两种方式安装、界面中“立即启用”无需重启、状态页、运行时记忆写入、真实模型的首轮对话与存入记忆、Headless 任务，以及桌面版窗口与远程页面的读写路由；另将全部 DSH 开发依赖切换到 0.2.0-rc.1：类型检查、构建、全部插件测试与 Headless 验证通过，根测试中只有核对锁定开发基线本身的断言不同。截图见[安装图集](../../assets/install-v0.5.19/README.md)。
+
+**0.2.1-alpha.2 上的记忆子 Agent。** DSH 0.2.1-alpha.2（npm `alpha`）移除了一次性的 `subagents.start`：所有子 Agent 都改由 `startActivation` 启动，spawn 与 fork 两个 provider 把它作为托管 activation 运行。dsh-mnemon 0.5.25 及更早版本用 `start` 启动每个记忆子 Agent，因此在 0.2.1-alpha.2 上，所有委派任务都会报 `this.subagents.start is not a function`（[#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356)）。这包括 `mnemon_remember` 等记忆空间写入、USER.md 压缩、工作记忆归档、空闲审查、存入记忆与项目档案归档。读取，以及放得下的运行时记忆写入，不会启动子 Agent，因此不受影响。
+
+0.5.25 之后的版本改用 `startActivation`，并以 caller 方式交付结果，所以结果回到 Mnemon，对话不会收到完成通知。在 DSH 0.2.0 与 0.1.7 上仍使用 `start`。在 0.2.1-alpha.2 上，所有本地子 Agent 都可以续接，由此带来两点不同：
+- 在对话之下启动的子 Agent，例如委派写入或空闲审查，会以“可继续”出现在对话的子 Agent 列表中。之后模型发来的消息，或你在该列表中发给它的消息，会在 Mnemon 的委派之外续接它：它的记忆写入不再经过原任务的检查（例如空闲审查只写一层的限制），并且每次停止时 DSH 都会通知对话，对话随之回复。Mnemon 无法移除这些条目，请不要续接它们，有需要时直接在对话中提出；
+- 它运行期间会占用对话的一个子 Agent 名额（`maxActiveSubagents`，默认 8 个）。名额用满时，记忆任务会因 `subagent limit reached` 失败。
+
+[issue #356 记录](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)包含 0.2.1-alpha.2 与 0.2.0-rc.2 上 USER.md 压缩的 WebUI 运行，以及两个版本上压缩、空闲审查与 Team 审查的真实宿主测试。
+
+**已验证的范围（0.2.1-alpha.2）。** 0.5.26 之后的版本也处理了 0.2.1-alpha.2 的其余变化：
+- 它的插件页不再列出 Starter 的分组行，因此组件列表上方关于 `dsh-mnemon/bundle` 的说明只在 DSH 列出该行时显示；
+- 每一步之前，如果当前目录已不存在，它会把 Agent 退回会话的原始目录；原始目录也不存在时就停止该 Agent。因此工作区文件夹被删除或移动后，该工作区的后台记忆任务仍然以这个工作区为准（它操作的正是这个工作区的记忆），并在第一个仍存在的工作区或 DSH 的启动目录中运行。
+
+在已安装的 0.2.1-alpha.2 与 0.2.0-rc.2 上，根测试全部通过（六个真实宿主测试使用适配后的副本运行），启用与不启用可选策略的 Headless 以及 Starter 的激活契约也都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因已知的分组行列表问题失败。在 0.2.1-alpha.2 上还检查了 WebUI：从插件页及其配置，到对话记忆、存入记忆、空闲审查、USER.md 压缩、记忆系统各页面、ZIP 备份、Git 同步与远程管理。详情以及在已安装 DSH 上运行测试的配置见 [DSH 0.2.1-alpha.2 记录](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)。
 
 **首次安装时的宿主行为。**
 
@@ -85,7 +99,7 @@ Starter 保留稳定的 group ID 和已有 `mnemon` 配置目标。停用核心�
 
 DSH 0.1.7 用基于 Config 的表单替代了 `settings.register()` 和 `settings-file`。Mnemon 提供动态 Config 字段，现有界面操作通过宿主检查 revision 的 profile 写入器持久化；修改传输权限仍需正常重载插件。
 
-Mnemon 消息使用 Session V3、V4 均接受的生产者专属来源 `dsh-mnemon`。过滤和去重仍识别历史包装，以及 DSH 迁移后的 `plugin:dsh-mnemon` 消息；本改动不会重写已有 Session 文件。
+Mnemon 消息使用 Session V3、V4 均接受的生产者专属来源 `dsh-mnemon`。过滤和去重仍识别历史包装，以及 DSH 迁移后的 `plugin:dsh-mnemon` 消息；本改动不会重写已有 Session 文件。委派的子 Agent 收到的任务则是一条用户消息，以它的首行标记；见[委派的子会话](./workflows.md#委派的子会话)。
 
 启动时，Mnemon 可将 `<profile home>/settings.yaml.imported` 中保留的备份恢复到可编辑的根 `mnemon` 条目，包括根设置、`mnemon-ui` 对话开关，以及仅属于当前 profile 的精确 `mnemon-view-*` / `mnemon-plugins-*` 命名空间。当前 profile 的显式值优先，包括显式清空的插件选择；已有 Source 和 Strategy 条目保持原样；Strategy 条目使用动态表达式时，会保留原表达式并跳过该条目的旧覆盖值，避免将当前求值固定下来。恢复后会在根 Config 中记录 `legacySettingsImported: true`，备份文件保持不变。
 

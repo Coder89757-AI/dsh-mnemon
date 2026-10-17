@@ -37,6 +37,7 @@ import {
   type MnemonSyncPullResult,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
+  type MnemonEmbeddingFill,
   type MnemonEmbeddingStatus,
   type StatusView,
   type TaskAgentModelCatalog,
@@ -93,7 +94,11 @@ export class MnemonClient {
 
   private async call<T>(channel: string, endpoint: string, payload: unknown): Promise<T> {
     const response = await callMnemonRpc(this.connection, channel, endpoint, payload)
-    if (!response.ok) throw new Error(response.error.message)
+    if (!response.ok) {
+      // A failure the Host could name keeps that name, so the page can translate it.
+      const reason = (response.error.details as { reason?: unknown } | undefined)?.reason
+      throw Object.assign(new Error(response.error.message), typeof reason === 'string' ? { reason } : {})
+    }
     return response.value as T
   }
 
@@ -163,6 +168,11 @@ export class MnemonClient {
     return this.call(MNEMON_WRITE_CHANNEL, 'provider-service-update', this.scoped(request))
   }
 
+  /** Fill in the vectors a Mnemon Native space lacks (#392). */
+  fillEmbeddings(memoryBodyId: string): Promise<MnemonEmbeddingFill> {
+    return this.call(MNEMON_WRITE_CHANNEL, 'embedding-fill', this.scoped({ memoryBodyId }))
+  }
+
   /** Settled memory-tool activity of one turn, shared across all mounted tails. */
   async turnActivity(turn: number, cursor = 0): Promise<TurnMemoryActivity | null> {
     const snapshot = await loadTurnActivities(this.connection, this.sessionId, cursor)
@@ -174,7 +184,7 @@ export class MnemonClient {
     return this.call(MNEMON_READ_CHANNEL, 'assistant-message', { sessionId: this.sessionId, messageId })
   }
 
-  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[] }> {
+  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[]; unembedded?: Array<{ memoryBodyId?: string; id?: string }> }> {
     return this.call(MNEMON_WRITE_CHANNEL, 'supervise', this.scoped({ content, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) }))
   }
 
@@ -231,7 +241,7 @@ export class MnemonClient {
   }
 
   /** Saves a patch; the answer never carries the token back. */
-  configureSync(patch: { repoUrl?: string | null; branch?: string; subdir?: string; token?: string | null; authorName?: string; authorEmail?: string; autoBackupMinutes?: number }): Promise<MnemonSyncConfigView> {
+  configureSync(patch: { repoUrl?: string | null; branch?: string; subdir?: string; token?: string | null; authorName?: string; authorEmail?: string; autoBackupMinutes?: number; machineLabel?: string | null }): Promise<MnemonSyncConfigView> {
     return this.call(MNEMON_SYNC_CHANNEL, 'configure', this.scoped(patch))
   }
 
