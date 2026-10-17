@@ -6,6 +6,7 @@ For an existing installation, start with [Compatibility and upgrades](../referen
 
 ## v0.5
 
+- [v0.5.31: DSH 0.2.1-rc.1 Support and Task Agent Model Choice](./v0.5.31.md)
 - [v0.5.30: Write Targets, Vector Coverage and Sync Fixes](./v0.5.30.md)
 - [v0.5.29: Git Sync, Provider and Pack Fixes](./v0.5.29.md)
 - [v0.5.28: Git Sync Usability and Reliability](./v0.5.28.md)

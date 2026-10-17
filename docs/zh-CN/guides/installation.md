@@ -206,7 +206,7 @@ mnemon:
 DSH 在安装插件前，以及每次启动时，都会检查插件声明支持的 DSH 版本，不包含自身版本的插件会被拒绝。截图中是 DSH 0.2.0-rc.1 拒绝只声明支持 DSH 0.1.7 的 dsh-mnemon 0.5.18；各 DSH 接受哪些版本，见[兼容性与升级](../reference/compatibility.md)。
 
 - 先确认 npm 上的版本：`npm view dsh-mnemon version`。
-- 新版本发布后的 24 小时内，pnpm 默认不会选用刚发布的版本，会改装一个较早的版本，于是出现这个提示；一天内连续发布时会退得更早。DSH 接受这个较早的版本时不会有任何提示，请在状态页核对版本号。此时点击**编辑**，输入带版本号的 `dsh-mnemon@0.5.30`（以 `npm view` 显示的版本为准），再点击**安装**；命令行为 `dsh plugin --profile web add dsh-mnemon@0.5.30`。也可以等 24 小时后重试。
+- 新版本发布后的 24 小时内，pnpm 默认不会选用刚发布的版本，会改装一个较早的版本，于是出现这个提示；一天内连续发布时会退得更早。DSH 接受这个较早的版本时不会有任何提示，请在状态页核对版本号。此时点击**编辑**，输入带版本号的 `dsh-mnemon@0.5.31`（以 `npm view` 显示的版本为准），再点击**安装**；命令行为 `dsh plugin --profile web add dsh-mnemon@0.5.31`。也可以等 24 小时后重试。
 - 用带版本号的方式安装后，profile 会固定在这个版本。之后在新版本发布满一天后运行 `dsh plugin --profile web update --latest dsh-mnemon` 升级；一天之内同样带版本号安装新版本。
 - 不要为旧版本执行 `allow-version` 等“接受风险”的操作：旧版本确实没有在该 DSH 上验证过。
 
