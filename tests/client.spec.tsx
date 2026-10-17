@@ -2029,7 +2029,13 @@ describe('MnemonWorkbench', () => {
     expect(call).not.toHaveBeenCalledWith(expect.anything(), 'remember', expect.anything())
   })
 
-  it('says when the task Agent or a write with constraints saved a memory without a vector (#388)', async () => {
+  // Memory Spaces' status says whether DSH manages the embedding settings; one that predates the field says nothing,
+  // and its receipts keep the caution.
+  it.each([
+    [undefined, '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'],
+    [true, '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'],
+    [false, '这条记忆暂未生成向量：当前没有可用的嵌入服务，它暂不参与语义匹配，关键词检索不受影响。连接嵌入服务后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'],
+  ])('says when the task Agent or a write with constraints saved a memory without a vector, DSH managing the embedding: %s (#388)', async (managed, note) => {
     const { connection, call } = createConnection()
     const domain = call.getMockImplementation()!
     call.mockImplementation(async (...args: Parameters<typeof domain>) => {
@@ -2037,22 +2043,25 @@ describe('MnemonWorkbench', () => {
       if (endpoint === 'supervise') return { ok: true, value: { delegated: true, sessionId: 'session-1', runId: 'child-1', provider: 'spawn', summary: '已存入项目记忆空间。', action: 'added', memoryBodyIds: ['project'], unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }] } }
       // Mnemon Native's own receipt for a memory saved while embedding did not succeed, then one with its vector.
       if (endpoint === 'remember') return { ok: true, value: { action: 'added', id: 'memory-2', memoryBodyId: 'project', embedded: call.mock.calls.filter(entry => entry[1] === 'remember').length > 1 } }
+      if (managed !== undefined && (endpoint === 'status' || endpoint === 'status-summary')) {
+        const answer = await domain(...args) as { ok: true; value: Record<string, unknown> }
+        return { ...answer, value: { ...answer.value, embeddingManaged: managed } } as Awaited<ReturnType<typeof domain>>
+      }
       return domain(...args)
     })
     render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} sessionId="session-1" />)
     await waitFor(() => expect(screen.getByText('已连接')).toBeTruthy())
-    const note = '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
 
     await openRememberDialog()
     fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Grafana 在 3300 端口。' } })
     fireEvent.click(await screen.findByRole('button', { name: '交给任务 Agent' }))
     await waitFor(() => expect(screen.getByText('已存入项目记忆空间。')).toBeTruthy())
-    expect(screen.getByText(note)).toBeTruthy()
+    expect(screen.getByText(note).getAttribute('data-tone')).toBe(managed === false ? 'neutral' : 'caution')
 
     fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Prometheus 在 9090 端口。' } })
     fireEvent.click(await screen.findByRole('button', { name: '按约束交给任务 Agent' }))
     await waitFor(() => expect(call).toHaveBeenCalledWith(expect.anything(), 'remember', expect.objectContaining({ content: '预发集群的 Prometheus 在 9090 端口。' })))
-    await waitFor(() => expect(screen.getByText(note)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(note).getAttribute('data-tone')).toBe(managed === false ? 'neutral' : 'caution'))
     expect(screen.queryByText('已存入项目记忆空间。')).toBeNull()
     // A memory saved with its vector reads as before.
     fireEvent.change(screen.getByRole('textbox', { name: '候选内容' }), { target: { value: '预发集群的 Loki 在 3100 端口。' } })

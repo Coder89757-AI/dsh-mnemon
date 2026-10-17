@@ -105,7 +105,7 @@ function MemorySpacesSourceView(props: MemorySourcePageProps & { page: Page }): 
     {page === 'explore' && <ExplorePage client={client} agentClient={client} agentAvailable={client.canAssist('agent-search')} status={status} seed={seed} writeEnabled={writable} onForget={forget} onRevealElement={revealElement} />}
     {page === 'entities' && <EntitiesPage client={client} revision={revision} writeEnabled={writable} onForget={forget} onExplore={explore} />}
     {page === 'content' && <ListPage client={client} revision={revision} writeEnabled={writable} onForget={forget} onClone={insight => remember(insight.content)} onExplore={explore} />}
-    {rememberOpen && <RememberPage client={client} agentAvailable={agentAvailable} memoryBodies={bodies} writeEnabled={writable} seed={seed} onMutate={refresh} onClose={() => setRememberOpen(false)} onView={() => { setRememberOpen(false); setPage('content') }} />}
+    {rememberOpen && <RememberPage client={client} agentAvailable={agentAvailable} memoryBodies={bodies} writeEnabled={writable} seed={seed} embeddingManaged={status?.embeddingManaged} onMutate={refresh} onClose={() => setRememberOpen(false)} onView={() => { setRememberOpen(false); setPage('content') }} />}
     {strategyOpen && preferences !== undefined && <PersistenceStrategyDialog client={client} settingsScope={{ setPath: async (path, value) => {
       if (path.length !== 1 || path[0] !== 'persistenceStrategy') throw new Error('Preference path is outside this Source')
       await preferences.replace(JSON.parse(JSON.stringify({ persistenceStrategy: value })) as MemoryJsonValue)
