@@ -244,6 +244,7 @@ export function defineMemoryStrategy<T extends MemoryStrategyDefinition>(definit
   if (manifest.deterministic !== true) throw new Error('memory Strategy must declare deterministic: true')
   if (typeof definition.compose !== 'function') throw new Error(`memory Strategy compose() is required: ${typeId}`)
   if (definition.createTurn !== undefined && typeof definition.createTurn !== 'function') throw new Error('memory Strategy createTurn must be a function')
+  if (manifest.workflows !== undefined && !Array.isArray(manifest.workflows)) throw new Error('memory Strategy workflows must be a list')
   const normalizedManifest = jsonClone({
     ...manifest,
     typeId,

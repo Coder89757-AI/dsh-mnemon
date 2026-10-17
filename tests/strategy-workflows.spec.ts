@@ -25,6 +25,7 @@ describe('Strategy workflow declarations', () => {
 
   it('rejects a malformed or repeated workflow id but loads one this Core does not know', () => {
     expect(() => define({ workflows: ['Idle Review'] as never })).toThrow(/memory Strategy workflow/)
+    expect(() => define({ workflows: 'idle-review' as never })).toThrow(/workflows must be a list/)
     expect(() => define({ workflows: ['idle-review', 'idle-review'] })).toThrow(/duplicated: idle-review/)
     // A newer Strategy may declare work a later Host runs; this one ignores it instead of refusing the Strategy.
     const newer = define({ workflows: ['idle-review', 'nightly-digest'] as never })

@@ -1,7 +1,7 @@
 import type { ComposableMemoryView, MemoryStrategyManifest, MemoryStrategyWorkflow } from '../core/contracts/index.ts'
 
 /** What the Host reads from a Strategy to decide which background work it drives. */
-export type StrategyDeclaration = Pick<MemoryStrategyManifest, 'typeId'> & Partial<Pick<MemoryStrategyManifest, 'workflows'>>
+export type StrategyDeclaration = Pick<MemoryStrategyManifest, 'typeId' | 'workflows'>
 
 const LAYERED_STRATEGY = 'default-three-tier'
 

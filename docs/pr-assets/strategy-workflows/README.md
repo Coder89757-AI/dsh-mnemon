@@ -6,22 +6,22 @@ Verified on 2026-10-17 (Asia/Shanghai) on `main` `3b33e07e` plus this change, wi
 
 ## What was wrong
 
-The Host decided which background work to run by comparing the Strategy's type id with the Layered strategy's, `default-three-tier`, in three places:
+The Host decided which background work to run by comparing the Strategy's type id with the Layered strategy's, `default-three-tier`:
 
 - `lifecycle.ts` ran idle review only while the configured Strategy was `default-three-tier`, and only after turns a Strategy of that type id composed;
-- `subagent.ts` took over Runtime writes for capacity maintenance (archive older entries first) through `threeTierActionWorkflow`, a helper it imported from the Layered plugin's `extension-sdk`, which compares the same type id.
+- `subagent.ts` took over Runtime writes for capacity maintenance (archive older entries first) at three entry points through `threeTierActionWorkflow`, a helper it imported from the Layered plugin's `extension-sdk`, which compares the same type id.
 
-So the Host had a build-time dependency on one Strategy package, and no other Strategy, General or third-party, could ever opt into either workflow. `docs/plans/plugin-first-ui.md` says the Layered strategy contributes the background tasks it drives; this was the last place where the Host decided that for it.
+So the Host loaded one Strategy package's code (the published 0.5.31 `lib/index.js` imports that `extension-sdk` when it starts), and no other Strategy, General or third-party, could ever opt into either workflow. `docs/plans/plugin-first-ui.md` says the Layered strategy contributes the background tasks it drives; this was the last place where the Host decided that for it.
 
 ## What changes
 
 - **Contract.** `MemoryStrategyManifest` gains an optional `workflows` field, with the known ids in `MEMORY_STRATEGY_WORKFLOWS`: `idle-review` and `runtime-capacity` (`src/core/contracts/view.ts`). `defineMemoryStrategy` checks the ids' shape and rejects duplicates; it keeps ids it does not know, so a newer Strategy still loads.
 - **Layered strategy.** Its manifest declares `workflows: ['idle-review', 'runtime-capacity']`. `threeTierActionWorkflow` stays exported, now marked deprecated.
-- **Host.** `src/host/strategy-workflows.ts` answers "does this Strategy drive this workflow" from the declaration. Idle review reads the declaration of the Strategy that composed the turn, through the generation that holds its definition, and of the configured Strategy as the serving composition installed it. Runtime capacity maintenance reads the declaration of the generation's Strategy at all three entry points (named tools, View Actions, browser management). `subagent.ts` no longer imports the Layered plugin.
+- **Host.** `src/host/strategy-workflows.ts` answers "does this Strategy drive this workflow" from the declaration. When a turn ends, the Host records which Strategy composed it, through the generation that holds its definition, and whether that Strategy declares `idle-review`; idle review then runs only while that Strategy is still the configured one. The check reads only what the turn recorded, so the review timer never looks anything up in the runtime. Runtime capacity maintenance reads the declaration of the generation's Strategy at its three entry points: Runtime writes without a pinned turn, named-tool and View Action writes, and browser management. `subagent.ts` no longer imports the Layered plugin.
 
 ## Equivalence and version skew
 
-For the shipped Strategies nothing changes: the Layered strategy declares exactly what its type id used to stand for, and the General strategy declares nothing. (Scoped composition, Light context and Active capture are Strategy extensions, not Strategies, and have no manifest of this kind.)
+For the shipped Strategies nothing changes: the Layered strategy declares exactly what its type id used to stand for, and the General strategy declares nothing. A third-party Strategy that builds its manifest by spreading the Layered one now copies the declaration as well; `workflows: []` keeps it out, and the changeset and the extension guide say so. (Scoped composition, Light context and Active capture are Strategy extensions, not Strategies, and have no manifest of this kind.)
 
 | Starter | Layered strategy | Result |
 |---|---|---|
@@ -30,14 +30,14 @@ For the shipped Strategies nothing changes: the Layered strategy declares exactl
 | 0.5.31 (published) | this change | both workflows: the old Host keys on the type id and keeps the unknown field |
 | 0.5.31 | 0.5.9 | unchanged |
 
-The third row was checked against the published package: `harness/old-starter-accepts.mjs` loads `dsh-mnemon@0.5.31` and its Layered strategy from a profile installed from npm and defines a Strategy whose manifest carries `workflows`. Result: `{"starter":"0.5.31","accepted":true,"keptWorkflows":["idle-review","runtime-capacity"],"typeId":"default-three-tier"}`.
+The third row was checked against the published package: `harness/old-starter-accepts.mjs` loads `dsh-mnemon@0.5.31` and its Layered strategy from a profile installed from npm and defines a Strategy whose manifest carries `workflows`. Result: `{"starter":"0.5.31","apiVersion":"dsh-mnemon/v1","accepted":true,"keptWorkflows":["idle-review","runtime-capacity"],"typeId":"default-three-tier"}`.
 
 The Layered plugin uses no new Starter export (the field is data), so its `dsh-mnemon` peer floor stays `^0.5.17`.
 
 ## Tests
 
 - `tests/strategy-workflows.spec.ts` (new): the declaration is kept, malformed or repeated ids are rejected, unknown ids load and are ignored; `strategyDrives` follows the declaration (a Layered strategy that declares only `runtime-capacity` gets no idle review) and the type-id fallback applies only to an undeclared Layered strategy; capacity maintenance takes over only the Runtime `mutate` Action; a View's Strategy is read from its generation.
-- `tests/lifecycle.spec.ts`: two new cases, a third-party Strategy that declares `idle-review` is reviewed, and a Layered strategy that does not declare it is not. The fixture's composition can now carry a declared Strategy; the existing 67 cases are unchanged and pass.
+- `tests/lifecycle.spec.ts`: the fixture now pairs every View with the Strategy that composed it, under that Strategy's own generation, as Core does. Every Strategy case runs twice, with the Layered strategy undeclared (as before 0.5.10) and declared (as it ships): a custom configured Strategy, a strategy switch while a review is scheduled, turns composed by a fallback Strategy, turns that ran without memory, and the Layered strategy's own review. New cases: a third-party Strategy that declares `idle-review` is reviewed; a Layered strategy that declares only `runtime-capacity` is not; and a scheduled review is decided even when the runtime would throw, since DSH exits on an exception from a timer.
 - `tests/runtime-capacity-workflow.spec.ts`: a new case archives for an independent Strategy that declares `runtime-capacity`. The existing independent-Strategy case copied the Layered manifest wholesale, so it now states `workflows: []` to keep testing a Strategy that declares nothing.
 - The Layered plugin's own test checks its declaration.
 

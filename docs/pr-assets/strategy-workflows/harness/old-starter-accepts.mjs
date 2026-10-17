@@ -1,5 +1,5 @@
 // old-starter-accepts.mjs <node_modules of a profile with dsh-mnemon 0.5.31>: the published Starter's Core validates a
-// Strategy manifest that carries the new `workflows` field, keeps it, and its Host still keys on the type id.
+// Strategy manifest that carries the new `workflows` field and keeps it unchanged (its Host reads only the type id).
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 const modules = process.argv[2]

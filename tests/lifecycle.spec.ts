@@ -17,6 +17,8 @@ import type {
   HostUserMessage,
 } from "../src/host/dsh.ts"
 import { MnemonLifecycle } from "../src/host/lifecycle.ts"
+import { MemoryCompositionUnavailableError } from '../src/core/generation.ts'
+import type { MemoryStrategyWorkflow } from '../src/core/contracts/index.ts'
 import { IdleReviewError, type MnemonSubagentCoordinator } from "../src/host/subagent.ts"
 import { sessionLog } from './fixtures/session-log.ts'
 
@@ -41,7 +43,18 @@ function durableCandidate(filler = 97): HostUserMessage {
   return userMessage(`Please remember this durable architecture rationale: ${'x'.repeat(filler)}`)
 }
 
-function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> }; strategyWorkflows?: Array<'idle-review' | 'runtime-capacity'> } = {}) {
+/** The Layered strategy as published before 0.5.10, declaring nothing, and as it ships now. */
+const LAYERED = [
+  ['undeclared', undefined],
+  ['declared', { 'default-three-tier': ['idle-review', 'runtime-capacity'] }],
+] as const satisfies ReadonlyArray<readonly [string, Partial<Record<string, readonly MemoryStrategyWorkflow[]>> | undefined]>
+
+/** The View fields Core takes from the Strategy that composed it, one generation per Strategy. */
+function composedBy(typeId: string): { strategyTypeId: string; strategyInstanceKey: string; runtimeGeneration: string } {
+  return { strategyTypeId: typeId, strategyInstanceKey: `strategy:${typeId}`, runtimeGeneration: `fixture-generation:${typeId}` }
+}
+
+function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> }; strategyWorkflows?: Partial<Record<string, readonly MemoryStrategyWorkflow[]>> | undefined } = {}) {
   const agentListeners = new Map<string, Listener>()
   const rootListeners = new Map<string, Listener>()
   const agentSections: Array<{ name: string; order: number; text: () => string }> = []
@@ -174,8 +187,7 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
     activeTurn: vi.fn(() => [...pinnedTurns.values()].at(-1)),
     beginTurn: vi.fn(async (turnId: string, scope: object) => {
       const turn = turnId.slice(turnId.lastIndexOf(':') + 1)
-      const context = { turnId, view: { id: `view-${turn}`, digest: `digest-${turn}`, runtimeGeneration: 'fixture-generation',
-        strategyTypeId: config.memoryTopology.strategyId, strategyInstanceKey: 'strategy:fixture', createdAt: '2026-08-23T00:00:00.000Z',
+      const context = { turnId, view: { id: `view-${turn}`, digest: `digest-${turn}`, ...composedBy(config.memoryTopology.strategyId), createdAt: '2026-08-23T00:00:00.000Z',
         projection: [], readGrants: [], routes: [], actionOffers: [] }, scope, startedAt: '2026-08-23T00:00:00.000Z' }
       pinnedTurns.set(turnId, context)
       return context
@@ -190,14 +202,13 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
     endTurn: vi.fn((turnId: string) => pinnedTurns.delete(turnId)),
   }
   const runtimeBinding = {
-    forAgent: vi.fn((_agent: HostAgent) => {
-      // The serving composition installs the configured Strategy; when a test declares its
-      // workflows, the generation carries its definition as Core would.
-      const strategy = options.strategyWorkflows === undefined ? undefined
-        : { instanceKey: 'strategy:fixture', definition: { manifest: { typeId: config.memoryTopology.strategyId, workflows: options.strategyWorkflows } } }
-      const generation = { sourceInstances: () => [], ...(strategy === undefined ? {} : { strategy }) }
-      return { config, composableTurns, memoryComposition: { generation: () => generation, current: () => strategy === undefined ? undefined : generation } }
-    }),
+    // Each generation holds the definition of the Strategy that composed its Views, as Core's does;
+    // a Strategy without a declaration in the test declares none, as the Layered one before 0.5.10.
+    forAgent: vi.fn((_agent: HostAgent) => ({ config, composableTurns, memoryComposition: { generation: (id: string) => {
+      const typeId = id.slice('fixture-generation:'.length)
+      const workflows = options.strategyWorkflows?.[typeId]
+      return { sourceInstances: () => [], strategy: { instanceKey: `strategy:${typeId}`, definition: { manifest: { typeId, ...(workflows === undefined ? {} : { workflows: [...workflows] }) } } } }
+    } } })),
     bindAgentRuntime: vi.fn((_agentId: string, _graph: unknown): (() => void) => () => undefined),
   }
   const runtimeSource = { ...runtimeBinding, executions: new MemoryExecutions(runtimeBinding as never) }
@@ -1199,9 +1210,9 @@ describe('Mnemon DSH lifecycle integration', () => {
     expect(rememberDecision.messages[1]?.content[0]?.text).not.toContain('mnemon_view_route')
   })
 
-  it('does not send default Source guidance or run three-tier review under a custom Strategy', async () => {
+  it.each(LAYERED)('does not send default Source guidance or run three-tier review under a custom Strategy (%s Layered)', async (_label, strategyWorkflows) => {
     vi.useFakeTimers()
-    const value = fixture(resolveConfig({ idleReviewMs: 5_000, memoryTopology: { strategyId: 'personal-notes' } }))
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000, memoryTopology: { strategyId: 'personal-notes' } }), { strategyWorkflows })
     try {
       const decision = await value.preStep([durableCandidate()], 1)
       if (decision.kind !== 'enter') throw new Error('unexpected rejection')
@@ -1229,10 +1240,39 @@ describe('Mnemon DSH lifecycle integration', () => {
     } finally { value.stop() }
   })
 
-  it('rechecks the selected Strategy before running an already-scheduled default review', async () => {
+  it.each(LAYERED)('reviews the turns the configured Layered strategy composed (%s)', async (_label, strategyWorkflows) => {
+    vi.useFakeTimers()
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows })
+    try {
+      await value.preStep([durableCandidate()], 1)
+      await value.turnStopping(1)
+      await value.preStep([userMessage('one more substantive turn')], 2)
+      await value.turnStopping(2)
+      expect(value.lifecycle.snapshot('session-1').current?.idleReviewPending).toBe(true)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(value.coordinator.review).toHaveBeenCalledOnce()
+    } finally { value.stop() }
+  })
+
+  it('decides a scheduled review without reaching into the runtime again', async () => {
+    vi.useFakeTimers()
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows: LAYERED[1][1] })
+    try {
+      await value.preStep([durableCandidate()], 1)
+      await value.turnStopping(1)
+      await value.preStep([userMessage('one more substantive turn')], 2)
+      await value.turnStopping(2)
+      // DSH exits on an exception thrown from a timer, so the scheduled check uses what the turn recorded.
+      value.runtimeSource.forAgent.mockImplementation(() => { throw new Error('workspace graph unavailable') })
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(value.coordinator.review).toHaveBeenCalledOnce()
+    } finally { value.stop() }
+  })
+
+  it.each(LAYERED)('rechecks the selected Strategy before running an already-scheduled default review (%s Layered)', async (_label, strategyWorkflows) => {
     vi.useFakeTimers()
     const config = resolveConfig({ idleReviewMs: 5_000 })
-    const value = fixture(config)
+    const value = fixture(config, { strategyWorkflows })
     try {
       await value.preStep([durableCandidate()], 1)
       await value.turnStopping(1)
@@ -1247,7 +1287,7 @@ describe('Mnemon DSH lifecycle integration', () => {
 
   it('runs idle review for a third-party Strategy that declares it', async () => {
     vi.useFakeTimers()
-    const value = fixture(resolveConfig({ idleReviewMs: 5_000, memoryTopology: { strategyId: 'personal-notes' } }), { strategyWorkflows: ['idle-review'] })
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000, memoryTopology: { strategyId: 'personal-notes' } }), { strategyWorkflows: { 'personal-notes': ['idle-review'] } })
     try {
       await value.preStep([durableCandidate()], 1)
       await value.turnStopping(1)
@@ -1263,7 +1303,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     vi.useFakeTimers()
     // A Layered strategy that declares only capacity maintenance opts out of idle review;
     // without a declaration at all, as copies before 0.5.10 have, its type id stands for both.
-    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows: ['runtime-capacity'] })
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows: { 'default-three-tier': ['runtime-capacity'] } })
     try {
       await value.preStep([durableCandidate()], 1)
       await value.turnStopping(1)
@@ -1276,14 +1316,14 @@ describe('Mnemon DSH lifecycle integration', () => {
     } finally { value.stop() }
   })
 
-  it('runs three-tier review only over turns that three-tier composed', async () => {
+  it.each(LAYERED)('runs three-tier review only over turns that three-tier composed (%s Layered)', async (_label, strategyWorkflows) => {
     vi.useFakeTimers()
-    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }))
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows })
     const pin = value.composableTurns.beginTurn.getMockImplementation()!
     // The selected Strategy is off, so the only installed one composes instead.
     value.composableTurns.beginTurn.mockImplementation(async (turnId: string, scope: object) => {
       const context = await pin(turnId, scope)
-      context.view.strategyTypeId = 'general'
+      Object.assign(context.view, composedBy('general'))
       return context
     })
     try {
@@ -1296,6 +1336,24 @@ describe('Mnemon DSH lifecycle integration', () => {
       await vi.advanceTimersByTimeAsync(10_000)
       expect(value.coordinator.review).not.toHaveBeenCalled()
     } finally { value.stop() }
+  })
+
+  it.each(LAYERED)('runs no idle review after turns that ran without memory (%s Layered)', async (_label, strategyWorkflows) => {
+    vi.useFakeTimers()
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows })
+    // No composition is serving, so the turns run without a View.
+    value.composableTurns.beginTurn.mockRejectedValue(new MemoryCompositionUnavailableError({ state: 'incomplete', contributionRevision: 0, sourceInstanceKeys: [],
+      diagnostics: [{ code: 'missing-strategy', message: 'No Memory Strategy contribution is installed.' }] }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      await value.preStep([durableCandidate()], 1)
+      await value.turnStopping(1)
+      await value.preStep([userMessage('one more substantive turn')], 2)
+      await value.turnStopping(2)
+      expect(value.lifecycle.snapshot('session-1').current?.idleReviewPending).toBe(false)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(value.coordinator.review).not.toHaveBeenCalled()
+    } finally { warn.mockRestore(); value.stop() }
   })
 
   it('delegates memory-tab candidates directly to an isolated memory subagent', async () => {
