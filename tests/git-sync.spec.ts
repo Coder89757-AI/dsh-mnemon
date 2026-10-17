@@ -516,7 +516,7 @@ describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
     index.documents[0]!.contentHash += '6'
     writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`)
 
-    await expect(machineA.sync.push({ message: 'First push' })).rejects.toThrow('Documents index contains invalid metadata')
+    await expect(machineA.sync.push({ message: 'First push' })).rejects.toThrow('Documents index records a content hash that is not a sha256 digest')
     // The branch is where the damage would have landed, and nothing reached it.
     expect((await git(['branch', '--list', 'mnemon-sync'], origin)).trim()).toBe('')
     expect(await git(['status', '--porcelain'], join(machineA.root, 'state', 'sync', 'git'))).toBe('')

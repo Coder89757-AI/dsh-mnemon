@@ -58,21 +58,27 @@ describe('Documents index integrity', () => {
     expect(indexOf(source.root).documents[0]!.contentHash).toMatch(/^[a-f0-9]{64}$/u)
   })
 
-  it('rejects a content hash one character too long', async () => {
+  it('refuses to publish a content hash one character too long, and still backs it up', async () => {
     const source = await fixture('documents-hash-long')
     // The value the reported store carried: a real sha256 digest plus one trailing character.
     damage(source.root, document => ({ ...document, contentHash: document.contentHash + '6' }))
     expect(indexOf(source.root).documents[0]!.contentHash).toHaveLength(65)
 
-    await expect(source.manager.exportPack('documents')).rejects.toThrow('Documents index contains invalid metadata')
-    await expect(source.manager.exportPack('documents', { stamp: true })).rejects.toThrow('Documents index contains invalid metadata')
+    await expect(source.manager.exportPack('documents', { stamp: true })).rejects.toThrow('Documents index records a content hash that is not a sha256 digest for documents/active/')
+    // The ZIP path reads the same index, and the store this report describes is one that has to be backed up before it is repaired.
+    const backup = await source.manager.exportPack('documents')
+    expect(backup.bytes).toBeGreaterThan(0)
+    // The backup cannot carry the bad index anywhere else: importing it is refused by the same rule.
+    const target = await fixture('documents-hash-long-target')
+    await expect(target.manager.importPack(backup.base64, { mode: 'merge' })).rejects.toThrow('Documents index records a content hash that is not a sha256 digest for documents/active/')
   })
 
-  it('rejects a content hash that is the right length but not hexadecimal', async () => {
+  it('refuses to publish a content hash that is the right length but not hexadecimal', async () => {
     const source = await fixture('documents-hash-non-hex')
     damage(source.root, document => ({ ...document, contentHash: 'Z'.repeat(64) }))
 
-    await expect(source.manager.exportPack('documents')).rejects.toThrow('Documents index contains invalid metadata')
+    await expect(source.manager.exportPack('documents', { stamp: true })).rejects.toThrow('Documents index records a content hash that is not a sha256 digest for documents/active/')
+    await expect(source.manager.exportPack('documents')).resolves.toMatchObject({ bytes: expect.any(Number) })
   })
 
   it('refuses to publish a size the payload cannot hold', async () => {

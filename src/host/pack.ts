@@ -351,7 +351,7 @@ function parseDocumentIndex(value: unknown): DocumentIndex {
     if (typeof item?.id !== 'string' || item.id.trim() === '' || ids.has(item.id)) throw new Error('Documents index contains an invalid or duplicate id')
     if (typeof item.title !== 'string' || typeof item.description !== 'string' || (item.status !== 'active' && item.status !== 'archived')) throw new Error('Documents index contains an invalid record')
     if (typeof item.filename !== 'string' || basename(item.filename) !== item.filename || !/^[a-zA-Z0-9._-]+\.md$/u.test(item.filename)) throw new Error('Documents index contains an unsafe filename')
-    if (typeof item.createdAt !== 'string' || typeof item.updatedAt !== 'string' || typeof item.lastAccessedAt !== 'string' || !Number.isSafeInteger(item.revision) || typeof item.contentHash !== 'string' || !CONTENT_HASH.test(item.contentHash) || !Number.isSafeInteger(item.sizeBytes)) throw new Error('Documents index contains invalid metadata')
+    if (typeof item.createdAt !== 'string' || typeof item.updatedAt !== 'string' || typeof item.lastAccessedAt !== 'string' || !Number.isSafeInteger(item.revision) || typeof item.contentHash !== 'string' || !Number.isSafeInteger(item.sizeBytes)) throw new Error('Documents index contains invalid metadata')
     if (!Array.isArray(item.sourcePaths) || !Array.isArray(item.sessionIds) || !Array.isArray(item.memoryBodyIds)) throw new Error('Documents index contains invalid lists')
     ids.add(item.id)
     return {
@@ -395,9 +395,11 @@ function validDatabase(bytes: Uint8Array, path: string): void {
  * disagree while neither looks malformed: an index a person edited, a write that stopped halfway,
  * or a store an older version repaired by hand. The import path and the publish path judge that
  * pair by this one rule, so a payload this machine would refuse from another machine is never one
- * this machine produces.
+ * this machine produces. Reading the index does not judge the digest's shape: a ZIP backup reads
+ * the same index, and a store that needs repair still has to download as one.
  */
 function assertDocumentPayload(document: DocumentRecord, bytes: Uint8Array): void {
+  if (!CONTENT_HASH.test(document.contentHash)) throw new Error(`Documents index records a content hash that is not a sha256 digest for ${document.relativePath}`)
   if (bytes.length !== document.sizeBytes) throw new Error(`Documents payload size does not match ${document.relativePath}`)
   const markdown = utf8(bytes, `payload/${document.relativePath}`)
   const frontmatterEnd = markdown.startsWith('---\n') ? markdown.indexOf('\n---\n', 4) : -1
