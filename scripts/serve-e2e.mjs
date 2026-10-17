@@ -28,6 +28,7 @@ import { rememberTargetModel } from './fixtures/remember-target-model.mjs'
 import { saveActionModel } from './fixtures/save-action-model.mjs'
 import { profileCompactionModel } from './fixtures/profile-compaction-model.mjs'
 import { DOCS_DEMO_LANGUAGES, docsDemoAssistant, docsDemoModel, seedDocsDemo } from './fixtures/docs-demo.mjs'
+import { recallBudgetModel } from './fixtures/recall-budget-model.mjs'
 import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies, slowEmbeddingServer } from './fixtures/archive-copies.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -64,6 +65,7 @@ for (const flag of flags) {
   if (flag === '--without-mnemon-cli') continue
   if (flag === '--remote-management') continue
   if (flag === '--live-model') continue
+  if (flag === '--recall-budget') continue
   if (flag === '--docs-demo' || flag.startsWith('--docs-demo=')) {
     docsDemo = flag === '--docs-demo' ? 'zh-CN' : flag.slice('--docs-demo='.length)
     if (!DOCS_DEMO_LANGUAGES.includes(docsDemo)) throw new Error('--docs-demo accepts ' + DOCS_DEMO_LANGUAGES.join(' or '))
@@ -151,6 +153,7 @@ const scriptedModel = liveModel ? undefined : flags.has('--runtime-routing') ? r
   : flags.has('--result-tool-cache') ? resultToolCacheModel(event => console.log('Result tool cache: ' + JSON.stringify(event)))
   : flags.has('--legacy-session-replay') ? legacySessionReplayModel(event => console.log('Legacy replay: ' + JSON.stringify(event)))
   : flags.has('--document-archive') ? documentArchiveModel(event => console.log('Document archive: ' + JSON.stringify(event)))
+  : flags.has('--recall-budget') ? recallBudgetModel(event => console.log('Recall budget: ' + JSON.stringify(event)))
   : docsDemo !== undefined ? docsDemoModel(docsDemo, event => console.log('Docs demo: ' + JSON.stringify(event))) : reviewModel ?? protectionModel
 const reviewFailure = flags.has('--review-failure')
 /**
@@ -352,6 +355,11 @@ try {
   if (docsDemo !== undefined) {
     await seedDocsDemo({ dataDir, workspace, language: docsDemo })
     console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target.'))
+  }
+  // The docs demo's memory, read by a model that asks three different Recall questions in one turn (#389).
+  if (flags.has('--recall-budget') && docsDemo === undefined) {
+    await seedDocsDemo({ dataDir, workspace, language: 'zh-CN' })
+    console.log('Recall budget seeded; send recall-budget-check.')
   }
   console.log('Fixture: ' + fixture)
   console.log('Workspace: ' + workspace)

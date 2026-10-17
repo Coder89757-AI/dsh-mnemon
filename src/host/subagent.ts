@@ -387,6 +387,10 @@ export interface RecallResult {
   query: string
   mode: string
   results: RecallInsight[]
+  /** The Strategy ran no query for this call, so `results` holds nothing of its own. */
+  notRun?: true
+  /** It did not run because the turn's budget for this read was spent. */
+  budgetExhausted?: true
   /** Core read identity/usage; truncated also includes the Host's final admission limits. */
   memoryEvidence?: Omit<MemoryEvidence, 'items'>
   hint?: string
@@ -1030,7 +1034,9 @@ export class MnemonSubagentCoordinator {
     try {
       const turn = execution.context
       const evidence = await execution.graph.source(typeId, turn.scope).forTurn(turn).route(routeId, input, execution.signal)
-      if (typeId === 'memory-spaces' && ['recall', 'related'].includes(routeId)) {
+      // A read the Strategy did not run, past its turn budget or from an insight the turn never
+      // admitted, is no recall (#389).
+      if (typeId === 'memory-spaces' && ['recall', 'related'].includes(routeId) && optionalObject(evidence.output)?.notRun !== true) {
         const observed = this.observedReads.get(turn) ?? new Set<string>()
         if (!observed.has(evidence.id)) { this.recordRecall(); observed.add(evidence.id) }
         this.observedReads.set(turn, observed)

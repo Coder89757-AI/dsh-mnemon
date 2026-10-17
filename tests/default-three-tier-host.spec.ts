@@ -171,7 +171,7 @@ describe('default three-tier Host presentation and shared execution', () => {
       items: [{ id: expect.any(String), title: 'Protocol record', excerpt: expect.stringContaining('protocol-token') }] })
     if (firstEntry === 'generic') expect(meta).toMatchObject({ reference: route.id })
     const second = await execute(order === 'named-first' ? 'generic' : 'named')
-    expect(second).toMatchObject({ notRun: true, results: [] })
+    expect(second).toMatchObject({ notRun: true, budgetExhausted: true, results: [] })
     expect(read).toHaveBeenCalledOnce()
   })
 
@@ -199,7 +199,13 @@ describe('default three-tier Host presentation and shared execution', () => {
     await execute('generic', 'durable fact')
     expect(read).toHaveBeenCalledTimes(2)
     const exhausted = await execute('named', 'third query')
+    expect(exhausted).toMatchObject({ query: 'third query', results: [], notRun: true, budgetExhausted: true })
     expect(exhausted.hint).toContain('budget is exhausted')
     expect(read).toHaveBeenCalledTimes(2)
+    // Only reads that ran count: the third Recall did not, and neither does Related from an insight the turn never admitted.
+    expect(coordinator.snapshot()).toMatchObject({ recalls: 1 })
+    const unadmitted = await (registered.get('mnemon_related')!.execute as Function)({ id: 'never-admitted', memoryBodyId: body.id }, { agent, signal: new AbortController().signal })
+    expect(unadmitted).toMatchObject({ results: [], notRun: true })
+    expect(coordinator.snapshot()).toMatchObject({ recalls: 1 })
   })
 })
