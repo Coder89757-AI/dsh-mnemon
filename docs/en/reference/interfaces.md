@@ -163,7 +163,7 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `graph` / `bodies` / `body-directory` | Active multi-space graph projection, provider-capability catalog, and fast directory projection |
 | `body-reconnect` | Invalidate transient health state and refresh one Memory Space without changing persistent data |
 | `provider-services` | Redacted Provider service catalog; configured-secret names may be present, secret values never are |
-| `embedding-status` | Mnemon's embedding model, availability and default-store coverage |
+| `embedding-status` | Mnemon's embedding model and availability, and the vector coverage of each Mnemon Native space with its total |
 | `list` / `entities` | Durable content list and entity aggregation |
 | `search` / `agent-search` / `related` | Direct retrieval, evidence answer, and relation traversal |
 | `turn-activities` / `turn-activity` | Session-wide or single-turn memory-tool activity |
@@ -185,6 +185,7 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `body-create` / `body-update` / `body-delete` / `body-merge` | Create or connect, edit, confirm Native deletion or remote disconnection, and merge Memory Spaces |
 | `body-metadata-maintain` | Let a task Agent refresh names and descriptions of 1 to 20 active Memory Spaces |
 | `provider-service-update` | Update one Provider service; credentials remain on the Host and the response is redacted |
+| `embedding-fill` | Fill in the vectors one Mnemon Native space lacks, through the Host's storage root and embedding settings; runs for at most a minute, in steps of at most ten seconds, and returns how many it filled in and how many remain |
 | `source-management-mutate` / `source-assistance` | Generic Source management mutation, and Host-assisted operations confirmed against the Source's current revision |
 | `version-update` | Update a named component with Host-fixed commands and arguments |
 

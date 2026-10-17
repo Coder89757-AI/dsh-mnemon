@@ -10,6 +10,8 @@ import {
   type ClientConnectionHandle,
   type ClientSettingsScope,
   type Config,
+  type MnemonEmbeddingFill,
+  type MnemonEmbeddingSpaceStatus,
   type MnemonEmbeddingStatus,
   type ResolvedIdleReviewConfig,
   type SettingsOperation,
@@ -161,6 +163,7 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
   const form = useStaged(saved, async draft => { await scope.mutate([{ op: 'set', path: ['embedding'], value: embeddingValue(managedSaved, draft) } as SettingsOperation]) })
   const [nativeCliFound, setNativeCliFound] = useState<boolean | undefined>(undefined)
   const [status, setStatus] = useState<{ state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }>({ state: 'idle' })
+  const [fill, setFill] = useState<EmbeddingFillState | undefined>(undefined)
   const statusRequest = useRef(0)
   const on = page.component.enabled
 
@@ -173,6 +176,7 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
   useEffect(() => {
     statusRequest.current += 1
     setStatus({ state: 'idle' })
+    setFill(undefined)
   }, [client, snapshot.revision])
 
   // Providers are read only while their Source runs; the page's switch turns it on.
@@ -182,10 +186,21 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
     if (client === undefined) return
     const request = statusRequest.current + 1
     statusRequest.current = request
-    setStatus({ state: 'loading' })
+    // The list stays while it is counted again, so a fill's refresh does not make it jump.
+    setStatus(previous => ({ state: 'loading', ...(previous.value === undefined ? {} : { value: previous.value }) }))
     void client.embeddingStatus().then(
       value => { if (statusRequest.current === request) setStatus({ state: 'ready', value }) },
       reason => { if (statusRequest.current === request) setStatus({ state: 'error', error: message(reason) }) },
+    )
+  }
+  // A fill runs through the Host, with its data directory and embedding settings; the counts are read again after it.
+  const fillSpace = (space: MnemonEmbeddingSpaceStatus): void => {
+    if (client === undefined || fill?.state === 'running') return
+    const target = { memoryBodyId: space.memoryBodyId, name: space.name }
+    setFill({ ...target, state: 'running' })
+    void client.fillEmbeddings(space.memoryBodyId).then(
+      result => { setFill({ ...target, state: 'done', result }); test() },
+      reason => { setFill({ ...target, state: 'failed', error: message(reason) }); test() },
     )
   }
   const activeScope = isWorkspaceStorageScope(snapshot.value?.storageScope ?? 'global') ? 'workspace' : 'global'
@@ -208,7 +223,8 @@ export function MemorySpacesSettings(props: ShippedSettingsServices & { page: Me
       t={t}
       leading={<NativeProviderCard activeScope={activeScope} cliMissing={cliMissing} t={t}>
         <EmbeddingEditor managed={managed.value} draft={form.draft} disabled={disabled} connectionAvailable={client !== undefined} cliMissing={cliMissing} changing={form.dirty}
-          status={status} t={t} onEdit={form.edit} onTest={test}
+          status={status} t={t} onEdit={form.edit} onTest={() => { setFill(undefined); test() }}
+          canFill={!disabled && !readOnly} fill={fill} onFill={fillSpace}
           onManaged={on => { if (!on) form.discard(); managed.set(on) }}
           actions={<>
             <WriteFailure error={managed.failed} t={t} />
@@ -253,6 +269,10 @@ function EmbeddingEditor(props: {
   cliMissing: boolean
   changing: boolean
   status: { state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }
+  /** Whether this page may fill in a space's vectors: it is writable and Mnemon takes writes. */
+  canFill: boolean
+  fill: EmbeddingFillState | undefined
+  onFill: (space: MnemonEmbeddingSpaceStatus) => void
   t: MnemonTranslate
   actions: ReactNode
   onManaged: (managed: boolean) => void
@@ -295,11 +315,73 @@ function EmbeddingEditor(props: {
     {props.actions}
     <div className={css.embeddingTest} aria-live="polite">
       <span className={status.state === 'error' ? css.error : undefined} role={status.state === 'error' ? 'alert' : undefined}>{feedback}</span>
-      <Button variant="outline" size="sm" disabled={props.disabled || !props.connectionAvailable || props.cliMissing || props.changing || status.state === 'loading'} onClick={props.onTest}>
+      <Button variant="outline" size="sm" disabled={props.disabled || !props.connectionAvailable || props.cliMissing || props.changing || status.state === 'loading' || props.fill?.state === 'running'}
+        onClick={props.onTest}>
         {t('config.embeddingTest')}
       </Button>
     </div>
+    {!props.cliMissing && !props.changing && (status.state === 'ready' || status.state === 'loading') && (status.value?.spaces ?? []).length > 0
+      && <EmbeddingSpaces spaces={status.value!.spaces!} available={status.value!.available} canFill={props.canFill} counting={status.state === 'loading'}
+        fill={props.fill} onFill={props.onFill} t={t} />}
+    <EmbeddingFillOutcome fill={props.fill} t={t} />
   </section>
+}
+
+/** A fill of one space's vectors: running, done with what it did, or failed with its reason (#392). */
+type EmbeddingFillState = { memoryBodyId: string; name: string }
+  & ({ state: 'running' } | { state: 'done'; result: MnemonEmbeddingFill } | { state: 'failed'; error: string })
+
+/**
+ * Each Mnemon Native space's vectors under the status line. Mnemon counts one Store at a
+ * time, so the total alone could read as every space's health while one lacked vectors (#392).
+ * A space that lacks them can have them filled in here while the embedding service answers.
+ */
+function EmbeddingSpaces(props: {
+  spaces: readonly MnemonEmbeddingSpaceStatus[]
+  available: boolean
+  canFill: boolean
+  /** The counts are being read again; the list stays, its buttons wait. */
+  counting: boolean
+  fill: EmbeddingFillState | undefined
+  onFill: (space: MnemonEmbeddingSpaceStatus) => void
+  t: MnemonTranslate
+}): JSX.Element {
+  const { t, fill } = props
+  const missing = (space: MnemonEmbeddingSpaceStatus): boolean => space.error === undefined && space.embedded < space.totalInsights
+  const fillable = props.available && props.canFill
+  const running = fill?.state === 'running' ? fill.memoryBodyId : undefined
+  return <div className={css.embeddingSpaces}>
+    <small id="mnemon-embedding-spaces">{t('config.embeddingSpaces')}</small>
+    <ul aria-labelledby="mnemon-embedding-spaces">
+      {props.spaces.map(space => <li key={space.memoryBodyId} data-missing={missing(space) ? '' : undefined} data-failed={space.error === undefined ? undefined : ''}>
+        <span className={css.embeddingSpaceName} title={space.name}>{space.name}</span>
+        {!space.active && <span className={css.embeddingSpaceState}>{t('common.inactive')}</span>}
+        <span className={css.embeddingSpaceCount}>{space.error === undefined
+          ? t('config.embeddingSpaceCounts', { embedded: space.embedded, total: space.totalInsights, coverage: space.coverage })
+          : t('config.embeddingSpaceFailed', { error: space.error })}</span>
+        {fillable && missing(space) && <Button variant="ghost" size="sm" disabled={running !== undefined || props.counting} aria-busy={running === space.memoryBodyId}
+          aria-label={t(running === space.memoryBodyId ? 'config.embeddingFillingLabel' : 'config.embeddingFillLabel', { name: space.name })}
+          onClick={() => props.onFill(space)}>{running === space.memoryBodyId ? t('config.embeddingFilling') : t('config.embeddingFill')}</Button>}
+      </li>)}
+    </ul>
+    {props.spaces.some(missing) && <p>{t(!props.canFill ? 'config.embeddingMissing' : props.available ? 'config.embeddingMissingFill' : 'config.embeddingMissingOffline')}</p>}
+    {props.spaces.some(space => space.error !== undefined) && <p>{t('config.embeddingSpacesUnread')}</p>}
+  </div>
+}
+
+/** What the last fill did. It stays while the counts are read again, and reads as a failure when it wrote no vector. */
+function EmbeddingFillOutcome(props: { fill: EmbeddingFillState | undefined; t: MnemonTranslate }): JSX.Element | null {
+  const { fill, t } = props
+  if (fill === undefined || fill.state === 'running') return null
+  const failure = (text: string): JSX.Element => <p className={`${css.embeddingFillOutcome} ${css.error}`} role="alert">{text}</p>
+  if (fill.state === 'failed') return failure(t('config.embeddingFillFailed', { name: fill.name, error: fill.error }))
+  const { filled, remaining, model, stopped } = fill.result
+  const name = fill.name
+  if (remaining > 0 && stopped === 'refused' && filled === 0) return failure(t('config.embeddingFillRefused', { name, model }))
+  const text = remaining === 0
+    ? filled > 0 ? t('config.embeddingFillDone', { name, filled }) : undefined
+    : stopped === 'refused' ? t('config.embeddingFillPartly', { name, filled, remaining }) : t('config.embeddingFillMore', { name, filled, remaining })
+  return text === undefined ? null : <p className={css.embeddingFillOutcome} role="status">{text}</p>
 }
 
 // ---- Layered strategy: the background tasks it drives ----

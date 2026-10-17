@@ -163,7 +163,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `graph` / `bodies` / `body-directory` | active 多空间图谱投影、含 Provider 能力的记忆空间目录与快速目录投影 |
 | `body-reconnect` | 清除短期健康状态并刷新单个记忆空间，不修改持久数据 |
 | `provider-services` | 脱敏的 Provider 服务目录；可包含已配置的凭据字段名，绝不包含凭据值 |
-| `embedding-status` | Mnemon 嵌入模型、可用性与默认 Store 覆盖率 |
+| `embedding-status` | Mnemon 嵌入模型与可用性，以及每个 Mnemon Native 空间的向量覆盖率和合计 |
 | `list` / `entities` | 内容列表与实体聚合 |
 | `search` / `agent-search` / `related` | 直接检索、证据回答与关系遍历 |
 | `turn-activities` / `turn-activity` | 会话或单回合的记忆工具活动 |
@@ -185,6 +185,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `body-create` / `body-update` / `body-delete` / `body-merge` | 创建或连接、编辑、确认后的 Native 删除或远程断开，以及合并记忆空间 |
 | `body-metadata-maintain` | 由任务 Agent 刷新 1 到 20 个 active 记忆空间的名称与说明 |
 | `provider-service-update` | 更新单个 Provider 服务；凭据仅在 Host 保存，响应脱敏 |
+| `embedding-fill` | 为一个 Mnemon Native 空间补齐缺少的向量，使用 Host 的存储根目录与嵌入设置；最多运行一分钟，每步最多十秒，返回补齐与仍缺少的数量 |
 | `source-management-mutate` / `source-assistance` | 通用 Source 管理 mutation，以及按 Source 当前修订确认的 Host 辅助操作 |
 | `version-update` | 更新明确组件；Host 固定命令与参数 |
 
