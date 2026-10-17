@@ -46,7 +46,9 @@ const client: UserConfig = {
   clean: false,
   deps: {
     neverBundle: CLIENT_EXTERNALS,
-    alwaysBundle: [/^dsh-mnemon-source-[^/]+\/presentation\//],
+    // Source presentation assets, and what the Starter still draws of Memory Spaces (src/client/memory-spaces-client.ts),
+    // taken from the pinned version's source through the tsconfig path of its public client entry.
+    alwaysBundle: [/^dsh-mnemon-source-[^/]+\/presentation\//, /^dsh-mnemon-source-memory-spaces\/client$/],
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),

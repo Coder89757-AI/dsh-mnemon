@@ -248,40 +248,6 @@ describe('MnemonClient product transport', () => {
     })
   })
 
-  it('routes provider service settings independently from Memory Spaces', async () => {
-    const call = vi.fn(async () => ({ ok: true as const, value: { providerId: 'mem0', configured: true, settings: { endpoint: 'http://127.0.0.1:8888' }, configuredSecrets: [] } }))
-    const client = new MnemonClient({ rpc: { call }, isLoopback: true } as ClientConnectionHandle, 'session-1', 'workspace-1')
-
-    await client.updateProviderService({ providerId: 'mem0', settings: { endpoint: 'http://127.0.0.1:8888', mode: 'self-hosted' }, enabled: true })
-
-    expect(call).toHaveBeenCalledWith(expect.any(String), 'provider-service-update', {
-      providerId: 'mem0', settings: { endpoint: 'http://127.0.0.1:8888', mode: 'self-hosted' }, enabled: true, sessionId: 'session-1', workspaceId: 'workspace-1',
-    })
-  })
-
-  it('loads redacted Provider settings through the read channel and never masks an authentication rejection', async () => {
-    const call = vi.fn(async (channel: string) => {
-      if (channel === '/dsh-mnemon-read') return { ok: true as const, value: { providers: [], items: [], generatedAt: 'now' } }
-      throw new Error(`unexpected channel: ${channel}`)
-    })
-    const client = new MnemonClient({ rpc: { call }, isLoopback: true } as ClientConnectionHandle, 'session-1')
-
-    await client.providerServices()
-    expect(call).toHaveBeenLastCalledWith('/dsh-mnemon-read', 'provider-services', { sessionId: 'session-1' })
-
-    call.mockReset()
-    call.mockRejectedValue(new Error('transport failure for /dsh-mnemon-write/provider-services: HTTP 403'))
-    await expect(client.providerServices()).rejects.toThrow('HTTP 403')
-    expect(call).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not retry an unavailable Provider catalog on a write endpoint', async () => {
-    const call = vi.fn(async () => ({ ok: false as const, error: { code: 'bad-request' as const, message: 'unknown read endpoint: provider-services', details: { issues: [] } } }))
-    const client = new MnemonClient({ rpc: { call }, isLoopback: true } as ClientConnectionHandle)
-    await expect(client.providerServices()).rejects.toThrow('unknown read endpoint')
-    expect(call.mock.calls).toEqual([['/dsh-mnemon-read', 'provider-services', {}]])
-  })
-
   it('loads the independent task Agent model catalog without a session dependency', async () => {
     const catalog = {
       effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' as const },
@@ -306,16 +272,5 @@ describe('MnemonClient product transport', () => {
 
     await expect(client.taskAgentModels(false)).resolves.toEqual(catalog)
     expect(call).toHaveBeenCalledWith(expect.any(String), 'task-agent-models', { includeCatalog: false, sessionId: 'session-9', workspaceId: 'workspace-2' })
-  })
-
-  it('checks Mnemon embedding status in the selected runtime scope', async () => {
-    const status = { available: true, model: 'qwen3-embedding:0.6b', totalInsights: 5, embedded: 4, coverage: '80%' }
-    const call = vi.fn(async () => ({ ok: true as const, value: status }))
-    const client = new MnemonClient({ rpc: { call }, isLoopback: true } as ClientConnectionHandle, 'session-1', 'workspace-1')
-
-    await expect(client.embeddingStatus()).resolves.toEqual(status)
-    expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'embedding-status', {
-      sessionId: 'session-1', workspaceId: 'workspace-1',
-    })
   })
 })

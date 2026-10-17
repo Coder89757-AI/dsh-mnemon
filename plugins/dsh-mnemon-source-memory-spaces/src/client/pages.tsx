@@ -5,7 +5,8 @@ import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { CATEGORIES, normalizeEntityKey, type Category, type EntityMemoriesView, type EntityRelatedView, type EntityView, type Insight, type MemorySpaceCatalog, type MemorySpaceMetadataUpdate, type MemorySpaceProvider, type MemorySpaceRediscovery, type MemorySpaceView, type MemoryGraphNode, type MemoryGraphSnapshot, type MemoryPlacementCapability, type MemoryPlacementPreference, type MemoryListView, type MemoryProviderConfigField, type MemoryProviderConnection, type MemoryProviderDescriptor, type MemoryProviderId, type MemoryReadSource } from '../contracts.ts'
 import type { MemorySpacesPageClient } from './api.ts'
 import { ProviderIcon } from './ProviderIcon.tsx'
-import { providerFieldLabel, providerOptionLabel, providerSummary } from './provider-presentation.ts'
+import { providerSummary } from './provider-presentation.ts'
+import { ProviderField } from './provider-field.tsx'
 import { type MnemonKey, type MnemonTranslate, useRequestVersion, appearanceClass, useLocale, humanBytes, message, short, PageHeader, SectionSpinner, ProgressiveFooter, SidebarModal, EmptyState, SearchField, SelectField, TaskAgentTag, WriteReceipt } from 'dsh-mnemon/client'
 
 import type { MemoryPersistenceStrategy } from '../contracts.ts'
@@ -68,17 +69,13 @@ function ProviderMemoryFields(props: {
   return <div className={css.providerFields} data-provider={props.provider.id}>
     <div className={css.providerFieldHeading}><div className={css.providerFieldIdentity}><ProviderIcon providerId={props.provider.id} icon={props.provider.icon} className={css.providerFieldIcon} /><div><strong>{props.provider.label}</strong><small>{providerSummary(t, props.provider)}</small></div></div><span>{props.provider.kind === 'local' ? t('overview.providerKindLocal') : t('overview.providerKindRemote')} · {t(`overview.workspaceBinding.${props.provider.workspaceBinding}`)}</span></div>
     <div className={css.providerAdvancedGrid}>{memoryProviderFields(props.provider).map(field => {
-      const label = providerFieldLabel(t, field)
-      const value = props.connection[field.key] ?? ''
-      const savedSecret = props.body?.provider.configuredSecrets.includes(field.key) === true
-      const clearingSecret = props.clearSecrets?.includes(field.key) === true
-      const required = field.required && (!savedSecret || clearingSecret)
-      const input = field.input === 'boolean'
-        ? <input aria-label={label} type="checkbox" checked={Boolean(value)} onChange={event => props.onChange(field.key, event.target.checked)} />
-        : field.input === 'select'
-          ? <SelectField hideLabel label={label} value={String(value)} options={(field.options ?? []).map(option => ({ value: option.value, label: providerOptionLabel(t, option) }))} onChange={next => props.onChange(field.key, next)} />
-          : <input aria-label={label} type={field.input === 'secret' ? 'password' : field.input === 'number' ? 'number' : field.input === 'url' ? 'url' : 'text'} value={String(value)} required={required} autoComplete={field.input === 'secret' ? 'new-password' : undefined} placeholder={savedSecret ? t('overview.providerApiKeyKeep') : field.placeholder ?? (field.input === 'secret' ? t('overview.providerApiKeyOptional') : undefined)} maxLength={field.maxLength ?? (field.input === 'secret' ? 8000 : 2000)} min={field.min} max={field.max} pattern={field.pattern} step={field.input === 'number' ? 'any' : undefined} onChange={event => props.onChange(field.key, event.target.value)} />
-      return <div key={field.key} className={css.providerFieldControl}><label>{label}{input}</label>{props.body !== undefined && field.input === 'secret' && savedSecret && props.onClearSecretsChange !== undefined && <label className={css.providerSecretClear}><input type="checkbox" checked={clearingSecret} onChange={event => props.onClearSecretsChange!(event.target.checked ? [...new Set([...(props.clearSecrets ?? []), field.key])] : (props.clearSecrets ?? []).filter(key => key !== field.key))} />{t('overview.providerSecretClear')}</label>}</div>
+      const saved = props.body?.provider.configuredSecrets.includes(field.key) === true
+      const clearSecrets = props.clearSecrets ?? []
+      return <ProviderField key={field.key} field={field} value={props.connection[field.key]} layout="dialog" saved={saved} clearing={clearSecrets.includes(field.key)}
+        onChange={value => props.onChange(field.key, value)}
+        {...(props.body === undefined || props.onClearSecretsChange === undefined ? {} : {
+          onClearChange: (clearing: boolean) => props.onClearSecretsChange!(clearing ? [...new Set([...clearSecrets, field.key])] : clearSecrets.filter(key => key !== field.key)),
+        })} />
     })}</div>
     <small className={css.providerWriteHint}>{props.provider.capabilities.writeMode === 'exact' ? t('overview.providerWriteExact') : t('overview.providerWriteAsync')} · {props.provider.capabilities.graph ? t('overview.providerGraphReady') : t('overview.providerSearchReady')}</small>
   </div>
