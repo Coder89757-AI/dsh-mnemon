@@ -112,6 +112,9 @@
       ],
       "dsh-mnemon-source-memory-spaces/native-cli": [
         "./plugins/dsh-mnemon-source-memory-spaces/src/native-cli.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/space-identity": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/space-identity.ts"
       ]
     },
     "resolveJsonModule": true

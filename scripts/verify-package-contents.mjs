@@ -1,3 +1,4 @@
+// Dry-run pack the root package and check its files, client bundle, README images and size ceiling.
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

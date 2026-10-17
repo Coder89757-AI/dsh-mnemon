@@ -79,6 +79,7 @@ mnemon:
   writeEnabled: true
   taskAgentModel:
     mode: inherit # inherit | fixed
+    # followConversation: true # 与 inherit 一起使用：跟随会话
     # provider: deepseek # fixed 时必填
     # model: deepseek-chat # fixed 时必填
   remoteAccess: read-only # 远程管理：read-only | trusted-host
@@ -113,7 +114,7 @@ mnemon:
 | `routingGuidance` | `true` | boolean | 是否注册额外的分层路由 system section |
 | `lifecycleEnabled` | `true` | boolean | 是否启用 pre-step cue 和评分空闲审查 |
 | `recallMode` | `guided` | `guided` / `off` | 是否在每个会话注入一次可持续复用的按需 recall cue；不移除显式召回 |
-| `writebackMode` | `guided` | `guided` / `off` | 是否在每个会话注入一次可持续复用的热记忆 cue，并启用评分加 dirty admission 的空闲审查；不移除显式写入 |
+| `writebackMode` | `guided` | `guided` / `off` | 是否在每个会话注入一次可持续复用的运行时记忆 cue，并启用评分加 dirty admission 的空闲审查；不移除显式写入 |
 | `idleReviewMs` | `30000` | 5000–600000 ms | 达标后需要连续空闲的时间 |
 | `idleReview.enabled` | `true` | boolean | 自动审查独立开关 |
 | `idleReview.runtimeMemory` | `true` | boolean | 允许审查修改运行时记忆（USER.md 与 MEMORY.md）；`false` 时只创建项目档案 |
@@ -128,7 +129,7 @@ mnemon:
 | `tabEnabled` | `true` | boolean | 是否挂载所选入口和工作台；关闭后 Host RPC、命令和 Agent 工具保持注册 |
 | `writeEnabled` | `true` | boolean | 是否暴露语义写工具、写 RPC 和写命令 |
 | `syncEnabled` | `false` | boolean | 本机是否同步到 Git 仓库。默认关闭，关闭时保持沉默：存储页那一行只有标题与开关，不读取状态，也不执行 Git 命令。仓库、分支、目录、提交身份、令牌与自动同步间隔（`autoBackupMinutes`）保存在 `state/sync-git.json`，不在这里 |
-| `taskAgentModel` | `{ mode: inherit }` | `inherit` / `fixed`；`followConversation`：boolean | 整理名称与说明、Agent 查询、存入记忆和档案归档使用的独立任务 Agent，以及空闲审查 worker 的模型路由；`inherit`（**跟随全局**）让任务 Agent 使用 DSH 新会话默认模型，DSH 会把它设为最近一次在任意会话中选择的模型，而空闲审查 worker 等委派 worker 使用其会话的路由；`inherit` 加 `followConversation: true`（**跟随会话**）让任务 Agent 也使用发起该工作的会话的路由，前提是该会话处于打开状态；`fixed`（**自定义**） 必须同时保存 `provider` 与 `model`，并会钉住对应的写入、证据问答、Provider 选择、迁移、压缩、归档和元信息维护 worker。对话中的 Recall 与 Related 是 Host 直接读取，不使用该路由 |
+| `taskAgentModel` | `{ mode: inherit }` | `inherit` / `fixed`；`followConversation`：boolean | 独立任务 Agent 与空闲审查 worker 的模型路由：`inherit`（**跟随全局**）、`inherit` 加 `followConversation: true`（**跟随会话**），或必须同时保存 `provider` 与 `model` 的 `fixed`（**自定义**）。见[后台任务 Agent 的模型路由](#后台任务-agent-的模型路由) |
 | `remoteAccess` | `read-only` | `read-only` / `trusted-host` | 非 loopback Mnemon 管理授权，仅启动时读取，由 API Gateway 映射执行 |
 | `conversationInteraction.turnBar` | `true` | boolean | 回复下方的回合记忆栏，立即生效 |
 | `conversationInteraction.saveAction` | `true` | boolean | 已完成回复上的**存入记忆**操作及其确认框，立即生效 |
@@ -137,7 +138,7 @@ mnemon:
 
 ### Runtime Memory 容量与维护预算
 
-长会话可以提高两类热记忆的字节上限和有界迁移/压缩 worker 预算，无需再补丁修改生成的包文件：
+长会话可以提高运行时记忆的两个字节上限和有界迁移/压缩 worker 预算，无需再补丁修改生成的包文件：
 
 ```yaml
 mnemon:
@@ -313,13 +314,13 @@ Memory Space 目录建立后，长期语义操作使用明确的记忆空间 ID�
 
 整理名称与说明、Agent 查询、记忆系统与对话中的存入记忆和档案归档会创建一个无会话历史的独立顶层任务 Agent。它使用当前查看工作区作为 cwd；即使没有选中主 Agent session，也能落到左上角选定工作区。任务完成后 Agent 会被释放。
 
-“分层策略”页面的“后台任务 → 任务 Agent 模型”提供三个选项：
+“分层策略”页面的“后台任务 → 任务 Agent 模型”为这些任务 Agent 与空闲审查 worker 提供三个选项：
 
-- **跟随全局**（`mode: inherit`，默认）：使用 DSH“创建新会话”时的默认 Provider / Model，DSH 会把它设为最近一次在任意会话中选择的模型；该路由不可用时才沿用当前可用主 Agent 的完整模型路由。
+- **跟随全局**（`mode: inherit`，默认）：任务 Agent 使用 DSH“创建新会话”时的默认 Provider / Model，DSH 会把它设为最近一次在任意会话中选择的模型；该路由不可用时才沿用当前可用主 Agent 的完整模型路由。空闲审查 worker 以及会话委派的其他 worker 使用所属会话的路由。
 - **跟随会话**（`mode: inherit` 加 `followConversation: true`）：使用 DSH 给发起该工作的会话自身委派（包括空闲审查）所用的路由，即其最近一次请求的 provider、模型与推理等级，第一次请求之前则用创建时的路由。该会话未打开时跟随全局。`followConversation` 是独立的配置键，不认识它的版本会按**跟随全局**读取。
-- **自定义**（`mode: fixed`）：保存完整的 Provider + Model，只覆盖 Mnemon 后台任务，不改变对话主 Agent。
+- **自定义**（`mode: fixed`）：保存完整的 Provider + Model（两者都必填），只覆盖 Mnemon 后台任务，不改变对话主 Agent。它还会钉住空闲审查 worker，以及写入、证据问答、Provider 选择、迁移、压缩、归档和元信息维护 worker 的路由。
 
-独立任务 Agent 内部如需语义判断，仍可调度受限 worker；该 worker 继承任务 Agent 的模型路由。
+独立任务 Agent 内部如需语义判断（例如为新空间智能选择 Provider），仍可调度受限 worker；该 worker 继承任务 Agent 的模型路由。对话中的 Recall 与 Related 是 Host 直接读取，不使用任何模型路由。
 
 ```yaml
 mnemon:
@@ -337,6 +338,8 @@ DSH 的实时模型目录会报告各模型的输入模态，选择器为支持�
 
 - 在 DSH 0.2.0 上，provider 从启动请求中接受这两项（`toolFilter` 与 `persona`）；
 - 在 DSH 0.2.1 上，没有 provider 接受这两项，它必须是由 DSH 在本进程中创建子 Agent 的 provider（例如它的 spawn 与 fork），由 Mnemon 自己为子 Agent 配上它们；见 [DSH 0.2.0 与 0.2.1](./compatibility.md#dsh-020-与-021)。
+
+每个子 Agent 都通过固定注册的同一个 `mnemon_subagent_result` 工具交回结果，并带上为它签发的可撤销 `requestId`：子 Agent 返回 `{ requestId, result }`，Host 按该操作的 schema 校验 `result`，拒绝过期或其他子任务提交的结果。
 
 空闲审查默认使用不继承父上下文的 `spawn` Provider，并从父 Agent 当前公开 surface 构建有界检查点。仅收录完整可见文本消息与成功工具结果，不重建被省略或不可用的上下文。`idleReview.provider: fork` 保留完整父上下文审查，并要求 `inheritsParentContext=true`。fork 缺失或不兼容时，`idleReview.fallback` 在启动前选择 `spawn` 或 `skip`；已启动的运行绝不通过其他 Provider 重试。
 

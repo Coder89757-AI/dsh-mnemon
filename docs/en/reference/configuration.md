@@ -1,6 +1,6 @@
 # Configuration Reference
 
-[简体中文](../../zh-CN/reference/configuration.md) | **English** | [Documentation Center](../README.md)
+[简体中文](../../zh-CN/reference/configuration.md) | **English** | [Documentation](../README.md)
 
 ## Configuration Location and Activation
 
@@ -79,6 +79,7 @@ mnemon:
   writeEnabled: true
   taskAgentModel:
     mode: inherit # inherit | fixed
+    # followConversation: true # with inherit: Follow the conversation
     # provider: deepseek # required for fixed
     # model: deepseek-chat # required for fixed
   remoteAccess: read-only # remote management: read-only | trusted-host
@@ -113,7 +114,7 @@ mnemon:
 | `routingGuidance` | `true` | boolean | Whether to register an additional tiered-routing system section |
 | `lifecycleEnabled` | `true` | boolean | Whether to enable the pre-step cue and score-based idle review |
 | `recallMode` | `guided` | `guided` / `off` | Whether to inject one durable on-demand recall cue per session; does not remove explicit recall |
-| `writebackMode` | `guided` | `guided` / `off` | Whether to inject one durable hot-memory cue per session and enable scored, dirty-admitted idle review; does not remove explicit writes |
+| `writebackMode` | `guided` | `guided` / `off` | Whether to inject one durable runtime-memory cue per session and enable scored, dirty-admitted idle review; does not remove explicit writes |
 | `idleReviewMs` | `30000` | 5000–600000 ms | Required continuous idle time after the threshold is reached |
 | `idleReview.enabled` | `true` | boolean | Independent automatic-review switch |
 | `idleReview.runtimeMemory` | `true` | boolean | Lets review change runtime memory (USER.md and MEMORY.md); `false` limits it to creating Documents |
@@ -128,7 +129,7 @@ mnemon:
 | `tabEnabled` | `true` | boolean | Whether to mount the selected entry and workbench; Host RPC, commands, and Agent tools remain registered when off |
 | `writeEnabled` | `true` | boolean | Whether to expose semantic write tools, write RPC, and write commands |
 | `syncEnabled` | `false` | boolean | Whether this installation syncs to a Git repository at all. Off by default, and off is silent: the Storage row is a title and a switch, no status is read and no Git command runs. Repository, branch, directory, commit identity, token and automatic sync interval (`autoBackupMinutes`) stay in `state/sync-git.json`, never here |
-| `taskAgentModel` | `{ mode: inherit }` | `inherit` / `fixed`; `followConversation`: boolean | Model route for independent task Agents used by Tidy names and descriptions, Ask Agent, Save to memory, and Document archiving, plus the idle-review worker; `inherit` (**Follow global**) gives the task Agents the DSH new-session default, which DSH sets to the model last picked in any conversation, while the idle-review worker and other delegated workers take their conversation's route; `inherit` with `followConversation: true` (**Follow the conversation**) gives the task Agents the route of the conversation that asked for the work too, while that conversation is open; `fixed` (**Custom**) requires both `provider` and `model` and also pins their bounded workers for write, answer, provider placement, migration, compaction, archive, and metadata maintenance. Conversation Recall and Related are direct Host reads and do not use this route |
+| `taskAgentModel` | `{ mode: inherit }` | `inherit` / `fixed`; `followConversation`: boolean | Model route for independent task Agents and the idle review worker: `inherit` (**Follow global**), `inherit` with `followConversation: true` (**Follow the conversation**), or `fixed` (**Custom**) with both `provider` and `model`. See [Background Task Agent Model Route](#background-task-agent-model-route) |
 | `remoteAccess` | `read-only` | `read-only` / `trusted-host` | Startup-only grant for non-loopback Mnemon management, enforced by the API Gateway projection |
 | `conversationInteraction.turnBar` | `true` | boolean | The turn memory bar under replies; applies at once |
 | `conversationInteraction.saveAction` | `true` | boolean | The **Save to memory** action and confirmation on finished replies; applies at once |
@@ -137,7 +138,7 @@ Every value is saved under the `mnemon` entry and applies live. The UI's `mnemon
 
 ### Runtime Memory budgets
 
-Long conversations can raise the two hot-memory byte limits and the bounded migration/compaction worker budget without patching generated package files:
+Long conversations can raise the two runtime memory byte limits and the bounded migration/compaction worker budget without patching generated package files:
 
 ```yaml
 mnemon:
@@ -313,13 +314,13 @@ After the Memory Space directory has been established, long-term semantic operat
 
 Tidy names and descriptions, Ask Agent, Save to memory in the Memory System and in conversations, and document archiving create a clean independent top-level task Agent. It uses the selected workspace as its cwd, works even when no main Agent session is selected, and is disposed after the task finishes.
 
-**Background tasks → Task Agent model** on the Layered strategy's page offers three choices:
+**Background tasks → Task Agent model** on the Layered strategy's page offers three choices for these task Agents and the idle review worker:
 
-- **Follow global** (`mode: inherit`, the default) uses the DSH Provider / Model selected for new sessions, which DSH sets to the model last picked in any conversation, then falls back to a complete route from the current available main Agent.
+- **Follow global** (`mode: inherit`, the default) gives the task Agents the DSH Provider / Model selected for new sessions, which DSH sets to the model last picked in any conversation, then falls back to a complete route from the current available main Agent. The idle review worker and the other workers a conversation delegates take that conversation's route.
 - **Follow the conversation** (`mode: inherit` with `followConversation: true`) uses the route DSH gives the conversation that asked for the work to its own delegated work, idle review included: the provider, model and reasoning effort of its last request, or the route it was created with before the first. While that conversation is not open, it follows global. `followConversation` is a key of its own, so a release without it reads the route as **Follow global**.
-- **Custom** (`mode: fixed`) stores a complete Provider + Model and overrides only Mnemon background tasks; it does not change the conversation Agent.
+- **Custom** (`mode: fixed`) stores a complete Provider + Model, both required, and overrides only Mnemon background tasks; it does not change the conversation Agent. It also pins the idle review worker and the bounded workers for write, answer, provider placement, migration, compaction, archive and metadata maintenance.
 
-When semantic judgment requires a bounded worker inside that task Agent, the worker inherits the task Agent route.
+When semantic judgment requires a bounded worker inside that task Agent, such as the smart selection of a Provider for a new space, the worker inherits the task Agent route. Conversation Recall and Related are direct Host reads and use no model route.
 
 ```yaml
 mnemon:
@@ -337,6 +338,8 @@ Regular workers prefer `spawn`. If no provider has that name, another provider t
 
 - on DSH 0.2.0, the provider takes both in the start request (`toolFilter` and `persona`);
 - on DSH 0.2.1, where no provider takes either, it must be one whose children DSH creates in this process, as its spawn and fork are, so that Mnemon composes the child itself; see [DSH 0.2.0 and 0.2.1](./compatibility.md#dsh-020-and-021).
+
+Every child reports through one stable `mnemon_subagent_result` tool, with a revocable `requestId` issued for that child: it returns `{ requestId, result }`, and the Host validates `result` against that operation's schema and rejects stale or foreign submissions.
 
 Idle review defaults to a non-inheriting `spawn` provider and an explicit, bounded checkpoint from the parent's current public surface. It includes whole visible text messages and successful tool results; omitted or unavailable context is not reconstructed. `idleReview.provider: fork` retains full-parent-context review and requires `inheritsParentContext=true`. If fork is missing or incompatible, `idleReview.fallback` chooses `spawn` or `skip` before startup. A started run is never retried through another provider.
 

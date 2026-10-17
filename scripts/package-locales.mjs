@@ -1,3 +1,4 @@
+// Read and validate a package's locale/*.json metadata for the package checks.
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'

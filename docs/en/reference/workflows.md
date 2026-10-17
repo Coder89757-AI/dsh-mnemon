@@ -1,6 +1,6 @@
 # Lifecycle and Core Workflows
 
-[简体中文](../../zh-CN/reference/workflows.md) | **English** | [Documentation Center](../README.md)
+[简体中文](../../zh-CN/reference/workflows.md) | **English** | [Documentation](../README.md)
 
 This page describes the **Layered strategy**, the default. The **General strategy** offers every available Source in one shared budget and leaves routing to the model: named tools serve their own Sources, and every other route is read with `mnemon_view_route` and changed with `mnemon_view_action`. When a profile mounts another Source of one type beside the Starter's, such as a second runtime track, the named tools serve the Starter instance and the other keeps its exact routes and offers. The Layered strategy composes one Source per role, so a second Source of one role there needs **Scoped composition** switched on, which by default admits every eligible Source; without it every turn fails with "found ambiguous … Sources". It has no recall envelope beyond each route's own limits, no Runtime capacity maintenance or archival, and no idle review. See [Strategies and enhancements](../guides/capabilities.md#strategies-and-enhancements).
 
@@ -224,14 +224,22 @@ Host writes each original entry exactly to its planned existing Space
   - skipped -> require exact Recall evidence
           |
           v
-Host retains exact hot entries by importance within its byte budget
+Host retains exact runtime entries by importance within its byte budget
           |
           v
 CAS compactAndMutate(revision, compaction, original mutation, lineage)
   -> persist JSON and both Markdown projections as one local commit
 ```
 
-The planner has no data-plane tools and cannot create a Space. The Host owns every write, verifies one durable destination for every committed source entry, and changes Runtime only after all evidence is valid. A late cross-process revision conflict still preserves the original hot entries; because a remote Provider cannot share the local file lock, already committed durable copies are retained as safe duplicates rather than destructively rolled back.
+The planner has no data-plane tools and cannot create a Space. The Host owns every write, verifies one durable destination for every committed source entry, and changes Runtime only after all evidence is valid. A late cross-process revision conflict still preserves the original runtime memory entries; because a remote Provider cannot share the local file lock, already committed durable copies are retained as safe duplicates rather than destructively rolled back.
+
+### Runtime archive recovery
+
+Capacity archival writes to an active Memory Space whose Provider supports exact writes and safe forget. Asynchronous extraction targets, including Hindsight, are excluded before any archive write. When no Memory Space at all can take the archive, because the layer is off or takes no automatic writes, no Provider is ready, no space is active or only unsupported Providers remain, the Runtime Source appends the entries compaction leaves out to its local archive in `runtime/archived/`, under the same lock and just before it commits the compaction and the pending write: `MEMORY.md` to read and `memories.jsonl` with each entry's metadata. A space that another Memory Spaces Source could take it into, or a Runtime Source too old to keep what compaction leaves out, still refuses. Mnemon Packs do not carry the local archive, and importing one keeps it. Direct Provider writes retain their existing asynchronous behavior.
+
+Conversation archival uses the selected Source's write scope: known spaces activated during the turn and spaces created by that View can receive the archive. A space created elsewhere after the View was pinned requires a new turn, so a write whose only eligible spaces lie outside the View's scope, or that the View offers no writes to, is refused rather than archived locally. An empty scope never grants access to every space. Destination errors distinguish an empty directory, an empty or excluding View scope, and unsupported Provider capabilities, and report the catalog, authorized and writable counts. The pending add has not been saved on failure; retry the same tool input in a new turn after correcting the reported cause. Existing runtime memory entries are preserved.
+
+If an archive receipt or local commit fails, the Host attempts to forget only entries proven newly created by this attempt. Skipped or reused entries are preserved. A changed or unreadable Runtime revision after a commit error is treated as uncertain: archive entries are retained to avoid losing committed memory. Cleanup errors identify the remaining destination and item ids. A Provider request that fails without receipts may have an unknown remote outcome, so this is not a distributed transaction; inspect that Provider before retrying.
 
 ## Document Creation, Update, and Archiving
 
@@ -280,6 +288,10 @@ capacityPlan using rendered UTF-8 bytes
 ```
 
 Manual archiving uses the same “index first, move second” path, and the same local archive when no Memory Space can take the index. When the Mnemon index succeeds but a revision conflict occurs, the index is not rolled back, so a safe duplicate reference may remain while the active original text is never lost.
+
+### Document archive recovery
+
+Document archive no longer asks the worker to number remember/recall receipts. If an older attempt left a cold index while the document stayed active, retrying can reuse an index whose exact path and content hash match the current revision. Updated documents need a matching new revision index. Providers with asynchronous extraction or no safe forget are rejected before indexing. When no Memory Space at all can take the index, the Document is archived locally without one: its original moves to the archive and stays readable on the Project Documents page. A cleanup failure names the destination and newly created id; keep existing data until the outcome is established.
 
 ## Deterministic Activity Scoring and Idle Review
 
@@ -335,7 +347,7 @@ start a task Agent on the completed turn
 conservative maintenance decision, one layer per pass
   - Documents first: search; create at most one separate document
     for a project record, never update or archive an existing one
-  - hot memory: only new, explicit, durable user assertions;
+  - runtime memory: only new, explicit, durable user assertions;
     MEMORY.md takes compact rules no Document covers, never
     project records (off with idleReview.runtimeMemory: false)
   - after a Document, working memory is refused, and vice versa
@@ -346,7 +358,7 @@ conservative maintenance decision, one layer per pass
       +-- failed/aborted ------------> retain activity
 ```
 
-The admission check is deliberately structural rather than an LLM classification, so an eligible but ordinary checkpoint starts no background model. The review Agent's tools are exactly `mnemon_document_search`, `mnemon_runtime_memory` and `mnemon_document_create`, without the runtime tool when `idleReview.runtimeMemory` is `false`. The review guard holds each pass to one layer: the first Document creation or working-memory change it admits claims the pass, and the other is refused even if that first call fails; USER.md changes stay independent. “At most one” document or hot-memory change is still enforced by the persona, not by a Host mutation counter. Memory Spaces receive review output only later, through working-memory capacity archiving and Document cold archiving. While Agent Teams tools are installed, review pauses unless `idleReview.agentTeams: scoped`; the Status page says so while it is paused. Background watermarks are not yet persisted, so a Host restart loses accumulated signals that have not been processed.
+The admission check is deliberately structural rather than an LLM classification, so an eligible but ordinary checkpoint starts no background model. The review Agent's tools are exactly `mnemon_document_search`, `mnemon_runtime_memory` and `mnemon_document_create`, without the runtime tool when `idleReview.runtimeMemory` is `false`. The review guard holds each pass to one layer: the first Document creation or working-memory change it admits claims the pass, and the other is refused even if that first call fails; USER.md changes stay independent. “At most one” document or runtime memory change is still enforced by the persona, not by a Host mutation counter. Memory Spaces receive review output only later, through working-memory capacity archiving and Document cold archiving. While Agent Teams tools are installed, review pauses unless `idleReview.agentTeams: scoped`; the Status page says so while it is paused. Background watermarks are not yet persisted, so a Host restart loses accumulated signals that have not been processed.
 
 ## How Configuration Switches Interact
 

@@ -1,6 +1,6 @@
 # Operations, security and troubleshooting
 
-[简体中文](../../zh-CN/guides/operations.md) | **English** | [Documentation hub](../README.md)
+[简体中文](../../zh-CN/guides/operations.md) | **English** | [Documentation](../README.md)
 
 ## Health checks
 
@@ -49,39 +49,6 @@ Go updates additionally require the active executable to resolve to the current 
 
 The Host fixes update commands and arguments. The browser cannot supply either; shell is disabled and execution/output are bounded. A plugin update installs the exact checked version in its owning profile and verifies the installed package before reporting success; pinned beta versions cannot silently remain on an older release. After an update, the UI rechecks both components and refreshes Status automatically. Mnemon applies on the next CLI call. dsh-mnemon loads once DSH restarts: stop and rerun `dsh web`, or quit the desktop app completely (`Cmd+Q` on macOS) and reopen it. Until then the Host keeps running the previous version, while DSH loads the new Memory System page as soon as the files change; that page reopens **Check versions** with the update and the restart it needs. Until DSH restarts, a notice above every Memory System page names the installed version and the one that still runs, whether the update came from Check versions or `dsh plugin`; packages updated on their own are named too. Status shows the running version, and **Check versions** the installed one, so it does not offer that update again.
 
-<a id="dsh-015-compatibility-and-legacy-session-recovery"></a>
-
-## Legacy Session recovery
-
-The error `source summary requires notice form; source v0 artifact remains unchanged` comes from older Mnemon messages in DSH Session logs. New recall/instruction messages omit that invalid summary. Updating the plugin does not rewrite an existing Session. To repair one affected log:
-
-1. Stop the owning DSH process. Back up its entire Session storage root, including every generation, separately from a Mnemon Pack. Use the exact `raw log` path reported by DSH; do not search or rewrite unrelated sessions.
-2. With the updated Mnemon package installed, preview the command below against a **backup copy**. Use Node `22.19+` or `24+` for `.jsonl.zstd`; plain `.jsonl` also works on Node 20.
-3. Write to a new path outside the Session directory. Review `repairedMessages`, `repairedDescriptors`, `expandedToolChunkRows`, `expandedToolChunks`, the SHA-256 report and `blockers`. Preview counts describe candidate changes. Known unsupported shapes cause exit status 1; a requested copy has `mode: "refused"` and no output is published. Existing output files are rejected.
-4. In a disposable copy of the Profile, replace only the affected `session.jsonl` or `session.jsonl.zstd` with the repaired copy, retaining the original backup. Let DSH load and resume it, then restart and verify the conversation. Repeat that explicit replacement in the stopped original Profile only after validating the copy. The command itself never replaces the input or a live Session.
-
-```sh
-dsh-mnemon-repair-session --input /backup/session.jsonl.zstd
-dsh-mnemon-repair-session --input /backup/session.jsonl.zstd --output /backup/repaired-session.jsonl.zstd
-```
-
-The executable is installed with `dsh-mnemon`; a Profile-local installation can use `pnpm exec dsh-mnemon-repair-session` from that Profile. In a checkout use `node bin/repair-legacy-session.mjs`. The two stream normalizations below preserve IDs themselves; a proven identity recovery can also apply to the same log. The copy repair supports these audited historical shapes:
-
-| Historical shape | Copy behavior |
-|---|---|
-| `dsh-mnemon` instructions summary `Optional memory recall and remember reminder`; recall summary `Memory View snapshot` or `Runtime memory snapshot` | Remove only that source's `summary` member. Other plugin messages and unfamiliar summaries remain untouched. |
-| Exact historical subagent descriptor v2 with a composition accepted by the frozen v3 contract | Change only its version value to 3. Keep provider, model pair, persona, label and tool filters intact; add no defaults or reasoning effort. Extra fields, unpaired models and unsupported versions are refused. |
-| Exact packed `tool-call-chunks` with string `id: ""` or `name: ""` | Expand to the original raw delta events, preserving IDs, name presence, argument strings, sequence numbers and timestamps. No chunk is dropped and provenance references need no renumbering. Already raw empty-string deltas remain byte-identical. |
-| Exact raw or packed tool deltas with an own `name: null` member | Keep the member and change its value to `""`; expand packed rows with the same logical sequence and timing. IDs, arguments and durable messages remain intact. Both values leave assembly unchanged, and keeping the member preserves token timing. `normalizedToolChunkNames` counts affected logical deltas. |
-| A completed `deepseek-official` stream recorded a unique nonempty provider ID before empty continuation IDs corrupted its durable tool chain | Restore that existing ID only after checking exact ordered chunk provenance, indexed block assembly, matching name/arguments and a unique call/result association. Preserve placeholders before the first candidate, message UUIDs, payloads and other plugin content. Independently proven multiple calls and text/reasoning blocks are supported. No ID is generated. |
-| No recorded ID, conflicting identities, interruptions, unknown affected owner shapes or unaccounted approval/dispatch/plugin/copy references | Report blockers and refuse output. Arbitrary empty-ID histories and owner replay state need recovery by their original writer. |
-
-The ID check uses the original stream's complete `sourceEventSeqs`, including packed logical members. Result provenance must select its exact call; if absent, only a unique single-call step with no other attempt qualifies. An explicit wrong reference never uses that fallback. Extra references through sequence numbers or message IDs are checked across step boundaries; ordinary compaction sequence references and unrelated plugins can remain unchanged. `recoveredToolIdentityChains` counts restored chains, `recoveredToolIdentityFields` counts logical identity slots, and `toolIdentityRecoveryRefusals` explains unsupported proofs with bounded location samples.
-
-The tool accepts only v0, valid UTF-8 JSON records and complete ordinary Zstandard frames, with a 128 MiB limit on stored input, decoded input and expanded output. Malformed input, incomplete frames, ambiguous duplicate keys on transformed or identity-proof paths, and unsafe delta coordinates are refused without publishing output. Only the changed summary/version/name/identity members and expanded packed rows are rewritten; every other decoded byte is retained. Diagnostics count every known blocker and include at most ten line/event/path samples per class, without message bodies. `migrationValidated: false` is deliberate: this scanner does not recover unrelated corruption or guarantee that every Session can migrate. The installed official DSH loader and stream replay remain the final checks. See the [issue #251 contract audit and verification](../../pr-assets/issue-251-legacy-repair/README.md).
-
-DSH migrates old Sessions to immutable v3 generations when opening for write. Mnemon Runtime, Documents and Memory Spaces retain their existing formats. To roll DSH back, restore the pre-upgrade Session backup in a separate old-version Profile; do not open v3 generations with an older DSH. See [verification and screenshots](../../pr-assets/issue-223-dsh-015/README.md).
-
 ## Backup and recovery
 
 <a id="recommended-settings-zip"></a>
@@ -91,6 +58,7 @@ DSH migrates old Sessions to immutable v3 generations when opening for write. Mn
 **Storage → Backup and migration** on the `dsh-mnemon` page under **Plugins** operates on the **currently effective root**:
 
 - **Export ZIP** includes Runtime, Documents, and every Mnemon Native Memory Space. Third-party connections, local external stores, and remote data are excluded.
+- Only the memory sources dsh-mnemon ships are in it: runtime memory, Project Documents and Memory Spaces. A memory source installed from another plugin package is neither exported nor imported; it keeps its own data.
 - **Import ZIP** previews, validates, then merges into the effective root.
 - Packs include `manifest.json`, SHA-256 inventory, and component summaries.
 - Export/import hold component locks; a Memory Space with an uncheckpointed WAL is rejected.
@@ -110,6 +78,8 @@ Import is governed by `writeEnabled` and is rejected in read-only deployments. A
 ### Git repository sync
 
 **Storage → Git sync** publishes the same payload as ZIP backup to a Git repository, so another machine can pull it. The switch is off by default, and while it is off the row shows only its title and the switch: no status is read and no Git command runs. Switched on, the row opens one card that reads in the order it is set up: **Repository**, **Sync**, **Automatic sync**, **Backup history** and **Advanced**. The remote holds readable files; the storage root is never made a Git work tree.
+
+Like the ZIP, a sync carries only runtime memory, Project Documents and the Mnemon Native Memory Spaces. A memory source installed from another plugin package is not synced; it keeps its own data.
 
 On the configured branch and remote directory (defaults `mnemon-sync` and `mnemon/`):
 
@@ -143,22 +113,26 @@ Once connected, the row shows the repository, whether it answers and how it auth
 - **No machine overwrites another.** The branch is merged before every push, and a push Git refuses because another machine published meanwhile folds the branch in again and is tried once more. Only a second refusal is reported; syncing again resolves it.
 - **One copy per divergence.** A document that differs on the two sides is kept beside the local one under a new id, and merging the same version again, as a retried sync does, does not add a second copy. A memory space merges instead: the memories either side added join one space, and the read counts a recall writes never make a copy. Only a memory edited or forgotten on one side keeps the other version as one copy, which that side's later versions move on.
 - **No stuck lock.** The sync lock records its owner, so a Host that stopped mid-operation does not leave every later sync refused: a lock whose process is gone is taken over at once, one an older version left without a record after 15 minutes, and any lock after an hour. The one-command credential files such a Host left behind are removed.
-- **An edit travels, not a copy.** A Project Document differs on the two sides only when both changed it since they last agreed. After every merge and every publish, a machine records each Project Document's version as it and the branch then agree on it, and the commit they agreed at (`state/sync/base.json`). A version covers the text, title, description, archive and links, but not when the document was last read. A document only the branch changed since then replaces the older version on this machine. A document only this machine changed is published as it is. Editing, renaming or archiving a document between syncs therefore adds no copy. A document both sides changed keeps this machine's version under its id, at a revision above both, and the branch's version beside it as a copy, even when only its title or archive differs. A branch version with a lower revision than this machine's, which a machine on an older dsh-mnemon can publish, is kept as a copy too. The agreement is used only while the branch still descends from the commit it was made at. A machine with no agreement on record, such as one updated from dsh-mnemon 0.5.28, which kept none, uses the documents at the commit of its last sync instead (`state/sync/last-run.json`), as the branch held them after this machine published or merged them, while the branch still descends from that commit. That record is dropped when the repository, branch or directory changes, and a branch version above this machine's revision is never taken from it. Without either, every document whose text differs keeps a copy, as before. This happens on the first sync after an update from a version before 0.5.28, on the first sync with another repository, branch or directory, and after the branch is deleted and published again.
+- **An edit travels, not a copy.** A Project Document differs on the two sides only when both changed it since they last agreed.
+  - After every merge and every publish, a machine records each Project Document's version as it and the branch then agree on it, and the commit they agreed at (`state/sync/base.json`). A version covers the text, title, description, archive and links, but not when the document was last read.
+  - A document only the branch changed since then replaces the older version on this machine. A document only this machine changed is published as it is. Editing, renaming or archiving a document between syncs therefore adds no copy.
+  - A document both sides changed keeps this machine's version under its id, at a revision above both, and the branch's version beside it as a copy, even when only its title or archive differs. A branch version with a lower revision than this machine's, which a machine on an older dsh-mnemon can publish, is kept as a copy too.
+  - The agreement is used only while the branch still descends from the commit it was made at. A machine with no agreement on record, such as one updated from dsh-mnemon 0.5.28, which kept none, uses the documents at the commit of its last sync instead (`state/sync/last-run.json`), as the branch held them after this machine published or merged them, while the branch still descends from that commit. That record is dropped when the repository, branch or directory changes, and a branch version above this machine's revision is never taken from it.
+  - Without either, every document whose text differs keeps a copy, as before. This happens on the first sync after an update from a version before 0.5.28, on the first sync with another repository, branch or directory, and after the branch is deleted and published again.
 - **Git 2.20 or newer** is enough: the mirror is initialized without options later Git versions introduced.
 - **Merges are validated.** A merge reads the remote manifest and its SHA-256 inventory first; a manifest or checksum mismatch is a hard failure that imports nothing. A push judges the payload it is about to publish by the same rules an import applies, so a Documents index whose digest or size disagrees with its document stops the push with the document's name, and nothing reaches the branch. A ZIP export still downloads such a store, so it can be backed up before it is repaired.
 - **Backup size.** Git stores a brand-new blob for every push, and the payload is the whole pack, so every successful push folds the mirror's loose objects into one pack (`git repack -adf`). A collection that fails is reported in the push result as a warning and never fails a push that already succeeded.
 - The payload is the existing Mnemon Pack payload: one collector, one validator, one importer. Packs carry `manifest.json`, the SHA-256 inventory and component summaries, and the sync extension records the channel, branch, directory and push time. A reader that does not know sync still reads a valid Mnemon Pack manifest.
-- The payload carries memory content only: runtime, documents and memory-spaces, with the user profile inside runtime. Configuration belongs to the profile layer and never travels in a payload, so a second machine keeps its own settings instead of inheriting this machine's. A pack manifest's `scope` is either `full` or exactly one component, so a persistent component selection cannot be represented. Component filtering exists only as the optional one-off `components` parameter on pull.
+- The payload carries memory content only: runtime, documents and memory-spaces, with the user profile inside runtime. Configuration belongs to the profile layer and never travels in a payload, so a second machine keeps its own settings instead of inheriting this machine's. A sync always carries the full pack; the [sync channel](../reference/interfaces.md#sync-channel) says why.
 - The mirror under `state/sync/git` is disposable and never a pack component, so it cannot sync itself; deleting it costs one fetch. Every sync, Check remote and backup history included, brings the sync directory inside the mirror back to the branch, so a file Git does not track there, such as the `-wal` and `-shm` SQLite leaves beside a database opened in place, is removed rather than read as payload; keep nothing of your own there. Every payload file is published whatever ignore rules the machine has, such as a global `*.db`. A branch an earlier version published without such a file fails the checksum check on every machine: delete the branch on the remote, or choose another directory under **Advanced**, and sync once.
 
 **Advanced** keeps this computer's name, the branch, the directory in the repository and the commit author, each showing the value in use; saving a new branch or directory says that the next sync writes there. **This computer's name** is what backup history and **Check remote** show as "from …" and what every sync publishes with its version: **Host name** uses the computer's current host name and follows it when it changes, and **Custom** takes a name of up to 120 characters on one line. A new name is used from the next sync on, which records it in a version of its own; earlier versions keep the name they were published with. The author is an explicit choice. **Default** commits as `dsh-mnemon sync <mnemon@localhost>`. **This computer's Git** uses the `user.name` and `user.email` Git has on the machine, and the default identity where none is configured, rather than failing or publishing a name Git guessed from the account and host names. **Custom** takes a name and an email.
 
-The GitHub grant is kept in DSH's credentials store under the key `dsh-mnemon/github`; the access token never reaches the browser and never appears in a response. The requested scope is `repo`, so the grant reaches private repositories, and it is used only for repositories on `https://github.com`; a repository on another host needs its own token. A grant GitHub no longer honours is reported as such, with **Sign in again**. Signing out deletes the stored grant. A Host that mounts no credentials provider offers the address form alone. GitHub is reached through the ambient `fetch` first and, when that cannot connect at all, through one retry over a proxy discovered from `HTTPS_PROXY`, `http_proxy`, `all_proxy` or — on Windows — the system proxy settings, so a machine whose launcher carries no proxy policy can still sign in; if no proxy is found the page says so and names `HTTPS_PROXY` instead of showing `fetch failed`.
+**Credentials.** They stay out of the payload, the DSH profile configuration, the browser, responses, error messages and the logs; the [sync channel](../reference/interfaces.md#sync-channel) gives the order in which they are resolved and the fields that describe them.
 
-Credentials stay out of the payload, the configuration file and the logs:
-
-- The token is resolved per operation, in this order: the `MNEMON_SYNC_GIT_TOKEN` environment variable, the token in `state/sync-git.json` (mode `0600`), then the grant GitHub sign-in wrote into DSH's credentials store. It is never written into the payload or printed in an error message. A saved token belongs to the host it was saved for: moving the repository to another host forgets it unless a new token comes with the move.
-- Status and configuration responses describe the credential (`hasToken`, `credentialSource`, `credentialLogin`), never its value. A failure carries its kind as `details.reason`, so the page states it in its own language.
+- A GitHub sign-in is kept in DSH's credentials store and is used only for repositories on `https://github.com`. Its scope is `repo`, so it reaches private repositories; a repository on another host needs its own token. A grant GitHub no longer honours is reported as such, with **Sign in again**. Signing out deletes the stored grant. A Host that mounts no credentials provider offers the address form alone.
+- A saved token lives in `state/sync-git.json` (mode `0600`) and belongs to the host it was saved for: moving the repository to another host forgets it unless a new token comes with the move. The `MNEMON_SYNC_GIT_TOKEN` environment variable, when set, comes before both.
+- Sign-in works even when the launcher passes no proxy policy on: the Host retries once through a proxy it discovers, and names `HTTPS_PROXY` when it finds none. The [sync channel](../reference/interfaces.md#sync-channel) describes the fallback.
 - A remote that cannot be read fails the sync before anything is committed. A push the remote refuses after the commit, for example without write access, keeps the commit in the mirror and says why. Nothing is lost either way; sync again once the remote answers.
 
 ### Seeing every machine's backups and differences
@@ -174,9 +148,19 @@ Credentials stay out of the payload, the configuration file and the logs:
 
 The two sides of a conflict count as the conflict, not in the per-side counts. Both lists are bounded, and the dialog says when there are more differences than it counted.
 
-Reconciling reuses the existing review ledger, and the **Reconcile** button on the **Memory reconciliation** row is the one entry to it: the run reads the difference — including both wordings of every conflict — as evidence, and the plan arrives as a pending proposal that is never written on its own; it lists every operation with its reason, and can be **Accepted** and then **Applied**, or annotated with an opinion first. A rejected plan has to be **reopened** before the AI is asked again: a decided proposal is answered by its decision, so the reviewer's words only reach the next run once it is open again — which is why the order is "leave an opinion, reopen, then ask again". The ledger records the positions that ran (`appliedOperations`), so a plan applied in part stays in the list until every one of its operations has run; a plan whose operations all ran leaves the list for the **Applied plans** dialog kept for reading, and reopening one there does not undo what it wrote — it restores the whole plan as a pending decision.
-
 Checking the remote and reading the history are reads: nothing is imported and no local memory changes. The only writes are **Sync now**, **Merge here only**, **Bring them back** and **Apply**; `runtime` in a merge's answer reports how many entries it wrote and how many stayed out because this installation had deleted them.
+
+### Memory reconciliation
+
+Reconciling reuses the existing review ledger, and the **Reconcile** button on the **Memory reconciliation** row under **Storage** is the one entry to it:
+
+- The run reads the difference, including both wordings of every conflict, as evidence. It is also given the entries the sync branch holds and this installation does not, and the opinions already recorded on pending proposals, oldest first, so a request can answer a proposal directly before reconciling again.
+- **What to accomplish** states what the run should achieve, for example "keep the short wording, do not merge near-duplicates". It describes the goal and never widens permission: what an operation may contain is still the Host's decision. The answer says whether your request was followed and how many branch entries the plan could see.
+- The plan arrives as a pending proposal that is never written on its own. It lists every operation with its reason, and can be **Accepted** and then **Applied**, rejected, or annotated with an opinion first.
+- A rejected plan has to be **reopened** before the AI is asked again: a decided proposal is answered by its decision, so the reviewer's words only reach the next run once it is open again. That is why the order is "leave an opinion, reopen, then ask again".
+- An accepted plan can be applied in part. Every operation carries a checkbox, only the positions that have not run are offered, **All** and **None** switch the whole set, and the button names how many it will apply; an empty selection says so instead of applying nothing silently. The ledger records the positions that ran (`appliedOperations`), shown as "{count} of {total} operations have run", so a plan applied in part stays in the list until every one of its operations has run.
+- A plan whose operations all ran leaves the list for the **Applied plans** dialog, kept for reading. Reopening one there does not undo what it wrote; it restores the whole plan as a pending decision.
+- A read-only Host can still read and annotate the ledger; applying is what requires a writable deployment.
 
 ### Recovery rehearsal
 
@@ -218,8 +202,18 @@ Recommended migration: export from the old scope → switch and confirm the new 
 
 With `workspaces`, back up the complete central directory for every workspace, or export a Pack for the selected workspace only. A renamed/moved workspace receives a new path hash; restoring its old data is an explicit operator action.
 
-
 Existing turns and delegated child activations may still use the old runtime. Wait for them to finish or cancel them before moving or retiring its data. Parent completion alone does not release an asynchronous child's delegation; a newly created or cold-resumed activation captures its own authorized generation.
+
+## Disable the complete Starter
+
+The legacy `mnemon` Entry remains the lifecycle switch for the complete Starter. To disable Mnemon without leaving its Source or Strategy Entries waiting on the missing Host service, add this profile patch and restart DSH:
+
+```yaml
+- id: mnemon
+  disabled: true
+```
+
+This disables the Core/Host, all three bundled Sources, both main Strategies, and all three optional Strategy enhancements together. It does not remove installed packages or delete memory data. Remove the override, or change it to `false`, and restart DSH to enable the Starter again.
 
 <a id="cloud-hosted-webui"></a>
 
@@ -239,17 +233,6 @@ The DSH releases in the [compatibility matrix](../reference/compatibility.md) ar
 4. Open the clean external URL and verify that **Status** and the `dsh-mnemon` page under **Plugins** both load and a page reload remains authenticated. Remote settings are read-only by default. If management is intended, apply the [explicit remote management grant](#remote-management), restart DSH, then verify one deliberate small save.
 
 An HTTP 403 can indicate a Host/Origin mismatch or an old remote Client still using standalone channels: check `--trusted-host`, the public authority and proxy routing, then upgrade dsh-mnemon, restart DSH and reload the browser. Remote Mnemon calls use the authenticated API Gateway. An HTTP 401 requires restoring the Host's browser authentication or pairing. A response saying remote management requires `remoteAccess: trusted-host` is a separate Mnemon grant check; successful browser authentication alone does not authorize management.
-
-### Disable the complete Starter
-
-The legacy `mnemon` Entry remains the lifecycle switch for the complete Starter. To disable Mnemon without leaving its Source or Strategy Entries waiting on the missing Host service, add this profile patch and restart DSH:
-
-```yaml
-- id: mnemon
-  disabled: true
-```
-
-This disables the Core/Host, all three bundled Sources, both main Strategies, and all three optional Strategy enhancements together. It does not remove installed packages or delete memory data. Remove the override, or change it to `false`, and restart DSH to enable the Starter again.
 
 <a id="remote-management"></a>
 
@@ -291,32 +274,11 @@ For authenticated remote clients, `remoteAccess: trusted-host` grants management
 
 ## Security boundaries
 
-### Process
+<a id="process"></a>
+<a id="files"></a>
+<a id="web-and-model"></a>
 
-- CLI uses `spawn(command, args, { shell: false })`.
-- stdout + stderr are capped at 2 MiB per call. Mnemon Native reads a whole Memory Space for its contents list, its graph and the exact-content check before runtime memory archives entries; those reads grow with the Store and are capped at 128 MiB.
-- A call that fails says why: only a failed launch suggests installing Mnemon or setting `mnemon.cliPath`, while a timeout, a cancellation and an output over the cap each name themselves.
-- Calls use `timeoutMs` and AbortSignal; cancellation sends `SIGTERM`, then `SIGKILL` after 1.5 seconds.
-- One Runner serializes calls; separate DSH processes still rely on Mnemon / SQLite concurrency.
-
-### Files
-
-- Runtime, Documents, and Pack operations use in-process queues or component locks.
-- Lock wait defaults to 5 seconds; stale threshold is 30 seconds.
-- Writes use temporary files, staging, and rename.
-- Runtime revisions block stale compaction; Document revisions block movement of updated originals.
-- `sourcePaths` cannot escape the initiating workspace or point into managed Documents.
-
-### Web and model
-
-- DSH owns authentication or pairing for remote RPCs and streams. Mnemon's API Gateway projection additionally requires `remoteAccess: trusted-host` for management; local loopback clients and DSH desktop windows (`dsh-app://app/`) use their own channels.
-- Provider catalogs and management responses are redacted; the UI receives configured field names, never saved credential values.
-- The WebUI follows the Host's writable settings snapshot instead of inferring capability from transport locality; an unavailable settings channel renders an explicit diagnostic rather than an empty page.
-- The WebUI neither reads SQLite, starts processes, calls remote providers, nor supplies arbitrary update commands; provider network access remains inside the Host.
-- Workers use persona, tool allowlists, and `maxDepth: 1`. A stable result tool accepts only the current child's revocable request ID and validates each operation's result schema.
-- Distillation and supervised writeback workers cannot call `mnemon_forget`. Idle review has only the create-only Documents tool for document writes, so it cannot replace user originals or archive documents to make room. These restrictions are enabled by default and do not require an enhancement plugin.
-- Idle review writes each pass to one layer: after it creates a Document, working-memory changes are refused, and after a working-memory change, a Document is refused. `idleReview.runtimeMemory: false` removes its runtime memory tool entirely.
-- Queries, candidates, Document bodies, and historical memory are treated as untrusted data.
+The Host runs the Mnemon CLI without a shell, bounds every call's time and output, and serializes writes behind locks and revisions. The browser never receives credentials and cannot start processes, and each task Agent gets only the memory tools its task needs. [Architecture](../development/architecture.md#security-boundaries) lists each boundary.
 
 These boundaries are not a secret scanner. There is no deterministic credential detection; never submit keys, tokens, private keys, or raw sensitive logs.
 
@@ -361,6 +323,39 @@ Report vulnerabilities privately through [SECURITY.md](../../../SECURITY.md), no
 | `mnemon-bundle (dsh-mnemon/bundle): pending (waiting for service: mnemonStarterReady)` right after an update | DSH was updated to 0.5.20 without a restart and still runs the old component group; quit DSH completely and start it again, as [Install and start](./installation.md#err_package_path_not_exported-after-an-update) describes |
 | Mnemon RPC returns 401 after a DSH restart or authority change | Open the launch URL printed by `dsh web` so the one-time token can establish a fresh authority-bound browser cookie |
 
+<a id="dsh-015-compatibility-and-legacy-session-recovery"></a>
+
+## Legacy Session recovery
+
+The error `source summary requires notice form; source v0 artifact remains unchanged` comes from older Mnemon messages in DSH Session logs. New recall/instruction messages omit that invalid summary. Updating the plugin does not rewrite an existing Session. To repair one affected log:
+
+1. Stop the owning DSH process. Back up its entire Session storage root, including every generation, separately from a Mnemon Pack. Use the exact `raw log` path reported by DSH; do not search or rewrite unrelated sessions.
+2. With the updated Mnemon package installed, preview the command below against a **backup copy**. Use Node `22.19+` or `24+` for `.jsonl.zstd`; plain `.jsonl` also works on Node 20.
+3. Write to a new path outside the Session directory. Review `repairedMessages`, `repairedDescriptors`, `expandedToolChunkRows`, `expandedToolChunks`, the SHA-256 report and `blockers`. Preview counts describe candidate changes. Known unsupported shapes cause exit status 1; a requested copy has `mode: "refused"` and no output is published. Existing output files are rejected.
+4. In a disposable copy of the Profile, replace only the affected `session.jsonl` or `session.jsonl.zstd` with the repaired copy, retaining the original backup. Let DSH load and resume it, then restart and verify the conversation. Repeat that explicit replacement in the stopped original Profile only after validating the copy. The command itself never replaces the input or a live Session.
+
+```sh
+dsh-mnemon-repair-session --input /backup/session.jsonl.zstd
+dsh-mnemon-repair-session --input /backup/session.jsonl.zstd --output /backup/repaired-session.jsonl.zstd
+```
+
+The executable is installed with `dsh-mnemon`; a Profile-local installation can use `pnpm exec dsh-mnemon-repair-session` from that Profile. In a checkout use `node bin/repair-legacy-session.mjs`. The two stream normalizations below preserve IDs themselves; a proven identity recovery can also apply to the same log. The copy repair supports these audited historical shapes:
+
+| Historical shape | Copy behavior |
+|---|---|
+| `dsh-mnemon` instructions summary `Optional memory recall and remember reminder`; recall summary `Memory View snapshot` or `Runtime memory snapshot` | Remove only that source's `summary` member. Other plugin messages and unfamiliar summaries remain untouched. |
+| Exact historical subagent descriptor v2 with a composition accepted by the frozen v3 contract | Change only its version value to 3. Keep provider, model pair, persona, label and tool filters intact; add no defaults or reasoning effort. Extra fields, unpaired models and unsupported versions are refused. |
+| Exact packed `tool-call-chunks` with string `id: ""` or `name: ""` | Expand to the original raw delta events, preserving IDs, name presence, argument strings, sequence numbers and timestamps. No chunk is dropped and provenance references need no renumbering. Already raw empty-string deltas remain byte-identical. |
+| Exact raw or packed tool deltas with an own `name: null` member | Keep the member and change its value to `""`; expand packed rows with the same logical sequence and timing. IDs, arguments and durable messages remain intact. Both values leave assembly unchanged, and keeping the member preserves token timing. `normalizedToolChunkNames` counts affected logical deltas. |
+| A completed `deepseek-official` stream recorded a unique nonempty provider ID before empty continuation IDs corrupted its durable tool chain | Restore that existing ID only after checking exact ordered chunk provenance, indexed block assembly, matching name/arguments and a unique call/result association. Preserve placeholders before the first candidate, message UUIDs, payloads and other plugin content. Independently proven multiple calls and text/reasoning blocks are supported. No ID is generated. |
+| No recorded ID, conflicting identities, interruptions, unknown affected owner shapes or unaccounted approval/dispatch/plugin/copy references | Report blockers and refuse output. Arbitrary empty-ID histories and owner replay state need recovery by their original writer. |
+
+The ID check uses the original stream's complete `sourceEventSeqs`, including packed logical members. Result provenance must select its exact call; if absent, only a unique single-call step with no other attempt qualifies. An explicit wrong reference never uses that fallback. Extra references through sequence numbers or message IDs are checked across step boundaries; ordinary compaction sequence references and unrelated plugins can remain unchanged. `recoveredToolIdentityChains` counts restored chains, `recoveredToolIdentityFields` counts logical identity slots, and `toolIdentityRecoveryRefusals` explains unsupported proofs with bounded location samples.
+
+The tool accepts only v0, valid UTF-8 JSON records and complete ordinary Zstandard frames, with a 128 MiB limit on stored input, decoded input and expanded output. Malformed input, incomplete frames, ambiguous duplicate keys on transformed or identity-proof paths, and unsafe delta coordinates are refused without publishing output. Only the changed summary/version/name/identity members and expanded packed rows are rewritten; every other decoded byte is retained. Diagnostics count every known blocker and include at most ten line/event/path samples per class, without message bodies. `migrationValidated: false` is deliberate: this scanner does not recover unrelated corruption or guarantee that every Session can migrate. The installed official DSH loader and stream replay remain the final checks. See the [issue #251 contract audit and verification](../../pr-assets/issue-251-legacy-repair/README.md).
+
+DSH migrates old Sessions to immutable v3 generations when opening for write. Mnemon Runtime, Documents and Memory Spaces retain their existing formats. To roll DSH back, restore the pre-upgrade Session backup in a separate old-version Profile; do not open v3 generations with an older DSH. See [verification and screenshots](../../pr-assets/issue-223-dsh-015/README.md).
+
 ## Known limitations
 
 ### Feature read-only is not disk read-only
@@ -383,14 +378,9 @@ Activity score, latest checkpoint, and retry state are not persisted. Host resta
 
 The supported DSH releases are in the [compatibility matrix](../reference/compatibility.md). The Web interface is bilingual, while commands, tool cards, compatibility metadata and some errors remain partly untranslated.
 
-## Document archive recovery
+<a id="document-archive-recovery"></a>
+<a id="runtime-archive-recovery"></a>
 
-Document archive no longer asks the worker to number remember/recall receipts. If an older attempt left a cold index while the document stayed active, retrying can reuse an index whose exact path and content hash match the current revision. Updated documents need a matching new revision index. Providers with asynchronous extraction or no safe forget are rejected before indexing. When no Memory Space at all can take the index, the Document is archived locally without one: its original moves to the archive and stays readable on the Project Documents page. A cleanup failure names the destination and newly created id; keep existing data until the outcome is established.
+## When an archive fails
 
-## Runtime archive recovery
-
-Capacity archival writes to an active Memory Space whose Provider supports exact writes and safe forget. Asynchronous extraction targets, including Hindsight, are excluded before any archive write. When no Memory Space at all can take the archive, because the layer is off or takes no automatic writes, no Provider is ready, no space is active or only unsupported Providers remain, the Runtime Source appends the entries compaction leaves out to its local archive in `runtime/archived/`, under the same lock and just before it commits the compaction and the pending write: `MEMORY.md` to read and `memories.jsonl` with each entry's metadata. A space that another Memory Spaces Source could take it into, or a Runtime Source too old to keep what compaction leaves out, still refuses. Mnemon Packs do not carry the local archive, and importing one keeps it. Direct Provider writes retain their existing asynchronous behavior.
-
-Conversation archival uses the selected Source's write scope: known spaces activated during the turn and spaces created by that View can receive the archive. A space created elsewhere after the View was pinned requires a new turn, so a write whose only eligible spaces lie outside the View's scope, or that the View offers no writes to, is refused rather than archived locally. An empty scope never grants access to every space. Destination errors distinguish an empty directory, an empty or excluding View scope, and unsupported Provider capabilities, and report the catalog, authorized and writable counts. The pending add has not been saved on failure; retry the same tool input in a new turn after correcting the reported cause. Existing hot entries are preserved.
-
-If an archive receipt or local commit fails, the Host attempts to forget only entries proven newly created by this attempt. Skipped or reused entries are preserved. A changed or unreadable Runtime revision after a commit error is treated as uncertain: archive entries are retained to avoid losing committed memory. Cleanup errors identify the remaining destination and item ids. A Provider request that fails without receipts may have an unknown remote outcome, so this is not a distributed transaction; inspect that Provider before retrying.
+What a failed or interrupted archive keeps, and what to check before retrying, is described with each workflow: [Document archive recovery](../reference/workflows.md#document-archive-recovery) and [Runtime archive recovery](../reference/workflows.md#runtime-archive-recovery).

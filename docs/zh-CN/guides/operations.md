@@ -49,39 +49,6 @@ Go 更新还要求当前执行文件确实位于本机 Go 的安装输出位置�
 
 更新命令由 Host 固定选择：浏览器不能传入命令或参数，执行禁用 shell，并限制时间与输出。插件更新在所属 profile 中安装已检查的精确版本，确认实际安装版本后才报告成功，避免固定 beta 版本未变却提示已更新。更新完成后界面自动重新检查两个组件并刷新状态。Mnemon CLI 从下一次调用起生效；dsh-mnemon 在 DSH 重启后才加载新插件代码：停止并重新运行 `dsh web`，或完全退出桌面版（macOS 上按 `Cmd+Q`）后重新打开。在此之前 Host 仍运行之前的版本，而 DSH 会在文件变化后立即载入新的记忆系统页面；该页面会重新打开**检查版本**，显示这次更新以及需要的重启。DSH 重启之前，记忆系统每个页面的顶部都会提示已安装的版本和仍在运行的版本，无论更新来自检查版本还是 `dsh plugin`；单独更新的子包也会列出。状态页显示的是正在运行的版本，**检查版本**显示已安装的版本，不会再次提供这次更新。
 
-<a id="dsh-015-兼容与旧会话恢复"></a>
-
-## 旧会话恢复
-
-错误 `source summary requires notice form; source v0 artifact remains unchanged` 来自旧版 Mnemon 写入的 DSH 会话消息。新消息已移除 recall/instructions 中不合法的 summary；更新插件不会改写现有会话。修复单个受影响日志时：
-
-1. 停止所属 DSH 进程，单独备份完整会话存储根及全部 generation；Mnemon Pack 不包含这些会话。以 DSH 错误中的准确 `raw log` 路径为准，不扫描或改写其他会话。
-2. 安装修复后的 Mnemon，对**备份副本**执行下面的预览命令。`.jsonl.zstd` 使用 Node `22.19+` 或 `24+`；普通 `.jsonl` 也支持 Node 20。
-3. 将结果写入会话目录外的新路径，核对 `repairedMessages`、`repairedDescriptors`、`expandedToolChunkRows`、`expandedToolChunks`、SHA-256 报告和 `blockers`。预览计数表示候选修改；发现已知不支持的形状时退出码为 1，副本请求返回 `mode: "refused"` 且不生成输出。已有输出文件会被拒绝。
-4. 先在一次性的 Profile 副本中，用修复副本替换对应 `session.jsonl` 或 `session.jsonl.zstd`，保留原始备份。让 DSH 加载、续写，重启后再验证会话。副本验证通过后，才在已停止的原 Profile 中执行同样的明确替换。命令本身绝不替换输入或正在使用的会话。
-
-```sh
-dsh-mnemon-repair-session --input /backup/session.jsonl.zstd
-dsh-mnemon-repair-session --input /backup/session.jsonl.zstd --output /backup/repaired-session.jsonl.zstd
-```
-
-可执行命令随 `dsh-mnemon` 安装；Profile 内安装可在该目录使用 `pnpm exec dsh-mnemon-repair-session`。源码 checkout 使用 `node bin/repair-legacy-session.mjs`。下表两种 stream 规范化本身不改 ID；同一日志也可叠加经过证明的身份恢复。副本修复仅覆盖经过契约审计的历史形状：
-
-| 历史形状 | 副本行为 |
-|---|---|
-| `dsh-mnemon` instructions summary 为 `Optional memory recall and remember reminder`；recall summary 为 `Memory View snapshot` 或 `Runtime memory snapshot` | 仅移除该 source 的 `summary` 成员，保留其他插件消息和陌生 summary。 |
-| 严格符合旧版封闭字段集合且组合参数满足冻结 v3 契约的 subagent descriptor v2 | 仅将版本值改为 3，保留 provider、成对模型字段、persona、label 和 toolFilter；不添加默认值或 reasoning effort。多余字段、不成对模型和其他不支持的版本会被拒绝。 |
-| 严格符合旧版结构、字符串 `id: ""` 或 `name: ""` 的 `tool-call-chunks` | 展开为原来的 raw delta 事件，保留 ID、name 是否存在、参数字符串、序号和时间戳。不丢弃 chunk，provenance 引用无需重编号。已经是 raw 的空字符串 delta 保持字节不变。 |
-| 严格符合结构、自有成员为 `name: null` 的 raw 或 packed 工具 delta | 保留成员，将值改为 `""`；packed 行按原逻辑序号与时间展开。ID、参数和持久消息不变。两种值均不改变组装状态，保留成员可维持 token 计时。`normalizedToolChunkNames` 统计受影响的逻辑 delta 数。 |
-| 完成的 `deepseek-official` stream 已记录唯一非空 provider ID，后续空 ID 覆盖了持久工具链身份 | 核对完整有序 chunk provenance、按 index 组装的 block、相同 name/参数和唯一 call/result 关联后，仅恢复该已记录 ID。保留首个候选之前的空占位值、消息 UUID、正文及其他插件内容；支持逐条证明的多工具，以及 text/reasoning block。不生成 ID。 |
-| 没有已记录 ID、身份冲突、中断、待修 owner 对象结构未知，或 approval/dispatch/plugin/消息副本引用未闭合 | 报告 blocker 并拒绝输出。任意空 ID 历史及 owner replay state 仍需原写入方恢复。 |
-
-ID 检查使用原 stream 完整的 `sourceEventSeqs`，包括 packed 逻辑成员。result provenance 必须精确指向对应 call；字段缺省时，仅允许没有其他 attempt 的唯一单调用 step。显式错误引用不能使用此回退。通过序号或消息 ID 关联的额外引用会跨 step 检查；普通 compaction 序号引用与无关插件仍可原样保留。`recoveredToolIdentityChains` 统计恢复的链，`recoveredToolIdentityFields` 统计逻辑身份字段，`toolIdentityRecoveryRefusals` 用有数量上限的位置样例解释无法证明的形状。
-
-工具只接受 v0、合法 UTF-8 JSON 记录和完整的普通 Zstandard 帧；原始输入、解压输入和展开输出均限制为 128 MiB。格式损坏、不完整帧、修改或身份判断路径中的歧义重复键、无法安全表示的 delta 序号或时间会在发布输出前被拒绝。仅改写匹配的 summary/version/name/identity 成员和需要展开的 packed 行，其他解压字节均保留。诊断统计每类已知 blocker 的全部次数，并最多列出十个行号/事件/字段路径样例，不输出消息正文。`migrationValidated: false` 明确表示扫描器不会修复其他损坏，也不保证任意会话都能迁移；最终仍以安装的官方 DSH 加载器和 stream 回放为准。参见 [issue #251 契约审计与验证](../../pr-assets/issue-251-legacy-repair/README.zh-CN.md)。
-
-DSH 以写权限打开旧会话时，会迁移为不可变的 v3 generation。Mnemon Runtime、档案与记忆空间维持原有格式。回滚 DSH 时，在独立旧版本 Profile 中恢复升级前会话备份；不要让旧 DSH 打开 v3 generation。参见[验证与截图](../../pr-assets/issue-223-dsh-015/README.zh-CN.md)。
-
 ## 备份与恢复
 
 <a id="推荐设置页-zip"></a>
@@ -91,6 +58,7 @@ DSH 以写权限打开旧会话时，会迁移为不可变的 v3 generation。Mn
 **插件 → 可组合记忆**页面“存储”组中的“备份与迁移”针对**当前有效根**工作：
 
 - **导出 ZIP**：包含 Runtime、Documents 和全部 Mnemon Native Memory Spaces；三方连接、本地外部 Store 与远程数据不进入包；
+- 包中只有 dsh-mnemon 随附的记忆来源：运行时记忆、项目档案与记忆空间。从其他插件包安装的记忆来源既不会导出也不会导入，它的数据由它自己保存；
 - **导入 ZIP**：先预检，再合并到当前有效根；
 - 包内包含 `manifest.json`、SHA-256 清单和三类数据摘要；
 - 导出与导入持有组件锁，Memory Space 仍有未 checkpoint 的 WAL 时会拒绝；
@@ -110,6 +78,8 @@ DSH 以写权限打开旧会话时，会迁移为不可变的 v3 generation。Mn
 ### Git 仓库同步
 
 **存储 → Git 同步**把与 ZIP 备份完全相同的载荷发布到 Git 仓库，供另一台机器拉取。该开关默认关闭；关闭时这一行只显示标题与开关，不读取状态，也不执行 Git 命令。打开后这一行展开为一张卡片，按设置的先后顺序排列：**仓库**、**同步**、**自动同步**、**备份历史**与**高级设置**。远端存放可读文件；存储根永远不会被变成 Git 工作树。
+
+与 ZIP 一样，Git 同步只携带运行时记忆、项目档案与 Mnemon Native 记忆空间。从其他插件包安装的记忆来源不会被同步，它的数据由它自己保存。
 
 远端位于所配置的分支与目录下（默认分支 `mnemon-sync`、目录 `mnemon/`）：
 
@@ -143,22 +113,26 @@ DSH 以写权限打开旧会话时，会迁移为不可变的 v3 generation。Mn
 - **设备之间不会互相覆盖。** 每次推送前都先合并分支；如果推送因其他设备刚好发布而被 Git 拒绝，会再合并一次并重试一次。只有第二次仍被拒绝才会报告，再同步一次即可。
 - **每处分歧只保留一份副本。** 两边内容不同的项目档案会以新 id 保留在本机版本旁边；再次合并同一版本（例如重试的同步）不会再多出一份。记忆空间则直接合并：两边新增的记忆都进入同一个空间，召回写入的计数不会产生副本。只有某条记忆在一边被编辑或遗忘时，才会把另一边的版本保留为一份副本，之后那一边的新版本会继续更新这份副本。
 - **不会卡在锁上。** 同步锁会记录持有者，因此中途停止的 Host 不会让之后的同步一直被拒绝：持有进程已不存在的锁立即接管，旧版本留下的无记录锁 15 分钟后接管，任何锁超过一小时都会接管。它遗留的单次命令凭据文件也会被清除。
-- **同步的是修改，不是副本。** 对项目档案来说，只有两边在上次一致之后都改动过，才算两边不同。每次合并和每次发布之后，设备会记下此时它与分支一致的每份项目档案的版本，以及达成一致时的提交（`state/sync/base.json`）。版本包括正文、标题、描述、归档状态和关联，但不包括上次读取的时间。此后只有分支改动过的档案，会替换本机的旧版本；只有本机改动过的档案，会按本机的版本发布。因此两次同步之间编辑、重命名或归档档案，都不会产生副本。两边都改动过的档案，本机的版本保留原 id，修订号高于两边，分支的版本作为副本保留在旁边，即使只有标题或归档状态不同也是如此。分支上修订号比本机低的版本也会保留为副本，较旧的 dsh-mnemon 可能发布这样的版本。只有分支仍从达成一致时的提交延续下来，这份记录才会被使用。没有这份记录的设备（例如从不保存它的 dsh-mnemon 0.5.28 升级上来的设备），会改用它上次同步那个提交里的档案（`state/sync/last-run.json`），也就是本机发布或合并之后分支上的版本，前提是分支仍从那个提交延续下来。仓库、分支或目录一改变，这条记录就会被丢弃；修订号高于本机的分支版本也不会按它处理。两者都没有时，正文不同的档案都会像以前一样各保留一份副本。从 0.5.28 之前的版本升级后的第一次同步、换到另一个仓库、分支或目录后的第一次同步，以及分支被删除后重新发布时，都属于这种情况。
+- **同步的是修改，不是副本。** 对项目档案来说，只有两边在上次一致之后都改动过，才算两边不同。
+  - 每次合并和每次发布之后，设备会记下此时它与分支一致的每份项目档案的版本，以及达成一致时的提交（`state/sync/base.json`）。版本包括正文、标题、描述、归档状态和关联，但不包括上次读取的时间。
+  - 此后只有分支改动过的档案，会替换本机的旧版本；只有本机改动过的档案，会按本机的版本发布。因此两次同步之间编辑、重命名或归档档案，都不会产生副本。
+  - 两边都改动过的档案，本机的版本保留原 id，修订号高于两边，分支的版本作为副本保留在旁边，即使只有标题或归档状态不同也是如此。分支上修订号比本机低的版本也会保留为副本，较旧的 dsh-mnemon 可能发布这样的版本。
+  - 只有分支仍从达成一致时的提交延续下来，这份记录才会被使用。没有这份记录的设备（例如从不保存它的 dsh-mnemon 0.5.28 升级上来的设备），会改用它上次同步那个提交里的档案（`state/sync/last-run.json`），也就是本机发布或合并之后分支上的版本，前提是分支仍从那个提交延续下来。仓库、分支或目录一改变，这条记录就会被丢弃；修订号高于本机的分支版本也不会按它处理。
+  - 两者都没有时，正文不同的档案都会像以前一样各保留一份副本。从 0.5.28 之前的版本升级后的第一次同步、换到另一个仓库、分支或目录后的第一次同步，以及分支被删除后重新发布时，都属于这种情况。
 - **Git 2.20 或更高版本即可**：初始化镜像时不再使用更晚版本才引入的选项。
 - **合并前先校验。** 合并先读取远端 manifest 与 SHA-256 清单；manifest 或校验和不匹配属于硬失败，不会导入任何内容。推送前也会按导入时的同一套规则校验即将发布的载荷：项目档案索引中的摘要或大小与档案本身不符时，推送会停止并说明是哪份档案，分支上不会写入任何内容。ZIP 导出仍能下载这样的数据，以便修复前先做备份。
 - **备份体积。** Git 为每次推送写入全新的 blob，而载荷是整包，因此每次推送成功后会把镜像的零散对象收进一个 pack（`git repack -adf`）。收拢失败只在推送结果中以警告回报，不会让已经成功的推送失败。
 - 载荷就是既有的 Mnemon Pack 载荷：同一个收集器、同一个校验器、同一个导入器。包内包含 `manifest.json`、SHA-256 清单与组件摘要，同步扩展字段记录通道、分支、目录与推送时间；不认识同步的读取方仍能读到合法的 Mnemon Pack manifest。
-- 载荷只承载记忆内容：runtime、documents 与 memory-spaces，用户画像包含在 runtime 中。配置属于 profile 层，不会随载荷传递，因此第二台机器保留自己的设置，不会继承本机的设置。Pack manifest 的 `scope` 只能是 `full` 或恰好一个组件，因此无法表示持久化的组件选择；组件筛选只作为 pull 的一次性可选参数 `components` 存在。
+- 载荷只承载记忆内容：runtime、documents 与 memory-spaces，用户画像包含在 runtime 中。配置属于 profile 层，不会随载荷传递，因此第二台机器保留自己的设置，不会继承本机的设置。同步总是携带完整的包，原因见[同步通道](../reference/interfaces.md#同步通道)。
 - `state/sync/git` 下的镜像是可丢弃的，且不属于任何数据组件，因此镜像不会同步自己；删除它只多一次 fetch。每次同步（包括检查远端与备份历史）都会把镜像中的同步目录恢复为分支的内容，所以 Git 不跟踪的文件（例如在原地打开数据库时 SQLite 留下的 `-wal` 与 `-shm`）会被删除，而不会被当作载荷读取；不要在那里存放自己的文件。无论这台设备有什么忽略规则（例如全局的 `*.db`），载荷中的每个文件都会被发布。较早版本因此漏掉文件后发布的分支，在每台设备上都通不过校验：在远端删除该分支，或在**高级设置**中换一个目录，再同步一次即可。
 
 **高级设置**包含这台电脑的名称、分支、仓库内目录与提交者，每项都显示当前使用的值；保存新的分支或目录时会说明下次同步会写到那里。**这台电脑的名称**会显示在备份历史与**检查远端**的“来自 …”里，并随每次同步一起发布：**主机名**使用这台电脑当前的主机名，主机名改变时跟着改变；**自定义**填写不超过 120 个字符、只占一行的名称。新名称从下一次同步起使用，那次同步会为它留下一个版本；之前的版本保留发布时的名称。提交者是明确的选择：**默认**以 `dsh-mnemon sync <mnemon@localhost>` 提交；**本机 Git** 使用这台机器 Git 配置的 `user.name` 与 `user.email`，没有配置时使用默认身份，而不是让提交失败，或发布 Git 根据账号与主机名猜出的身份；**自定义**填写姓名与邮箱。
 
-GitHub 登录凭据保存在 DSH 凭据存储的 `dsh-mnemon/github` 键下；访问令牌不会到达浏览器，也不会出现在任何响应中。申请的 scope 是 `repo`，因此可以访问私有仓库，并且只用于 `https://github.com` 上的仓库；其他主机上的仓库需要自己的令牌。GitHub 不再认可的凭据会被如实提示，并提供**重新登录**。退出登录会删除已保存的凭据。未挂载凭据 provider 的 Host 只提供地址表单。访问 GitHub 时先走环境自带的 `fetch`，完全连不上时再用从 `HTTPS_PROXY`、`http_proxy`、`all_proxy`（Windows 上还包括系统代理设置）发现的代理重试一次，因此启动器没有下发代理策略的机器也能登录；若一个代理都找不到，页面会直接说明并指出要设置 `HTTPS_PROXY`，而不是只显示 `fetch failed`。
+**凭据。** 凭据不进入载荷、DSH profile 配置、浏览器、响应、错误信息与日志；它们按什么顺序解析、由哪些字段描述，见[同步通道](../reference/interfaces.md#同步通道)。
 
-凭据不进入载荷、配置文件与日志：
-
-- 令牌每次操作时按以下顺序解析：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中的令牌，最后是 GitHub 登录写入 DSH 凭据存储的凭据。它不会写入载荷，也不会出现在错误信息里。保存的令牌只属于保存它时的主机：把仓库换到另一个主机时，除非同时提供新令牌，旧令牌会被丢弃。
-- 状态与配置响应只描述凭据（`hasToken`、`credentialSource`、`credentialLogin`），不回传其值。失败会以 `details.reason` 带上类别，页面据此用自己的语言说明。
+- GitHub 登录保存在 DSH 的凭据存储中，只用于 `https://github.com` 上的仓库。申请的 scope 是 `repo`，因此可以访问私有仓库；其他主机上的仓库需要自己的令牌。GitHub 不再认可的凭据会被如实提示，并提供**重新登录**。退出登录会删除已保存的凭据。未挂载凭据 provider 的 Host 只提供地址表单。
+- 保存的令牌放在 `state/sync-git.json`（权限 `0600`）中，只属于保存它时的主机：把仓库换到另一个主机时，除非同时提供新令牌，旧令牌会被丢弃。设置了环境变量 `MNEMON_SYNC_GIT_TOKEN` 时，它优先于这两者。
+- 启动器没有下发代理策略时也能登录：Host 会通过自己发现的代理重试一次，一个都找不到时会提示设置 `HTTPS_PROXY`。回退方式见[同步通道](../reference/interfaces.md#同步通道)。
 - 读不到远端时，同步会在提交任何内容之前失败；提交之后才被远端拒绝的推送（例如没有写权限）会把提交留在镜像中并说明原因。两种情况都不会丢失数据，远端恢复后再同步一次即可。
 
 ### 查看每台设备的备份与差异
@@ -174,9 +148,19 @@ GitHub 登录凭据保存在 DSH 凭据存储的 `dsh-mnemon/github` 键下；�
 
 冲突两侧计为冲突本身，不计入按侧统计的条数。两份列表都受上限保护，差异多于统计时弹窗会说明。
 
-整理复用既有的审查账本，入口是**记忆整理**那一行的**整理记忆**：它把差异——包括冲突两侧的写法——作为证据交给 agent，方案以待审查建议的形式出现，不会自动写入；方案列出每条操作与理由，可以**接受**后**执行**，也可以先留下意见。已拒绝的方案要先**重新打开**才能再整理：账本里已决定的建议由其决定回答，只有重新打开后，你的意见才会进入下一次 run 读到的证据，所以顺序是「写下意见 → 重新打开 → 再整理」。执行过的位置会被账本逐条记录（`appliedOperations`），因此只执行了选中项的方案仍留在列表里，直到它的每条操作都跑过为止；全部执行完的方案离开列表、收进**已执行的历史方案**弹窗，只供回看，重新打开它不会撤销已经写入的改动，而是把整份方案恢复成待审查、可以重新决定。
-
 检查远端与查看备份历史都是只读：不会导入任何内容，也不会改动本机记忆。会写入的只有**立即同步**、**只合并到本机**、**恢复这些记忆**与**执行**；合并响应里的 `runtime` 回报本次写入了几条、又有几条因为本机记录过删除而留在原处。
+
+### 记忆整理
+
+整理复用既有的审查账本，唯一的入口是**存储**中**记忆整理**那一行的**整理记忆**：
+
+- 它把差异（包括冲突两侧的写法）作为证据交给 agent，同时交给它同步分支持有而本机没有的条目，以及待审查建议上已经记录的意见（按时间从早到晚），因此可以直接对着建议补充要求再整理一次。
+- **整理要求**说明这次整理要达成什么，例如“保留短句风格，别合并同义项”。它只描述目标，不会放宽权限：一条操作能包含什么仍由 Host 决定。整理完成后页面会说明是否参考了你的要求，以及参考了远端多少条本机没有的记忆。
+- 方案以待审查建议的形式出现，不会自动写入。它列出每条操作与理由，可以**接受**后**执行**，也可以拒绝，或先留下意见。
+- 已拒绝的方案要先**重新打开**才能再整理：账本里已决定的建议由其决定回答，只有重新打开后，你的意见才会进入下一次 run 读到的证据，所以顺序是「写下意见 → 重新打开 → 再整理」。
+- 接受后的方案可以只执行一部分：每条操作前有复选框，只列出还没执行过的位置，**全选**/**全不选**切换整组，按钮会显示本次执行几条；一条都没选时直接提示，而不是什么也不做。账本逐条记录执行过的位置（`appliedOperations`），并显示为「已执行 {count}/{total} 条」，因此只执行了一部分的方案仍留在列表里，直到它的每条操作都执行过为止。
+- 全部执行完的方案离开列表，收进**已执行的历史方案**弹窗，只供回看；重新打开它不会撤销已经写入的改动，而是把整份方案恢复成待审查、可以重新决定。
+- 只读 Host 依然可以读取和批注账本；需要可写部署的是“执行”。
 
 ### 恢复演练
 
@@ -218,8 +202,18 @@ GitHub 登录凭据保存在 DSH 凭据存储的 `dsh-mnemon/github` 键下；�
 
 使用 `workspaces` 时，备份整个集中目录可覆盖所有工作区，导出 Pack 则只覆盖所选工作区。移动或重命名工作区会产生新路径哈希；恢复旧数据需要操作者显式执行。
 
-
 现有回合和已委托的子 Agent activation 可能仍使用旧运行图。迁移或停用其数据前，应等待它们结束或取消这些任务。父回合结束本身不会释放异步子任务的委托；新创建或冷恢复的 activation 会捕获自己获准使用的 generation。
+
+## 停用完整 Starter
+
+既有的 `mnemon` Entry 继续作为整个 Starter 的生命周期总开关。需要停用 Mnemon 时，在 profile patch 中加入以下配置并重启 DSH；不需要逐项停用 Source 或 Strategy：
+
+```yaml
+- id: mnemon
+  disabled: true
+```
+
+该开关会同时停用 Core/Host、三个随附 Source、两个主策略和三个可选 Strategy 增强，不会卸载包或删除记忆数据。删除该覆盖项，或把它改为 `false`，再重启 DSH，即可重新启用完整 Starter。
 
 <a id="cloud-hosted-webui"></a>
 
@@ -239,17 +233,6 @@ GitHub 登录凭据保存在 DSH 凭据存储的 `dsh-mnemon/github` 键下；�
 4. 打开干净的公网 URL，确认“状态”和**插件 → 可组合记忆**页面都能加载，并且整页刷新后仍保持认证。远程设置默认只读；需要管理时，先应用[显式远程管理授权](#remote-management)、重启 DSH，再验证一次有意的小范围保存。
 
 HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独立通道。请检查 `--trusted-host`、公网 authority 与代理路由，再升级 dsh-mnemon、重启 DSH 并刷新浏览器；远程 Mnemon 调用使用已认证 API Gateway。HTTP 401 需要恢复 Host 浏览器认证或配对。若返回远程管理需要 `remoteAccess: trusted-host`，则是另一个 Mnemon 授权检查；浏览器认证成功本身不授予管理权限。
-
-### 停用完整 Starter
-
-既有的 `mnemon` Entry 继续作为整个 Starter 的生命周期总开关。需要停用 Mnemon 时，在 profile patch 中加入以下配置并重启 DSH；不需要逐项停用 Source 或 Strategy：
-
-```yaml
-- id: mnemon
-  disabled: true
-```
-
-该开关会同时停用 Core/Host、三个随附 Source、两个主策略和三个可选 Strategy 增强，不会卸载包或删除记忆数据。删除该覆盖项，或把它改为 `false`，再重启 DSH，即可重新启用完整 Starter。
 
 <a id="remote-management"></a>
 
@@ -291,32 +274,11 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 
 ## 安全边界
 
-### 进程
+<a id="进程"></a>
+<a id="文件"></a>
+<a id="web-与模型"></a>
 
-- CLI 使用 `spawn(command, args, { shell: false })`，不拼接 shell。
-- 每次调用的 stdout + stderr 合计限制 2 MiB。Mnemon Native 在内容列表、图谱，以及运行时记忆归档前的逐字比对中会读取整个记忆空间，这些读取随 Store 增长，上限为 128 MiB。
-- 调用失败时会写明原因：只有启动失败才提示安装 Mnemon 或设置 `mnemon.cliPath`；超时、取消和输出超出上限会各自说明。
-- 每次调用受 `timeoutMs` 与 AbortSignal 控制；取消先 `SIGTERM`，1.5 秒后 `SIGKILL`。
-- 单个 Runner 内调用串行；跨 DSH 进程仍依赖 Mnemon / SQLite 并发语义。
-
-### 文件
-
-- Runtime、Documents 和 Pack 操作使用进程内队列或组件锁。
-- lock 默认等待 5 秒，超过 30 秒才视为 stale。
-- 写入使用临时文件、staging 与 rename。
-- Runtime revision 阻止过期压缩覆盖；Document revision 阻止移动已更新原文。
-- `sourcePaths` 不能逃出发起会话工作区，也不能指向受管 Documents 目录。
-
-### Web 与模型
-
-- DSH 负责远程 RPC 与 stream 的认证或配对；Mnemon 的 API Gateway 映射对管理操作另行要求 `remoteAccess: trusted-host`，本地回环客户端与 DSH 桌面版窗口（`dsh-app://app/`）使用各自的通道。
-- Provider 目录和管理响应始终脱敏；界面只显示已配置字段名，不返回已保存凭据值。
-- WebUI 依据 Host 返回的可写 settings snapshot 判断产品能力，不再根据传输位置猜测权限；设置通道不可用时会显示明确诊断，而不是空白页。
-- WebUI 不直接读取 SQLite、启动进程、调用远程 Provider 或指定任意更新命令；Provider 网络访问只发生在 Host。
-- worker 使用 persona、工具白名单与 `maxDepth: 1`。固定结果工具仅接受当前子任务的可撤销请求 ID，并按每次操作的 schema 校验结果。
-- 蒸馏和 supervised writeback worker 不能调用 `mnemon_forget`；空闲审查的档案写入只开放仅创建工具，不能覆盖用户原文，也不能通过归档腾出容量。这些限制默认启用，无需增强插件。
-- 空闲审查每轮只写一层：建了项目档案后，修改工作记忆会被拒绝；修改工作记忆后，新建项目档案会被拒绝。`idleReview.runtimeMemory: false` 会完全收回它的运行时记忆工具。
-- 查询、候选、档案正文与历史记忆全部按不可信数据处理。
+Host 调用 Mnemon CLI 时不经过 shell，限制每次调用的时间与输出，并通过锁与修订让写入串行。浏览器既拿不到凭据，也不能启动进程；每个任务 Agent 只拿到其任务需要的记忆工具。各项边界的细节见[架构设计](../development/architecture.md#安全边界)。
 
 这些边界不是秘密扫描器。当前没有确定性的凭据检测；不要提交密钥、token、私钥和原始敏感日志。
 
@@ -361,6 +323,39 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 | 更新后提示 `mnemon-bundle (dsh-mnemon/bundle): pending (waiting for service: mnemonStarterReady)` | 更新到 0.5.20 后没有重启，正在运行的 DSH 仍保留旧的组件组；完全退出并重新启动 DSH，见[安装与启动](./installation.md#更新后启用时提示-err_package_path_not_exported) |
 | DSH 重启或 authority 改变后 Mnemon RPC 返回 401 | 打开 `dsh web` 输出的启动 URL，让一次性 token 建立新的、与 authority 绑定的浏览器 Cookie |
 
+<a id="dsh-015-兼容与旧会话恢复"></a>
+
+## 旧会话恢复
+
+错误 `source summary requires notice form; source v0 artifact remains unchanged` 来自旧版 Mnemon 写入的 DSH 会话消息。新消息已移除 recall/instructions 中不合法的 summary；更新插件不会改写现有会话。修复单个受影响日志时：
+
+1. 停止所属 DSH 进程，单独备份完整会话存储根及全部 generation；Mnemon Pack 不包含这些会话。以 DSH 错误中的准确 `raw log` 路径为准，不扫描或改写其他会话。
+2. 安装修复后的 Mnemon，对**备份副本**执行下面的预览命令。`.jsonl.zstd` 使用 Node `22.19+` 或 `24+`；普通 `.jsonl` 也支持 Node 20。
+3. 将结果写入会话目录外的新路径，核对 `repairedMessages`、`repairedDescriptors`、`expandedToolChunkRows`、`expandedToolChunks`、SHA-256 报告和 `blockers`。预览计数表示候选修改；发现已知不支持的形状时退出码为 1，副本请求返回 `mode: "refused"` 且不生成输出。已有输出文件会被拒绝。
+4. 先在一次性的 Profile 副本中，用修复副本替换对应 `session.jsonl` 或 `session.jsonl.zstd`，保留原始备份。让 DSH 加载、续写，重启后再验证会话。副本验证通过后，才在已停止的原 Profile 中执行同样的明确替换。命令本身绝不替换输入或正在使用的会话。
+
+```sh
+dsh-mnemon-repair-session --input /backup/session.jsonl.zstd
+dsh-mnemon-repair-session --input /backup/session.jsonl.zstd --output /backup/repaired-session.jsonl.zstd
+```
+
+可执行命令随 `dsh-mnemon` 安装；Profile 内安装可在该目录使用 `pnpm exec dsh-mnemon-repair-session`。源码 checkout 使用 `node bin/repair-legacy-session.mjs`。下表两种 stream 规范化本身不改 ID；同一日志也可叠加经过证明的身份恢复。副本修复仅覆盖经过契约审计的历史形状：
+
+| 历史形状 | 副本行为 |
+|---|---|
+| `dsh-mnemon` instructions summary 为 `Optional memory recall and remember reminder`；recall summary 为 `Memory View snapshot` 或 `Runtime memory snapshot` | 仅移除该 source 的 `summary` 成员，保留其他插件消息和陌生 summary。 |
+| 严格符合旧版封闭字段集合且组合参数满足冻结 v3 契约的 subagent descriptor v2 | 仅将版本值改为 3，保留 provider、成对模型字段、persona、label 和 toolFilter；不添加默认值或 reasoning effort。多余字段、不成对模型和其他不支持的版本会被拒绝。 |
+| 严格符合旧版结构、字符串 `id: ""` 或 `name: ""` 的 `tool-call-chunks` | 展开为原来的 raw delta 事件，保留 ID、name 是否存在、参数字符串、序号和时间戳。不丢弃 chunk，provenance 引用无需重编号。已经是 raw 的空字符串 delta 保持字节不变。 |
+| 严格符合结构、自有成员为 `name: null` 的 raw 或 packed 工具 delta | 保留成员，将值改为 `""`；packed 行按原逻辑序号与时间展开。ID、参数和持久消息不变。两种值均不改变组装状态，保留成员可维持 token 计时。`normalizedToolChunkNames` 统计受影响的逻辑 delta 数。 |
+| 完成的 `deepseek-official` stream 已记录唯一非空 provider ID，后续空 ID 覆盖了持久工具链身份 | 核对完整有序 chunk provenance、按 index 组装的 block、相同 name/参数和唯一 call/result 关联后，仅恢复该已记录 ID。保留首个候选之前的空占位值、消息 UUID、正文及其他插件内容；支持逐条证明的多工具，以及 text/reasoning block。不生成 ID。 |
+| 没有已记录 ID、身份冲突、中断、待修 owner 对象结构未知，或 approval/dispatch/plugin/消息副本引用未闭合 | 报告 blocker 并拒绝输出。任意空 ID 历史及 owner replay state 仍需原写入方恢复。 |
+
+ID 检查使用原 stream 完整的 `sourceEventSeqs`，包括 packed 逻辑成员。result provenance 必须精确指向对应 call；字段缺省时，仅允许没有其他 attempt 的唯一单调用 step。显式错误引用不能使用此回退。通过序号或消息 ID 关联的额外引用会跨 step 检查；普通 compaction 序号引用与无关插件仍可原样保留。`recoveredToolIdentityChains` 统计恢复的链，`recoveredToolIdentityFields` 统计逻辑身份字段，`toolIdentityRecoveryRefusals` 用有数量上限的位置样例解释无法证明的形状。
+
+工具只接受 v0、合法 UTF-8 JSON 记录和完整的普通 Zstandard 帧；原始输入、解压输入和展开输出均限制为 128 MiB。格式损坏、不完整帧、修改或身份判断路径中的歧义重复键、无法安全表示的 delta 序号或时间会在发布输出前被拒绝。仅改写匹配的 summary/version/name/identity 成员和需要展开的 packed 行，其他解压字节均保留。诊断统计每类已知 blocker 的全部次数，并最多列出十个行号/事件/字段路径样例，不输出消息正文。`migrationValidated: false` 明确表示扫描器不会修复其他损坏，也不保证任意会话都能迁移；最终仍以安装的官方 DSH 加载器和 stream 回放为准。参见 [issue #251 契约审计与验证](../../pr-assets/issue-251-legacy-repair/README.zh-CN.md)。
+
+DSH 以写权限打开旧会话时，会迁移为不可变的 v3 generation。Mnemon Runtime、档案与记忆空间维持原有格式。回滚 DSH 时，在独立旧版本 Profile 中恢复升级前会话备份；不要让旧 DSH 打开 v3 generation。参见[验证与截图](../../pr-assets/issue-223-dsh-015/README.zh-CN.md)。
+
 ## 已知限制
 
 ### 功能只读不等于磁盘只读
@@ -383,14 +378,9 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 
 支持的 DSH 版本见[兼容性矩阵](../reference/compatibility.md)。Web 界面为中英文双语，但命令、工具卡、兼容元数据和部分错误仍未完全国际化。
 
-## 文档归档恢复
+<a id="文档归档恢复"></a>
+<a id="运行时归档恢复"></a>
 
-文档归档不再要求子代理为 remember/recall 回执编号。旧版本失败后若留下冷索引而文档仍为 active，重试可复用精确路径与当前内容哈希一致的索引；文档更新后需要匹配新修订的索引。异步提取或不支持安全删除的 Provider 会在写入前被拒绝。完全没有能接收索引的记忆空间时，文档会在不建索引的情况下归档到本地：原文移入归档目录，仍可在项目档案页面阅读。清理失败会报告目标空间和本次新建的 id；确认结果前应保留已有数据。
+## 归档失败时
 
-## 运行时归档恢复
-
-容量归档写入已激活的记忆空间，其 Provider 必须支持精确写入和安全删除。Hindsight 等异步提取目标会在任何归档写入前被排除。完全没有能接收归档的记忆空间时（该层已关闭或不接受自动写入、没有就绪的 Provider、没有激活的空间，或只剩不支持的 Provider），Runtime Source 会在同一把锁内、紧接着提交压缩与待写入内容之前，把压缩舍弃的条目追加到本地归档 `runtime/archived/`：`MEMORY.md` 供阅读，`memories.jsonl` 保存每个条目及其元数据。另一个记忆空间 Source 中有能接收归档的空间，或 Runtime Source 版本过旧、无法保留压缩舍弃的条目时，仍会拒绝。Mnemon Pack 不包含本地归档，导入 Pack 时会保留它。直接向 Provider 写入仍保持原有的异步行为。
-
-对话归档使用所选 Source 的写入范围：回合中激活的已知空间，以及当前 View 创建的空间，都可作为归档目标。在 View 固定之后由其他操作创建的空间，需要新回合才能使用；所以当合适的空间都在 View 写入范围之外，或当前 View 不提供对它们的写入时，写入会被拒绝，而不是归档到本地。空范围始终不授权任何空间。目标错误会区分目录为空、View 范围为空或排除了当前空间、Provider 能力不支持，并报告目录、授权和可写数量。失败时待新增内容尚未保存；修正所报告的原因后，请在新回合重试同一份工具输入。已有热记忆会保留。
-
-归档回执或本地提交失败时，Host 仅尝试删除回执能证明由本次操作新建的条目，保留跳过或复用的既有条目。本地提交报错后，如果 Runtime 修订已变更或无法读取，则提交结果不确定：保留归档条目，避免丢失已提交的记忆。清理失败会标出剩余目标空间和条目 id。Provider 请求失败且没有返回回执时，远端结果可能不确定，因此这不是分布式事务；重试前应检查对应 Provider。
+归档失败或中断后会保留什么、重试前应检查什么，与各自的流程写在一起：见[项目档案归档恢复](../reference/workflows.md#项目档案归档恢复)与[运行时归档恢复](../reference/workflows.md#运行时归档恢复)。

@@ -1,3 +1,4 @@
+// Check that every package whose published inputs changed has a changeset, or that a release pull request consumed them all.
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'

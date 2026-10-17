@@ -5,7 +5,7 @@ import { RUNTIME_ENTRY_DELIMITER, type RuntimeMemoryCompactedEntry, type Runtime
 import type { EdgeType, Insight, MemoryBodyCatalog as MemorySpaceCatalog, MemoryBodyMetadataSample as MemorySpaceMetadataSample, MemorySpaceWriteScopeRequest, PreparedMemoryPlacement, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { mutationResultCommitted } from './receipts.ts'
 import { SourceSession, sourceFailure } from './source-session.ts'
-import { threeTierActionWorkflow } from 'dsh-mnemon-strategy-default-three-tier/extension-sdk'
+import { runtimeCapacityWrite, strategyDrives, viewStrategy } from './strategy-workflows.ts'
 import { receipt as mutationReceipt } from '../sdk/input.ts'
 import { allowsParticipation, assertParticipation } from './access.ts'
 import { namedToolInstance, type DelegatedWriteResult, type MemorySpaceMetadataMaintenanceResult, type MemorySpaceMetadataUpdate, type MemoryPlacementDecision, type MnemonReconcileOptions, type MnemonReconcileResult, type SubagentCounters } from './protocol.ts'
@@ -1191,7 +1191,7 @@ export class MnemonSubagentCoordinator {
       const runtime = graph.source('runtime', scope).forGeneration(lease.generation)
       const context: RuntimeWriteContext = {
         runtime, inspectRuntime: runtime,
-        maintain: threeTierActionWorkflow(lease.generation.strategy.definition.manifest.typeId, 'runtime', 'mutate') !== undefined,
+        maintain: strategyDrives(lease.generation.strategy.definition.manifest, 'runtime-capacity'),
         commit: () => runtime.mutate('mutate', request, signal),
         memorySpaces: async () => {
           if (!graph.config.writeEnabled || !this.runtimeSource.config.writeEnabled) throw new Error('dsh-mnemon is configured read-only')
@@ -1236,7 +1236,7 @@ export class MnemonSubagentCoordinator {
         receipt = await graph.composableTurns.executeAction(turn.turnId, offerId, input, authorize, signal)
         return receipt.details as unknown as RuntimeMemoryMutationResult
       }
-      if (offer === undefined || source === undefined || threeTierActionWorkflow(turn.view.strategyTypeId, source.sourceTypeId, offer.sourceActionId) === undefined) {
+      if (offer === undefined || source === undefined || !runtimeCapacityWrite(viewStrategy(lease.generation, turn.view), source.sourceTypeId, offer.sourceActionId)) {
         await commit()
         return receipt!
       }
@@ -1262,7 +1262,7 @@ export class MnemonSubagentCoordinator {
     try {
       const generation = lease.generation
       const source = generation.sourceInstances().find(candidate => candidate.sourceInstanceKey === request.sourceInstanceKey)
-      if (request.mode !== 'mutate' || source === undefined || threeTierActionWorkflow(generation.strategy.definition.manifest.typeId, source.sourceTypeId, request.operation) === undefined) {
+      if (request.mode !== 'mutate' || source === undefined || !runtimeCapacityWrite(generation.strategy.definition.manifest, source.sourceTypeId, request.operation)) {
         return await generation.executeManagement(request)
       }
       const runtime = graph.source('runtime', request.scope).forInstance(request.sourceInstanceKey).forGeneration(generation)

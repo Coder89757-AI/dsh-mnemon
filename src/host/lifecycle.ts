@@ -21,6 +21,7 @@ import { idleReviewBlockReason } from './review-tools.ts'
 import { TurnActivityProjection, type TurnMemoryActivity, type TurnMemoryActivitySnapshot } from './activity.ts'
 import { applyMemoryViewGuidance } from './guidance.ts'
 import { modelMemoryWake } from './view-presentation.ts'
+import { strategyDrives, viewStrategy } from './strategy-workflows.ts'
 import { AgentMemoryTurn, openAgentTurn, type DelegatedMemoryView } from './agent-memory-turn.ts'
 import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, SupervisedWritebackResult, TaskAgentModelCatalog } from "./protocol.ts"
 import type { PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
@@ -228,7 +229,7 @@ class MnemonAgentLifecycle {
   private lastPhase: LifecyclePhase = 'idle'
   private lastAt: string | undefined
   private lastError: string | undefined
-  private composedTurn: { turn: number; strategyTypeId: string } | undefined
+  private composedTurn: { turn: number; typeId: string; idleReview: boolean } | undefined
 
   constructor(
     readonly agent: HostAgent,
@@ -415,7 +416,8 @@ class MnemonAgentLifecycle {
 
   private scheduleIdleReview(turn: number): void {
     this.cancelIdleReview(true)
-    if (!this.idleReviewAllowed() || !this.composedByDefault(turn)) return
+    this.recordComposedTurn(turn)
+    if (!this.idleReviewAllowed()) return
     const activity = this.ensureTurnActivity(turn)
     const tools = completedToolActivity(this.agent.session.snapshotEvents(), turn)
     activity.toolCallCount = tools.count
@@ -435,25 +437,35 @@ class MnemonAgentLifecycle {
     }, Math.max(this.config.idleReviewMs, (this.lastReviewAttemptAt ?? -Infinity) + this.config.idleReview.minIntervalMs - Date.now()))
   }
 
-  /**
-   * Automatic three-tier maintenance belongs to the default product, not to
-   * every third-party View Strategy, and only to turns that Strategy actually
-   * composed: a turn served by a fallback Strategy, or run without memory, has
-   * nothing for it to maintain. Explicit management remains available.
-   */
-  private composedByDefault(turn: number): boolean {
-    if (this.memoryTurn === undefined) return true
+  /** Which Strategy composed the turn, while its View is still pinned, and whether it declares idle review. */
+  private recordComposedTurn(turn: number): void {
+    if (this.memoryTurn === undefined) return
     const pinned = this.memoryTurn.current
-    if (pinned?.turn === turn) this.composedTurn = { turn, strategyTypeId: pinned.context.view.strategyTypeId }
-    else if (this.composedTurn?.turn !== turn) this.composedTurn = undefined
-    return this.composedTurn?.strategyTypeId === 'default-three-tier'
+    if (pinned?.turn === turn) {
+      const strategy = viewStrategy(pinned.graph.memoryComposition.generation(pinned.context.view.runtimeGeneration), pinned.context.view)
+      this.composedTurn = { turn, typeId: strategy.typeId, idleReview: strategyDrives(strategy, 'idle-review') }
+    } else if (this.composedTurn?.turn !== turn) this.composedTurn = undefined
+  }
+
+  /**
+   * Idle review belongs to a Strategy that declares it, as the Layered
+   * strategy does, not to every third-party View Strategy: the configured
+   * one, and only after a turn it actually composed. A turn served by a
+   * fallback Strategy, or run without memory, has nothing for it to maintain,
+   * and a Strategy selected since has its own say. Explicit management
+   * remains available.
+   */
+  private strategyDrivesIdleReview(): boolean {
+    const typeId = this.config.memoryTopology.strategyId
+    if (this.memoryTurn === undefined) return strategyDrives({ typeId }, 'idle-review')
+    return this.composedTurn?.typeId === typeId && this.composedTurn.idleReview
   }
 
   private idleReviewAllowed(): boolean {
     return this.config.lifecycleEnabled && this.config.writeEnabled && this.config.writebackMode === 'guided'
       && this.config.idleReview.enabled && this.idleReviewAttempts < this.config.idleReview.maxPerSession
       && idleReviewBlockReason(this.agent, this.config.idleReview.agentTeams) === undefined
-      && this.config.memoryTopology.strategyId === 'default-three-tier'
+      && this.strategyDrivesIdleReview()
   }
 
   private async runIdleReview(): Promise<void> {

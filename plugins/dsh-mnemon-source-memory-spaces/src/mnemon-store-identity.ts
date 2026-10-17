@@ -1,5 +1,6 @@
 /**
- * What a Memory Space holds, as opposed to how it was used, and the merge of two versions of one.
+ * What a Mnemon store holds, as opposed to how it was used, and the merge of two versions of one.
+ * The public `./space-identity` entry exposes it; its limits and test hooks stay here.
  *
  * Mnemon writes to a space whenever it is read: a recall, search or show raises
  * `access_count`, stamps `last_accessed_at` and logs the read in `oplog`. Two machines
@@ -23,8 +24,8 @@
  *
  * It needs `node:sqlite` (Node 22.13, 23.4 and later). Without it, for bytes that are not a
  * readable database, for a database with a virtual table, or past the row limits, the identity
- * is the bytes' digest, which is what merges compared before, and such a space contains and
- * merges with no other: a copy is kept, never a memory lost.
+ * is the bytes' digest, and such a store contains and merges with no other, so a caller keeps
+ * both versions rather than losing a memory.
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -48,12 +49,23 @@ const ROW_VALUES: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 ])
 const SCRATCH_PREFIX = '.dsh-space-identity-'
 /**
- * Past this many rows a space is compared by its bytes, and past the second limit every space
- * a merge reads after it. A merge runs under the Pack lock, so a crafted database must not hold
- * the Host or the lock for long: 120,000 real rows read in about 0.4 s.
+ * Past this many rows a store is compared by its bytes, and past the second limit, counted over
+ * all of one identity's reads, so is every store it reads after that. Its caller may hold a lock
+ * while it compares, so a crafted database must not take long: 120,000 real rows read in about
+ * 0.4 s.
  */
-export const MEMORY_SPACE_IDENTITY_MAX_ROWS = 500_000
-export const MEMORY_SPACE_MERGE_MAX_ROWS = 2_000_000
+const IDENTITY_MAX_ROWS = 500_000
+const MERGE_MAX_ROWS = 2_000_000
+
+/** Test hooks; the public entry passes none. */
+export interface MnemonStoreIdentityOptions {
+  /** Returns `node:sqlite`, or nothing as a Node without it does. */
+  sqlite?: () => Sqlite | undefined
+  /** The most rows one store is read by before it is compared by its bytes. */
+  maxRows?: number
+  /** The most rows all of this identity's reads take together. */
+  maxMergeRows?: number
+}
 
 /** One table as the identity reads it. */
 interface Table {
@@ -112,24 +124,23 @@ function remove(path: string): void {
 }
 
 /**
- * Reads what each database holds once, and merges two of them. A merge holds one under the
- * Memory Spaces lock and disposes it at the end, so the copies a Host that stopped mid-merge
- * left behind are swept first.
+ * Reads what each database holds once, and merges two of them. Make one per comparison or merge
+ * and dispose of it at the end. A process that stopped midway leaves its copies behind; the next
+ * identity on the same parent sweeps them before it makes its own.
  */
-export class MemorySpaceIdentity {
+export class MnemonStoreIdentity {
   private scratch: string | undefined
   private readonly known = new WeakMap<Uint8Array, Contents | null>()
   private readonly projections = new WeakMap<Uint8Array, Map<string, Set<string> | null>>()
+  private readonly module: () => Sqlite | undefined
+  private readonly maxRows: number
   private remaining: number
 
-  /** `parent` holds the short-lived copies a database is read from: the storage root. */
-  constructor(
-    private readonly parent: string,
-    private readonly module: () => Sqlite | undefined = sqlite,
-    private readonly maxRows = MEMORY_SPACE_IDENTITY_MAX_ROWS,
-    maxMergeRows = MEMORY_SPACE_MERGE_MAX_ROWS,
-  ) {
-    this.remaining = maxMergeRows
+  /** `parent` holds the short-lived copies a database is read from. */
+  constructor(private readonly parent: string, options: MnemonStoreIdentityOptions = {}) {
+    this.module = options.sqlite ?? sqlite
+    this.maxRows = options.maxRows ?? IDENTITY_MAX_ROWS
+    this.remaining = options.maxMergeRows ?? MERGE_MAX_ROWS
   }
 
   of(bytes: Uint8Array): string {

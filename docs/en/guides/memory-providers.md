@@ -1,6 +1,6 @@
 # Long-term memory providers
 
-**English** | [简体中文](../../zh-CN/guides/memory-providers.md) | [Documentation](../README.md)
+[简体中文](../../zh-CN/guides/memory-providers.md) | **English** | [Documentation](../README.md)
 
 Memory Spaces hold dsh-mnemon's long-term memory, and their backend is a Provider you can swap. The Memory Space contract stays stable while the Provider supplies the data plane. **Mnemon Native is the official, prioritized default**; external Providers are opt-in integrations for teams that already use another memory engine or need a different sharing, extraction or retrieval model.
 

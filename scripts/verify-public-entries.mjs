@@ -1,3 +1,4 @@
+// Import every public Node entry and check that no declaration it reaches exposes a private type.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'

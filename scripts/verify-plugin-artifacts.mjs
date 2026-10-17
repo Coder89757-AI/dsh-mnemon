@@ -1,3 +1,4 @@
+// Verify every packed package outside the workspace: each plugin as its own repository, an external consumer and the Starter in real DSH.
 import { createServer } from 'node:http'
 import { createReadStream } from 'node:fs'
 import assert from 'node:assert/strict'

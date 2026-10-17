@@ -5,9 +5,9 @@ import { zipSync, unzipSync, type Unzipped } from 'fflate'
 import type { ResolvedConfig } from './config.ts'
 import { runProcess, type ProcessRunner } from './process.ts'
 import {
-  MnemonPackManager, MNEMON_PACK_MAX_EXPANDED_BYTES, RUNTIME_MEMORIES_PATH,
+  DOCUMENTS_INDEX_PATH, MnemonPackManager, MNEMON_PACK_MAX_EXPANDED_BYTES, RUNTIME_MEMORIES_PATH,
   documentVersions, entryKey, parseMachineIdentity, parseManifest as parseManifestJson, parseRuntime, parseTombstones,
-  tombstoneCovers, tombstoneKey,
+  payloadPrefix, tombstoneCovers, tombstoneKey,
   type RuntimeFile, type StoredRuntimeEntry,
 } from './pack.ts'
 import type {
@@ -241,12 +241,6 @@ function versionAtLeast(version: string, minimum: string): boolean {
   return true
 }
 
-function componentDirectory(component: MnemonPackComponent): string {
-  if (component === 'runtime') return 'payload/runtime/'
-  if (component === 'documents') return 'payload/documents/'
-  return 'payload/data/'
-}
-
 /**
  * The deletions one side of the channel recorded. They live in the sync extension, never
  * in the payload, so a Pack stays readable by any version; a branch that predates the
@@ -273,7 +267,7 @@ function extensionMachine(extension: Record<string, unknown> | undefined): Mnemo
 
 /** Whether the payload of one component differs between two sets of files. */
 function componentChanged(before: Record<string, Uint8Array>, after: Record<string, Uint8Array>, component: MnemonPackComponent): boolean {
-  const prefix = componentDirectory(component)
+  const prefix = payloadPrefix(component)
   for (const path of new Set([...Object.keys(before), ...Object.keys(after)])) {
     if (!path.startsWith(prefix)) continue
     const published = before[path]
@@ -918,8 +912,8 @@ export class MnemonGitSync {
     try {
       const ancestry = await this.git(['merge-base', '--is-ancestor', last.commit, tip], { cwd: this.store.mirror(), signal })
       if (ancestry.exitCode !== 0) return undefined
-      const index = await this.show(last.commit, settings.subdir + 'payload/documents/index.json', signal)
-      return index === undefined ? undefined : documentVersions({ 'payload/documents/index.json': index })
+      const index = await this.show(last.commit, settings.subdir + DOCUMENTS_INDEX_PATH, signal)
+      return index === undefined ? undefined : documentVersions({ [DOCUMENTS_INDEX_PATH]: index })
     } catch (error) {
       // An old index that cannot be read is no agreement; the merge keeps copies, as without one.
       signal?.throwIfAborted()
