@@ -6,7 +6,7 @@ The Starter pins a tested combination of official plugins. The table records ver
 
 | Component | Baseline | What is verified |
 |---|---|---|
-| DSH | `0.2.1-rc.1` (npm `next`), `0.2.0-rc.2` (npm `latest`) | The supported hosts. 0.2.1-rc.1 is the pinned development baseline, and CI also runs every root test against an installed 0.2.0-rc.2. Both are checked through the WebUI, Headless and the Starter's activation contracts; see [DSH 0.2.0 and 0.2.1](#dsh-020-and-021) |
+| DSH | `0.2.1-rc.2` (npm `next`), `0.2.0-rc.2` (npm `latest`) | The supported hosts. 0.2.1-rc.2 is the pinned development baseline, and CI also runs every root test against an installed 0.2.0-rc.2. Both are checked through the WebUI, Headless and the Starter's activation contracts; see [DSH 0.2.0 and 0.2.1](#dsh-020-and-021). The range also admits 0.2.1-rc.1, the baseline v0.5.31 was released on |
 | Node.js | `22.19` and `24` | Source CI and packed-artifact CI respectively; development requires `^22.19.0 \|\| >=24.0.0` |
 | Node.js 20 | Public package imports only | Does not establish that the DSH Host runs on Node 20 |
 | Mnemon Native CLI | `0.2.9` | Opt-in tests against a real CLI and disposable data; install the CLI separately |
@@ -25,7 +25,7 @@ Installing for the first time? How DSH chooses the registry, and why its result 
 | DSH | dsh-mnemon |
 |---|---|
 | `0.1.7-rc.2`, `0.2.0-rc.1`, `0.2.1-alpha.2` | `0.5.30` |
-| `0.2.1-alpha.3` and later alphas | None works in full: memory subagents and **Check versions → Update** fail in 0.5.30. Upgrade DSH to `0.2.1-rc.1` (npm `next`) |
+| `0.2.1-alpha.3` and later alphas | None works in full: memory subagents and **Check versions → Update** fail in 0.5.30. Upgrade DSH to `0.2.1-rc.2` (npm `next`) |
 | `0.1.5-rc.1` to `0.1.7-alpha.1` | `0.5.16` |
 
 What those hosts needed is kept under [Older DSH hosts](#older-dsh-hosts). How each release was verified, and the earlier Headless and WebUI records that remain historical evidence, are under [Verification and evidence](#verification-and-evidence).
@@ -39,7 +39,7 @@ What those hosts needed is kept under [Older DSH hosts](#older-dsh-hosts). How e
 
 ### Upgrade order
 
-Update dsh-mnemon on your current DSH first, then upgrade DSH. On DSH 0.1.7-rc.2 that means dsh-mnemon 0.5.30 first (`dsh plugin --profile web add dsh-mnemon@0.5.30`); then install DSH 0.2.0-rc.2 or 0.2.1-rc.1 and update dsh-mnemon again. If DSH was upgraded first, it turns an unsupported release off and memory data is untouched; updating the plugin brings it back. Do not use `allow-version` to let an unsupported release through.
+Update dsh-mnemon on your current DSH first, then upgrade DSH. On DSH 0.1.7-rc.2 that means dsh-mnemon 0.5.30 first (`dsh plugin --profile web add dsh-mnemon@0.5.30`); then install DSH 0.2.0-rc.2 or 0.2.1-rc.2 and update dsh-mnemon again. If DSH was upgraded first, it turns an unsupported release off and memory data is untouched; updating the plugin brings it back. Do not use `allow-version` to let an unsupported release through.
 
 On DSH 0.2.1, **Check versions → Update** in dsh-mnemon 0.5.30 and earlier stops with `already-installed`. Quit DSH, run `dsh plugin --profile web add dsh-mnemon@<version>` (the `desktop` profile is managed on the desktop app's Plugins page instead), then start DSH again. Later updates go through **Check versions** as usual.
 
@@ -140,7 +140,7 @@ In the affected `0.5.13` install, Desktop's fallback hides a missing `createVola
 
 ### The supported hosts
 
-The root tests run on the pinned 0.2.1-rc.1 and, in CI, against DSH 0.2.0-rc.2 installed from npm (`pnpm run test:installed-dsh`; see [Development](../development/README.md#environment-and-commands)); the real-host specs compose whichever DSH they run on. On both releases Headless passes with and without the optional Strategies, as do the Starter's activation contracts and Git sync's checks; only `--check-declared-rows` fails on 0.2.0-rc.2, on its grouping-row listing. The [DSH 0.2.1-rc.1 record](../../pr-assets/dsh-021-rc1/README.md) has the WebUI checks on both releases. Earlier records: the [0.2.0-rc.2 release acceptance](../../pr-assets/release-v0.5.22/README.md), [activations (#356)](../../pr-assets/issue-356-subagent-activation/README.md), [0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.md) and [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.md).
+The root tests run on the pinned 0.2.1-rc.2 and, in CI, against DSH 0.2.0-rc.2 installed from npm (`pnpm run test:installed-dsh`; see [Development](../development/README.md#environment-and-commands)); the real-host specs compose whichever DSH they run on. On both releases Headless passes with and without the optional Strategies, as do the Starter's activation contracts and Git sync's checks; only `--check-declared-rows` fails on 0.2.0-rc.2, on its grouping-row listing. The [DSH 0.2.1-rc.2 record](../../pr-assets/dsh-021-rc2/README.md) has the checks on 0.2.1-rc.2, and the [DSH 0.2.1-rc.1 record](../../pr-assets/dsh-021-rc1/README.md) the WebUI checks on 0.2.1-rc.1 and 0.2.0-rc.2. Earlier records: the [0.2.0-rc.2 release acceptance](../../pr-assets/release-v0.5.22/README.md), [activations (#356)](../../pr-assets/issue-356-subagent-activation/README.md), [0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.md) and [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.md).
 
 See also the [upgrade evidence](../../pr-assets/main-rebase-20260904/README.md) and the [current development checks](../development/README.md). A passing mechanism test is not an LLM quality benchmark. OS-specific and real-CLI checks may be skipped unless their environment is explicitly available.
 

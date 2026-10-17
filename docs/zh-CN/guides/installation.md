@@ -45,7 +45,7 @@ npx @deepseek-ai/dsh web
 
 DSH 在 `http://127.0.0.1:3080` 启动，并自动在浏览器中打开一个带一次性令牌的地址；终端里也会打印这个地址。使用期间保持终端开着，按 `Ctrl+C` 停止 DSH。
 
-- 这条命令使用 npm 上 `latest` 标签的 DSH（撰写本文时为 0.2.0-rc.2）；`npx @deepseek-ai/dsh@next web` 使用 `next` 标签的版本（0.2.1-rc.1）。dsh-mnemon 两者都支持，见[兼容性与升级](../reference/compatibility.md)。
+- 这条命令使用 npm 上 `latest` 标签的 DSH（撰写本文时为 0.2.0-rc.2）；`npx @deepseek-ai/dsh@next web` 使用 `next` 标签的版本（0.2.1-rc.2）。dsh-mnemon 两者都支持，见[兼容性与升级](../reference/compatibility.md)。
 - 经常使用时可以全局安装：`npm install --global @deepseek-ai/dsh`，之后运行 `dsh web` 即可；[命令行方式](#7-命令行与-headless)也需要全局安装的 `dsh`。
 
 第一次打开时：

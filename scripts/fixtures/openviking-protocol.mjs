@@ -2,6 +2,7 @@
 // It models a cosmetic extraction update that never stores the submitted text, and the
 // request validation of OpenViking 0.4.16: the content API refuses any field it does not
 // declare (issue 353), and tags are set by their own endpoint.
+import { realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 
@@ -88,7 +89,8 @@ export function openVikingProtocolFixture() {
   return { server, files, requests, state }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Node runs a script it reaches through a link, such as /tmp on macOS, from its real path.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const fixture = openVikingProtocolFixture()
   fixture.server.listen(Number(process.env.MNEMON_OPENVIKING_FIXTURE_PORT || 19335), '127.0.0.1', () => {
     console.log(`Deterministic OpenViking protocol fixture: http://127.0.0.1:${fixture.server.address().port}`)

@@ -4,14 +4,14 @@
 
 ## Environment and commands
 
-The plugin's Node engine floor is 20. The pinned complete DSH development profile is the published 0.2.1-rc.1 release (npm `next`) and needs Node `^22.19.0 || >=24.0.0`; use Node 24 for development. Root, Source Client tests and the external artifact consumer use that cohort, and `dsh-client-store` owns the public selector type used by the subagent projection adapter. Public Node entries are also smoke-tested on Node 20 in CI. DSH 0.2.0-rc.2 (npm `latest`) is supported as well: `tests/dsh-host-compatibility.spec.ts` runs DSH's own pre-install compatibility check over all 18 package manifests for the supported and unsupported releases, and CI runs the root tests against an installed 0.2.0-rc.2. To run them against another installation yourself:
+The plugin's Node engine floor is 20. The pinned complete DSH development profile is the published 0.2.1-rc.2 release (npm `next`) and needs Node `^22.19.0 || >=24.0.0`; use Node 24 for development. Root, Source Client tests and the external artifact consumer use that cohort, and `dsh-client-store` owns the public selector type used by the subagent projection adapter. Public Node entries are also smoke-tested on Node 20 in CI. DSH 0.2.0-rc.2 (npm `latest`) is supported as well: `tests/dsh-host-compatibility.spec.ts` runs DSH's own pre-install compatibility check over all 18 package manifests for the supported and unsupported releases, and CI runs the root tests against an installed 0.2.0-rc.2. To run them against another installation yourself:
 
 ```sh
 npm install --global --prefix <directory> @deepseek-ai/dsh@0.2.0-rc.2
 DSH_HOST_ROOT=<directory>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed-dsh
 ```
 
-Every `@deepseek-ai/*` import, subpaths included, then resolves from that installation (`scripts/installed-dsh.config.ts`), and the real-host specs compose it through `tests/helpers/installed-dsh.ts`. Build first, as for `pnpm run test`. [Compatibility](../reference/compatibility.md#dsh-020-and-021) lists where the two releases differ.
+Every `@deepseek-ai/*` import, subpaths included, then resolves from that installation (`scripts/installed-dsh.config.ts`), and the real-host specs compose it through `tests/helpers/installed-dsh.ts`. Build first, as for `pnpm run test`. [Compatibility](../reference/compatibility.md#dsh-020-and-021) lists where the two releases differ. A spec of behavior only DSH 0.2.1 has skips on 0.2.0 through the helper's `dsh021`, as `tests/task-agent-cwd-host.spec.ts` does for a task Agent whose workspace folder is gone and `tests/resumed-memory-task-host.spec.ts` for a finished memory task its conversation resumes.
 
 DSH's UI primitives import Markdown/highlighting dependencies that their published manifest lists as development dependencies. Root, the three Source packages and the external consumer declare that complete cohort explicitly for standalone Client tests; Host artifacts still use DSH’s provided UI module. Tests use the public async Agent factory and durable `assistant/message` events.
 
@@ -146,7 +146,7 @@ To serve the WebUI on another DSH release, install it with `npm install -g --pre
 
 `pnpm e2e:serve` takes the options below, of two kinds:
 
-- **Setup options** change the profile, the model stub or how the WebUI runs: `--strategy-extensions`, `--live-model`, `--plugin`, `--better-sidebar`, `--electron`, `--trusted-host`, `--remote-management`, `--without-mnemon-cli`, `--second-runtime`, `--review-failure`, `--runtime-archive` and `--archive-copies`. The last two also start a stand-in service on loopback, a Hindsight server and a slow embedding service.
+- **Setup options** change the profile, the model stub or how the WebUI runs: `--strategy-extensions`, `--live-model`, `--log-model-requests`, `--plugin`, `--better-sidebar`, `--electron`, `--trusted-host`, `--remote-management`, `--without-mnemon-cli`, `--second-runtime`, `--review-failure`, `--runtime-archive` and `--archive-copies`. The last two also start a stand-in service on loopback, a Hindsight server and a slow embedding service.
 - **Scripted models** decide what the model does for one check: `--document-protection`, `--review-evidence`, `--document-archive`, `--openviking-write`, `--runtime-routing`, `--result-tool-cache`, `--runtime-write-scope`, `--legacy-session-replay`, `--idle-review`, `--review-layers`, `--strict-template`, `--general-strategy`, `--exact-id`, `--save-action`, `--profile-compaction`, `--remember-target`, `--recall-budget` and `--docs-demo`. One scripted model runs at a time, so use them one at a time: if several are given, the first in `scripts/serve-e2e.mjs` wins, and `--live-model` turns them all off. Each combines with the setup options.
 
 Apart from those stand-ins and the OpenViking protocol fixture that `--openviking-write` expects, the storage, the tools, the transport and the browser are real, and no personal credentials or memory are used. Each fixture prints its steps as lines with its own prefix, shown in the table. The record holds the complete steps and the results before and after its fix; [scripts/README.md](../../../scripts/README.md) lists the file behind each option.
@@ -155,6 +155,7 @@ Apart from those stand-ins and the OpenViking protocol fixture that `--openvikin
 |---|---|---|---|
 | `--strategy-extensions` | Turns on the three shipped enhancements: Scoped composition, Light context and Active capture | — | [Strategy contributions](../../pr-assets/strategy-extensions-20260901/README.md) |
 | `--live-model` | The DeepSeek API answers instead of the loopback stub, and the scripted models are off. The key comes from `DEEPSEEK_API_KEY` and the endpoint from `DEEPSEEK_BASE_URL` when set; neither is stored | — | — |
+| `--log-model-requests` | Each `Fixture model request:` line also names, as JSON, the model the request asks for, what sent it (`conversation`, `title` for DSH's session title, or `memory task` for a child that carries Mnemon's completion protocol), its tool count, and its thinking mode and reasoning effort when it sets them. Not with `--live-model`, which replaces the stub | — | [Test tooling](../../pr-assets/test-tooling-from-records/README.md) |
 | `--docs-demo` (Chinese), `--docs-demo=en` | Seeds the fictional Lumen project of the [documentation gallery](../../assets/webui-v0.5.19/README.md): profile and working memory, six project documents and three Memory Spaces. Ask about checkout (结账), then ask it to remember a new target (记住). With `--live-model` the real model answers; recapture the gallery that way whenever the UI changes. `Docs demo:` | — | [Gallery](../../assets/webui-v0.5.19/README.md) |
 | `--plugin=<package directory>` | Links one more test-only plugin into the profile; repeat it for several | [#340](https://github.com/omdsh-dev/dsh-mnemon/issues/340) | [Settings outside slots](../../pr-assets/issue-340-settings-outside-slots/README.md) |
 | `--better-sidebar=<package directory>` | Links one layout or skin package into the profile, such as Better Sidebar or the ORCA LINK skin | [#232](https://github.com/omdsh-dev/dsh-mnemon/issues/232) | [ORCA LINK sidebar](../../pr-assets/issue-232-orca-sidebar/README.md) |
@@ -183,6 +184,15 @@ Apart from those stand-ins and the OpenViking protocol fixture that `--openvikin
 | `--profile-compaction` | Caps USER.md at 100 bytes and turns idle review off. Send `记住：回答尽量简洁，不要冗长的开场白。`, `记住：回答使用简体中文。` and `记住：汇报时先列出阻塞项。` as three messages. `Profile compaction:` | [#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356) | [Subagent activations](../../pr-assets/issue-356-subagent-activation/README.md) |
 | `--remember-target` | Seeds the Chinese Lumen project, whose 调研归档 space is switched off, unless `--docs-demo` seeds it. Send `remember-target-check`, then `remember-archive-check`. `Remember target:` | [#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387) | [Explicit space target](../../pr-assets/issue-387-explicit-space-target/README.md) |
 | `--recall-budget` | Seeds the Chinese Lumen project unless `--docs-demo` seeds it, and a model that asks three different Recall questions in one turn. Send `recall-budget-check`. `Recall budget:` | [#389](https://github.com/omdsh-dev/dsh-mnemon/issues/389) | [Recall budget](../../pr-assets/issue-389-recall-budget/README.md) |
+
+The slow embedding service of `--archive-copies` also runs on its own, for Mnemon CLI probes or as the endpoint in the Mnemon Native embedding settings. `node scripts/fixtures/fake-embeddings.mjs` serves Ollama's API at `http://127.0.0.1:<port>` and the OpenAI-compatible one at `http://127.0.0.1:<port>/v1`, with a deterministic vector for each text, and prints a `Fake embeddings:` line for each embedding request:
+
+- `--port <n>` chooses the port (a free one by default) and `--port-file <file>` writes the one it took;
+- `--delay-ms <ms>` holds every embedding answer, but not the model list, as a slow service does;
+- `--missing-model` keeps the service up without the model: Mnemon finds it available, and every embedding request answers 404;
+- `--model <name>` names the model it lists, `nomic-embed-text` by default.
+
+`MNEMON_NATIVE_TEST_CLI=/absolute/path/to/mnemon pnpm exec vitest run tests/fake-embeddings-fixture.spec.mjs` also checks it against a real Mnemon CLI over both protocols.
 
 ### Earlier records
 

@@ -6,7 +6,7 @@ Starter 固定经过测试的官方插件组合。下表记录验证范围，不
 
 | 组件 | 基线 | 已验证的范围 |
 |---|---|---|
-| DSH | `0.2.1-rc.1`（npm `next`）、`0.2.0-rc.2`（npm `latest`） | 受支持的宿主。0.2.1-rc.1 是锁定的开发基线，CI 还会在已安装的 0.2.0-rc.2 上运行全部根测试。两者都经过 WebUI、Headless 与 Starter 激活契约的检查，见 [DSH 0.2.0 与 0.2.1](#dsh-020-与-021) |
+| DSH | `0.2.1-rc.2`（npm `next`）、`0.2.0-rc.2`（npm `latest`） | 受支持的宿主。0.2.1-rc.2 是锁定的开发基线，CI 还会在已安装的 0.2.0-rc.2 上运行全部根测试。两者都经过 WebUI、Headless 与 Starter 激活契约的检查，见 [DSH 0.2.0 与 0.2.1](#dsh-020-与-021)。支持范围也包含 v0.5.31 发布时的基线 0.2.1-rc.1 |
 | Node.js | `22.19`、`24` | 分别用于源码 CI 与打包制品 CI；开发要求 `^22.19.0 \|\| >=24.0.0` |
 | Node.js 20 | 仅公开包入口导入 | 不代表 DSH Host 能在 Node 20 运行 |
 | Mnemon Native CLI | `0.2.9` | 显式启用的真实 CLI 与临时数据测试；CLI 需要另外安装 |
@@ -25,7 +25,7 @@ dsh-mnemon 支持 `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`：DSH 0.2.0 �
 | DSH | dsh-mnemon |
 |---|---|
 | `0.1.7-rc.2`、`0.2.0-rc.1`、`0.2.1-alpha.2` | `0.5.30` |
-| `0.2.1-alpha.3` 及之后的 alpha | 没有完全可用的版本：在 0.5.30 中记忆子 Agent 与**检查版本 → 更新**都会失败。请把 DSH 升级到 `0.2.1-rc.1`（npm `next`） |
+| `0.2.1-alpha.3` 及之后的 alpha | 没有完全可用的版本：在 0.5.30 中记忆子 Agent 与**检查版本 → 更新**都会失败。请把 DSH 升级到 `0.2.1-rc.2`（npm `next`） |
 | `0.1.5-rc.1` 至 `0.1.7-alpha.1` | `0.5.16` |
 
 这些宿主需要的内容保留在[旧版 DSH 宿主](#旧版-dsh-宿主)。各版本如何验证，以及仅保留为历史证据的较早 Headless 和 WebUI 记录，见[验证与证据](#验证与证据)。
@@ -39,7 +39,7 @@ dsh-mnemon 支持 `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`：DSH 0.2.0 �
 
 ### 升级顺序
 
-先在现有 DSH 中更新 dsh-mnemon，再升级 DSH。在 DSH 0.1.7-rc.2 上，先把 dsh-mnemon 更新到 0.5.30（`dsh plugin --profile web add dsh-mnemon@0.5.30`），然后安装 DSH 0.2.0-rc.2 或 0.2.1-rc.1，再更新一次 dsh-mnemon。若先升级了 DSH，它会停用不受支持的版本，记忆数据不受影响；更新插件后即可恢复。不要用 `allow-version` 为不受支持的版本放行。
+先在现有 DSH 中更新 dsh-mnemon，再升级 DSH。在 DSH 0.1.7-rc.2 上，先把 dsh-mnemon 更新到 0.5.30（`dsh plugin --profile web add dsh-mnemon@0.5.30`），然后安装 DSH 0.2.0-rc.2 或 0.2.1-rc.2，再更新一次 dsh-mnemon。若先升级了 DSH，它会停用不受支持的版本，记忆数据不受影响；更新插件后即可恢复。不要用 `allow-version` 为不受支持的版本放行。
 
 在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`。请退出 DSH，运行 `dsh plugin --profile web add dsh-mnemon@<版本>`（`desktop` profile 改在桌面版的插件页中管理），再启动 DSH。之后的更新照常通过**检查版本**完成。
 
@@ -140,7 +140,7 @@ Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用
 
 ### 受支持的宿主
 
-根测试在锁定的 0.2.1-rc.1 上运行，CI 还会在从 npm 安装的 DSH 0.2.0-rc.2 上运行（`pnpm run test:installed-dsh`，见[开发指南](../development/README.md#环境与命令)）；真实宿主测试组合的是它所运行的那个 DSH。在两个版本上，启用与不启用可选策略的 Headless、Starter 的激活契约以及 Git 同步检查都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因分组行列表失败。[DSH 0.2.1-rc.1 记录](../../pr-assets/dsh-021-rc1/README.zh-CN.md)包含两个版本上的 WebUI 检查。更早的记录：[0.2.0-rc.2 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)、[activation（#356）](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)、[0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)与 [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.zh-CN.md)。
+根测试在锁定的 0.2.1-rc.2 上运行，CI 还会在从 npm 安装的 DSH 0.2.0-rc.2 上运行（`pnpm run test:installed-dsh`，见[开发指南](../development/README.md#环境与命令)）；真实宿主测试组合的是它所运行的那个 DSH。在两个版本上，启用与不启用可选策略的 Headless、Starter 的激活契约以及 Git 同步检查都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因分组行列表失败。[DSH 0.2.1-rc.2 记录](../../pr-assets/dsh-021-rc2/README.zh-CN.md)包含 0.2.1-rc.2 上的检查，[DSH 0.2.1-rc.1 记录](../../pr-assets/dsh-021-rc1/README.zh-CN.md)包含 0.2.1-rc.1 与 0.2.0-rc.2 上的 WebUI 检查。更早的记录：[0.2.0-rc.2 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)、[activation（#356）](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)、[0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)与 [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.zh-CN.md)。
 
 另见[升级证据](../../pr-assets/main-rebase-20260904/README.md)与[当前开发检查](../development/README.md)。机制测试通过不是 LLM 质量评测通过；特定 OS 与真实 CLI 检查在没有对应环境时可能跳过。
 

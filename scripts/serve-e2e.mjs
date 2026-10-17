@@ -30,7 +30,9 @@ import { saveActionModel } from './fixtures/save-action-model.mjs'
 import { profileCompactionModel } from './fixtures/profile-compaction-model.mjs'
 import { DOCS_DEMO_LANGUAGES, docsDemoAssistant, docsDemoModel, seedDocsDemo } from './fixtures/docs-demo.mjs'
 import { recallBudgetModel } from './fixtures/recall-budget-model.mjs'
-import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies, slowEmbeddingServer } from './fixtures/archive-copies.mjs'
+import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies } from './fixtures/archive-copies.mjs'
+import { fakeEmbeddingServer } from './fixtures/fake-embeddings.mjs'
+import { describeModelRequest } from './fixtures/model-request-log.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const flags = new Set(process.argv.slice(2))
@@ -66,6 +68,7 @@ for (const flag of flags) {
   if (flag === '--without-mnemon-cli') continue
   if (flag === '--remote-management') continue
   if (flag === '--live-model') continue
+  if (flag === '--log-model-requests') continue
   if (flag === '--recall-budget') continue
   if (flag === '--docs-demo' || flag.startsWith('--docs-demo=')) {
     docsDemo = flag === '--docs-demo' ? 'zh-CN' : flag.slice('--docs-demo='.length)
@@ -106,6 +109,8 @@ const selfRegistering = new Set(STARTER_SELF_REGISTERING_PACKAGES)
 const extensionsEnabled = flags.has('--strategy-extensions')
 const liveModel = flags.has('--live-model')
 if (liveModel && !process.env.DEEPSEEK_API_KEY?.trim()) throw new Error('--live-model reads the model key from DEEPSEEK_API_KEY')
+const logModelRequests = flags.has('--log-model-requests')
+if (logModelRequests && liveModel) throw new Error("--log-model-requests logs the loopback model stub's requests, and --live-model replaces the stub")
 const runtimeArchive = flags.has('--runtime-archive')
 const fixture = await mkdtemp(join(tmpdir(), 'mnemon-web-e2e-'))
 const dshHome = join(fixture, 'dsh-home')
@@ -134,9 +139,11 @@ const archiveProvider = runtimeArchive ? createServer(async (request, response) 
   response.end(JSON.stringify(value))
 }) : undefined
 if (archiveProvider) await new Promise(resolveListen => archiveProvider.listen(0, '127.0.0.1', resolveListen))
-// Issue #339: an embedding service slower than the Mnemon CLI's default 10 s timeout.
+// Issue #339: an embedding service slower than the Mnemon CLI's default 10 s timeout, with one
+// `Archive copies:` line per embedding request, as the #339 record counts them.
 const embeddingDelayMs = Number(process.env.MNEMON_E2E_EMBEDDING_DELAY_MS ?? 12_000)
-const slowEmbedder = flags.has('--archive-copies') ? slowEmbeddingServer({ delayMs: embeddingDelayMs, report: event => console.log('Archive copies: ' + JSON.stringify(event)) }) : undefined
+const slowEmbedder = flags.has('--archive-copies') ? fakeEmbeddingServer({ model: 'fixture-embed', delayMs: embeddingDelayMs,
+  report: ({ event, request, delayMs }) => console.log('Archive copies: ' + JSON.stringify({ event, request, delayMs })) }) : undefined
 if (slowEmbedder) await new Promise(resolveListen => slowEmbedder.listen(0, '127.0.0.1', resolveListen))
 const protectionModel = flags.has('--document-protection') ? documentProtectionModel(event => console.log('Document protection: ' + JSON.stringify(event))) : undefined
 const reviewModel = flags.has('--review-evidence') ? reviewEvidenceModel(event => console.log('Review evidence: ' + JSON.stringify(event))) : undefined
@@ -182,8 +189,8 @@ function fixtureRequest(wire) {
 const model = createServer(async (request, response) => {
   let input = ''
   for await (const chunk of request) input += chunk
-  console.log('Fixture model request: ' + ++modelRequests)
   const wire = input === '' ? {} : JSON.parse(input)
+  console.log('Fixture model request: ' + ++modelRequests + (logModelRequests ? ' ' + JSON.stringify(describeModelRequest(wire)) : ''))
   const reviewPersona = reviewFailure ? fixtureRequest(wire).messages
     .filter(message => message.role === 'system').map(message => message.content).join('\n') : ''
   if (/Completion protocol: call `mnemon_subagent_result(?:_[^`]+)?`/u.test(reviewPersona)) {
