@@ -34,6 +34,8 @@ A review of the code after v0.5.31 found these concrete gaps. Each one changes w
 - **Providers bring their own translated text,** and a Provider without copy shows its summary instead of an empty line.
 - **Memory Spaces reaches Mnemon Native through its Provider adapter** for embedding status and fill, the version check and space merges, so that other Providers can offer the same operations.
 - **SDK helpers for the code every Source and Provider repeats:** page presentation, refreshing on a new revision, navigation seeds, and a packaged Provider's entry with a default status check.
+- **Memory Spaces shows no error while it starts.** Right after it is switched on, its settings show "not installed" for about a second while the Source starts; they should read as loading.
+- **A Provider list reload cannot undo a switch or a save.** A quiet reload already under way when the user switches or saves a Provider can answer after the change and show the list from before it until the next read.
 
 ## Later: controlled maintenance and extension growth
 
