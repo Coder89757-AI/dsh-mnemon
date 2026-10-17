@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MnemonSettingsCard } from '../src/client/MnemonSettingsCard.tsx'
 import { MnemonChangeSignal } from '../src/client/change-signal.ts'
 import { MnemonComponentListSeat } from '../src/client/component-list-seat.ts'
-import { MEMORY_SPACES_PACKAGE, MemorySpacesSettings, RUNTIME_PACKAGE, RuntimeSettings, THREE_TIER_PACKAGE, ThreeTierSettings } from '../src/client/component-settings.tsx'
+import { MemorySpacesSettings } from 'dsh-mnemon-source-memory-spaces/client'
+import { createComponentHosts, type ComponentHosts } from '../src/client/component-host.ts'
+import { MEMORY_SPACES_PACKAGE, RUNTIME_PACKAGE, RuntimeSettings, THREE_TIER_PACKAGE, ThreeTierSettings } from '../src/client/component-settings.tsx'
 import { translateEn, translateZh, type MnemonTranslate } from '../src/client/locales.ts'
 import type { ClientConnectionHandle, ClientSettingsScope } from "../src/host/dsh.ts"
 import type { Config } from "../src/host/config.ts"
@@ -44,9 +46,19 @@ function page(packageName: string, options: { enabled?: boolean; writable?: bool
   }
 }
 type PageOptions = Parameters<typeof page>[1]
-/** Memory Spaces' own settings: its Providers and the Native embedding runtime. */
+/** What the configuration lends Memory Spaces' settings, one set per settings scope as the page keeps one. */
+const lent = new WeakMap<object, ComponentHosts>()
+function hostFor(scope: ClientSettingsScope<Config>, connection: ClientConnectionHandle | undefined, options: NonNullable<PageOptions>, componentChanges?: { bump: () => void }) {
+  let hosts = lent.get(scope)
+  if (hosts === undefined) {
+    hosts = createComponentHosts({ scope, connection, componentChanges })
+    lent.set(scope, hosts)
+  }
+  return hosts(MEMORY_SPACES_PACKAGE, options.sessionId, options.workspaceId)
+}
+/** Memory Spaces' own settings, as its registration renders them: its Providers and the Native embedding runtime. */
 const spaces = (scope: ClientSettingsScope<Config>, connection?: ClientConnectionHandle, options: PageOptions = {}, t: MnemonTranslate = translateZh, componentChanges?: { bump: () => void }) =>
-  <MemorySpacesSettings scope={scope} {...(connection === undefined ? {} : { connection })} t={t} page={page(MEMORY_SPACES_PACKAGE, options)} {...(componentChanges === undefined ? {} : { componentChanges })} />
+  <MemorySpacesSettings {...page(MEMORY_SPACES_PACKAGE, { ...options, language: t === translateEn ? 'en' : options.language ?? 'zh' })} host={hostFor(scope, connection, options, componentChanges)!} />
 /** The Layered strategy's own settings: the background tasks it drives. */
 /** What the Host reports for a page opened from a conversation on a model other than DSH's new-session one. */
 const conversationDirectory = {
@@ -511,7 +523,7 @@ describe('MnemonSettingsCard', () => {
     const componentSettings = {
       has: (packageName: string) => packageName === MEMORY_SPACES_PACKAGE,
       render: (entry: MemoryPluginEntryView, current: { enabled: boolean; label: string; writable: boolean; language: string }) =>
-        <MemorySpacesSettings scope={scope} connection={connection} t={translateZh} page={{ component: { packageName: entry.packageName, label: current.label, enabled: current.enabled }, writable: current.writable, language: current.language }} />,
+        <MemorySpacesSettings component={{ packageName: entry.packageName, label: current.label, enabled: current.enabled }} writable={current.writable} language={current.language} host={hostFor(scope, connection, {})!} />,
     }
     render(<MnemonSettingsCard scope={scope} connection={connection} componentSettings={componentSettings} />)
     // A layer whose Source component is off reads as off: the component is the layer's switch.

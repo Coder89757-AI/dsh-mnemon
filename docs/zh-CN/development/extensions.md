@@ -106,7 +106,7 @@ DSH 自己的插件列表从包内的 `locale/en.json` 与 `locale/zh.json`（`m
 
 #### 组件自己的设置与状态卡片
 
-声明的选项不够用时，组件可以在 `./client` 入口把自己的设置加入它的组件页，与随附组件的做法相同：运行时记忆的用户画像范围、记忆空间的 Provider 与嵌入、分层策略的后台任务。Source 还可以提供它运行时在记忆系统“状态”页卡片上显示的内容。
+声明的选项不够用时，组件可以在 `./client` 入口把自己的设置加入它的组件页，记忆空间就是这样带来它的 Provider 与嵌入。其他随附组件的设置仍由 dsh-mnemon 通过同一区域绘制：运行时记忆的用户画像范围、分层策略的后台任务。Source 还可以提供它运行时在记忆系统“状态”页卡片上显示的内容。
 
 ```tsx
 import { installMemoryComponentUI } from 'dsh-mnemon/client'
@@ -121,6 +121,14 @@ export function apply(ctx) {
 ```
 
 设置渲染在 `mnemon.component.settings` 区域，以插件声明中的包名为键，位于组件页的状态、关系与声明的选项之后；该组件的行会出现打开它们的齿轮。它只接收页面知道的信息：`component`（`packageName`、`label`、`enabled`）、`writable`、`language`，以及存在时对话的 `sessionId` 与 `workspace`；所需的服务请通过自己的注册注入。注册会等待 dsh-mnemon 的配置出现，调用返回的函数即结束。请遵循页面的交互规则：开关与下拉选择改动即生效，需要输入的值等待你自己的**应用**，且不并入其他分组的保存。
+
+`dsh-mnemon/client` 还导出记忆空间自己的设置所用的控件与样式，即 dsh-mnemon 绘制这些设置时所用的：`ToggleRow`，`useLive`、`useStaged` 以及 `PanelActions`、`WriteFailure`（一组设置的两种保存方式），`Callout`、`Reveal`、`GlobalLocationSetting`，以及配置页的类名表 `memorySettingsStyles`。类名表的键是一组固定的类名，属于 API：比 Starter 更旧或更新的已安装组件按名称查找它们，因此任何版本都不会重命名其中的类。配置页不会在组件的设置外层设置翻译，所以 `PanelActions` 与 `WriteFailure` 接收你传入的 `t`。导入它们的组件，应把 `dsh-mnemon` peer 最低版本声明为首个导出它们的 Starter，也就是同时导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 的那一版。
+
+记忆空间是 dsh-mnemon 曾代为绘制设置的随附组件。dsh-mnemon 保留它的设置，并把只有自己掌握的内容借给记忆空间自己的设置：
+
+- **后备注册。** dsh-mnemon 以 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 自行注册记忆空间的设置（取自它固定的记忆空间版本），为随附组件保留的状态卡片也会这样注册。DSH 对每个键只渲染优先级数值最低的注册，因此记忆空间以默认优先级注册自己的设置后，只要仍在注册，就会替代后备注册。所以只要记忆空间自己的客户端没有注册设置，页面就由后备注册绘制：记忆空间关闭时、打开后其客户端加载期间、客户端加载失败或其条目出错时，以及搭配本身没有设置的 0.5.21 及更早的记忆空间时。打开记忆空间会在已打开的页面下把前者换成后者；前者存在 `host.retained` 中的内容让后者从前者所在的状态开始。
+- **只在 dsh-mnemon 让出时注册。** dsh-mnemon 0.5.31 及更早版本以默认优先级自己绘制记忆空间的设置，而 DSH 拒绝同一个包在同一优先级上的第二次注册。导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 是 dsh-mnemon 的承诺：它以该优先级保留这些设置，并借给它们 `host`。因此记忆空间只在 `dsh-mnemon/client` 导出它时注册自己的设置。客户端包读取已加载的 dsh-mnemon 缺少的导出时得到 `undefined`，所以记忆空间在绘制时才读取较新的导出，而不是在加载时。
+- **`host`。** 注册在记忆空间键下的设置会收到 `host`。`host.configuration` 读取借给记忆空间的配置键，并通过页面带修订栅栏的设置写入 `set` 它拥有的那个键。`host.operations.read`/`write` 调用 dsh-mnemon 为记忆空间提供的 Host 操作，并始终在页面自己的对话与工作区中执行：输入中带 `sessionId` 或 `workspaceId` 的会被拒绝。记忆空间的设置自行发起的读取（`provider-services`、`status-summary`）在相同读取仍在进行时会与之合并，但只合并在配置当前修订下发起的那一次；嵌入测试总是向 Host 重新询问。`host.retained` 在页面的客户端运行期间保存设置重新挂载时需要的内容，`host.changed()` 让记忆系统重新读取它的页面。与 Source 页面的 `management` 客户端一样，`host` 从不交出设置服务或传输层。它跟随键而不是注册者：注册在其他键下的设置不会收到它；其他包只有抢先注册在记忆空间的键下才能拿到它，而这不会给它超出 DSH 已与所有客户端插件共享的连接之外的任何权限。
 
 状态卡片渲染在 `mnemon.component.status` 区域，同样以包名为键，在组件声明的名称下方显示 `<strong>` 中的一行要点与 `<p>` 中的一行说明。它接收 `component`、`language`，以及存在时记忆系统的 `sessionId` 与 `workspace`，并自行读取自己的 Source。无论是否提供内容，每个 Source 组件都有一张卡片：组件已关闭或其 Source 未运行时显示页面自己的说明，未提供内容时显示正在运行。标签页、卡片与页头都使用组件声明的名称。
 
@@ -138,7 +146,7 @@ export function apply(ctx) {
 | `dsh-mnemon-strategy-light-context` | `projection` | 一份共享投影上限，只收紧 Host 预算；不是增量注入或摘要压缩 |
 | `dsh-mnemon-strategy-auto-capture` | `capture` | 当前对话的记录指引、目标与明确 Action id；不启动后台 Agent、不直接写入 |
 
-Starter 会安装这三个包并注册为停用的 DSH Entry，因此开关始终可用，但默认组合、预算和提醒保持 v0.4 行为。打开开关后，对应贡献自动参与当前主策略，不改变主策略；关闭只撤销该贡献，不删除任何 Source 数据。通用策略（`dsh-mnemon-strategy-general`）同样接受这三个槽。Runtime 当前没有展开 route；把常驻预算压得很低可能隐藏热记忆，需要针对实际任务评测。
+Starter 会安装这三个包并注册为停用的 DSH Entry，因此开关始终可用，但默认组合、预算和提醒保持 v0.4 行为。打开开关后，对应贡献自动参与当前主策略，不改变主策略；关闭只撤销该贡献，不删除任何 Source 数据。通用策略（`dsh-mnemon-strategy-general`）同样接受这三个槽。Runtime 当前没有展开 route；把常驻预算压得很低可能隐藏运行时记忆，需要针对实际任务评测。
 
 `scoped` 的 Source key 若包含 Loader 的 include 前缀，应使用实例目录中的完整 key；省略配置时按角色/key 确定性组合现有实例，不创建新的存储。面板的**选项**可编辑包声明的字段；Profile 配置仍可用于自动化。
 

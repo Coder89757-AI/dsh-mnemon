@@ -3,6 +3,28 @@ import { IconChevronDownOutlineRegular, Menu, Switch } from '@deepseek-ai/dsh-cl
 import css from './MnemonSettingsCard.module.css'
 import { Reveal, TARGET } from './feedback.tsx'
 
+/**
+ * The configuration's class names that Memory Spaces' own settings use, so they
+ * draw as the shipped settings do. They are API: an installed Memory Spaces,
+ * older or newer than this Starter, looks its classes up by these names, so
+ * renaming or removing one unstyles it.
+ */
+export const MEMORY_SETTINGS_CLASS_NAMES = [
+  'configFeedback', 'editor', 'editorHeading', 'editorNote', 'embeddingFillOutcome', 'embeddingSpaceCount',
+  'embeddingSpaceName', 'embeddingSpaceState', 'embeddingSpaces', 'embeddingTest', 'error', 'fieldGrid',
+  'groupCallout', 'memoryConfigFooter', 'packSuccess', 'panelHeading', 'panelNote', 'panelSection',
+  'providerBoolean', 'providerChevron', 'providerDisclosure', 'providerEnableControl', 'providerFieldControl',
+  'providerIdentity', 'providerInlineBody', 'providerList', 'providerLoadError', 'providerLocationField',
+  'providerMark', 'providerRow', 'providerRowHeader', 'providerScopeTag', 'providerSecretInput',
+  'providerSecretVisibility', 'providerServiceFooter', 'providerServiceForm', 'providerServiceLocation',
+  'providerServicePrompt', 'providerSettingsGrid', 'providerState', 'providerTarget', 'providerToggle',
+  'providerToggleError', 'scopeChanging', 'visuallyHidden',
+] as const
+export type MemorySettingsClass = typeof MEMORY_SETTINGS_CLASS_NAMES[number]
+
+/** The configuration's class map, by the names in MEMORY_SETTINGS_CLASS_NAMES. */
+export const memorySettingsStyles = css as Readonly<Record<MemorySettingsClass, string>>
+
 /** Marks a row as the place a component's state shows, so the page can point at it. */
 const targetOf = (target: string | undefined) => target === undefined ? {} : { [TARGET]: target }
 

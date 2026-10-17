@@ -3,6 +3,7 @@ import type { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PluginConfigViewProps } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { MNEMON_COMPONENT_SETTINGS_SLOT, type ComponentSettingsDirectory, type MemoryComponentSettingsProps } from './component-ui.tsx'
+import type { ComponentHosts } from './component-host.ts'
 import { MnemonSettingsCard, type ComponentSettingsSource, type MnemonSettingsCardProps } from './MnemonSettingsCard.tsx'
 import type { MnemonClientContext } from './dsh-context.ts'
 import { useMnemonSessionId, type MnemonSessionBinding } from './session-binding.ts'
@@ -16,6 +17,8 @@ interface MnemonSettingsHostProps extends Omit<MnemonSettingsCardProps, 'session
   workspaces: MnemonClientContext['workspaces']
   /** The components that contributed settings to their pages. */
   componentSettingsDirectory?: ComponentSettingsDirectory
+  /** What the page lends the shipped components whose settings dsh-mnemon used to draw. */
+  componentHost?: ComponentHosts
   /**
    * Renders a contribution on a page that does not own the settings region,
    * such as DSH's row page, or the configuration when a shell draws it
@@ -25,7 +28,7 @@ interface MnemonSettingsHostProps extends Omit<MnemonSettingsCardProps, 'session
 }
 
 /** The dsh-mnemon bundle page body; root-slot injection is cached, so session and workspace stay live here. */
-export function MnemonSettingsHost({ view, currentSession, sessions, workspaces, localeRuntime, componentSettingsDirectory, renderSlot, renderContributed, ...props }: MnemonSettingsHostProps): JSX.Element | null {
+export function MnemonSettingsHost({ view, currentSession, sessions, workspaces, localeRuntime, componentSettingsDirectory, componentHost, renderSlot, renderContributed, ...props }: MnemonSettingsHostProps): JSX.Element | null {
   const sessionId = useMnemonSessionId(currentSession)
   const subscribeSessions = useCallback((listener: () => void) => sessions.list.subscribe(listener), [sessions.list])
   const getSessions = useCallback(() => sessions.list.getSnapshot(), [sessions.list])
@@ -44,15 +47,17 @@ export function MnemonSettingsHost({ view, currentSession, sessions, workspaces,
   const componentSettings = useMemo<ComponentSettingsSource | undefined>(() => (renderSlot === undefined && renderContributed === undefined) || contributed === undefined ? undefined : {
     has: packageName => contributed.has(packageName),
     render: (entry, page) => {
+      const host = componentHost?.(entry.packageName, page.sessionId, page.workspace?.id)
       const owner: MemoryComponentSettingsProps = {
         component: { packageName: entry.packageName, label: page.label, enabled: page.enabled },
         writable: page.writable, language: page.language,
         ...(page.sessionId === undefined ? {} : { sessionId: page.sessionId }),
         ...(page.workspace === undefined ? {} : { workspace: page.workspace }),
+        ...(host === undefined ? {} : { host }),
       }
       return renderSlot !== undefined ? renderSlot(MNEMON_COMPONENT_SETTINGS_SLOT, owner, { entryKey: entry.packageName, fallback: null }) : renderContributed!(entry.packageName, owner)
     },
-  }, [renderSlot, renderContributed, contributed])
+  }, [renderSlot, renderContributed, contributed, componentHost])
   if (view !== 'page') return null
   const cwd = sessionId === undefined ? undefined : Object.entries(catalog.byId).find(([id]) => id === sessionId)?.[1]?.cwd
   const normalizePath = (value: string): string => value.replace(/[\\/]+$/u, '')
