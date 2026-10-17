@@ -1,4 +1,4 @@
-import type { MemoryProviderConfigField, MemoryProviderConnection, MemoryProviderDescriptor, MemoryProviderId } from '../contracts.ts'
+import { isNativeProvider, type MemoryProviderConfigField, type MemoryProviderConnection, type MemoryProviderDescriptor, type MemoryProviderId } from '../contracts.ts'
 
 export function memoryProviderDescriptor(id: MemoryProviderId, catalog: readonly MemoryProviderDescriptor[] = []): MemoryProviderDescriptor {
   const descriptor = catalog.find(candidate => candidate.id === id)
@@ -48,7 +48,7 @@ function normalizeScopedProviderConnection(
   catalog: readonly MemoryProviderDescriptor[] = [],
 ): MemoryProviderConnection {
   const descriptor = memoryProviderDescriptor(providerId, catalog)
-  if ((descriptor.typeId ?? descriptor.id) === 'mnemon-native') return {}
+  if (isNativeProvider(descriptor)) return {}
   const fields = descriptor.fields.filter(item => item.scope === scope)
   const allowed = new Set(fields.map(item => item.key))
   for (const key of Object.keys(input ?? {})) if (!allowed.has(key)) throw new Error(`unsupported ${descriptor.label} ${scope} setting: ${key}`)
@@ -120,7 +120,7 @@ export function normalizeProviderConnection(
   catalog: readonly MemoryProviderDescriptor[] = [],
 ): MemoryProviderConnection {
   const descriptor = memoryProviderDescriptor(providerId, catalog)
-  if ((descriptor.typeId ?? descriptor.id) === 'mnemon-native') return {}
+  if (isNativeProvider(descriptor)) return {}
   const allowed = new Set(descriptor.fields.map(item => item.key))
   for (const key of Object.keys(input ?? {})) if (!allowed.has(key)) throw new Error(`unsupported ${descriptor.label} setting: ${key}`)
   for (const key of clearSecrets) {

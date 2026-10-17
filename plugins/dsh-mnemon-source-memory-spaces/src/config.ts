@@ -2,7 +2,7 @@ import z from '@deepseek-ai/schemastery'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { MemoryPersistenceStrategy, ResolvedMemoryPersistenceStrategy, MemoryPlacementCapability, MemoryPlacementPreference, MemoryProviderId, MemoryProviderConnection, MnemonEmbeddingConfig, ResolvedMnemonEmbeddingConfig, RecallQualityConfig, ResolvedRecallQualityConfig } from './contracts.ts'
-import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MNEMON_EMBEDDING_PROTOCOLS } from './contracts.ts'
+import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MEMORY_SPACE_ID_PATTERN, MNEMON_EMBEDDING_PROTOCOLS, NATIVE_PROVIDER_ID } from './contracts.ts'
 import { DEFAULT_TIMEOUT_MS, DEFAULT_RECALL_LIMIT, DEFAULT_RECALL_QUALITY_POLICY, DEFAULT_RECALL_LOW_SCORE_THRESHOLD, DEFAULT_RECALL_HIGH_SCORE_THRESHOLD, DEFAULT_RECALL_CANDIDATE_MULTIPLIER, DEFAULT_RECALL_MAX_MEDIUM_RESULTS, DEFAULT_RECALL_MAX_UNKNOWN_RESULTS } from './defaults.ts'
 
 export interface MemorySpacesConfig {
@@ -44,12 +44,12 @@ const MEMORY_PLACEMENT_PREFERENCE_SET = new Set(['balanced', 'local-first', 'sha
 export function resolvePersistenceStrategy(value: MemoryPersistenceStrategy | undefined): ResolvedMemorySpacesConfig['persistenceStrategy'] {
   const mode = value?.mode ?? 'manual'
   if (mode !== 'manual' && mode !== 'automatic') throw new Error(`dsh-mnemon: unsupported persistence strategy mode: ${String(mode)}`)
-  const providerId = value?.providerId ?? 'mnemon-native'
+  const providerId = value?.providerId ?? NATIVE_PROVIDER_ID
   if (!MEMORY_PROVIDER_ID.test(providerId)) throw new Error(`dsh-mnemon: invalid persistence strategy provider: ${String(providerId)}`)
   const prompt = value?.prompt?.trim() ?? ''
   if (prompt.length > 4000) throw new Error('dsh-mnemon: persistence strategy prompt is too long (max 4000 characters)')
   const configuredProviderIds = value?.rules?.allowedProviderIds
-  const allowedProviderIds = [...new Set(configuredProviderIds === undefined || (configuredProviderIds.length === 0 && mode === 'manual') ? ['mnemon-native'] : configuredProviderIds)]
+  const allowedProviderIds = [...new Set(configuredProviderIds === undefined || (configuredProviderIds.length === 0 && mode === 'manual') ? [NATIVE_PROVIDER_ID] : configuredProviderIds)]
   if (allowedProviderIds.length === 0) throw new Error('dsh-mnemon: persistence strategy requires at least one allowed provider')
   for (const id of allowedProviderIds) if (!MEMORY_PROVIDER_ID.test(id)) throw new Error(`dsh-mnemon: invalid persistence strategy provider: ${String(id)}`)
   const dataBoundary = value?.rules?.dataBoundary ?? 'allow-remote'
@@ -128,7 +128,7 @@ export function resolveMemorySpacesConfig(value: MemorySpacesConfig = {}, source
     : requested === '~' ? homedir() : requested.startsWith('~/') ? join(homedir(), requested.slice(2)) : requested
   if (!isAbsolute(dataDir)) throw new Error('Memory Spaces dataDir must be absolute or start with ~/')
   const store = optionalText(config.store)
-  if (store !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/u.test(store)) throw new Error('Memory Spaces store has an invalid identifier')
+  if (store !== undefined && !MEMORY_SPACE_ID_PATTERN.test(store)) throw new Error('Memory Spaces store has an invalid identifier')
   const cliPath = optionalText(config.cliPath)
   return {
     storageScope: 'custom', dataDir,

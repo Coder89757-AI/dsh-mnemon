@@ -72,6 +72,8 @@ Where the two differ, dsh-mnemon takes the path each one offers:
 - **Incompatible releases.** When DSH refuses an update as incompatible, the error names what the release needs: `requires DSH ^0.3.0` where DSH 0.2.1 reports the release's requirements, `requires @deepseek-ai/dsh ^0.3.0` where DSH 0.2.0 reports its peers.
 - **Plugins page.** DSH 0.2.0 lists the Starter's grouping row as an off component; see [the bundle component list on DSH 0.2.0](#the-bundle-component-list-on-dsh-020). DSH 0.2.1 lists only the components.
 
+Where each of these paths lives in the code, and what retires the DSH 0.2.0 half, is in the [compatibility register](../development/compatibility-register.md) with the rest of the compatibility code.
+
 ## Desktop windows
 
 DSH desktop windows load from the app's own `dsh-app://app/` address instead of a loopback URL. A page the application serves itself (an address other than `http:` or `https:`) uses Mnemon's local channels; it counts as remote only when DSH declares a transport for it that does not own the Host. The DSH desktop app declares `ownsHost: true`. Pages opened from another device keep the API Gateway and its read-only default, and the Memory System and the plugin settings say that `remoteAccess: trusted-host` and a DSH restart are needed. The local channels and `/api` share DSH's Host/Origin checks and browser-session authentication. [Desktop windows on DSH 0.1.7](#desktop-windows-on-dsh-017) describes the read-only state 0.5.18 and earlier showed there.

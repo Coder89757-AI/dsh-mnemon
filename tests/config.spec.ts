@@ -153,6 +153,21 @@ describe('Mnemon config and resolution', () => {
       .toMatchObject({ turnBar: false, saveAction: false })
   })
 
+  it('still accepts a stored toolviews preference and leaves it out of the resolved config', () => {
+    for (const toolviews of [true, false]) {
+      const stored = Config({ conversationInteraction: { toolviews, turnBar: false } })
+      expect(stored.conversationInteraction).toEqual({ toolviews, turnBar: false, saveAction: true })
+      expect(resolveConfig(stored).conversationInteraction).toEqual({ turnBar: false, saveAction: true })
+    }
+    expect(Config({}).conversationInteraction).toEqual({ toolviews: false, turnBar: true, saveAction: true })
+    expect(resolveConfig({}).conversationInteraction).toEqual({ turnBar: true, saveAction: true })
+  })
+
+  it('keeps toolviews declared in the schema DSH builds its form from', () => {
+    // Undeclared keys pass through the schema, so only this keeps the generated form as it was.
+    expect(Object.keys(Config.dict?.conversationInteraction?.dict ?? {})).toEqual(['toolviews', 'turnBar', 'saveAction'])
+  })
+
   it.each(['builtin', 'sidebar'] as const)('preserves displayMode=%s without changing storage or visibility', displayMode => {
     const legacy = { displayMode, storageScope: 'workspace' as const, tabEnabled: false, writeEnabled: false }
     const parsed = Config(legacy)
@@ -211,6 +226,11 @@ describe('Mnemon config and resolution', () => {
 
   it('rejects unsafe store names', () => {
     expect(() => resolveConfig({ store: '../other' })).toThrow('store')
+    // A store names a Native space's directory, so it takes exactly a space id.
+    for (const store of ['default', 'A-1_b', '9lives']) expect(resolveConfig({ store }).store).toBe(store)
+    for (const store of ['-lead', '_lead', 'a.b', 'a/b', 'ä', 'a b']) {
+      expect(() => resolveConfig({ store }), store).toThrow('dsh-mnemon: store must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
+    }
   })
 
 })

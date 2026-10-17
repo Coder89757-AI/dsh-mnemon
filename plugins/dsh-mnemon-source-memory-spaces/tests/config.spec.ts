@@ -13,6 +13,13 @@ describe('Memory Spaces configuration rules', () => {
     expect(() => resolveConfig({ recallQuality: { maxUnknownResults: -1 } })).toThrow('max unknown')
   })
 
+  it('takes a store hint only as a space id', () => {
+    for (const store of ['default', 'A-1_b', '9lives']) expect(resolveConfig({ store }).store).toBe(store)
+    for (const store of ['../other', '-lead', '_lead', 'a.b', 'a/b', 'ä', 'a b']) {
+      expect(() => resolveConfig({ store }), store).toThrow('Memory Spaces store has an invalid identifier')
+    }
+  })
+
   it('normalizes and validates DSH-managed Mnemon embedding settings', () => {
     expect(resolveConfig({
       embedding: { enabled: true, endpoint: ' https://ollama.example.test/prefix/// ', model: ' qwen3-embedding:0.6b ', apiKey: '  sk-secret  ' },

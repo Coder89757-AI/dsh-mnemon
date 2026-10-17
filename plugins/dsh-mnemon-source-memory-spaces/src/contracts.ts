@@ -9,6 +9,18 @@ import type { MemoryReadGrant } from 'dsh-mnemon/contracts'
 
 export type MemoryProviderId = string
 
+/**
+ * The Mnemon Native Provider's id. Its package names its descriptor and driver
+ * with it, the Starter installs it under it, and a stored space that names no
+ * Provider belongs to it.
+ */
+export const NATIVE_PROVIDER_ID = 'mnemon-native'
+
+/** Whether a Provider is Mnemon Native: by its implementation type, else by its id. */
+export function isNativeProvider(provider: { readonly id: MemoryProviderId; readonly typeId?: string | undefined }): boolean {
+  return (provider.typeId ?? provider.id) === NATIVE_PROVIDER_ID
+}
+
 export type MemoryProviderConnectionValue = string | number | boolean
 export type MemoryProviderConnection = Record<string, MemoryProviderConnectionValue>
 
@@ -682,6 +694,10 @@ export const MEMORY_SPACE_REGISTRY_FILE = '.dsh-memory-bodies.json'
 export const MEMORY_SPACE_DATABASE_FILE = 'mnemon.db'
 /** A space id, which also names its store's directory. */
 export const MEMORY_SPACE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
+/** The most characters a space's name holds. */
+export const MEMORY_SPACE_NAME_MAX_LENGTH = 100
+/** The most characters a space's routing description holds. */
+export const MEMORY_SPACE_DESCRIPTION_MAX_LENGTH = 1000
 /** Mnemon's own record of its default store, one space id, at the storage root. */
 export const MNEMON_ACTIVE_STORE_FILE = 'active'
 /** Third-party Provider services and the spaces they serve, in the storage root's `state` directory. No Pack carries it. */
@@ -720,7 +736,8 @@ export function parseMemorySpaceRegistry(value: unknown): MemorySpaceRegistryFil
   const bodies = registry.bodies.map((raw): MemorySpaceRegistryEntry => {
     const body = isObject(raw) ? raw : undefined
     if (typeof body?.id !== 'string' || !MEMORY_SPACE_ID_PATTERN.test(body.id) || ids.has(body.id)) throw new Error('Memory Space registry contains an invalid or duplicate id')
-    if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 100 || typeof body.description !== 'string' || body.description.length > 1000) throw new Error('Memory Space registry contains invalid metadata')
+    if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > MEMORY_SPACE_NAME_MAX_LENGTH
+      || typeof body.description !== 'string' || body.description.length > MEMORY_SPACE_DESCRIPTION_MAX_LENGTH) throw new Error('Memory Space registry contains invalid metadata')
     if (typeof body.createdAt !== 'string' || typeof body.updatedAt !== 'string') throw new Error('Memory Space registry contains invalid timestamps')
     ids.add(body.id)
     return { id: body.id, name: body.name, description: body.description, active: body.active === true, createdAt: body.createdAt, updatedAt: body.updatedAt }

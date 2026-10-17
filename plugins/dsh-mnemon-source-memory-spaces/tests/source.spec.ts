@@ -13,6 +13,7 @@ import { createRunner } from '../src/runner.ts'
 import { resolveMemorySpacesConfig } from '../src/config.ts'
 import { defineMemorySpaceProvider, MEMORY_SPACE_PROVIDER_API_VERSION, NORMALIZED_RELEVANCE_SCORE } from '../src/provider-sdk.ts'
 import { MemoryProviderCatalog } from '../src/providers/catalog.ts'
+import { MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH } from '../src/contracts.ts'
 
 describe('standalone Memory Spaces Source', () => {
   it('admits only evidence actually returned under the View budget, not all Provider search hits', async () => {
@@ -195,6 +196,35 @@ describe('standalone Memory Spaces Source', () => {
       }
       expect(runner.context.get('mnemonProvider', false)).toBeUndefined()
       next.release()
+    } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
+  })
+
+  it('limits a space name and description by one rule wherever a request sets them', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mnemon-spaces-limits-'))
+    const runner = new MemoryCompositionRunner()
+    const scope = { storage: 'custom' as const }
+    const name = 'n'.repeat(MEMORY_SPACE_NAME_MAX_LENGTH)
+    const description = 'd'.repeat(MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)
+    try {
+      await runner.mount(strategy, { instanceId: 'strategy' })
+      await runner.mount({ inject: ['mnemonMemory'], async apply(ctx: Context) {
+        await installMemorySpaces(ctx, [{ instanceId: 'fixture', module: provider, config: undefined }], { config: { dataDir: directory } })
+      } }, { instanceId: 'spaces' })
+      const client = await runner.managementClient('source:spaces', scope)
+      await client.mutate('provider-service-update', { providerId: 'fixture', settings: {}, enabled: true }, { confirmed: true })
+      const body = ((await client.read('body-directory')).value as unknown as { items: Array<{ id: string }> }).items[0]!
+      // The management operations.
+      await expect(client.mutate('body-create', { name: `${name}n`, description: 'Facts' }, { confirmed: true })).rejects.toThrow('name is too long (max 100 characters)')
+      await expect(client.mutate('body-create', { name, description: `${description}d` }, { confirmed: true })).rejects.toThrow('description is too long (max 1000 characters)')
+      await expect(client.mutate('body-update', { memoryBodyId: body.id, name: `${name}n` }, { confirmed: true })).rejects.toThrow('name is too long (max 100 characters)')
+      await expect(client.mutate('body-update', { memoryBodyId: body.id, description: `${description}d` }, { confirmed: true })).rejects.toThrow('description is too long (max 1000 characters)')
+      expect((await client.mutate('body-update', { memoryBodyId: body.id, name, description }, { confirmed: true })).value).toMatchObject({ name, description })
+      // The model's manage-spaces Action.
+      const turn = await runner.beginTurn({ scope })
+      const manage = turn.view.actionOffers.find(offer => offer.sourceActionId === 'manage-spaces')!
+      await expect(turn.executeAction(manage.id, { operation: 'update', memoryBodyId: body.id, name: `${name}n` }, () => true)).rejects.toThrow('name is too long (max 100 characters)')
+      await expect(turn.executeAction(manage.id, { operation: 'update', memoryBodyId: body.id, description: `${description}d` }, () => true)).rejects.toThrow('description is too long (max 1000 characters)')
+      turn.release()
     } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
   })
 

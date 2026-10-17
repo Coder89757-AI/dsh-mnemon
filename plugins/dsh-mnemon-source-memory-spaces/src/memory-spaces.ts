@@ -22,7 +22,10 @@ import type {
   UpdateMemorySpaceRequest,
 } from './contracts.ts'
 import type { ProviderMemorySpace } from './providers/adapter.ts'
-import { MEMORY_PROVIDER_REGISTRY_FILE, MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY } from './contracts.ts'
+import {
+  isNativeProvider, MEMORY_PROVIDER_REGISTRY_FILE, MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_NAME_MAX_LENGTH,
+  MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY, NATIVE_PROVIDER_ID,
+} from './contracts.ts'
 
 const NATIVE_REGISTRY_VERSION = 1
 const PROVIDER_REGISTRY_VERSION = 4
@@ -196,12 +199,12 @@ function providerProjectionMetadata(providerCatalog: MemoryProviderCatalog, prov
     .map(key => compactProviderMetadataValue(candidate.connection[key]))
     .find((value): value is string => value !== undefined)
   const fallbackId = compactProviderMetadataValue(externalId) ?? externalId
-  const name = (mappedName || nearestName || `${descriptor.label} ${fallbackId}`).slice(0, 100)
+  const name = (mappedName || nearestName || `${descriptor.label} ${fallbackId}`).slice(0, MEMORY_SPACE_NAME_MAX_LENGTH)
   const mappedDescription = String(candidate.description ?? '').trim()
-  const description = (mappedDescription || `${descriptor.label} memory namespace mapped from ${externalId}.`).slice(0, 1000)
+  const description = (mappedDescription || `${descriptor.label} memory namespace mapped from ${externalId}.`).slice(0, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)
   return {
-    name: requiredText(name, 'name', 100),
-    description: optionalText(description, 'description', 1000),
+    name: requiredText(name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH),
+    description: optionalText(description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH),
   }
 }
 
@@ -309,7 +312,7 @@ export class MemorySpaceRegistry {
   }
 
   private isNative(providerId: MemoryProviderId): boolean {
-    return this.providerTypeId(providerId) === 'mnemon-native'
+    return this.providerTypeId(providerId) === NATIVE_PROVIDER_ID
   }
 
   private providerTypeId(providerId: MemoryProviderId): string {
@@ -383,7 +386,7 @@ export class MemorySpaceRegistry {
 
   providerServices(options: { includeSecrets?: boolean } = {}): MemoryProviderServiceCatalog {
     this.refreshIfChanged()
-    const providers = this.providerCatalog.providers.filter(provider => (provider.typeId ?? provider.id) !== 'mnemon-native')
+    const providers = this.providerCatalog.providers.filter(provider => !isNativeProvider(provider))
     const items: MemoryProviderServiceView[] = providers.map(provider => {
       const connection = this.services[provider.id]
       const publicConnection = this.providerCatalog.publicScoped(provider.id, 'service', connection ?? {})
@@ -642,8 +645,8 @@ export class MemorySpaceRegistry {
         ?? (providerTypeId === 'openviking' && request.connection === undefined && request.openViking !== undefined
         ? request.openViking as unknown as MemoryProviderConnection
         : request.connection)
-      let configured = providerTypeId === 'mnemon-native' ? this.runner.commandFound : false
-      if (providerTypeId !== 'mnemon-native' && (requestConnection !== undefined || this.providerServiceConfigured(descriptor.id))) {
+      let configured = providerTypeId === NATIVE_PROVIDER_ID ? this.runner.commandFound : false
+      if (providerTypeId !== NATIVE_PROVIDER_ID && (requestConnection !== undefined || this.providerServiceConfigured(descriptor.id))) {
         try {
           const split = this.providerCatalog.split(descriptor.id, requestConnection)
           this.providerCatalog.normalize(descriptor.id, { ...(this.services[descriptor.id] ?? {}), ...split.service, ...split.memory })
@@ -662,8 +665,8 @@ export class MemorySpaceRegistry {
   }
 
   async create(request: CreateMemorySpaceRequest, signal?: AbortSignal, placement?: MemoryPlacementDecision): Promise<MemorySpace> {
-    const name = requiredText(request.name, 'name', 100)
-    const description = requiredText(request.description, 'description', 1000)
+    const name = requiredText(request.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH)
+    const description = requiredText(request.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)
     if (request.placement !== undefined && placement === undefined) throw new Error('automatic provider placement must be resolved before creating a Memory Space')
     if (placement !== undefined && request.providerId !== undefined && request.providerId !== placement.providerId) throw new Error('resolved provider placement conflicts with providerId')
     const providerId = placement?.providerId ?? request.providerId ?? this.defaultProviderId()
@@ -744,8 +747,8 @@ export class MemorySpaceRegistry {
     const { openViking: _legacyOpenViking, ...currentBody } = current
     const body: StoredMemorySpace = {
       ...currentBody,
-      ...(request.name === undefined ? {} : { name: requiredText(request.name, 'name', 100) }),
-      ...(request.description === undefined ? {} : { description: optionalText(request.description, 'description', 1000) }),
+      ...(request.name === undefined ? {} : { name: requiredText(request.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH) }),
+      ...(request.description === undefined ? {} : { description: optionalText(request.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH) }),
       ...(request.active === undefined ? {} : { active: request.active }),
       ...(nativeProvider || (request.name === undefined && request.description === undefined) ? {} : { metadataSource: 'manual' as const }),
       ...(connection === undefined ? {} : { connection }),
@@ -889,13 +892,13 @@ export class MemorySpaceRegistry {
               && body.name === '默认记忆体'
               && body.description === '从现有 Mnemon Store 自动接入。'
             migratedSyntheticDefault ||= syntheticDefault
-            const providerId: MemoryProviderId = 'providerId' in body && storedProviderId(body.providerId) ? body.providerId : 'mnemon-native'
+            const providerId: MemoryProviderId = 'providerId' in body && storedProviderId(body.providerId) ? body.providerId : NATIVE_PROVIDER_ID
             const providerKnown = this.providerCatalog.has(providerId)
             if (!providerKnown) {
               return {
                 id: body.id,
-                name: requiredText(body.name || body.id, 'name', 100),
-                description: optionalText(body.description, 'description', 1000),
+                name: requiredText(body.name || body.id, 'name', MEMORY_SPACE_NAME_MAX_LENGTH),
+                description: optionalText(body.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH),
                 active: body.active === true,
                 providerId,
                 connection: storedProviderConnection('connection' in body ? body.connection : undefined),
@@ -918,8 +921,8 @@ export class MemorySpaceRegistry {
             if (connection !== undefined) this.providerCatalog.normalize(providerId, { ...this.services[providerId], ...connection })
             return {
               id: body.id,
-              name: requiredText(syntheticDefault ? body.id : body.name || body.id, 'name', 100),
-              description: optionalText(syntheticDefault ? 'Existing Mnemon Store discovered on disk.' : body.description, 'description', 1000),
+              name: requiredText(syntheticDefault ? body.id : body.name || body.id, 'name', MEMORY_SPACE_NAME_MAX_LENGTH),
+              description: optionalText(syntheticDefault ? 'Existing Mnemon Store discovered on disk.' : body.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH),
               active: body.active === true,
               providerId,
               ...(placement === undefined ? {} : { placement }),
@@ -959,8 +962,8 @@ export class MemorySpaceRegistry {
               if (!this.providerCatalog.has(providerId)) {
                 return {
                   id: body.id,
-                  name: requiredText(body.name || body.id, 'name', 100),
-                  description: optionalText(body.description, 'description', 1000),
+                  name: requiredText(body.name || body.id, 'name', MEMORY_SPACE_NAME_MAX_LENGTH),
+                  description: optionalText(body.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH),
                   active: body.active === true,
                   providerId,
                   ...(typeof body.externalId !== 'string' || body.externalId.trim() === '' ? {} : { externalId: body.externalId.trim() }),
@@ -985,8 +988,8 @@ export class MemorySpaceRegistry {
               this.providerCatalog.normalize(providerId, { ...this.services[providerId], ...connection })
               return {
                 id: body.id,
-                name: requiredText(body.name || body.id, 'name', 100),
-                description: optionalText(body.description, 'description', 1000),
+                name: requiredText(body.name || body.id, 'name', MEMORY_SPACE_NAME_MAX_LENGTH),
+                description: optionalText(body.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH),
                 active: body.active === true,
                 providerId,
                 ...(typeof body.externalId !== 'string' || body.externalId.trim() === '' ? {} : { externalId: body.externalId.trim() }),
@@ -1040,7 +1043,7 @@ export class MemorySpaceRegistry {
         name: entry.name,
         description: 'Existing Mnemon Store discovered on disk.',
         active: this.spaces.length === 0 || entry.name === legacyActive,
-        providerId: 'mnemon-native',
+        providerId: NATIVE_PROVIDER_ID,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
@@ -1101,11 +1104,11 @@ export class MemorySpaceRegistry {
     if (!this.persistent) return
     mkdirSync(this.directory, { recursive: true, mode: 0o700 })
     const nativeBodies: StoredNativeMemorySpace[] = this.spaces
-      .filter(body => body.providerId === 'mnemon-native' || this.providerCatalog.has(body.providerId) && this.isNative(body.providerId))
+      .filter(body => body.providerId === NATIVE_PROVIDER_ID || this.providerCatalog.has(body.providerId) && this.isNative(body.providerId))
       .map(({ providerId: _providerId, connection: _connection, openViking: _openViking, ...body }) => body)
     this.writeRegistry(this.registryPath, { version: NATIVE_REGISTRY_VERSION, bodies: nativeBodies })
 
-    const providerBodies = this.spaces.filter(body => body.providerId !== 'mnemon-native' && (!this.providerCatalog.has(body.providerId) || !this.isNative(body.providerId)))
+    const providerBodies = this.spaces.filter(body => body.providerId !== NATIVE_PROVIDER_ID && (!this.providerCatalog.has(body.providerId) || !this.isNative(body.providerId)))
     if (providerBodies.length === 0 && Object.keys(this.services).length === 0) {
       rmSync(this.providerRegistryPath, { force: true })
       this.state.diskRevision = this.diskRevision()

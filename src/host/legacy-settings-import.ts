@@ -210,6 +210,7 @@ export function planLegacySettingsImport(options: LegacySettingsImportOptions): 
     if (Object.hasOwn(current, 'legacySettingsImported') && typeof current.legacySettingsImported !== 'boolean') throw new Error('Current import marker must be boolean')
     const root = Object.hasOwn(sections, 'mnemon') ? copiedObject(sections.mnemon, 'mnemon') : {}
     if (Object.hasOwn(root, 'memoryView') || Object.hasOwn(root, 'legacySettingsImported')) throw new Error('Legacy mnemon contains reserved migration fields')
+    // `toolviews` switches nothing any more; it stays accepted so a file that holds it still imports.
     const oldInteraction = Object.hasOwn(root, 'conversationInteraction')
       ? interaction(root.conversationInteraction, 'mnemon.conversationInteraction', ['toolviews', 'turnBar', 'saveAction']) : {}
     const oldUi = Object.hasOwn(sections, 'mnemon-ui') ? interaction(sections['mnemon-ui'], 'mnemon-ui', ['turnBar', 'saveAction']) : {}

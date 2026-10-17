@@ -8,6 +8,7 @@ import type { MnemonClientContext } from './dsh-context.ts'
 import { MemoryIcon } from './memory-icon.tsx'
 import { humanBytes, message } from './page-kit.tsx'
 import { SelectField, TaskAgentTag, WriteReceipt, writeOutcome, type FieldOption } from './page-controls.tsx'
+import { NATIVE_PROVIDER_ID } from './memory-spaces-client.ts'
 import css from './MnemonSaveAction.module.css'
 
 interface MnemonSaveActionProps {
@@ -75,7 +76,7 @@ function saveDestinations(status: Partial<StatusView> | undefined, taskAgent: bo
   const spacesOn = takes('memory-spaces')
   // Active spaces, as the Agent sees them. A Mnemon Native space takes writes only while its CLI is found.
   const spaces = spacesOn ? (status?.memoryBodies ?? []).filter(body => body.active !== false && body.providerEnabled !== false && body.provider.capabilities.remember
-    && ((body.provider.typeId ?? body.provider.id) !== 'mnemon-native' || status?.commandFound !== false)) : []
+    && ((body.provider.typeId ?? body.provider.id) !== NATIVE_PROVIDER_ID || status?.commandFound !== false)) : []
   // The task Agent writes to Memory Spaces only: it needs one, or a ready Provider to create one with.
   const providerReady = spaces.length > 0 || status?.commandFound !== false || (status?.providerServices ?? []).some(provider => provider.enabled && provider.configured)
   return [
