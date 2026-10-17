@@ -7,7 +7,7 @@ The Starter pins a tested combination of official plugins. The table records ver
 | Component | Baseline | What is verified |
 |---|---|---|
 | DSH | `0.2.1-rc.1` (npm `next`), `0.2.0-rc.2` (npm `latest`) | The supported hosts. 0.2.1-rc.1 is the pinned development baseline, and CI also runs every root test against an installed 0.2.0-rc.2. Both are checked through the WebUI, Headless and the Starter's activation contracts; see [DSH 0.2.0 and 0.2.1](#dsh-020-and-021) |
-| Node.js | `22.19` and `24` | Source CI and packed-artifact CI respectively; development requires `^22.19.0 || >=24.0.0` |
+| Node.js | `22.19` and `24` | Source CI and packed-artifact CI respectively; development requires `^22.19.0 \|\| >=24.0.0` |
 | Node.js 20 | Public package imports only | Does not establish that the DSH Host runs on Node 20 |
 | Mnemon Native CLI | `0.2.9` | Opt-in tests against a real CLI and disposable data; install the CLI separately |
 | Third-party Providers | Adapter contracts and fixtures | Does not establish live cloud-account conformance or upstream availability |

@@ -58,6 +58,7 @@ ZIP 备份与 Git 同步有意只携带 dsh-mnemon 随附的 Source：运行时�
 - README 列出全部四种存储范围：全局、按工作区、集中存储以及你指定的目录。
 - 中文开发指南统一称“空闲审查”，两种语言对激活测试的 18 个包的计数也一致了。
 - `docs/README.md` 只给出一条入门路径：先看安装与启动，再看入门指南。
+- 兼容性表格中 Node.js 版本范围里的竖线已转义，GitHub 不再把那一格截断在 `^22.19.0` 处。
 - 贡献指南的文档检查清单加入安装与启动和兼容性页面。`.changeset/README.md` 改为指向发布流程的简短说明；发布流程补上空 changeset 的规则，并新增“发布 PR”一节，说明 `.github/release-notes/vX.Y.Z.md`、两份 `docs/*/releases/vX.Y.Z.md` 发布说明以及 `docs/pr-assets/release-vX.Y.Z` 验收记录。
 - 验收证据索引要求把可复用工具放进 `scripts/` 或 `tests/`，由记录链接过去。当前的说明已经不再指向记录中的 `installed-dsh*.vitest.config.mjs` 或 `adapt-host-specs.mjs`，对应的工具是 `pnpm run test:installed-dsh`。
 

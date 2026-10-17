@@ -58,6 +58,7 @@ The ZIP backup and Git sync deliberately carry only the Sources dsh-mnemon ships
 - The README names all four storage scopes: global, per workspace, centralized and a directory you choose.
 - The Chinese development guide calls idle review 空闲审查, and both languages count the activation test's 18 packages the same way.
 - `docs/README.md` gives one start path: Install and start, then Getting started.
+- The Node.js range in the compatibility table escapes its pipes, so GitHub no longer cuts that cell short at `^22.19.0`.
 - CONTRIBUTING's documentation checklist names installation and compatibility. `.changeset/README.md` is a pointer to the release guide, which gains the empty-changeset rule and a *Release pull request* section on `.github/release-notes/vX.Y.Z.md`, the two `docs/*/releases/vX.Y.Z.md` notes and the `docs/pr-assets/release-vX.Y.Z` record.
 - The evidence index asks for reusable tooling in `scripts/` or `tests/`, where records link it. No current instruction pointed at a record's `installed-dsh*.vitest.config.mjs` or `adapt-host-specs.mjs` any more; `pnpm run test:installed-dsh` is the tool.
 
