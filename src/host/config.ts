@@ -4,7 +4,7 @@ import { isAbsolute } from 'node:path'
 import { normalizeDisplayMode } from './display-mode.ts'
 import { schema as MemoryViewConfig, preferences as validateMemoryViewPreferences } from './view-preferences.ts'
 import { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
-import { MEMORY_SPACE_ID_PATTERN } from 'dsh-mnemon-source-memory-spaces/contracts'
+import { MEMORY_PLACEMENT_CAPABILITIES, MEMORY_SPACE_ID_PATTERN } from 'dsh-mnemon-source-memory-spaces/contracts'
 
 export { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
 import {
@@ -71,8 +71,6 @@ export const InteractionConfig: z<InteractionConfig> = z.object({
   turnBar: z.boolean().default(true),
   saveAction: z.boolean().default(true),
 })
-
-const MEMORY_PLACEMENT_CAPABILITIES = ['graph', 'entities', 'related', 'exact-write', 'link', 'forget'] as const
 
 const MemoryProviderConnectionSchema: z<MemoryProviderConnection> = z.dict(z.union([z.string(), z.number(), z.boolean()]))
 const MemoryPersistenceStrategySchema = z.object({
@@ -164,6 +162,9 @@ export const Config: z<Config> = z.object({
     dataDir: z.string(),
   })).default([]),
   store: z.string(),
+  // Memory Spaces' own configuration takes 1–600,000 ms for the same value. One range for both is
+  // on the roadmap (docs/plans/review-gaps-2026-10.md, item 4); until then each keeps its own,
+  // so that stored values validate as they did.
   timeoutMs: z.number().step(1).min(100).max(120_000).default(DEFAULT_TIMEOUT_MS),
   defaultRecallLimit: z.number().step(1).min(1).max(50).default(DEFAULT_RECALL_LIMIT),
   runtimeMemory: RuntimeMemorySchema.default({

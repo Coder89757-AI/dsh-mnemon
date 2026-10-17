@@ -19,6 +19,8 @@ import {
   MNEMON_VIEW_WRITE_CHANNEL,
   MNEMON_WRITE_CHANNEL,
   type ClientConnectionHandle,
+  type MnemonRpcChannel,
+  type MnemonRpcEndpoint,
 } from '../host/protocol.ts'
 
 type ClientRpcResult = Awaited<ReturnType<ClientConnectionHandle['rpc']['call']>>
@@ -77,10 +79,10 @@ export function isRemoteConnection(connection: ClientConnectionHandle): boolean 
 }
 
 /** Route only paired remote pages through API Gateway; local clients retain legacy channels. */
-export async function callMnemonRpc(
+export async function callMnemonRpc<Channel extends MnemonRpcChannel>(
   connection: ClientConnectionHandle,
-  channel: string,
-  endpoint: string,
+  channel: Channel,
+  endpoint: MnemonRpcEndpoint<Channel>,
   payload: unknown,
   signal?: AbortSignal,
 ): Promise<ClientRpcResult> {

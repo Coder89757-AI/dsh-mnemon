@@ -4,7 +4,7 @@ import {
   prepareMemoryPlacement,
   rulesOnlyPlacement,
 } from '../src/provider-placement.ts'
-import type { MemoryPlacementCandidate, MemoryPlacementCapability } from "../src/contracts.ts"
+import { MEMORY_PLACEMENT_CAPABILITIES, type MemoryPlacementCandidate, type MemoryPlacementCapability } from "../src/contracts.ts"
 
 const candidates: MemoryPlacementCandidate[] = [
   {
@@ -109,5 +109,9 @@ describe('memory provider placement', () => {
       mode: 'automatic',
       rules: { requiredCapabilities: ['telepathy' as MemoryPlacementCapability] },
     }, candidates)).toThrow('unsupported required memory capability')
+    // Every capability the contracts list is one placement can check a Provider for.
+    for (const capability of MEMORY_PLACEMENT_CAPABILITIES) {
+      expect(() => prepareMemoryPlacement({ mode: 'automatic', rules: { requiredCapabilities: [capability] } }, candidates), capability).not.toThrow()
+    }
   })
 })

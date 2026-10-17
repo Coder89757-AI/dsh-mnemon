@@ -16,6 +16,8 @@ import {
   type MemorySourceManagementCatalog,
   type MemorySourceManagementResult,
   type MnemonPackComponent,
+  type MnemonRpcChannel,
+  type MnemonRpcEndpoint,
   type MnemonPackExport,
   type MnemonPackImportResult,
   type MnemonPackPreview,
@@ -45,6 +47,9 @@ import {
   type VersionUpdateResult,
 } from "../host/protocol.ts"
 import { callMnemonRpc } from './remote-rpc.ts'
+
+/** The channel a component's read or write operation goes on. */
+type ComponentChannel<Mode extends 'read' | 'write'> = Mode extends 'read' ? typeof MNEMON_READ_CHANNEL : typeof MNEMON_WRITE_CHANNEL
 
 interface TurnActivityCacheEntry {
   cursor: number
@@ -88,7 +93,7 @@ async function loadTurnActivities(connection: ClientConnectionHandle, sessionId:
 export class MnemonClient {
   constructor(private readonly connection: ClientConnectionHandle, private readonly sessionId?: string, private readonly workspaceId?: string) {}
 
-  private async call<T>(channel: string, endpoint: string, payload: unknown): Promise<T> {
+  private async call<T, Channel extends MnemonRpcChannel = MnemonRpcChannel>(channel: Channel, endpoint: MnemonRpcEndpoint<Channel>, payload: unknown): Promise<T> {
     const response = await callMnemonRpc(this.connection, channel, endpoint, payload)
     if (!response.ok) {
       // A failure the Host could name keeps that name, so the page can translate it.
@@ -157,7 +162,7 @@ export class MnemonClient {
    * endpoint name (component-host.ts): Memory Spaces reads its Providers and
    * embedding through these.
    */
-  componentOperation<T>(mode: 'read' | 'write', endpoint: string, payload: object): Promise<T> {
+  componentOperation<T, Mode extends 'read' | 'write' = 'read' | 'write'>(mode: Mode, endpoint: MnemonRpcEndpoint<ComponentChannel<Mode>>, payload: object): Promise<T> {
     return this.call(mode === 'read' ? MNEMON_READ_CHANNEL : MNEMON_WRITE_CHANNEL, endpoint, this.scoped(payload))
   }
 

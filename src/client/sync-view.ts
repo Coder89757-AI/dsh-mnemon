@@ -1,10 +1,17 @@
 import {
-  MNEMON_MACHINE_LABEL_MAX,
+  githubRepositoryNameValid,
+  machineLabelValid,
   MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL,
   MNEMON_SYNC_DEFAULT_AUTHOR_NAME,
   MNEMON_SYNC_TOKEN_ENV,
+  portableAbsolutePath,
+  syncBranchValid,
+  syncDirectoryParts,
+  syncEmailValid,
+  syncRepositoryProblem,
   type MnemonSyncFailureReason,
   type MnemonSyncRemoteIssue,
+  type MnemonSyncRepositoryProblem,
   type MnemonSyncStatus,
 } from '../host/protocol.ts'
 import type { MnemonTranslate } from './locales.ts'
@@ -42,51 +49,37 @@ export function repositoryName(url: string): string {
   }
 }
 
-/** What is wrong with a typed repository address, the same rules the Host applies. */
-export type RepositoryProblem = 'format' | 'credentials'
+/** What is wrong with a typed repository address, by the Host's rules; a local path is checked as the browser can. */
+export type RepositoryProblem = MnemonSyncRepositoryProblem
 
 export function repositoryProblem(url: string): RepositoryProblem | undefined {
   const value = url.trim()
-  if (value === '') return undefined
-  if (value.length > 2000 || /\s/u.test(value)) return 'format'
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(value)) {
-    if (!/^(https|ssh):\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u.test(value)) return 'format'
-    return /^https:\/\/[^/]*@/u.test(value) ? 'credentials' : undefined
-  }
-  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\s]+$/u.test(value)) return undefined
-  // An absolute path on the Host: POSIX, a Windows drive, or a UNC share.
-  return value.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith('\\\\') ? undefined : 'format'
+  // An empty address clears the repository.
+  return value === '' ? undefined : syncRepositoryProblem(value, portableAbsolutePath)
 }
 
 /** A Git branch name, as the Host checks it. */
 export function branchValid(value: string): boolean {
-  const name = value.trim()
-  return name !== '' && name.length <= 200 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(name) && !name.includes('..') && !name.includes('//')
-    && !name.includes('@{') && !name.endsWith('/') && !name.endsWith('.') && !name.endsWith('.lock')
+  return syncBranchValid(value.trim())
 }
 
 /** A directory inside the branch, as the Host checks it. */
 export function directoryValid(value: string): boolean {
-  const raw = value.trim().replaceAll('\\', '/')
-  if (raw === '' || raw.length > 400 || /^[A-Za-z]:/u.test(raw)) return false
-  const parts = raw.split('/').filter(part => part !== '')
-  return parts.length > 0 && !parts.some(part => part === '.' || part === '..' || part.includes(':'))
+  return syncDirectoryParts(value) !== undefined
 }
 
 export function emailValid(value: string): boolean {
-  const email = value.trim()
-  return email.length <= 320 && /^[^\s<>@]+@[^\s<>@]+$/u.test(email)
+  return syncEmailValid(value.trim())
 }
 
 /** A name for this computer, as the Host stores one: one line, at most the shared limit. */
 export function machineNameValid(value: string): boolean {
-  const name = value.trim()
-  return name !== '' && name.length <= MNEMON_MACHINE_LABEL_MAX && !/[\p{Cc}\u2028\u2029]/u.test(name)
+  return machineLabelValid(value.trim())
 }
 
 /** A GitHub repository name, as GitHub accepts one. */
 export function repositoryNameValid(value: string): boolean {
-  return /^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u.test(value.trim())
+  return githubRepositoryNameValid(value.trim())
 }
 
 /** Who a sync commit names: the channel's identity, this computer's Git identity, or a typed one. */
