@@ -146,7 +146,7 @@ See also the [upgrade evidence](../../pr-assets/main-rebase-20260904/README.md) 
 
 ### Product media
 
-The [v0.5.19 Light gallery](../../assets/webui-v0.5.19/README.md), captured on DSH 0.1.7-rc.2, covers the bilingual desktop pages, the Plugins page, and a conversation, Memory Spaces and the composition board at 390 × 844, where long names truncate. Pages changed since then, such as the Task Agent model choice on the Layered strategy's page, look different now. It does not retest every Host settings surface or physical phones, so phone support is not declared complete; the historical v0.5.2 layout failure at 390 px keeps its [versioned evidence](../../pr-assets/documentation-refresh/README.md).
+The [v0.5.32 Light gallery](../../assets/webui-v0.5.32/README.md), captured on DSH 0.2.1-rc.2, covers the bilingual desktop pages, DSH's Plugins page and dsh-mnemon's page, and a conversation, Memory Spaces and the composition board at 390 × 844, where long names truncate and, in English, the active Memory System tab can sit off-screen. It does not retest every Host settings surface, DSH 0.2.0 or physical phones, so phone support is not declared complete; the historical v0.5.2 layout failure at 390 px keeps its [versioned evidence](../../pr-assets/documentation-refresh/README.md).
 
 <a id="other-records"></a>
 
