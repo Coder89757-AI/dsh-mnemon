@@ -201,9 +201,10 @@ export const Config: z<Config> = z.object({
   idleReviewMs: z.number().step(1).min(5_000).max(600_000).default(DEFAULT_IDLE_REVIEW_MS),
   idleReview: IdleReviewSchema.default(DEFAULT_IDLE_REVIEW),
   // Conversation surfaces default on and remain independently switchable live.
-  // `toolviews` switches nothing: it stays here only so stored profiles and
-  // legacy imports that hold it keep validating. Settings writes refuse it and
-  // the resolved config leaves it out.
+  // `toolviews` switches nothing. Its declaration only keeps the form DSH
+  // generates from this schema, and the default it fills in, as they were:
+  // stored values would validate without it, since undeclared keys pass
+  // through. Settings writes refuse it and the resolved config leaves it out.
   conversationInteraction: z.object({
     toolviews: z.boolean().default(false),
     turnBar: z.boolean().default(true),

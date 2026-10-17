@@ -39,7 +39,8 @@ describe('component package metadata', () => {
     const { dependencies } = read('package.json') as { dependencies: Record<string, string> }
     const pinned = Object.entries(dependencies).filter(([name]) => /^dsh-mnemon-(?:source|strategy)-/u.test(name))
     expect(pinned.map(([name]) => name).sort()).toEqual(STARTER_COMPONENT_ROWS.map(row => row.packageName).sort())
-    for (const [name, version] of pinned) expect(version, name).toMatch(/^\d+\.\d+\.\d+$/u)
+    // One exact version each, a release candidate's prerelease included, never a range.
+    for (const [name, version] of pinned) expect(version, name).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u)
   })
 
   it('tells a shipped component from an installed one by the Starter rows', () => {

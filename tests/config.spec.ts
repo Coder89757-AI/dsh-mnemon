@@ -163,6 +163,11 @@ describe('Mnemon config and resolution', () => {
     expect(resolveConfig({}).conversationInteraction).toEqual({ turnBar: true, saveAction: true })
   })
 
+  it('keeps toolviews declared in the schema DSH builds its form from', () => {
+    // Undeclared keys pass through the schema, so only this keeps the generated form as it was.
+    expect(Object.keys(Config.dict?.conversationInteraction?.dict ?? {})).toEqual(['toolviews', 'turnBar', 'saveAction'])
+  })
+
   it.each(['builtin', 'sidebar'] as const)('preserves displayMode=%s without changing storage or visibility', displayMode => {
     const legacy = { displayMode, storageScope: 'workspace' as const, tabEnabled: false, writeEnabled: false }
     const parsed = Config(legacy)
