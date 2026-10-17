@@ -6,6 +6,8 @@ import type { MnemonSubagentCoordinator } from './subagent.ts'
 
 /** What a memory saved without a vector means, in the words the WebUI receipts use (#388). */
 const UNEMBEDDED_LINE = '未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
+/** The same, while DSH does not manage the embedding settings: no embedding service is set up, as on a default install. */
+const UNEMBEDDED_NO_SERVICE_LINE = '这条记忆暂未生成向量：当前没有可用的嵌入服务，它暂不参与语义匹配，关键词检索不受影响。连接嵌入服务后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
 
 const USAGE = '用法：/mnemon [status|recall <查询>|related <ID>|remember <内容>|forget <ID>]'
 
@@ -85,7 +87,7 @@ async function execute(serviceOrSource: MnemonAgentRuntimeSource, coordinator: M
       if (argument === '') return error('remember 需要一条自包含的记忆内容。')
       const result = await coordinator.remember(invocation.agent, { content: argument, source: 'user' }, invocation.signal)
       const written = mutationResultCommitted({ action: result.action }) || result.action === 'partial'
-      const vectorless = !written || (result.unembedded ?? []).length === 0 ? '' : '\n' + UNEMBEDDED_LINE
+      const vectorless = !written || (result.unembedded ?? []).length === 0 ? '' : '\n' + (graph.config.embedding.enabled ? UNEMBEDDED_LINE : UNEMBEDDED_NO_SERVICE_LINE)
       return { kind: 'success', text: `Mnemon 记忆 Agent 已处理：${result.action}${result.memoryBodyIds.length === 0 ? '' : ` · 记忆空间 ${result.memoryBodyIds.join(', ')}`}${result.summary === '' ? '' : `\n${result.summary}`}${vectorless}` }
     }
     case 'forget': {

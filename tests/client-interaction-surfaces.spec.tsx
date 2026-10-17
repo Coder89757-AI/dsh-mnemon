@@ -422,8 +422,8 @@ describe('conversation interaction surfaces', () => {
     { sourceInstanceKey: 'source:mnemon-source-memory-spaces', sourceTypeId: 'memory-spaces', revision: 's1' },
   ] } })
   const emptyRuntime = { ok: true as const, value: { revision: 'r1', value: { targets: { memory: { used: 0, limit: 10_240 }, user: { used: 0, limit: 4_096 } } } } }
-  const openSaveAction = (rpcCall: (...args: never[]) => unknown) => {
-    render(<MnemonSaveAction messageId="message-1" sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as unknown as ClientConnectionHandle} settingsScope={writableSettingsScope} localeRuntime={localeRuntime} t={translate as never} />)
+  const openSaveAction = (rpcCall: (...args: never[]) => unknown, scope = writableSettingsScope) => {
+    render(<MnemonSaveAction messageId="message-1" sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as unknown as ClientConnectionHandle} settingsScope={scope} localeRuntime={localeRuntime} t={translate as never} />)
     fireEvent.click(screen.getByRole('button', { name: 'saveAction.button' }))
   }
   const choose = (label: RegExp) => {
@@ -546,6 +546,9 @@ describe('conversation interaction surfaces', () => {
     choose(/^saveAction\.to\.user/)
     await saveWhenReady()
     await screen.findByText('saveAction.saved.runtimeMaintained')
+    // Working memory and the user profile keep no vectors, so their receipts never mention one.
+    expect(screen.queryByText('receipt.unembedded')).toBeNull()
+    expect(screen.queryByText('receipt.unembeddedNoService')).toBeNull()
   })
 
   it('says nothing about a vector when the write put no memory anywhere (#388)', async () => {
@@ -564,9 +567,15 @@ describe('conversation interaction surfaces', () => {
     fireEvent.click(submit)
     await screen.findByText('receipt.skipped')
     expect(screen.queryByText('receipt.unembedded')).toBeNull()
+    expect(screen.queryByText('receipt.unembeddedNoService')).toBeNull()
   })
 
-  it('says when a memory was saved without a vector, through the task Agent or written directly (#388)', async () => {
+  // With the embedding settings at their default no embedding service is set up, so a missing vector is expected and
+  // gets a neutral note; once DSH manages them, a configured service did not answer, which keeps the caution.
+  it.each([
+    [false, 'receipt.unembeddedNoService', 'neutral'],
+    [true, 'receipt.unembedded', 'caution'],
+  ] as const)('says when a memory was saved without a vector, through the task Agent or written directly, DSH managing the embedding: %s (#388)', async (managed, note, tone) => {
     const native = { id: 'native', name: 'Native space', active: true, providerEnabled: true, provider: { id: 'mnemon-native', label: 'Mnemon Native', capabilities: { remember: true } } }
     let embedded = false
     const rpcCall = vi.fn(async (_channel: string, endpoint: string) => {
@@ -578,25 +587,29 @@ describe('conversation interaction surfaces', () => {
       if (endpoint === 'source-management-mutate') return { ok: true as const, value: { revision: 's2', value: { action: 'added', id: 'm2', memoryBodyId: 'native', embedded } } }
       throw new Error(`unexpected endpoint: ${endpoint}`)
     })
-    openSaveAction(rpcCall)
+    const other = managed ? 'receipt.unembeddedNoService' : 'receipt.unembedded'
+    openSaveAction(rpcCall, settingsScope<Config>({ status: 'ready', value: managed ? { embedding: { enabled: true, endpoint: 'http://127.0.0.1:9' } } : {}, writable: true, mode: 'host' }))
     await screen.findByText('taskAgent.ready')
     const submit = screen.getByRole('button', { name: 'saveAction.submit' }) as HTMLButtonElement
     await waitFor(() => expect(submit.disabled).toBe(false))
     fireEvent.click(submit)
     // The task Agent's result lists the memory; its own summary may leave that out.
     await screen.findByText('Saved to Native space.')
-    expect(screen.getByText('receipt.unembedded')).toBeTruthy()
+    expect(screen.getByText(note).getAttribute('data-tone')).toBe(tone)
+    expect(screen.queryByText(other)).toBeNull()
     // Written directly, Mnemon Native's receipt says embedded: false.
     choose(/^Native space/)
     fireEvent.click(screen.getByRole('button', { name: 'saveAction.save' }))
     await screen.findByText('saveAction.saved.space')
-    expect(screen.getByText('receipt.unembedded')).toBeTruthy()
+    expect(screen.getByText(note).getAttribute('data-tone')).toBe(tone)
+    expect(screen.queryByText(other)).toBeNull()
     // A memory saved with its vector reads as before.
     embedded = true
     fireEvent.change(screen.getByRole('textbox', { name: 'saveAction.candidate' }), { target: { value: 'Grafana on the staging cluster listens on port 3301.' } })
     fireEvent.click(screen.getByRole('button', { name: 'saveAction.save' }))
     await screen.findByText('saveAction.saved.space')
-    expect(screen.queryByText('receipt.unembedded')).toBeNull()
+    expect(screen.queryByText(note)).toBeNull()
+    expect(screen.queryByText(other)).toBeNull()
   })
 
   it('says before saving when working memory cannot take the text, or will make room first', async () => {

@@ -640,6 +640,11 @@ export interface MemorySpacesStatus {
   timeoutMs: number
   defaultRecallLimit: number
   recallQuality: ResolvedRecallQualityConfig
+  /**
+   * Whether DSH manages Mnemon Native's embedding settings (`embedding.enabled`). While it does
+   * not, Mnemon keeps the Host environment and its own defaults. Memory Spaces 0.5.21 and earlier omit it.
+   */
+  embeddingManaged?: boolean
   memoryBodyDirectory: string
   memoryBodies: MemorySpaceView[]
   providerServices?: MemoryProviderRuntimeStatus[]
