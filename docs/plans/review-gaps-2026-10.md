@@ -4,7 +4,7 @@
 
 Status: planned, nothing here has shipped. Written on 2026-10-17 against `main` at `f41a121f` (v0.5.31 with #414, #415 and #416); file references are to that revision.
 
-After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into it (#421).
+After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421).
 
 ## 1. Backups and Git sync drop a Native space's placement decision
 
@@ -93,11 +93,11 @@ After v0.5.31, a review of the code, the documentation and the Host's compatibil
 
 **Today.** Found while recording the switch for #421, the same on `main`. Right after Memory Spaces is switched on from its page under Plugins, its Source is still starting, so the settings' first `provider-services` read answers that the Source `memory-spaces` is not installed. The page shows that as a load error for about half a second to a second, until the next read lists the Providers.
 
-**Change.** While the Source a component's settings read is starting, show them as loading and read again once it is running, instead of reporting the read as failed. A Source that stays unavailable still shows the error.
+**Change.** While the Source a component's settings read is starting, show them as loading and read again once it is running, instead of reporting the read as failed; `ProviderSettingsSection` already has a `pending` state for this, which the settings do not pass yet. A Source that stays unavailable still shows the error.
 
 **Tests.** Switching Memory Spaces on in the WebUI on both DSH releases shows no error frame; a Source that never starts still shows the error with its retry.
 
-## 11. A Provider list reload can undo a toggle or a save on the page
+## 11. A Provider list reload can undo a switch or a save on the page
 
 **Today.** Found in the review of #421, the same on `main`. The Provider settings read the list again quietly, for example when the configuration's revision moves. If such a read is under way when the user switches a Provider or saves its service, and it answers after the switch or the save, the page shows the list as it was before the change (`load` in Memory Spaces' `src/client/provider-settings.tsx` does not know the change happened). What is stored is right; the page shows it again at the next read.
 
