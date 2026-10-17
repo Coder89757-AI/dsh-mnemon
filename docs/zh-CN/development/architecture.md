@@ -44,6 +44,14 @@ Memory Spaces **自己定义内部 Fiber 与 Provider 协议**。每个 Provider
 
 Host 将解析后的目录交给各默认 Source。Source 继续拥有自己的格式、事务和 Provider 状态；切换布局不搬迁其数据。显式选择全局 USER.md 时仅用户档案使用全局根，项目数据仍留在所选工作区根。设置和只读清单使用同一布局解析器。
 
+Host 复制或统计 Source 的文件时（Mnemon Pack、Git 同步和状态页的存储清单），从该 Source 的 `./contracts` 读取其文件名、锁文件与解析器：
+
+- Runtime：目录、文件与锁文件，以及其控制器写入 USER.md/MEMORY.md 所用的投影与字节计数；
+- Documents：目录、索引解析器与锁文件；
+- Memory Spaces：存储布局、注册表解析器与记忆空间计数。比较与合并同一 Mnemon 存储的两个副本（[#370](https://github.com/omdsh-dev/dsh-mnemon/issues/370)、[#391](https://github.com/omdsh-dev/dsh-mnemon/issues/391)）由其仅限 Node 的 `./space-identity` 入口提供。
+
+只有 Pack 对传入文件的自身检查留在 Host：memories.json 的条目、档案的 front matter 与内容哈希，以及存储的 SQLite 文件头。Pack 用各 Source 的名称拼出条目路径，并由测试将其固定为版本 1 格式。
+
 ## 默认插件组合
 
 | 插件 | 记忆权威 | 默认 View 贡献 |
