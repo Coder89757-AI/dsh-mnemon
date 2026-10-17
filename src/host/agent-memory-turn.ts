@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import type { MemoryOperationScope } from '../core/contracts/index.ts'
+import type { MemoryOperationScope, MemoryStrategyManifest } from '../core/contracts/index.ts'
 import { isMemoryCompositionUnavailable } from '../core/generation.ts'
 import type { ComposableMemoryTurn } from '../core/turns.ts'
 import type { HostAgent } from './dsh.ts'
@@ -59,6 +59,11 @@ export class AgentMemoryTurn {
 
   get current(): PinnedAgentMemoryTurn | undefined {
     return this.pinned
+  }
+
+  /** The Strategy the serving composition selected, as its definition declares it. */
+  servingStrategy(): MemoryStrategyManifest | undefined {
+    return this.runtime.forAgent(this.agent).memoryComposition.current()?.strategy.definition.manifest
   }
 
   /** Why the current turn has no View, when memory could not be composed for it. */

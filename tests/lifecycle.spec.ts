@@ -41,7 +41,7 @@ function durableCandidate(filler = 97): HostUserMessage {
   return userMessage(`Please remember this durable architecture rationale: ${'x'.repeat(filler)}`)
 }
 
-function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> } } = {}) {
+function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> }; strategyWorkflows?: Array<'idle-review' | 'runtime-capacity'> } = {}) {
   const agentListeners = new Map<string, Listener>()
   const rootListeners = new Map<string, Listener>()
   const agentSections: Array<{ name: string; order: number; text: () => string }> = []
@@ -190,7 +190,14 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
     endTurn: vi.fn((turnId: string) => pinnedTurns.delete(turnId)),
   }
   const runtimeBinding = {
-    forAgent: vi.fn((_agent: HostAgent) => ({ config, composableTurns, memoryComposition: { generation: () => ({ sourceInstances: () => [] }) } })),
+    forAgent: vi.fn((_agent: HostAgent) => {
+      // The serving composition installs the configured Strategy; when a test declares its
+      // workflows, the generation carries its definition as Core would.
+      const strategy = options.strategyWorkflows === undefined ? undefined
+        : { instanceKey: 'strategy:fixture', definition: { manifest: { typeId: config.memoryTopology.strategyId, workflows: options.strategyWorkflows } } }
+      const generation = { sourceInstances: () => [], ...(strategy === undefined ? {} : { strategy }) }
+      return { config, composableTurns, memoryComposition: { generation: () => generation, current: () => strategy === undefined ? undefined : generation } }
+    }),
     bindAgentRuntime: vi.fn((_agentId: string, _graph: unknown): (() => void) => () => undefined),
   }
   const runtimeSource = { ...runtimeBinding, executions: new MemoryExecutions(runtimeBinding as never) }
@@ -1234,6 +1241,37 @@ describe('Mnemon DSH lifecycle integration', () => {
       expect(value.lifecycle.snapshot('session-1').current?.idleReviewPending).toBe(true)
       config.memoryTopology.strategyId = 'personal-notes'
       await vi.advanceTimersByTimeAsync(5_000)
+      expect(value.coordinator.review).not.toHaveBeenCalled()
+    } finally { value.stop() }
+  })
+
+  it('runs idle review for a third-party Strategy that declares it', async () => {
+    vi.useFakeTimers()
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000, memoryTopology: { strategyId: 'personal-notes' } }), { strategyWorkflows: ['idle-review'] })
+    try {
+      await value.preStep([durableCandidate()], 1)
+      await value.turnStopping(1)
+      await value.preStep([userMessage('one more substantive turn')], 2)
+      await value.turnStopping(2)
+      expect(value.lifecycle.snapshot('session-1').current?.idleReviewPending).toBe(true)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(value.coordinator.review).toHaveBeenCalledOnce()
+    } finally { value.stop() }
+  })
+
+  it('leaves idle review to the Strategies that declare it, the Layered one included', async () => {
+    vi.useFakeTimers()
+    // A Layered strategy that declares only capacity maintenance opts out of idle review;
+    // without a declaration at all, as copies before 0.5.10 have, its type id stands for both.
+    const value = fixture(resolveConfig({ idleReviewMs: 5_000 }), { strategyWorkflows: ['runtime-capacity'] })
+    try {
+      await value.preStep([durableCandidate()], 1)
+      await value.turnStopping(1)
+      await value.preStep([userMessage('one more substantive turn')], 2)
+      await value.turnStopping(2)
+      expect(value.lifecycle.snapshot('session-1').current?.reviewActivity.eligible).toBe(true)
+      expect(value.lifecycle.snapshot('session-1').current?.idleReviewPending).toBe(false)
+      await vi.advanceTimersByTimeAsync(10_000)
       expect(value.coordinator.review).not.toHaveBeenCalled()
     } finally { value.stop() }
   })

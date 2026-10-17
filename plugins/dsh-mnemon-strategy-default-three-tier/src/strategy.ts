@@ -28,6 +28,7 @@ export const DEFAULT_THREE_TIER_VIEW_STRATEGY = defineMemoryStrategy({
     maxRoutes: 32,
     maxActions: 32,
     extensionSlots: ['selection', 'projection', 'capture'],
+    workflows: ['idle-review', 'runtime-capacity'],
   },
   compose(request, sources, contributions = []) {
     if (contributions.length === 0) return composeThreeTier(request, sources)
