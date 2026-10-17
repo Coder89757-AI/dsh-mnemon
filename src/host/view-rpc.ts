@@ -7,6 +7,7 @@ import type { MemoryOperationScope } from '../core/contracts/index.ts'
 import type { MemoryPluginManagement } from './plugin-management.ts'
 import type { MemoryPluginInstallation } from './plugin-installation.ts'
 import { MNEMON_VIEW_CHANNEL, MNEMON_VIEW_WRITE_CHANNEL, type MemoryViewConfigurationRequest, type MemoryViewDashboard } from './view-protocol.ts'
+import { MNEMON_RPC_ENDPOINTS } from './protocol.ts'
 import { mainStrategyTypeId } from './main-strategy.ts'
 
 function object(value: unknown): Record<string, unknown> {
@@ -20,9 +21,10 @@ function optionalId(value: unknown): string | undefined {
 }
 
 export function createViewHandler(runtime: LiveMnemonRuntime, engine: MemoryRuntime, management: MemoryPluginManagement, access: 'read' | 'write', lifecycle?: MnemonLifecycle, installation?: MemoryPluginInstallation): HostRpcHandler {
+  const served: readonly string[] = MNEMON_RPC_ENDPOINTS[access === 'read' ? MNEMON_VIEW_CHANNEL : MNEMON_VIEW_WRITE_CHANNEL]
   return async (endpoint, input, signal) => {
     try {
-      if (access === 'read' ? !['dashboard', 'preview', 'inspect-plugin'].includes(endpoint) : !['apply', 'install-plugin'].includes(endpoint)) throw new Error('View operation is not available on this channel')
+      if (!served.includes(endpoint)) throw new Error('View operation is not available on this channel')
       const payload = object(input)
       if (endpoint === 'inspect-plugin') {
         if (installation === undefined || typeof payload.packageName !== 'string') throw new Error('Plugin discovery is unavailable')

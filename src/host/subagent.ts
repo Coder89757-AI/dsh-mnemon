@@ -8,7 +8,7 @@ import { SourceSession, sourceFailure } from './source-session.ts'
 import { runtimeCapacityWrite, strategyDrives, viewStrategy } from './strategy-workflows.ts'
 import { receipt as mutationReceipt } from '../sdk/input.ts'
 import { allowsParticipation, assertParticipation } from './access.ts'
-import { namedToolInstance, type DelegatedWriteResult, type MemorySpaceMetadataMaintenanceResult, type MemorySpaceMetadataUpdate, type MemoryPlacementDecision, type MnemonReconcileOptions, type MnemonReconcileResult, type SubagentCounters } from './protocol.ts'
+import { namedToolInstance, type CoordinatedDocumentResult, type CoordinatedRuntimeMemoryResult, type DelegatedAnswerResult, type DelegatedWriteResult, type MemorySpaceMetadataMaintenanceResult, type MemorySpaceMetadataUpdate, type MemoryPlacementDecision, type MnemonReconcileOptions, type MnemonReconcileResult, type SubagentCounters } from './protocol.ts'
 import { emptyDocumentSnapshot, foreignMachines, parseReconcileResult, pendingOpinions, RECONCILE_PERSONA, RECONCILE_SCHEMA, reconcilePrompt, type MnemonReconcileEvidence } from './reconcile.ts'
 import { DEFAULT_MEMORY_VIEW_BUDGET, type ComposableMemoryView, type MemoryEvidence, type MemoryJsonValue, type MemoryMigrationLineage, type MemoryMutationReceipt, type MemoryOperationScope, type MemorySourceManagementRequest, type MemorySourceManagementResult } from '../core/contracts/index.ts'
 import type { MemoryCompositionGeneration } from '../core/composition.ts'
@@ -20,7 +20,7 @@ import { startWithContinuationTurns } from './continuation-turn.ts'
 import { childComposition, startSubagent, type SubagentStartAgents } from './subagent-start.ts'
 import type { IdleReviewFailure, MemoryToolName } from './protocol.ts'
 
-export type { DelegatedWriteResult, SubagentCounters } from "./protocol.ts"
+export type { CoordinatedDocumentResult, CoordinatedRuntimeMemoryResult, DelegatedAnswerResult, DelegatedWriteResult, SubagentCounters } from "./protocol.ts"
 
 type AgentRuntimeSource = MnemonAgentRuntimeSource
 
@@ -411,23 +411,6 @@ function withoutVector(receipts: readonly CapturedToolReceipt[]): Array<{ memory
     if (value?.embedded !== false) return []
     return [{ ...(typeof value.memoryBodyId === 'string' ? { memoryBodyId: value.memoryBodyId } : {}), ...(typeof value.id === 'string' ? { id: value.id } : {}) }]
   })
-}
-
-export type CoordinatedDocumentResult = DocumentMutationResult & {
-  lineage?: MemoryMigrationLineage[]
-  maintenance?: { runId: string; provider: string; summary: string; memoryBodyIds: string[]; archivedDocumentIds: string[] }
-}
-
-export interface DelegatedAnswerResult {
-  answer: string
-  citations: string[]
-  delegation: { runId: string; provider: string }
-}
-
-export type CoordinatedRuntimeMemoryResult = RuntimeMemoryMutationResult & {
-  revision?: string
-  maintenance?: { runId: string; provider: string; summary: string; memoryBodyIds: string[] }
-  memoryReceipt?: Pick<MemoryMutationReceipt, 'status' | 'completion' | 'committedAt'>
 }
 
 function object(value: unknown): Record<string, unknown> {

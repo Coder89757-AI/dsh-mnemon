@@ -1,5 +1,5 @@
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
-import type { ClientConnectionHandle, ClientSettingsScope, ClientSettingsSnapshot, Config } from '../host/protocol.ts'
+import type { ClientConnectionHandle, ClientSettingsScope, ClientSettingsSnapshot, Config, MNEMON_READ_CHANNEL, MNEMON_WRITE_CHANNEL, MnemonRpcEndpoint } from '../host/protocol.ts'
 import { MnemonClient } from './api.ts'
 import type { MnemonChangeSignal } from './change-signal.ts'
 import type { MemoryComponentConfigurationSnapshot, MemoryComponentHost } from './component-ui.tsx'
@@ -11,8 +11,8 @@ interface Lent {
   /** The ones it owns and may write. */
   owns: readonly string[]
   /** Host operations on the read and write channels, by the names the Host serves them under. */
-  read: readonly string[]
-  write: readonly string[]
+  read: readonly MnemonRpcEndpoint<typeof MNEMON_READ_CHANNEL>[]
+  write: readonly MnemonRpcEndpoint<typeof MNEMON_WRITE_CHANNEL>[]
   /**
    * Reads the settings make on their own, which a later mount may join while the same one is
    * under way at the same configuration revision. A read the user asks for is never joined.
@@ -93,12 +93,13 @@ export function createComponentHosts(services: ComponentHostServices): Component
     }
     const { connection, componentChanges } = services
     const client = connection === undefined ? undefined : new MnemonClient(connection, sessionId, workspaceId)
-    const call = (mode: 'read' | 'write', names: readonly string[], operation: string, input: MemoryJsonValue | undefined): Promise<unknown> => {
-      if (!names.includes(operation)) return Promise.reject(new Error(`dsh-mnemon does not serve this component the ${mode} operation ${operation}`))
+    const call = (mode: 'read' | 'write', names: Lent['read'] | Lent['write'], operation: string, input: MemoryJsonValue | undefined): Promise<unknown> => {
+      const endpoint = names.find(name => name === operation)
+      if (endpoint === undefined) return Promise.reject(new Error(`dsh-mnemon does not serve this component the ${mode} operation ${operation}`))
       if (input !== undefined && (typeof input !== 'object' || input === null || Array.isArray(input))) return Promise.reject(new Error(`${operation} takes an object`))
       const named = SCOPE_FIELDS.filter(field => input !== undefined && Object.hasOwn(input, field))
       if (named.length > 0) return Promise.reject(new Error(`${operation} runs in the page's conversation and workspace; it takes no ${named.join(' or ')}`))
-      return client!.componentOperation(mode, operation, input ?? {})
+      return client!.componentOperation(mode, endpoint, input ?? {})
     }
     // A read the settings start while the same one is under way joins it, as when the
     // component's own settings replace dsh-mnemon's while those still load. Only one started

@@ -33,7 +33,10 @@ import type {
   MemorySpaceView,
 } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { ConnectionHandle as DshClientConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
+import type { DocumentMutationResult, DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
+import type { RuntimeMemoryMutationResult } from 'dsh-mnemon-source-runtime/contracts'
+import type { MemoryMigrationLineage, MemoryMutationReceipt } from '../core/contracts/index.ts'
+import { MNEMON_VIEW_CHANNEL, MNEMON_VIEW_WRITE_CHANNEL } from './view-protocol.ts'
 
 export const MNEMON_READ_CHANNEL = '/dsh-mnemon-read'
 export const MNEMON_ACTIVATION_CHANNEL = '/dsh-mnemon-activation'
@@ -79,6 +82,38 @@ export const MNEMON_SETTINGS_NAMESPACE = 'mnemon'
 export const MNEMON_UI_SETTINGS_NAMESPACE = 'mnemon-ui'
 export * from './view-protocol.ts'
 export * from './memory-tools.ts'
+
+/**
+ * Every endpoint the Host serves on each channel, by the names both sides use: the client's calls
+ * are typed against this list, and tests/rpc-endpoints.spec.ts checks that each Host handler serves
+ * exactly these names.
+ */
+export const MNEMON_RPC_ENDPOINTS = {
+  [MNEMON_READ_CHANNEL]: [
+    'status', 'status-summary', 'memory-system', 'versions', 'task-agent-models', 'runtime-memory', 'documents', 'document', 'document-search',
+    'graph', 'bodies', 'body-directory', 'body-reconnect', 'provider-services', 'embedding-status', 'list', 'entities', 'search', 'agent-search', 'related',
+    'turn-activities', 'turn-activity', 'assistant-message', 'source-management-catalog', 'source-management-read', 'source-assistance',
+  ],
+  [MNEMON_ACTIVATION_CHANNEL]: ['body', 'source-assistance'],
+  [MNEMON_WRITE_CHANNEL]: [
+    'runtime-memory', 'document', 'supervise', 'remember', 'link', 'forget', 'body-create', 'body-update', 'body-delete', 'body-merge',
+    'body-metadata-maintain', 'provider-service-update', 'embedding-fill', 'source-management-mutate', 'source-assistance', 'version-update',
+  ],
+  [MNEMON_PACK_CHANNEL]: ['target', 'export', 'inspect', 'import'],
+  [MNEMON_SYNC_CHANNEL]: [
+    'status', 'configure', 'push', 'preview', 'backups', 'diff', 'pull',
+    'github-status', 'github-start', 'github-poll', 'github-cancel', 'github-signout', 'github-repositories', 'github-create',
+  ],
+  [MNEMON_REVIEW_CHANNEL]: ['view', 'opinion', 'decide', 'reopen', 'reconcile', 'apply'],
+  [MNEMON_SETTINGS_CHANNEL]: ['get', 'mutate'],
+  [MNEMON_VIEW_CHANNEL]: ['dashboard', 'preview', 'inspect-plugin'],
+  [MNEMON_VIEW_WRITE_CHANNEL]: ['apply', 'install-plugin'],
+} as const satisfies Readonly<Record<string, readonly string[]>>
+/** A channel the Host serves. */
+export type MnemonRpcChannel = keyof typeof MNEMON_RPC_ENDPOINTS
+/** An endpoint the Host serves on a channel, or on any of several. */
+export type MnemonRpcEndpoint<Channel extends MnemonRpcChannel = MnemonRpcChannel> = (typeof MNEMON_RPC_ENDPOINTS)[Channel][number]
+
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
 
@@ -528,6 +563,26 @@ export interface DelegatedWriteResult {
 
 /** The `supervise` RPC result: a delegated write for the conversation that asked for it. */
 export interface SupervisedWritebackResult extends DelegatedWriteResult { sessionId: string }
+
+/** What a task Agent answered from the evidence a search recalled, as `agent-search` adds it to the results. */
+export interface DelegatedAnswerResult {
+  answer: string
+  citations: string[]
+  delegation: { runId: string; provider: string }
+}
+
+/** A Document write or archive the Host ran: the Documents Source's result, and the archival it ran, for the archive or to make room for the write. */
+export type CoordinatedDocumentResult = DocumentMutationResult & {
+  lineage?: MemoryMigrationLineage[]
+  maintenance?: { runId: string; provider: string; summary: string; memoryBodyIds: string[]; archivedDocumentIds: string[] }
+}
+
+/** A runtime memory write the Host ran: the Runtime Source's result, and the capacity maintenance that ran with it. */
+export type CoordinatedRuntimeMemoryResult = RuntimeMemoryMutationResult & {
+  revision?: string
+  maintenance?: { runId: string; provider: string; summary: string; memoryBodyIds: string[] }
+  memoryReceipt?: Pick<MemoryMutationReceipt, 'status' | 'completion' | 'committedAt'>
+}
 
 export type LifecyclePhase = 'idle' | 'prime' | 'recall' | 'writeback' | 'review' | 'supervised' | 'error'
 

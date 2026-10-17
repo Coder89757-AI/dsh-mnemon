@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { HostRpcHandler, RpcResult } from './dsh.ts'
-import { MNEMON_REMOTE_NAMESPACE } from './protocol.ts'
+import { MNEMON_REMOTE_NAMESPACE, MNEMON_RPC_ENDPOINTS, MNEMON_SETTINGS_CHANNEL } from './protocol.ts'
 
 export interface MnemonRemoteHandlers {
   readonly read: HostRpcHandler
@@ -26,6 +26,8 @@ function denied(): RpcResult<unknown> {
     },
   }
 }
+
+const SETTINGS_ENDPOINTS: readonly string[] = MNEMON_RPC_ENDPOINTS[MNEMON_SETTINGS_CHANNEL]
 
 function unknownSettingsEndpoint(endpoint: string): RpcResult<unknown> {
   return {
@@ -85,7 +87,7 @@ export class MnemonRemoteService extends TypertRemoteService {
   @Remote('settings')
   async settings(endpoint: string, payload: unknown, signal: AbortSignal): Promise<RpcResult<unknown>> {
     if (endpoint === 'mutate' && !this.handlers.management) return denied()
-    if (endpoint !== 'get' && endpoint !== 'mutate') return unknownSettingsEndpoint(endpoint)
+    if (!SETTINGS_ENDPOINTS.includes(endpoint)) return unknownSettingsEndpoint(endpoint)
     const response = await this.handlers.settings(endpoint, payload, signal)
     if (endpoint !== 'get' || this.handlers.management || !response.ok || typeof response.value !== 'object' || response.value === null || Array.isArray(response.value)) return response
     return { ...response, value: { ...(response.value as Record<string, unknown>), writable: false } }
