@@ -10,7 +10,7 @@ You meet dsh-mnemon in three places. The conversation shows what each turn read 
 | [The Memory System](#the-memory-system) | Check status; browse, search and edit runtime memory, documents and memory spaces | **Memory System** in the sidebar, or a session tab |
 | [On the Plugins page](#on-the-plugins-page) | Choose strategies and enhancements; set up components, storage and the interface | **Plugins → dsh-mnemon** (可组合记忆), or the gear in the Memory System header |
 
-The recordings and screenshots come from the [v0.5.32 gallery](../../assets/webui-v0.5.32/README.md): a real DSH 0.2.1 WebUI in light appearance with a seeded, fictional project, Lumen. The live DeepSeek model wrote every answer, write and receipt; waits for the model play at 4x or 6x, marked in the lower right corner. No embedding service ran during this capture (the Mnemon Native embedding settings stay at their default), so each save to a Memory Space reports that it has no vector.
+The recordings and screenshots come from the [v0.5.32 gallery](../../assets/webui-v0.5.32/README.md): a real DSH 0.2.1 WebUI in light appearance with a seeded, fictional project, Lumen. The live DeepSeek model wrote every answer, write and receipt; waits for the model play at 4x or 6x, marked in the lower right corner. A local Ollama served embeddings at Mnemon's default endpoint, with the Mnemon Native embedding settings at their default, so every memory has a vector.
 
 Two rules hold everywhere. **Switches and selectors apply as soon as you change them**; if a write fails, the control shows the saved value again next to the reason. **Typed values wait for their group's Apply**, which appears once something changed, together with a note on what applying will do.
 
@@ -22,18 +22,18 @@ Two rules hold everywhere. **Switches and selectors apply as soon as you change 
 
 A reply that used memory ends with a **Turn memory** line: the Memory System's brain mark, then how many recalls, document searches and writes the turn made. Expanded, it has one row per tool. On the left, the tool says in plain words what it did, such as **Document search** or **Memory Spaces recall ×2**; hover to see the tool's own name. On the right are the items it read or wrote.
 
-![An answer drawn from working memory, Project Documents and Memory Spaces; the expanded bar lists three documents and a memory](../../assets/webui-v0.5.32/en/chat-recall.jpg)
+![An answer drawn from working memory and Project Documents; the expanded bar lists three documents and one more](../../assets/webui-v0.5.32/en/chat-recall.jpg)
 
 - Select a tool to open its page in the Memory System.
 - Select an item to open it where it lives: a document is selected in **Project Documents**; a memory runs as a query on the **Recall** page; a runtime entry is highlighted and scrolled to in **Runtime memory**.
 - Each tool lists up to three items and counts the rest; an item known only by its id stays out. On a phone, the items sit below their tool.
 - Turns without memory activity show no bar.
 
-When you correct a fact, the Agent replaces the runtime memory entry and the bar reports the write; select it to see the replaced entry. Here the Agent also corrected its note on the latest measurement, which no longer meets the target, so the bar lists two runtime memory writes. [Watch the correction](../../assets/webui-v0.5.32/en/correct.mp4).
+When you correct a fact, the Agent replaces the runtime memory entry and the bar reports the write; select it to see the replaced entry. Here the Agent also updated the checkout LCP investigation in Project Documents, whose latest measurement no longer meets the target, so the bar lists a runtime memory write and a document update. [Watch the correction](../../assets/webui-v0.5.32/en/correct.mp4).
 
 | A correction and its writes | Its runtime item opens the entry, highlighted |
 |---|---|
-| ![The reply to a new checkout target; the turn memory bar lists two runtime memory updates, the new target and the corrected measurement](../../assets/webui-v0.5.32/en/chat-correction.jpg) | ![Runtime memory with the replaced checkout target entry highlighted](../../assets/webui-v0.5.32/en/memory-runtime.jpg) |
+| ![The reply to a new checkout target; the turn memory bar lists a runtime memory update with the new target and a document update to the checkout LCP investigation](../../assets/webui-v0.5.32/en/chat-correction.jpg) | ![Runtime memory with the replaced checkout target entry highlighted](../../assets/webui-v0.5.32/en/memory-runtime.jpg) |
 
 Temporary progress, guesses and secrets are not written.
 
@@ -54,7 +54,7 @@ Each finished reply has a brain-shaped **Save to memory** in its action strip, t
 
 | Edit the candidate | Choose where it goes | The task Agent's receipt |
 |---|---|---|
-| ![Save to memory with Task Agent ready and the candidate cut down to one fact](../../assets/webui-v0.5.32/en/chat-save.jpg) | ![Save to open: Let the Agent decide, Working memory (MEMORY.md), User profile (USER.md), and the Lumen project and Team conventions Memory Spaces](../../assets/webui-v0.5.32/en/chat-save-target.jpg) | ![Receipt: saved in the Lumen project Memory Space and linked to the earlier note on the synchronous SDK, with View in Memory Spaces and the line that it has no vector yet](../../assets/webui-v0.5.32/en/chat-save-receipt.jpg) |
+| ![Save to memory with Task Agent ready and the candidate cut down to one fact](../../assets/webui-v0.5.32/en/chat-save.jpg) | ![Save to open: Let the Agent decide, Working memory (MEMORY.md), User profile (USER.md), and the Lumen project and Team conventions Memory Spaces](../../assets/webui-v0.5.32/en/chat-save-target.jpg) | ![Receipt: saved in the Lumen project Memory Space and linked to the earlier note on the synchronous SDK, with View in Memory Spaces](../../assets/webui-v0.5.32/en/chat-save-receipt.jpg) |
 
 **Save to memory** at the top of Memory Spaces opens the Memory Spaces dialog, without the conversation's **Save to** choice. The turn memory bar and the Save to memory button are on by default and can be turned off under [Interface](#interface). In the conversation-tab placement, these entries open the Memory System tab of the conversation they came from; with several eligible tabs in split panes, open the intended one yourself.
 

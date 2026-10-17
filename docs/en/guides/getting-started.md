@@ -61,7 +61,7 @@ Ask a question that depends on what you stored, and let the Agent decide whether
 - a **Turn memory** line appears if the turn used memory; expand it to see the documents and memories each tool read or wrote, and select one to open it where it lives;
 - the brain mark under the reply is **Save to memory**: it opens an editable dialog, **Cancel** writes nothing, and sending it to the task Agent returns a receipt.
 
-![An answer that uses working memory, Project Documents and Memory Spaces, with the items the turn read](../../assets/webui-v0.5.32/en/chat-recall.jpg)
+![An answer that uses working memory and Project Documents, with the documents the turn read](../../assets/webui-v0.5.32/en/chat-recall.jpg)
 
 Ordinary conversation does not force recall. Current requests, repository files and live tool results outrank remembered history.
 
