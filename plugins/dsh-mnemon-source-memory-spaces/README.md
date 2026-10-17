@@ -31,6 +31,8 @@ The `./contracts` entry names the Native layout under a storage root (`data/<spa
 
 The public package entry exports `resolveEmbedding`, `resolvePersistenceStrategy`, and `resolveRecallQuality`. They validate and normalize this Source's settings without I/O or mounting a Fiber. The Starter uses the same rules and recall defaults; it still owns legacy setting keys, storage scope, and its Host timeout policy. Independent Source configuration retains its own instance defaults and timeout limits.
 
+The `./contracts` entry exports `MEMORY_PLACEMENT_CAPABILITIES`, the capabilities a persistence strategy's rules may require of a Provider, from which the `MemoryPlacementCapability` type is derived. `resolvePersistenceStrategy` accepts exactly these, and the Starter's settings schema takes the same list.
+
 ## Source-owned Client
 
 The optional `./client` entry owns the Source's pages, its settings on its page under Plugins (the Providers and the embedding Mnemon Native reads) and `presentation/` resources. It uses `dsh-mnemon/client` for the shared frame, scoped management and the configuration and Host operations dsh-mnemon lends its settings, without receiving raw RPC transport, credentials, a Host Context or an LLM grant. DSH mounts the same pages in the default Starter; cross-Source Agent workflows remain optional Host assistance. dsh-mnemon 0.5.31 and earlier draw these settings themselves, so with them the client registers none.
