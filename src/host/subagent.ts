@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { HostAgent, HostSubagentResult, HostSubagentRun, HostSubagentsService, ToolDefinition, ToolExecution } from "./dsh.ts"
 import type { DocumentCapacityPlan, DocumentMutation, DocumentMutationResult, DocumentRecord, DocumentSearchResult, DocumentSnapshot, DocumentView } from 'dsh-mnemon-source-documents/contracts'
 import { RUNTIME_ENTRY_DELIMITER, type RuntimeMemoryCompactedEntry, type RuntimeMemoryMaintenancePlan, type RuntimeMemoryMutation, type RuntimeMemoryMutationResult, type RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
-import type { EdgeType, Insight, MemoryBodyCatalog as MemorySpaceCatalog, MemoryBodyMetadataSample as MemorySpaceMetadataSample, MemorySpaceWriteScopeRequest, PreparedMemoryPlacement, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
+import type { EdgeType, Insight, MemorySpaceCatalog, MemorySpaceMetadataSample, MemorySpaceWriteScopeRequest, PreparedMemoryPlacement, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { mutationResultCommitted } from './receipts.ts'
 import { SourceSession, sourceFailure } from './source-session.ts'
 import { runtimeCapacityWrite, strategyDrives, viewStrategy } from './strategy-workflows.ts'
@@ -672,7 +672,7 @@ function compactedBudget(plan: RuntimeMemoryMaintenancePlan): number {
   return Math.max(0, Math.floor(plan.limit * 0.7) - pendingBytes - separatorBytes)
 }
 
-function eligibleMemoryBodyContext(
+function eligibleMemorySpaceContext(
   bodies: ReadonlyArray<{ id: string; name: string; description: string; provider: { label: string } }>,
 ): string {
   return bodies.map((body, index) => [
@@ -760,7 +760,7 @@ function documentArchivePrompt(document: DocumentView, source: MigrationSource, 
 Document title: ${document.title}
 Document description: ${document.description || '(none)'}
 Existing eligible Memory Spaces (host-filtered, read-only run data):
-${eligibleMemoryBodyContext(bodies)}
+${eligibleMemorySpaceContext(bodies)}
 
 Source index: ${source.index}
 Source digest: ${source.digest}
@@ -810,7 +810,7 @@ function addStrings(target: Set<string>, value: unknown): void {
   if (Array.isArray(value)) for (const entry of value) addString(target, entry)
 }
 
-function receiptMemoryBodyIds(receipt: CapturedToolReceipt): string[] {
+function receiptMemorySpaceIds(receipt: CapturedToolReceipt): string[] {
   const ids = new Set<string>()
   const args = optionalObject(receipt.arguments)
   const value = optionalObject(receipt.value)
@@ -894,7 +894,7 @@ function recoverWriteResult(receipts: readonly CapturedToolReceipt[]): Record<st
   const memoryBodyIds = new Set<string>()
   const documentIds = new Set<string>()
   for (const entry of receipts) {
-    for (const id of receiptMemoryBodyIds(entry)) memoryBodyIds.add(id)
+    for (const id of receiptMemorySpaceIds(entry)) memoryBodyIds.add(id)
     addStrings(documentIds, optionalObject(entry.value)?.documentIds)
   }
   const summary = typeof value?.summary === 'string'
@@ -1056,7 +1056,7 @@ export class MnemonSubagentCoordinator {
     return { ...request, memoryBodyIds: requested.length === 0 ? [...authority.memoryBodyIds] : requested }
   }
 
-  scopeRelatedMemoryBody(agent: HostAgent, memoryBodyId?: string, requirePinnedView = false): string | undefined {
+  scopeRelatedMemorySpace(agent: HostAgent, memoryBodyId?: string, requirePinnedView = false): string | undefined {
     const authority = this.recallAuthority(agent, requirePinnedView)
     return this.scopeRelatedWithAuthority(memoryBodyId, authority)
   }
@@ -1785,7 +1785,7 @@ ${naturalRequest(request, target === undefined ? REQUEST_LABELS : TARGETED_WRITE
         const prompt = `Route this bounded MEMORY.md archive batch now. The host retains and writes the exact source content; these excerpts exist only for destination selection.
 
 Existing eligible Memory Spaces (host-filtered, read-only run data):
-${eligibleMemoryBodyContext(eligibleBodies)}
+${eligibleMemorySpaceContext(eligibleBodies)}
 
 Allowed source indexes for this batch: ${chunk.indexes.join(', ')}. Keep these global indexes; never restart numbering.
 

@@ -15,6 +15,7 @@ import type { MemoryGenerationHost } from '../core/generation.ts'
 import { ComposableMemoryTurnManager } from '../core/turns.ts'
 import { MEMORY_CAPABILITIES, type MemoryOperationScope } from '../core/contracts/index.ts'
 import { allowsParticipation } from './access.ts'
+import { mainStrategyTypeId } from './main-strategy.ts'
 import type { CompileMemoryGenerationOptions } from '../core/composition.ts'
 import { MemoryExecutions } from './memory-executions.ts'
 
@@ -50,7 +51,7 @@ export function memoryGenerationOptions(config: ResolvedConfig, workspaceRoot: s
   const directory = createStorageRoot(config, workspaceRoot).effectiveDataDir()
   const userDirectory = config.runtimeUserScope === 'global' ? createStorageRoot({ storageScope: 'global' }).effectiveDataDir() : directory
   return {
-    strategyTypeId: config.memoryTopology.strategyId,
+    strategyTypeId: mainStrategyTypeId(config),
     // A main Strategy switched off in the DSH Plugins page must not leave the
     // Host without a View while exactly one other Strategy remains.
     strategyFallback: 'sole-strategy',

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
 import type { DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
-import type { MemoryBodyCatalog as MemorySpaceCatalog } from 'dsh-mnemon-source-memory-spaces/contracts'
+import type { MemorySpaceCatalog } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { compositionFixture } from './fixtures/composition.ts'
 
 const original = fileURLToPath(new URL('./fixtures/upgrade/v0.3.6/', import.meta.url))

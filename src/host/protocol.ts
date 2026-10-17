@@ -29,8 +29,8 @@ import type {
   ResolvedMemoryPersistenceStrategy,
   MemoryProviderRuntimeStatus,
   Source,
-  MemoryBodyStats as MemorySpaceStats,
-  MemoryBodyView as MemorySpaceView,
+  MemorySpaceStats,
+  MemorySpaceView,
 } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { ConnectionHandle as DshClientConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
