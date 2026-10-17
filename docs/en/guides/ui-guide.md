@@ -173,7 +173,7 @@ At 390 px the sidebar becomes DSH's icon rail and the pages stack. Long names tr
 
 ![The dsh-mnemon page under Plugins: header, Memory composition and component rows](../../assets/webui-v0.5.19/en/plugin-composition.jpg)
 
-DSH 0.1.7 keeps a plugin's configuration on its own page under **Plugins**. The `dsh-mnemon` page (可组合记忆 in Chinese) has **Memory composition**, **Storage** and **Interface**, then DSH's list of the components the Starter includes. **Open Memory System** at the top leads back. Each component's own settings live on its own page.
+DSH keeps a plugin's configuration on its own page under **Plugins**. The `dsh-mnemon` page (可组合记忆 in Chinese) has **Memory composition**, **Storage** and **Interface**, then DSH's list of the components the Starter includes. **Open Memory System** at the top leads back. Each component's own settings live on its own page.
 
 | Where | Contains | Applies |
 |---|---|---|

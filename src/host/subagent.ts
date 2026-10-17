@@ -2292,7 +2292,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
     }
     const isolated = (name: string): boolean => compatible(name) && this.subagents.getProvider(name)?.inheritsParentContext !== true
     const selected = names.includes('spawn') && isolated('spawn') ? 'spawn' : names.find(isolated)
-    if (selected === undefined) throw new Error('dsh-mnemon requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting')
+    if (selected === undefined) throw new Error('dsh-mnemon requires a non-inheriting DSH subagent provider that limits depth and gives each child its own instructions and tools')
     return selected
   }
 

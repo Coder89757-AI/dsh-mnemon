@@ -53,9 +53,7 @@ Go 更新还要求当前执行文件确实位于本机 Go 的安装输出位置�
 
 ## 旧会话恢复
 
-支持的宿主为 DSH `0.1.7-rc.2` 与 `0.2.0-rc.2`，参见[兼容性矩阵](../reference/compatibility.md)。升级 Mnemon 后重启 Web Profile：Starter 补丁为拥有路由的 `connection` Entry 同时声明 `webRuntime` 和 `webServer`，恢复此前在“记忆系统”或其配置页返回 HTTP 405 的全部七个 RPC 通道。绕过 Starter 独立安装 Host 的自定义 Profile，也应在自己的 connection Entry 声明这两个依赖，并保留自定义组合原有的其他依赖。不修改 DSH 包源码；浏览器认证和 Mnemon grant 仍然生效。
-
-另一项 `source summary requires notice form; source v0 artifact remains unchanged` 错误来自旧版 Mnemon 写入的 DSH 会话消息。新消息已移除 recall/instructions 中不合法的 summary；更新插件不会改写现有会话。修复单个受影响日志时：
+错误 `source summary requires notice form; source v0 artifact remains unchanged` 来自旧版 Mnemon 写入的 DSH 会话消息。新消息已移除 recall/instructions 中不合法的 summary；更新插件不会改写现有会话。修复单个受影响日志时：
 
 1. 停止所属 DSH 进程，单独备份完整会话存储根及全部 generation；Mnemon Pack 不包含这些会话。以 DSH 错误中的准确 `raw log` 路径为准，不扫描或改写其他会话。
 2. 安装修复后的 Mnemon，对**备份副本**执行下面的预览命令。`.jsonl.zstd` 使用 Node `22.19+` 或 `24+`；普通 `.jsonl` 也支持 Node 20。
@@ -227,7 +225,7 @@ GitHub 登录凭据保存在 DSH 凭据存储的 `dsh-mnemon/github` 键下；�
 
 ## 云端 WebUI
 
-DSH 0.1.7-rc.2 与 0.2.0-rc.2 是支持的 registry 安装目标。页面、每个 RPC 与每条 stream 都通过 Host 输出的启动 token URL 建立同一份、与 authority 绑定的浏览器会话。`--trusted-host` 仍只是 Host/Origin 防线，不能替代 HTTPS 或部署层访问控制。
+[兼容性矩阵](../reference/compatibility.md)列出的 DSH 版本是支持的 registry 安装目标。页面、每个 RPC 与每条 stream 都通过 Host 输出的启动 token URL 建立同一份、与 authority 绑定的浏览器会话。`--trusted-host` 仍只是 Host/Origin 防线，不能替代 HTTPS 或部署层访问控制。
 
 1. 在反向代理或访问网关终止 HTTPS，并只向预期用户开放公网入口。把同源的 `/` 与 `/api` 流量（包括 stream）代理到 `http://127.0.0.1:3080`，同时保留外部 `Host` authority。
 2. 使用外部 authority 启动回环服务。参数应为裸 `host[:port]`，不是 URL：
@@ -332,7 +330,7 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 
 | 现象 | 检查与处理 |
 |---|---|
-| 插件详情中 `mnemon-bundle` 容器行（0.5.20 起名为 `dsh-mnemon/bundle`，此前为 `cordis:group`）显示“已关闭”，点击提示“找不到该插件” | DSH `0.1.7-rc.2` 的已知容器展示问题（`0.2.0-rc.1` 与 `0.2.0-rc.2` 同样显示为已关闭；`0.2.1-alpha.2` 不再列出该行，配置页也随之不再显示相应说明）。先检查“记忆系统 → 状态”和实际组件；正常时可继续使用。整套组合用顶层 bundle 或 `mnemon` 核心组件开关，不要重置数据或删除分组。参见[原因、处理步骤与修复边界](../reference/compatibility.md#dsh-017-bundle-组件列表)和[上游 #649](https://github.com/dsh-external/issues/issues/649)。 |
+| 插件详情中 `mnemon-bundle` 容器行（0.5.20 起名为 `dsh-mnemon/bundle`，此前为 `cordis:group`）显示“已关闭”，点击提示“找不到该插件” | DSH 0.2.0 的已知容器展示问题，与 0.1.7 相同；DSH 0.2.1 不再列出该行，配置页也随之不再显示相应说明。先检查“记忆系统 → 状态”和实际组件；正常时可继续使用。整套组合用顶层 bundle 或 `mnemon` 核心组件开关，不要重置数据或删除分组。参见[原因、处理步骤与修复边界](../reference/compatibility.md#dsh-020-上的-bundle-组件列表)和[上游 #649](https://github.com/dsh-external/issues/issues/649)。 |
 | Windows 切换会话时终端窗口闪现 | 更新 Starter，或独立安装的 Runtime Source，然后重启 DSH Host。Runtime 的 Git 分支检测会隐藏控制台窗口；Git 失败、超时或 HEAD 分离时仍回退到不按分支筛选的 Runtime 视图。 |
 | Mnemon 不可用 | macOS/Linux 运行 `command -v mnemon`、`mnemon --version`；Windows PowerShell 运行 `Get-Command mnemon`、`Test-Path "$env:LOCALAPPDATA\Programs\mnemon\mnemon.exe"`。设置 `MNEMON_CLI_PATH` 或 `mnemon.cliPath` 后重启 |
 | Electron 桌面 Host 无法运行 npm CLI 脚本 | 经过验证的 npm 启动器仅在子进程中设置 `ELECTRON_RUN_AS_NODE=1`。如果桌面壳关闭了 [Electron `runAsNode` fuse](https://www.electronjs.org/docs/latest/tutorial/fuses#runasnode)，该变量会被忽略；请将 `mnemon.cliPath` 指向官方原生二进制（Windows 为 `mnemon.exe`）。npm 自动更新仍需要 Host 能够运行 JavaScript 启动器 |
@@ -345,7 +343,7 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 | 自定义目录被拒绝 | 使用绝对路径、`~` 或 `~/...` |
 | `memoryBodyId is required...` | active 数量不是恰好 1；显式选择目标 |
 | `memory space is not active for reading` | 在概览激活目标；写入 inactive 可以，读取不行 |
-| Provider 错误 | 审查需要受 guard 保护的本地子 Agent；默认有界 `spawn`，可选择 `fork`。DSH/Teams 0.1.7-rc.2 可选择 `idleReview.agentTeams: scoped`，默认仍为 `pause`；重试前核对部分写入回执 |
+| Provider 错误 | 审查需要受 guard 保护的本地子 Agent；默认有界 `spawn`，可选择 `fork`。安装了 Team 工具时如需继续审查，可选择 `idleReview.agentTeams: scoped`，默认仍为 `pause`；重试前核对部分写入回执 |
 | 本地模型（例如 Ollama 上的 Qwen3.x）下后台审查报 `no user query found in messages` | 工具结果填满模型的上下文窗口后，Ollama 截断时丢掉了子代理的任务提示。0.5.22 起，Mnemon 会给被拒的子代理步骤追加一条用户消息并重试（[#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327)），请更新 dsh-mnemon。调大 Ollama 的上下文长度（`OLLAMA_CONTEXT_LENGTH` 或模型的 `num_ctx`）也能避免截断。审查可能在失败前已创建项目档案，请核对部分写入回执 |
 | Runtime replace 超容量 | 缩短 replacement 或先显式整理；自动维护只处理 add 溢出 |
 | Document source path 被拒绝 | 路径必须在会话工作区内，且不能引用受管 Documents 目录 |
@@ -383,7 +381,7 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 
 ### 版本与国际化
 
-支持 DSH 0.1.7-rc.2 与 0.2.0-rc.2，参见[兼容性矩阵](../reference/compatibility.md)。Web 界面为中英文双语，但命令、工具卡、兼容元数据和部分错误仍未完全国际化。
+支持的 DSH 版本见[兼容性矩阵](../reference/compatibility.md)。Web 界面为中英文双语，但命令、工具卡、兼容元数据和部分错误仍未完全国际化。
 
 ## 文档归档恢复
 

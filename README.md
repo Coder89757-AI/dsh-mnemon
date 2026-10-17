@@ -92,7 +92,7 @@ npx @deepseek-ai/dsh web
 4. For Memory Spaces, install the Mnemon CLI for Mnemon Native with `npm install --global @mnemon-dev/mnemon`, or enable another Provider on the Memory Spaces page.
 5. Choose the main strategy and enhancements under **Plugins → dsh-mnemon**.
 
-dsh-mnemon supports DSH `0.2.0-rc.2` (npm `latest` and `next`) and `0.1.7-rc.2`. The same package serves the desktop app's Plugins page, `dsh plugin --profile web add dsh-mnemon` on the command line, and Headless with `dsh plugin --profile headless add dsh-mnemon`; keep `v0.5.16` on older hosts. [Getting started](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/getting-started.md) continues from here, and [compatibility and upgrades](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/reference/compatibility.md) covers existing installations.
+dsh-mnemon supports DSH `0.2.0-rc.2` (npm `latest`) and `0.2.1-rc.1` (npm `next`). The same package serves the desktop app's Plugins page, `dsh plugin --profile web add dsh-mnemon` on the command line, and Headless with `dsh plugin --profile headless add dsh-mnemon`; older hosts keep the release [compatibility and upgrades](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/reference/compatibility.md) names for them. [Getting started](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/getting-started.md) continues from here, and [compatibility and upgrades](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/reference/compatibility.md) covers existing installations.
 
 ## How it works
 

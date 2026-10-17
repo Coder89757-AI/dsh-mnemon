@@ -53,9 +53,7 @@ The Host fixes update commands and arguments. The browser cannot supply either; 
 
 ## Legacy Session recovery
 
-DSH `0.1.7-rc.2` and `0.2.0-rc.2` are the supported hosts; see the [compatibility matrix](../reference/compatibility.md). Restart the Web Profile after upgrading Mnemon: the Starter patch gives the owning `connection` entry both `webRuntime` and `webServer`. This restores all seven Mnemon RPC channels when **Memory System** or its configuration page previously returned HTTP 405. Custom profiles that install the Host without the Starter must apply the same dependency declaration to their connection entry, preserving any additional dependencies in their own composition. No DSH package source is changed; browser authentication and Mnemon grants still apply.
-
-The separate error `source summary requires notice form; source v0 artifact remains unchanged` comes from older Mnemon messages in DSH Session logs. New recall/instruction messages omit that invalid summary. Updating the plugin does not rewrite an existing Session. To repair one affected log:
+The error `source summary requires notice form; source v0 artifact remains unchanged` comes from older Mnemon messages in DSH Session logs. New recall/instruction messages omit that invalid summary. Updating the plugin does not rewrite an existing Session. To repair one affected log:
 
 1. Stop the owning DSH process. Back up its entire Session storage root, including every generation, separately from a Mnemon Pack. Use the exact `raw log` path reported by DSH; do not search or rewrite unrelated sessions.
 2. With the updated Mnemon package installed, preview the command below against a **backup copy**. Use Node `22.19+` or `24+` for `.jsonl.zstd`; plain `.jsonl` also works on Node 20.
@@ -227,7 +225,7 @@ Existing turns and delegated child activations may still use the old runtime. Wa
 
 ## Cloud-hosted WebUI
 
-DSH 0.1.7-rc.2 and 0.2.0-rc.2 are the supported registry targets. It authenticates the page, every RPC, and every stream through an authority-bound browser session created from the launch-token URL printed by the Host. `--trusted-host` remains a Host/Origin fence; it does not replace HTTPS or deployment access controls.
+The DSH releases in the [compatibility matrix](../reference/compatibility.md) are the supported registry targets. It authenticates the page, every RPC, and every stream through an authority-bound browser session created from the launch-token URL printed by the Host. `--trusted-host` remains a Host/Origin fence; it does not replace HTTPS or deployment access controls.
 
 1. Terminate HTTPS at a reverse proxy or access gateway and protect the public entry for its intended users. Proxy the same-origin `/` and `/api` traffic, including streams, to `http://127.0.0.1:3080` while preserving the external `Host` authority.
 2. Start the loopback service with the external authority. Use a bare `host[:port]`, not a URL:
@@ -332,7 +330,7 @@ Report vulnerabilities privately through [SECURITY.md](../../../SECURITY.md), no
 
 | Symptom | Check and resolution |
 |---|---|
-| Plugin details show the `mnemon-bundle` container row (named `dsh-mnemon/bundle` from 0.5.20, `cordis:group` before) as off, and its switch returns `unknown-plugin` | Known container-display issue in DSH `0.1.7-rc.2` (`0.2.0-rc.1` and `0.2.0-rc.2` show it as off too; `0.2.1-alpha.2` no longer lists it, and the configuration then leaves out its note). Check **Memory System → Status** and the actual components; continue using Mnemon if they and memory operations work. Use the top-level bundle or `mnemon` core component switch for the composition; do not reset data or remove the group. See [cause, handling and fix boundaries](../reference/compatibility.md#dsh-017-bundle-component-list) and [upstream #649](https://github.com/dsh-external/issues/issues/649). |
+| Plugin details show the `mnemon-bundle` container row (named `dsh-mnemon/bundle` from 0.5.20, `cordis:group` before) as off, and its switch returns `unknown-plugin` | Known container-display issue in DSH 0.2.0, as in 0.1.7; DSH 0.2.1 no longer lists the row, and the configuration then leaves out its note. Check **Memory System → Status** and the actual components; continue using Mnemon if they and memory operations work. Use the top-level bundle or `mnemon` core component switch for the composition; do not reset data or remove the group. See [cause, handling and fix boundaries](../reference/compatibility.md#the-bundle-component-list-on-dsh-020) and [upstream #649](https://github.com/dsh-external/issues/issues/649). |
 | Terminal flashes when switching conversations on Windows | Update the Starter, or Runtime Source if independently installed, then restart the DSH Host. Runtime Git branch detection hides its console window; Git failures, timeouts and detached HEAD still fall back to an unfiltered Runtime view. |
 | Mnemon unavailable | macOS/Linux: run `command -v mnemon`, `mnemon --version`. Windows PowerShell: run `Get-Command mnemon`, `Test-Path "$env:LOCALAPPDATA\Programs\mnemon\mnemon.exe"`. Set `MNEMON_CLI_PATH` or `mnemon.cliPath`, then restart |
 | Electron desktop Host cannot run npm CLI scripts | Verified npm launchers use child-only `ELECTRON_RUN_AS_NODE=1`. If the desktop shell disables the [Electron `runAsNode` fuse](https://www.electronjs.org/docs/latest/tutorial/fuses#runasnode), this flag is ignored; set `mnemon.cliPath` to the official native binary (`mnemon.exe` on Windows). Automatic npm updates still require a Host that can run the JavaScript launcher |
@@ -345,7 +343,7 @@ Report vulnerabilities privately through [SECURITY.md](../../../SECURITY.md), no
 | Custom directory rejected | Use an absolute path, `~`, or `~/...` |
 | `memoryBodyId is required...` | Active count is not exactly one; select a target explicitly |
 | `memory space is not active for reading` | Activate it in Overview; inactive writes are allowed, reads are not |
-| Provider error | Review needs guarded local child publication; use bounded `spawn` or opt-in `fork`. With DSH/Teams 0.1.7-rc.2, opt into `idleReview.agentTeams: scoped`; `pause` stays the default. Inspect partial-write receipts before retrying |
+| Provider error | Review needs guarded local child publication; use bounded `spawn` or opt-in `fork`. To review while Team tools are installed, opt into `idleReview.agentTeams: scoped`; `pause` stays the default. Inspect partial-write receipts before retrying |
 | Background review fails with `no user query found in messages` on a local model, such as Qwen3.x on Ollama | Once tool results filled the model's context window, Ollama's truncation dropped the subagent's prompt. From 0.5.22, Mnemon adds a short user turn to a refused subagent step and retries it ([#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327)); update dsh-mnemon. A larger Ollama context length (`OLLAMA_CONTEXT_LENGTH` or the model's `num_ctx`) also avoids the truncation. The review may have created a Document before it failed; check the partial-write receipts |
 | Runtime replace exceeds capacity | Shorten it or organize first; automatic maintenance handles add overflow only |
 | Document source path rejected | Keep it inside the session workspace and outside managed Documents |
@@ -383,7 +381,7 @@ Activity score, latest checkpoint, and retry state are not persisted. Host resta
 
 ### Versions and internationalization
 
-DSH 0.1.7-rc.2 and 0.2.0-rc.2 are supported; see the [compatibility matrix](../reference/compatibility.md). The Web interface is bilingual, while commands, tool cards, compatibility metadata and some errors remain partly untranslated.
+The supported DSH releases are in the [compatibility matrix](../reference/compatibility.md). The Web interface is bilingual, while commands, tool cards, compatibility metadata and some errors remain partly untranslated.
 
 ## Document archive recovery
 

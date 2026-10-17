@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 
 /**
  * The DSH a real-host spec composes: the repository's pinned one, or the installation
- * DSH_HOST_ROOT names when the installed-DSH harness runs the root tests against it.
+ * DSH_HOST_ROOT names when `pnpm run test:installed-dsh` runs the root tests against it.
  */
 export const requireDsh = createRequire(process.env.DSH_HOST_ROOT === undefined
   ? realpathSync(new URL('../../node_modules/@deepseek-ai/dsh/package.json', import.meta.url))

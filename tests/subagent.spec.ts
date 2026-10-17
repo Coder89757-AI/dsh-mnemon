@@ -2944,7 +2944,7 @@ describe('Mnemon memory subagent coordinator', () => {
     vi.mocked(host.value.getProvider).mockImplementation(() => ({ capabilities: DSH_021_CAPABILITIES }) as never)
     const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), toolRegistry().value)
 
-    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting')
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider that limits depth and gives each child its own instructions and tools')
     expect(host.startActivation).not.toHaveBeenCalled()
   })
 
@@ -2953,7 +2953,7 @@ describe('Mnemon memory subagent coordinator', () => {
     vi.mocked(host.value.getProvider).mockImplementation(() => ({ capabilities: { outputSchema: true, depthLimit: true, toolFilter: false, persona: false } }) as never)
     const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), toolRegistry().value)
 
-    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting')
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider that limits depth and gives each child its own instructions and tools')
     expect(host.startActivation).not.toHaveBeenCalled()
   })
 
