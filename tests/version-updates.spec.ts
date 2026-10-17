@@ -625,7 +625,7 @@ describe('Starter updates through DSH\'s plugin manager', () => {
     expect(f.run).toHaveBeenCalledWith('/fake/pnpm', ['add', 'dsh-mnemon@0.5.22', '--save-exact'], expect.objectContaining({ cwd: f.profile }))
   })
 
-  // DSH 0.2.1-alpha.3 with hot reload: another version replaces an installed package only after it is removed.
+  // DSH 0.2.1 with hot reload: another version replaces an installed package only after it is removed.
   const refusesInstalled = () => vi.fn(async (): Promise<DshBundleChange> => ({ application: 'failed', error: { code: 'already-installed' } }))
 
   it('replaces the Starter through DSH\'s own plugin command where DSH refuses to install over it', async () => {
@@ -652,10 +652,11 @@ describe('Starter updates through DSH\'s plugin manager', () => {
   it('names the DSH a release needs where DSH\'s plugin command refuses it as incompatible', async () => {
     const command = vi.fn<DshPluginCommand>(async () => ({
       exitCode: 1, output: 'dsh: dsh-mnemon@0.5.22 is incompatible', logPath: '/profile/.plugin-manager/logs/2/pnpm.log',
-      incompatible: [{ runtimeVersion: '0.2.1-alpha.3', peers: { '@deepseek-ai/dsh': '^0.3.0' } }],
+      // DSH 0.2.1 names what the release requires: `engines.dsh` where it states one, else each DSH peer.
+      incompatible: [{ runtimeVersion: '0.2.1-rc.1', requirements: { 'engines.dsh': '^0.3.0', '@deepseek-ai/dsh-app-boot': '^0.3.0' } }],
     }))
     const f = profileFixture({ installer: { installBundle: refusesInstalled() }, pluginCommand: command })
-    await expect(f.manager.update('dsh-mnemon')).rejects.toThrow('DSH could not install dsh-mnemon@0.5.22: incompatible-version (requires @deepseek-ai/dsh ^0.3.0; this DSH is 0.2.1-alpha.3)')
+    await expect(f.manager.update('dsh-mnemon')).rejects.toThrow('DSH could not install dsh-mnemon@0.5.22: incompatible-version (requires DSH ^0.3.0, @deepseek-ai/dsh-app-boot ^0.3.0; this DSH is 0.2.1-rc.1)')
     // DSH restored the profile, so this Host still runs and records the version it had.
     expect(f.manager.currentDshMnemonVersion).toBe('0.5.21')
     expect(f.manager.restartStatus()).toBeUndefined()
@@ -759,7 +760,7 @@ describe('Starter updates through DSH\'s plugin manager', () => {
     // DSH restores the profile record when an install fails; files it downloaded can stay.
     const f = profileFixture({ installer: { installBundle: vi.fn(async (): Promise<DshBundleChange> => {
       json(join(f.profile, 'node_modules', 'dsh-mnemon', 'package.json'), { name: 'dsh-mnemon', version: '0.5.22' })
-      return { application: 'failed', error: { code: 'incompatible-version', incompatible: [{ runtimeVersion: '0.1.7-rc.2', peers: { '@deepseek-ai/dsh': '^0.2.0' } }] } }
+      return { application: 'failed', error: { code: 'incompatible-version', incompatible: [{ runtimeVersion: '0.2.0-rc.2', peers: { '@deepseek-ai/dsh': '^0.3.0' } }] } }
     }) } })
     await expect(f.manager.update('dsh-mnemon')).rejects.toThrow('incompatible-version')
     await expect(f.starter()).resolves.toMatchObject({ current: '0.5.21', latest: '0.5.22', outdated: true, restartRequired: false })

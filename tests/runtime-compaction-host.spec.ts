@@ -1,5 +1,3 @@
-import { realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
@@ -17,8 +15,8 @@ import { MnemonLifecycle } from '../src/host/lifecycle.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { compositionFixture } from './fixtures/composition.ts'
+import { loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 
-const requireDsh = createRequire(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
 const spawn = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-spawn-in-process'))
 
 type Reply = string | { name: string; args: Record<string, unknown> }
@@ -68,6 +66,7 @@ it('compacts a full USER.md through a memory subagent and keeps the parent conve
     await ctx.plugin(ToolRuntime, { mode: 'native' })
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await loadWorkingDirectory(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(spawn, { providerName: 'spawn' })
     ctx.llm.registerAdapter(['mock'], new ScriptedAdapter(options => {
@@ -103,8 +102,8 @@ it('compacts a full USER.md through a memory subagent and keeps the parent conve
 
     expect(writes.map(write => write.isError)).toEqual([false, false, false])
     expect(children).toHaveLength(1)
-    // The child sees only its result tool and Mnemon's instructions, never the parent's memory tools; from
-    // DSH 0.2.1-alpha.3 Mnemon registers both in the child's own scope.
+    // The child sees only its result tool and Mnemon's instructions, never the parent's memory tools; on
+    // DSH 0.2.1 Mnemon registers both in the child's own scope.
     expect(childTools).toEqual([['mnemon_subagent_result']])
     const child = children[0]!
     await vi.waitFor(() => expect(ctx.agents.get(child.id)).toBeUndefined(), { timeout: 5_000 })

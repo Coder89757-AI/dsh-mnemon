@@ -32,7 +32,7 @@ function store<T>(value: T) {
   return { getSnapshot: () => value, subscribe: () => () => {} }
 }
 
-const pkg: PluginPackageRef = { name: 'dsh-mnemon', installed: true, enabled: true, rows: [{ rowId: 'mnemon', moduleName: 'dsh-mnemon', enabled: true }] }
+const pkg: PluginPackageRef = { name: 'dsh-mnemon', installed: true, availability: 'profile', official: false, enabled: true, rows: [{ rowId: 'mnemon', moduleName: 'dsh-mnemon', enabled: true }] }
 const bundle = (overrides: Partial<PluginPackageRef> = {}): PluginsSubject => ({ kind: 'bundle', pkg: { ...pkg, ...overrides } })
 
 describe('dsh-mnemon page under DSH Plugins', () => {

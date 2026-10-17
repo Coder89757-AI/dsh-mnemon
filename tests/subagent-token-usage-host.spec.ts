@@ -44,7 +44,7 @@ function harness() {
 
 function descriptor(session: Session) {
   return session.append('subagent/descriptor', snapshotSubagentDescriptor({
-    mode: 'one-shot', provider: 'fixture', label: 'Projection regression',
+    mode: 'continuable', provider: 'fixture', label: 'Projection regression',
   }))
 }
 

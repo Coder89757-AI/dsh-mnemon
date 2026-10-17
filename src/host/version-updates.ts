@@ -68,8 +68,8 @@ export interface DshPluginCommandResult {
   logPath?: string
   kind?: string
   timedOut?: boolean
-  /** The packages the running DSH refused, with the DSH their peers need. */
-  incompatible?: ReadonlyArray<{ runtimeVersion?: string; peers?: Readonly<Record<string, string>> }>
+  /** The packages the running DSH refused, with the DSH they need. */
+  incompatible?: ReadonlyArray<DshIncompatibility>
 }
 
 /** What a DSH launcher records about the profile it runs (`ctx.profileContext`). */
@@ -89,9 +89,9 @@ function profileContextOf(value: unknown): DshProfileContext | undefined {
 }
 
 /**
- * The `dsh plugin` command of the DSH this Host runs in, from `@deepseek-ai/dsh-plugin-manager/operations`
- * (DSH 0.2.0 and later), which DSH's runtime resolution supplies to every profile. Undefined where the
- * launcher records no profile or the installation does not export the command.
+ * The `dsh plugin` command of the DSH this Host runs in, from `@deepseek-ai/dsh-plugin-manager/operations`,
+ * which DSH's runtime resolution supplies to every profile. Undefined where the launcher records no
+ * profile or the installation does not export the command.
  */
 export async function dshPluginCommand(profileContext: unknown): Promise<DshPluginCommand | undefined> {
   const profile = profileContextOf(profileContext)
@@ -120,9 +120,9 @@ export async function dshPluginCommand(profileContext: unknown): Promise<DshPlug
  * (a packaged app's bundled pnpm), registry fallbacks and lock. It checks the new
  * version's DSH peers and restores the profile files when it fails. Upgrading an
  * installed bundle reports `restart-required` without reloading it, and
- * `enabled: false` leaves the profile's bundle selection alone. Identical in DSH
- * 0.1.7-rc.2 and 0.2.0. From 0.2.1-alpha.3 a profile with hot reload refuses to
- * install over a package it has (`already-installed`): there another version
+ * `enabled: false` leaves the profile's bundle selection alone. On DSH 0.2.1 a
+ * profile with hot reload refuses to install over a package it has
+ * (`already-installed`): there another version
  * replaces it only after it is removed, which would stop this plugin mid-update,
  * so the update runs DSH's own `dsh plugin add` instead.
  */
@@ -131,12 +131,22 @@ export interface DshBundleInstaller {
   listBundles(): Promise<ReadonlyArray<{ name: string; version?: string }>>
 }
 
+/**
+ * A package the running DSH refused. DSH 0.2.1 names what it needs `requirements`,
+ * keyed `engines.dsh` or by DSH peer package; DSH 0.2.0 names the peers alone `peers`.
+ */
+export interface DshIncompatibility {
+  runtimeVersion?: string
+  requirements?: Readonly<Record<string, string>>
+  peers?: Readonly<Record<string, string>>
+}
+
 export interface DshBundleChange {
   application: 'applied' | 'restart-required' | 'overridden' | 'failed' | 'cancelled'
   error?: {
     code?: string
     diagnostic?: string
-    incompatible?: ReadonlyArray<{ runtimeVersion?: string; peers?: Readonly<Record<string, string>> }>
+    incompatible?: ReadonlyArray<DshIncompatibility>
   }
   packageResult?: { output?: string; logPath?: string; kind?: string }
 }
@@ -373,7 +383,8 @@ async function resultOrThrow(runner: ProcessRunner, command: string, args: reado
 function dshFailure(change: DshBundleChange): string {
   const reason = change.error?.code ?? change.application
   const incompatible = change.error?.incompatible ?? []
-  const peers = incompatible.flatMap(plugin => Object.entries(plugin.peers ?? {}).map(([name, range]) => `${name} ${range}`))
+  const peers = incompatible.flatMap(plugin => Object.entries(plugin.requirements ?? plugin.peers ?? {})
+    .map(([name, range]) => `${name === 'engines.dsh' ? 'DSH' : name} ${range}`))
   if (peers.length > 0) {
     const runtime = incompatible.find(plugin => plugin.runtimeVersion !== undefined)?.runtimeVersion
     return `${reason} (requires ${peers.join(', ')}${runtime === undefined ? '' : `; this DSH is ${runtime}`})`
@@ -781,7 +792,7 @@ export class VersionUpdateManager {
   }
 
   /**
-   * DSH 0.2.1-alpha.3 with hot reload replaces an installed package only after removing it, which would
+   * DSH 0.2.1 with hot reload replaces an installed package only after removing it, which would
    * stop this plugin mid-update. `dsh plugin add` replaces it in place under the profile's lock, after
    * DSH's compatibility check; the new version loads at the next restart, or at DSH's next profile
    * recomposition, which replaces plugins whose files changed.
