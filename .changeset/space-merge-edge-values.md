@@ -1,0 +1,5 @@
+---
+"dsh-mnemon": patch
+---
+
+Git sync no longer adds a copy of a Memory Space when the two sides hold the same memories and links and differ only in values Mnemon writes again. Merging spaces, including merging an earlier sync copy back, rewrites the weight, note and time of every link both spaces hold, and filling in vectors once the embedding service answers again (`mnemon embed`) or keeping a memory from pruning (`mnemon gc --keep`) rewrites the memories' update times, while the branch still holds them as published. The next sync could not merge the two versions and kept the branch's version as a new, active space beside this one: a duplicate that recall then read from as well. A link is now the two memories it joins and its type, and a memory's update time no longer takes part in the comparison; the same link with other values keeps this machine's values, and the memories and links only the other machine added still arrive. Update every machine that syncs the repository: one still on an earlier version keeps adding these copies itself.

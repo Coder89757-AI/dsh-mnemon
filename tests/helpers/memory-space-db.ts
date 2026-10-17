@@ -35,11 +35,19 @@ CREATE TRIGGER set_insight_stored_at AFTER INSERT ON insights WHEN NEW.stored_at
   BEGIN UPDATE insights SET stored_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id; END;
 `
 
+/** What an edge carries besides the memories it links, as Mnemon writes it. */
+export interface SpaceEdge {
+  type?: string
+  weight?: number
+  metadata?: string
+  createdAt?: string
+}
+
 /**
  * A `mnemon.db` with Mnemon 0.2.10's schema, in WAL mode and checkpointed as a settled space is.
  * `reads` appends read-log rows the way a recall, search or show does.
  */
-export function writeSpace(path: string, options: { insights: SpaceInsight[]; edges?: Array<[string, string]>; reads?: number }): void {
+export function writeSpace(path: string, options: { insights: SpaceInsight[]; edges?: Array<[string, string] | [string, string, SpaceEdge]>; reads?: number }): void {
   if (sqlite === undefined) throw new Error('node:sqlite is not available')
   for (const suffix of ['', '-wal', '-shm']) rmSync(path + suffix, { force: true })
   const database = new sqlite.DatabaseSync(path)
@@ -53,8 +61,9 @@ export function writeSpace(path: string, options: { insights: SpaceInsight[]; ed
       insight.accessedAt ?? null, insight.embedding ?? null, insight.effectiveImportance ?? 0.6)
     database.prepare("INSERT INTO oplog (operation, insight_id, detail, created_at) VALUES ('remember', ?, '{}', ?)").run(insight.id, at)
   }
-  for (const [source, target] of options.edges ?? []) {
-    database.prepare("INSERT INTO edges VALUES (?, ?, 'semantic', 0.8, '{}', ?)").run(source, target, at)
+  for (const [source, target, edge] of options.edges ?? []) {
+    database.prepare('INSERT INTO edges VALUES (?, ?, ?, ?, ?, ?)')
+      .run(source, target, edge?.type ?? 'semantic', edge?.weight ?? 0.8, edge?.metadata ?? '{}', edge?.createdAt ?? at)
   }
   for (let read = 0; read < (options.reads ?? 0); read += 1) {
     database.prepare("INSERT INTO oplog (operation, insight_id, detail, created_at) VALUES ('recall', NULL, '{}', ?)").run(at)
