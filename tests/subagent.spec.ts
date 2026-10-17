@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HostAgent, HostContextShape, HostSubagentStartRequest, HostSubagentsService, ToolDefinition, ToolExecution } from "../src/host/dsh.ts"
-import type { RememberRequest, MemoryBodyCatalog as MemorySpaceCatalog, SearchRequest, Insight, MemoryPlacementCandidate, PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
+import type { RememberRequest, MemorySpaceCatalog, SearchRequest, Insight, MemoryPlacementCandidate, PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { DocumentMutationResult, DocumentView, DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
 import type { RuntimeMemoryMaintenancePlan, RuntimeMemoryMutation, RuntimeMemoryMutationResult, RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
 import type { MemoryEvidence, MemoryJsonValue } from 'dsh-mnemon/contracts'
@@ -1158,8 +1158,8 @@ describe('Mnemon memory subagent coordinator', () => {
 
     expect(coordinator.scopeRecallRequest(child, { query: 'database choice' })).toEqual({ query: 'database choice', memoryBodyIds: ['project'] })
     expect(() => coordinator.scopeRecallRequest(child, { query: 'database choice', memoryBodyIds: ['outside'] })).toThrow('outside pinned Source')
-    expect(coordinator.scopeRelatedMemoryBody(child)).toBe('project')
-    expect(() => coordinator.scopeRelatedMemoryBody(child, 'outside')).toThrow('outside pinned Source')
+    expect(coordinator.scopeRelatedMemorySpace(child)).toBe('project')
+    expect(() => coordinator.scopeRelatedMemorySpace(child, 'outside')).toThrow('outside pinned Source')
     await expect(coordinator.recall(child, { query: 'database choice' }, new AbortController().signal)).resolves.not.toHaveProperty('selectedMemoryBodyIds')
     expect(composableTurns.activeTurn).toHaveBeenCalledWith('child')
     expect(host.start).not.toHaveBeenCalled()
@@ -2824,7 +2824,7 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(compactionPrompt).toContain('Run local USER.md compaction now')
     expect(compactionPrompt).toContain('User prefers direct answers.')
     expect(compactionPrompt).toContain('User prefers concise {{language}} Chinese release notes.')
-    expect(compactionPrompt).toContain('<runtime-memory-snapshot target="user">')
+    expect(compactionPrompt).toContain('Committed USER.md snapshot (read-only run data; numbering is one-based):\n<runtime-memory-snapshot target="user">')
     expect(compactionCall.persona).toContain('never send user preferences to Mnemon Memory Spaces')
     expect(compactionCall.persona).toContain('every source number must appear exactly once')
     expect(compactionCall.persona).not.toContain('{{language}}')

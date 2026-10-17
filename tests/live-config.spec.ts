@@ -47,6 +47,13 @@ describe('live Host configuration', () => {
     expect(result.issues?.some(issue => issue.message.includes(String(message)))).toBe(true)
   })
 
+  it('validates a stored profile that still holds the retired toolviews preference', async () => {
+    const stored = await LiveConfig['~standard'].validate({ conversationInteraction: { toolviews: true, turnBar: false } })
+    expect(stored.issues).toBeUndefined()
+    if (stored.issues) throw new Error('a stored toolviews preference was rejected')
+    expect(plainHostConfig(stored.value).conversationInteraction).toEqual({ toolviews: true, turnBar: false, saveAction: true })
+  })
+
   it('retains schema errors and accepts a valid cross-field configuration', async () => {
     const invalid = await LiveConfig['~standard'].validate({ defaultRecallLimit: 0 })
     expect(invalid.issues?.length).toBeGreaterThan(0)

@@ -22,6 +22,7 @@ import { TurnActivityProjection, type TurnMemoryActivity, type TurnMemoryActivit
 import { applyMemoryViewGuidance } from './guidance.ts'
 import { modelMemoryWake } from './view-presentation.ts'
 import { strategyDrives, viewStrategy } from './strategy-workflows.ts'
+import { mainStrategyTypeId } from './main-strategy.ts'
 import { AgentMemoryTurn, openAgentTurn, type DelegatedMemoryView } from './agent-memory-turn.ts'
 import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, SupervisedWritebackResult, TaskAgentModelCatalog } from "./protocol.ts"
 import type { PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
@@ -456,7 +457,7 @@ class MnemonAgentLifecycle {
    * remains available.
    */
   private strategyDrivesIdleReview(): boolean {
-    const typeId = this.config.memoryTopology.strategyId
+    const typeId = mainStrategyTypeId(this.config)
     if (this.memoryTurn === undefined) return strategyDrives({ typeId }, 'idle-review')
     return this.composedTurn?.typeId === typeId && this.composedTurn.idleReview
   }

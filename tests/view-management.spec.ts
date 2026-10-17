@@ -340,6 +340,15 @@ describe('View configuration with the real pinned DSH Cordis Loader', () => {
     await expect(reader('dashboard', {})).resolves.toMatchObject({ ok: true, value: { pluginInstallation: { supported: true, profileName: 'web' } } })
   })
 
+  it('reports the main Strategy the profile chose on the dashboard, else the default one', async () => {
+    const chosen = await fixture({ strategyTypeId: 'general', entries: {} })
+    await expect(createViewHandler(chosen.live, chosen.engine, chosen.management, 'read')('dashboard', { workspaceId: 'workspace' }))
+      .resolves.toMatchObject({ ok: true, value: { strategyTypeId: 'general' } })
+    const unchosen = await fixture()
+    await expect(createViewHandler(unchosen.live, unchosen.engine, unchosen.management, 'read')('dashboard', { workspaceId: 'workspace' }))
+      .resolves.toMatchObject({ ok: true, value: { strategyTypeId: 'default-three-tier' } })
+  })
+
   it('aligns a listed session whose Agent is not loaded with the workspace DSH lists it under', async () => {
     const f = await fixture()
     const listed = { id: 'workspace', path: f.workspace, title: 'Fixture', sessionIds: ['listed'] }

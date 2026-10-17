@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveMemorySpacesConfig } from '../src/config.ts'
+import { MnemonNativeProvider, definition as nativeDefinition, descriptor as nativeDescriptor } from 'dsh-mnemon-provider-mnemon-native'
 import {
-  MEMORY_PROVIDER_REGISTRY_FILE, MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY,
-  MNEMON_ACTIVE_STORE_FILE, parseMemorySpaceRegistry, summarizeMemoryProviderRegistry, summarizeMemorySpaceRegistry,
+  isNativeProvider, MEMORY_PROVIDER_REGISTRY_FILE, MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_ID_PATTERN,
+  MEMORY_SPACE_NAME_MAX_LENGTH, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY, MNEMON_ACTIVE_STORE_FILE, NATIVE_PROVIDER_ID,
+  parseMemorySpaceRegistry, summarizeMemoryProviderRegistry, summarizeMemorySpaceRegistry,
 } from '../src/contracts.ts'
 import { validateMemorySpaceId } from '../src/memory-spaces.ts'
 import type { ProcessRunner } from '../src/providers/process.ts'
@@ -98,6 +100,38 @@ describe('Memory Spaces storage contracts', () => {
     ]
     for (const [value, message] of refusals) expect(() => parseMemorySpaceRegistry(value), JSON.stringify(value)).toThrow(message)
     expect(parseMemorySpaceRegistry({ version: 1, bodies: [entry({ name: 'n'.repeat(100), description: 'd'.repeat(1000) })] }).bodies).toHaveLength(1)
+  })
+
+  it('limit a space name and description by the rule the registry writes and a copy is read with', async () => {
+    expect([MEMORY_SPACE_NAME_MAX_LENGTH, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH]).toEqual([100, 1000])
+    const dataDir = dataDirectory()
+    mkdirSync(join(dataDir, MEMORY_SPACES_DIRECTORY, 'project'), { recursive: true })
+    writeFileSync(join(dataDir, MEMORY_SPACES_DIRECTORY, 'project', MEMORY_SPACE_DATABASE_FILE), 'database')
+    const { registry } = registryOn(dataDir)
+    const name = 'n'.repeat(MEMORY_SPACE_NAME_MAX_LENGTH)
+    const description = 'd'.repeat(MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)
+    expect(registry.update('project', { name, description })).toMatchObject({ name, description })
+    expect(() => registry.update('project', { name: `${name}n` })).toThrow('name is too long (max 100 characters)')
+    expect(() => registry.update('project', { description: `${description}d` })).toThrow('description is too long (max 1000 characters)')
+    const stored = JSON.parse(readFileSync(registry.registryPath, 'utf8')) as unknown
+    expect(parseMemorySpaceRegistry(stored).bodies).toMatchObject([{ id: 'project', name, description }])
+    // Creating a space checks both before anything else; at the limits, whatever stops this
+    // fixture's create later, it is not their length.
+    await expect(registry.create({ name: `${name}n`, description: 'Facts' })).rejects.toThrow('name is too long (max 100 characters)')
+    await expect(registry.create({ name, description: `${description}d` })).rejects.toThrow('description is too long (max 1000 characters)')
+    expect(await registry.create({ name, description }).then(() => '', (error: unknown) => String(error))).not.toContain('too long')
+  })
+
+  it('name the Mnemon Native Provider as its own package does', () => {
+    expect(NATIVE_PROVIDER_ID).toBe('mnemon-native')
+    expect(nativeDescriptor.id).toBe(NATIVE_PROVIDER_ID)
+    expect(nativeDefinition.manifest.typeId).toBe(NATIVE_PROVIDER_ID)
+    expect(new MnemonNativeProvider({ runJson: vi.fn(), runText: vi.fn() }).id).toBe(NATIVE_PROVIDER_ID)
+    // A child instance keeps the type; an id alone counts only without one.
+    expect(isNativeProvider({ id: NATIVE_PROVIDER_ID })).toBe(true)
+    expect(isNativeProvider({ id: 'local', typeId: NATIVE_PROVIDER_ID })).toBe(true)
+    expect(isNativeProvider({ id: NATIVE_PROVIDER_ID, typeId: 'openviking' })).toBe(false)
+    expect(isNativeProvider({ id: 'openviking' })).toBe(false)
   })
 
   it('summarize a stored registry for an inventory without judging its spaces', () => {

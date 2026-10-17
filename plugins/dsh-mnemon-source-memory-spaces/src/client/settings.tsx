@@ -6,7 +6,7 @@ import {
   type MemoryComponentHost, type MemoryComponentSettingsProps, type MemoryComponentUIContext,
 } from 'dsh-mnemon/client'
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
-import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MNEMON_EMBEDDING_PROTOCOLS, type MnemonEmbeddingConfig, type MnemonEmbeddingFill, type MnemonEmbeddingSpaceStatus, type MnemonEmbeddingStatus } from '../contracts.ts'
+import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MNEMON_EMBEDDING_PROTOCOLS, NATIVE_PROVIDER_ID, type MnemonEmbeddingConfig, type MnemonEmbeddingFill, type MnemonEmbeddingSpaceStatus, type MnemonEmbeddingStatus } from '../contracts.ts'
 import { ProviderIcon } from './ProviderIcon.tsx'
 import { ProviderSettingsSection } from './provider-settings.tsx'
 import { memorySpacesSettingsClient } from './settings-client.ts'
@@ -234,9 +234,9 @@ function SpacesSettings({ page, host }: { page: MemoryComponentSettingsProps; ho
 /** Mnemon Native, listed first among the Providers; its body holds the settings only Native reads. */
 function NativeProviderCard(props: { activeScope: 'global' | 'workspace'; cliMissing: boolean; t: Translate; children: ReactNode }): JSX.Element {
   const css = memorySettingsStyles
-  return <details className={css.providerRow} data-provider="mnemon-native" data-native="">
+  return <details className={css.providerRow} data-provider={NATIVE_PROVIDER_ID} data-native="">
     <summary className={css.providerRowHeader}>
-      <span className={css.providerIdentity}><ProviderIcon providerId="mnemon-native" icon={{ kind: 'brand', value: 'mnemon' }} className={css.providerMark} /><span><strong>{props.t('config.nativeName')}</strong><small>{props.t('config.nativeSummary')}</small></span></span>
+      <span className={css.providerIdentity}><ProviderIcon providerId={NATIVE_PROVIDER_ID} icon={{ kind: 'brand', value: 'mnemon' }} className={css.providerMark} /><span><strong>{props.t('config.nativeName')}</strong><small>{props.t('config.nativeSummary')}</small></span></span>
       <span className={css.providerEnableControl}>
         <span className={css.providerScopeTag} data-scope={props.activeScope}>{props.t(`config.${props.activeScope}`)}</span>
         <span className={css.providerState} data-enabled={props.cliMissing ? undefined : ''}>{props.t(props.cliMissing ? 'config.nativeCliMissing' : 'config.officialNative')}</span>

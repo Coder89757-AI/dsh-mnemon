@@ -6,13 +6,9 @@ import { runProcess, type ProcessRunner } from './process.ts'
 import type { MemoryPluginLoader } from './plugin-management.ts'
 import { parseSemver, resolveExecutable } from './version-updates.ts'
 import type { MemoryPluginInstallResult, MemoryPluginInstallationEnvironment, MemoryPluginInspection, MemoryPluginKind } from './view-protocol.ts'
+import { STARTER_ENHANCEMENT_PACKAGES } from './starter-components.ts'
 
 const PACKAGE = /^(?:@[a-z0-9._-]+\/)?dsh-mnemon-(source|strategy)-[a-z0-9][a-z0-9._-]*$/u
-const SUGGESTIONS = [
-  'dsh-mnemon-strategy-scoped',
-  'dsh-mnemon-strategy-light-context',
-  'dsh-mnemon-strategy-auto-capture',
-] as const
 const FETCH_TIMEOUT_MS = 10_000
 const INSTALL_TIMEOUT_MS = 10 * 60_000
 
@@ -116,7 +112,7 @@ function installed(profile: Profile | undefined, packageName: string): boolean {
 }
 
 export class MemoryPluginInstallation {
-  readonly suggestions = [...SUGGESTIONS]
+  readonly suggestions = [...STARTER_ENHANCEMENT_PACKAGES]
   private readonly runner: ProcessRunner
   private readonly fetcher: (packageName: string, tag: string) => Promise<unknown>
   private readonly command: () => DshCommand | undefined

@@ -7,6 +7,7 @@ import type { MemoryOperationScope } from '../core/contracts/index.ts'
 import type { MemoryPluginManagement } from './plugin-management.ts'
 import type { MemoryPluginInstallation } from './plugin-installation.ts'
 import { MNEMON_VIEW_CHANNEL, MNEMON_VIEW_WRITE_CHANNEL, type MemoryViewConfigurationRequest, type MemoryViewDashboard } from './view-protocol.ts'
+import { mainStrategyTypeId } from './main-strategy.ts'
 
 function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('View request must be an object')
@@ -50,7 +51,7 @@ export function createViewHandler(runtime: LiveMnemonRuntime, engine: MemoryRunt
           ? undefined
           : lifecycle?.turnActivities(sessionId).activities.find(candidate => candidate.turn === current.turn)
         const snapshot = engine.contributionSnapshot()
-        const value: MemoryViewDashboard = { ...catalog, strategyTypeId: config.memoryTopology.strategyId,
+        const value: MemoryViewDashboard = { ...catalog, strategyTypeId: mainStrategyTypeId(config),
           ...(current === undefined ? { currentUnavailable: sessionId === undefined ? 'no-session' as const : !aligned ? 'unaligned' as const : 'not-generated' as const } : { current }),
           ...(activity === undefined ? {} : { activity }),
           sources: snapshot.sources.map(source => ({ sourceInstanceKey: source.instanceKey, sourceTypeId: source.definition.manifest.typeId,

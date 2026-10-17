@@ -182,4 +182,29 @@ describe('Mnemon settings bridge', () => {
 
     await expect(handler('mutate', { namespace: 'mnemon-ui', ops: [{ op: 'set', path: ['toolviews'], value: true }] })).resolves.toMatchObject({ ok: false })
   })
+
+  it('refuses every write to the retired toolviews preference while legacy clients keep their interaction paths', async () => {
+    const mutate = vi.fn(async () => {})
+    const settings = {
+      writable: true,
+      register: vi.fn(),
+      mutate,
+      describe: () => [
+        { ns: 'mnemon', value: {}, revision: 0, applies: 'live' as const },
+        { ns: 'mnemon-ui', value: {}, revision: 0, applies: 'live' as const },
+      ],
+    } as unknown as HostSettingsService
+    const handler = createSettingsHandler(settings)
+    for (const request of [
+      { ops: [{ op: 'set', path: ['conversationInteraction', 'toolviews'], value: true }] },
+      { ops: [{ op: 'unset', path: ['conversationInteraction', 'toolviews'] }] },
+      { namespace: 'mnemon-ui', ops: [{ op: 'unset', path: ['toolviews'] }] },
+    ]) {
+      await expect(handler('mutate', request)).resolves.toMatchObject({ ok: false, error: { code: 'settings-rejected' } })
+    }
+    expect(mutate).not.toHaveBeenCalled()
+    const legacy = { op: 'set', path: ['conversationInteraction', 'turnBar'], value: false }
+    await expect(handler('mutate', { ops: [legacy] })).resolves.toMatchObject({ ok: true })
+    expect(mutate).toHaveBeenCalledWith('mnemon', [legacy], undefined)
+  })
 })

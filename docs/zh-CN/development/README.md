@@ -48,7 +48,7 @@ cordis.patch.yml   default Starter composition
 
 根包拥有 Core/SDK、DSH Host 和默认 Starter，不拥有 Source 存储实现：Host 复制或统计 Source 的文件时，从该 Source 的 `./contracts` 读取其文件名、锁文件与解析器（见[内置存储范围](./architecture.md#内置存储范围)）。`plugins/` 下每个目录都是可独立发布的项目。默认发行包按公开 semver 依赖全部十七个官方插件。Starter 安装通用策略与三个增强，其 Entry 默认停用；`memoryView.strategyTypeId` 记录由哪个主策略组合 View，各组件开关由 DSH 插件管理器记录。Source/Strategy 通过 peer 使用 Core SDK，策略贡献使用其完整 Strategy 的公开 SDK，Provider 使用 Memory Spaces SDK。peer/开发关系会产生包管理器环依赖提示；生产代码导入边界另有独立检查。
 
-不再保留私有工作区包、控制器转发文件、业务 binding 或 compatibility 目录。兼容指用户配置、数据与使用流程，不是延续历史内部符号。
+不再保留私有工作区包、控制器转发文件、业务 binding 或 compatibility 目录。兼容指用户配置、数据与使用流程，不是延续历史内部符号。[兼容登记表](./compatibility-register.md)列出为此保留的代码、保留原因，以及每一项可以移除的条件。
 
 较大改动之前写成的设计计划及其状态见 [docs/plans](../../plans/README.md)（英文）。[scripts/README.md](../../../scripts/README.md)（英文）列出每个脚本与夹具，以及它们的输入和环境变量。[Provider Lab](../../../provider-lab/README.md) 在本机回环地址上运行各第三方 Provider；[tests/fixtures/upgrade](../../../tests/fixtures/upgrade/README.md) 保存 `tests/upgrade.spec.ts` 用来升级的拆分前存储数据。
 

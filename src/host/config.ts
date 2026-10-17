@@ -4,6 +4,7 @@ import { isAbsolute } from 'node:path'
 import { normalizeDisplayMode } from './display-mode.ts'
 import { schema as MemoryViewConfig, preferences as validateMemoryViewPreferences } from './view-preferences.ts'
 import { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
+import { MEMORY_SPACE_ID_PATTERN } from 'dsh-mnemon-source-memory-spaces/contracts'
 
 export { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
 import {
@@ -200,6 +201,10 @@ export const Config: z<Config> = z.object({
   idleReviewMs: z.number().step(1).min(5_000).max(600_000).default(DEFAULT_IDLE_REVIEW_MS),
   idleReview: IdleReviewSchema.default(DEFAULT_IDLE_REVIEW),
   // Conversation surfaces default on and remain independently switchable live.
+  // `toolviews` switches nothing. Its declaration only keeps the form DSH
+  // generates from this schema, and the default it fills in, as they were:
+  // stored values would validate without it, since undeclared keys pass
+  // through. Settings writes refuse it and the resolved config leaves it out.
   conversationInteraction: z.object({
     toolviews: z.boolean().default(false),
     turnBar: z.boolean().default(true),
@@ -345,7 +350,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
   if (requestedPackId !== undefined && selectedPack === undefined) throw new Error(`dsh-mnemon: unknown custom Pack: ${requestedPackId}`)
   const dataDir = selectedPack?.dataDir ?? legacyDataDir
   if (storageScope === 'custom' && dataDir === undefined) throw new Error('dsh-mnemon: a custom dataDir is required when storageScope is custom')
-  if (store !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(store)) {
+  if (store !== undefined && !MEMORY_SPACE_ID_PATTERN.test(store)) {
     throw new Error('dsh-mnemon: store must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
   }
   return {
@@ -371,7 +376,6 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     idleReviewMs: config.idleReviewMs ?? DEFAULT_IDLE_REVIEW_MS,
     idleReview: IdleReviewSchema(config.idleReview ?? {}),
     conversationInteraction: {
-      toolviews: config.conversationInteraction?.toolviews ?? false,
       turnBar: config.conversationInteraction?.turnBar ?? true,
       saveAction: config.conversationInteraction?.saveAction ?? true,
     },

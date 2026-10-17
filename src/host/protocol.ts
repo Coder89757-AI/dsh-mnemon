@@ -29,8 +29,8 @@ import type {
   ResolvedMemoryPersistenceStrategy,
   MemoryProviderRuntimeStatus,
   Source,
-  MemoryBodyStats as MemorySpaceStats,
-  MemoryBodyView as MemorySpaceView,
+  MemorySpaceStats,
+  MemorySpaceView,
 } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { ConnectionHandle as DshClientConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
@@ -203,6 +203,7 @@ export interface ResolvedRuntimeMemoryConfig {
   maintenanceMaxTokens: number
 }
 
+export { STARTER_COMPONENT_ROWS } from './starter-components.ts'
 export { normalizeDisplayMode } from './display-mode.ts'
 export type MnemonDisplayMode = 'sidebar' | 'builtin'
 
@@ -266,6 +267,7 @@ export interface Config {
   idleReviewMs?: number
   idleReview?: Partial<ResolvedIdleReviewConfig>
   conversationInteraction?: {
+    /** @deprecated Switches nothing. Stored profiles may still hold it; the resolved config leaves it out. */
     toolviews?: boolean
     turnBar?: boolean
     saveAction?: boolean
@@ -371,7 +373,6 @@ export interface ResolvedConfig {
   idleReviewMs: number
   idleReview: ResolvedIdleReviewConfig
   conversationInteraction: {
-    toolviews: boolean
     turnBar: boolean
     saveAction: boolean
   }

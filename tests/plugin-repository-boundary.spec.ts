@@ -133,8 +133,9 @@ describe('standalone plugin repository boundary', () => {
     // (tsdown.config.ts), so a component package may reach it only as presentation
     // assets or types. The one exception is what the Starter still draws of Memory
     // Spaces, taken through one module from Memory Spaces' own public client entry:
-    // its settings, as a fallback for a version that registers none, and the Status
-    // page's Provider marks. The package size ceiling no longer guards this.
+    // its settings, as a fallback for a version that registers none, the Status
+    // page's Provider marks and the Mnemon Native Provider's id. The package size
+    // ceiling no longer guards this.
     const gateway = join(root, 'src/client/memory-spaces-client.ts')
     const pending = [join(root, 'src/client/index.ts')]
     const visited = new Set<string>()
