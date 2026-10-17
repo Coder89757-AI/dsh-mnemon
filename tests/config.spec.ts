@@ -153,6 +153,16 @@ describe('Mnemon config and resolution', () => {
       .toMatchObject({ turnBar: false, saveAction: false })
   })
 
+  it('still accepts a stored toolviews preference and leaves it out of the resolved config', () => {
+    for (const toolviews of [true, false]) {
+      const stored = Config({ conversationInteraction: { toolviews, turnBar: false } })
+      expect(stored.conversationInteraction).toEqual({ toolviews, turnBar: false, saveAction: true })
+      expect(resolveConfig(stored).conversationInteraction).toEqual({ turnBar: false, saveAction: true })
+    }
+    expect(Config({}).conversationInteraction).toEqual({ toolviews: false, turnBar: true, saveAction: true })
+    expect(resolveConfig({}).conversationInteraction).toEqual({ turnBar: true, saveAction: true })
+  })
+
   it.each(['builtin', 'sidebar'] as const)('preserves displayMode=%s without changing storage or visibility', displayMode => {
     const legacy = { displayMode, storageScope: 'workspace' as const, tabEnabled: false, writeEnabled: false }
     const parsed = Config(legacy)

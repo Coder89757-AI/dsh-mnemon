@@ -200,6 +200,9 @@ export const Config: z<Config> = z.object({
   idleReviewMs: z.number().step(1).min(5_000).max(600_000).default(DEFAULT_IDLE_REVIEW_MS),
   idleReview: IdleReviewSchema.default(DEFAULT_IDLE_REVIEW),
   // Conversation surfaces default on and remain independently switchable live.
+  // `toolviews` switches nothing: it stays here only so stored profiles and
+  // legacy imports that hold it keep validating. Settings writes refuse it and
+  // the resolved config leaves it out.
   conversationInteraction: z.object({
     toolviews: z.boolean().default(false),
     turnBar: z.boolean().default(true),
@@ -371,7 +374,6 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     idleReviewMs: config.idleReviewMs ?? DEFAULT_IDLE_REVIEW_MS,
     idleReview: IdleReviewSchema(config.idleReview ?? {}),
     conversationInteraction: {
-      toolviews: config.conversationInteraction?.toolviews ?? false,
       turnBar: config.conversationInteraction?.turnBar ?? true,
       saveAction: config.conversationInteraction?.saveAction ?? true,
     },
