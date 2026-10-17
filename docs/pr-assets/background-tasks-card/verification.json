@@ -8,7 +8,10 @@
       "3977b974"
     ],
     "mergeOfMain": "1fb83599",
-    "adjustment": "4a40ace5"
+    "adjustment": [
+      "4a40ace5",
+      "8ab1322a"
+    ]
   },
   "environment": {
     "os": "macOS 15.6 arm64",
@@ -27,21 +30,44 @@
       "main": {
         "conversationA": "deepseek-v4-pro",
         "conversationB": "deepseek-flash",
-        "saveWithSwitchOff": [
+        "saveFollowingGlobal": [
           "deepseek-flash"
         ],
         "steps": [
-          "conversation A picks DeepSeek-V4-Pro",
-          "reply A1",
-          "conversation B picks DeepSeek-V41-Flash",
-          "reply B1",
-          "the two conversations run on different models",
-          "back in 发布流程（会话 A）",
-          "Save to memory 1 ran a task Agent",
-          "switch off: A's task asks for the DSH default, the model B picked last",
-          "Status has no background task route",
-          "the Layered page has no conversation switch",
-          "browser console errors"
+          {
+            "step": "conversation A picks /^DeepSeek-V4-Pro$/u"
+          },
+          {
+            "step": "reply A1"
+          },
+          {
+            "step": "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u"
+          },
+          {
+            "step": "reply B1"
+          },
+          {
+            "step": "the two conversations run on different models"
+          },
+          {
+            "step": "back in 发布流程（会话 A）"
+          },
+          {
+            "step": "Save to memory 1 ran a task Agent"
+          },
+          {
+            "step": "following global: A's task asks for the DSH default, the model B picked last"
+          },
+          {
+            "step": "the Layered page offers two choices",
+            "choices": [
+              "跟随主链路 / 使用 DSH 新会话默认模型",
+              "指定模型 / 为后台任务和子代理委托固定 Provider 与模型"
+            ]
+          },
+          {
+            "step": "browser console errors"
+          }
         ],
         "allStepsPassed": true,
         "modelRequests": [
@@ -90,46 +116,73 @@
       "branch": {
         "conversationA": "deepseek-v4-pro",
         "conversationB": "deepseek-flash",
-        "saveWithSwitchOff": [
+        "saveFollowingGlobal": [
           "deepseek-flash"
         ],
-        "saveWithSwitchOn": [
+        "saveFollowingTheConversation": [
           "deepseek-v4-pro"
         ],
-        "statusStates": {
-          "Status states the route and where it comes from": [
-            "deepseek-official / deepseek-flash",
-            "DSH 默认模型"
-          ],
-          "Status now states A's own model": [
-            "deepseek-official / deepseek-v4-pro",
-            "会话的模型"
-          ]
-        },
-        "storedSetting": [
-          "taskAgentModel:",
-          "      mode: inherit",
-          "      followConversation: true"
-        ],
         "steps": [
-          "conversation A picks /^DeepSeek-V4-Pro$/u",
-          "reply A1",
-          "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u",
-          "reply B1",
-          "the two conversations run on different models",
-          "back in 发布流程（会话 A）",
-          "Save to memory 1 ran a task Agent",
-          "switch off: A's task asks for the DSH default, the model B picked last",
-          "Status states the route and where it comes from",
-          "the gear opens the choice with the switch off",
-          "the switch is stored with the inherited route",
-          "Status now states A's own model",
-          "back in 发布流程（会话 A）",
-          "reply A2",
-          "Save to memory 2 ran a task Agent",
-          "switch on: A's task asks for A's own model",
-          "the Layered page reads the same switch",
-          "browser console errors"
+          {
+            "step": "conversation A picks /^DeepSeek-V4-Pro$/u"
+          },
+          {
+            "step": "reply A1"
+          },
+          {
+            "step": "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u"
+          },
+          {
+            "step": "reply B1"
+          },
+          {
+            "step": "the two conversations run on different models"
+          },
+          {
+            "step": "back in 发布流程（会话 A）"
+          },
+          {
+            "step": "Save to memory 1 ran a task Agent"
+          },
+          {
+            "step": "following global: A's task asks for the DSH default, the model B picked last"
+          },
+          {
+            "step": "following global states the new-session model",
+            "stated": "当前将使用\ndeepseek-official / deepseek-flash\n新会话模型"
+          },
+          {
+            "step": "the Layered page offers three choices",
+            "choices": [
+              "跟随全局 / 跟随新会话的模型",
+              "跟随会话 / 跟随当前会话使用的模型",
+              "自定义 / 指定模型"
+            ]
+          },
+          {
+            "step": "following the conversation states A's own model",
+            "stated": "当前将使用\ndeepseek-official / deepseek-v4-pro\n当前会话",
+            "choice": "跟随会话"
+          },
+          {
+            "step": "the choice is stored as an inherited route that follows the conversation",
+            "taskAgentModel": "taskAgentModel:\n      mode: inherit\n      followConversation: true\n"
+          },
+          {
+            "step": "back in 发布流程（会话 A）"
+          },
+          {
+            "step": "reply A2"
+          },
+          {
+            "step": "Save to memory 2 ran a task Agent"
+          },
+          {
+            "step": "following the conversation: A's task asks for A's own model"
+          },
+          {
+            "step": "browser console errors"
+          }
         ],
         "allStepsPassed": true,
         "modelRequests": [
@@ -200,46 +253,73 @@
       "branch": {
         "conversationA": "deepseek-v4-pro",
         "conversationB": "deepseek-flash",
-        "saveWithSwitchOff": [
+        "saveFollowingGlobal": [
           "deepseek-flash"
         ],
-        "saveWithSwitchOn": [
+        "saveFollowingTheConversation": [
           "deepseek-v4-pro"
         ],
-        "statusStates": {
-          "Status states the route and where it comes from": [
-            "deepseek-official / deepseek-flash",
-            "DSH 默认模型"
-          ],
-          "Status now states A's own model": [
-            "deepseek-official / deepseek-v4-pro",
-            "会话的模型"
-          ]
-        },
-        "storedSetting": [
-          "taskAgentModel:",
-          "      mode: inherit",
-          "      followConversation: true"
-        ],
         "steps": [
-          "conversation A picks /^DeepSeek-V4-Pro$/u",
-          "reply A1",
-          "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u",
-          "reply B1",
-          "the two conversations run on different models",
-          "back in 发布流程（会话 A）",
-          "Save to memory 1 ran a task Agent",
-          "switch off: A's task asks for the DSH default, the model B picked last",
-          "Status states the route and where it comes from",
-          "the gear opens the choice with the switch off",
-          "the switch is stored with the inherited route",
-          "Status now states A's own model",
-          "back in 发布流程（会话 A）",
-          "reply A2",
-          "Save to memory 2 ran a task Agent",
-          "switch on: A's task asks for A's own model",
-          "the Layered page reads the same switch",
-          "browser console errors"
+          {
+            "step": "conversation A picks /^DeepSeek-V4-Pro$/u"
+          },
+          {
+            "step": "reply A1"
+          },
+          {
+            "step": "conversation B picks /^DeepSeek-V4\\.?1-Flash$/u"
+          },
+          {
+            "step": "reply B1"
+          },
+          {
+            "step": "the two conversations run on different models"
+          },
+          {
+            "step": "back in 发布流程（会话 A）"
+          },
+          {
+            "step": "Save to memory 1 ran a task Agent"
+          },
+          {
+            "step": "following global: A's task asks for the DSH default, the model B picked last"
+          },
+          {
+            "step": "following global states the new-session model",
+            "stated": "当前将使用\ndeepseek-official / deepseek-flash\n新会话模型"
+          },
+          {
+            "step": "the Layered page offers three choices",
+            "choices": [
+              "跟随全局 / 跟随新会话的模型",
+              "跟随会话 / 跟随当前会话使用的模型",
+              "自定义 / 指定模型"
+            ]
+          },
+          {
+            "step": "following the conversation states A's own model",
+            "stated": "当前将使用\ndeepseek-official / deepseek-v4-pro\n当前会话",
+            "choice": "跟随会话"
+          },
+          {
+            "step": "the choice is stored as an inherited route that follows the conversation",
+            "taskAgentModel": "taskAgentModel:\n      mode: inherit\n      followConversation: true\n"
+          },
+          {
+            "step": "back in 发布流程（会话 A）"
+          },
+          {
+            "step": "reply A2"
+          },
+          {
+            "step": "Save to memory 2 ran a task Agent"
+          },
+          {
+            "step": "following the conversation: A's task asks for A's own model"
+          },
+          {
+            "step": "browser console errors"
+          }
         ],
         "allStepsPassed": true,
         "modelRequests": [
@@ -314,16 +394,19 @@
       "tests/lifecycle.spec.ts: follows the conversation that asked for the work once its inherited route is switched to follow it (reasoning effort included)",
       "tests/lifecycle.spec.ts: never borrows another open conversation's model, and takes a conversation's creation route before its first request",
       "tests/lifecycle.spec.ts: two catalog cases now expect the inherited route",
-      "tests/client-settings.spec.tsx: asks for the route of the conversation the page was opened from, and follows it only with the switch on",
-      "tests/client-workbench-background.spec.tsx: nine cases for the stated route and the gear, the switch on and off, a fixed model, a change made elsewhere, giving up a fixed model, reading only the route until the gear opens and the whole directory on Read again, the route without a DSH default and before the settings are read, a failed read, and a page without the settings grant"
+      "tests/client-settings.spec.tsx: follows the conversation the page was opened from only once that is chosen, and reads a choice stored elsewhere",
+      "tests/client-settings.spec.tsx: keeps following the conversation when a custom model is given up before it was written",
+      "tests/client-settings.spec.tsx: reads the whole directory again for a custom route after a failed read",
+      "tests/client-settings.spec.tsx: states the route the Host takes without a DSH default, and the Host's route before the settings are read",
+      "tests/client-settings.spec.tsx: three older cases use the renamed choices"
     ],
     "onFirstVersion": {
       "revision": "1fb83599",
-      "failing": 14,
-      "note": "12 new or rewritten cases, and the 2 older catalog cases that now expect the inherited route",
+      "failing": 13,
+      "note": "8 for what they check; 3 only because the choices were renamed and 2 only because the catalog now reports the inherited route",
       "examples": [
         "a task asked from session-2, which is not open, took session-1's ai / space-bunny (source session) instead of deepseek / deepseek-chat",
-        "a fixed route stored on another page did not show on the status page"
+        "a route stored elsewhere did not show on the page that had already read the settings"
       ]
     }
   },
@@ -343,17 +426,42 @@
       "the stated route could differ from the Host's without a DSH default, or before the page had the settings",
       "the switch took provider and model but not the reasoning effort DSH gives delegated work"
     ],
-    "failingThereNow": 8
+    "failingThereNow": 8,
+    "note": "The findings about the status page went with it; the others are covered on the Layered strategy page."
   },
   "verify": {
     "command": "pnpm run verify (Node 24.19.0, pnpm 11.25.0)",
-    "rootTests": "2,025 passed, 6 skipped",
-    "package": "59 files, 1,990,405 unpacked bytes, under the 2,500,000-byte ceiling",
+    "rootTests": "2,019 passed, 6 skipped",
+    "package": "59 files, 1,984,169 unpacked bytes, under the 2,500,000-byte ceiling",
     "also": [
       "docs, typecheck and the deterministic build",
       "every plugin's build, typecheck and tests",
       "Headless activation and the legacy settings import",
       "publint and attw"
     ]
-  }
+  },
+  "choices": {
+    "Follow global": {
+      "stored": {
+        "mode": "inherit"
+      },
+      "route": "the model DSH keeps for new sessions (the one picked last), else an open Agent's creation route"
+    },
+    "Follow the conversation": {
+      "stored": {
+        "mode": "inherit",
+        "followConversation": true
+      },
+      "route": "the route DSH gives the asking conversation's own delegated work, while it is open; else Follow global"
+    },
+    "Custom": {
+      "stored": {
+        "mode": "fixed",
+        "provider": "...",
+        "model": "..."
+      },
+      "route": "the chosen Provider and model"
+    }
+  },
+  "statusPage": "The first version and the first adjustment put the route on the Memory System status page; it moved back to the Layered strategy page under Plugins, where the setting already was, and Status is as on main."
 }
