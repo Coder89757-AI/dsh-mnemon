@@ -1,20 +1,21 @@
 import { isWorkspaceStorageScope } from '../host/protocol.ts'
 import { isDefaultSourceInstance } from '../host/protocol.ts'
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { IconChevronLeftOutline14, IconRefreshOutlineRegular, IconSettingsOutlineRegular } from './ui-icons.ts'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { consumeMnemonAnchor, subscribeMnemonAnchor, type MnemonAnchor } from "./anchor.ts"
 
-import { type ClientConnectionHandle, type ClientSettingsScope, type Config, type JsonValue, type MemorySourceManagementCatalog, type MemorySourceManagementInstance, type StatusView, type StorageAreaInventory, type StorageScopeKind, type VersionRestartStatus } from "../host/protocol.ts"
+import { type ClientConnectionHandle, type ClientSettingsScope, type Config, type JsonValue, type MemorySourceManagementInstance, type StorageAreaInventory, type StorageScopeKind, type VersionRestartStatus } from "../host/protocol.ts"
 import type { MemoryPluginEntryView, MemoryViewDashboard } from '../host/view-protocol.ts'
 import { MnemonClient } from "./api.ts"
 import { isRemoteConnection } from "./remote-rpc.ts"
 import { StatusPage, storageScopeLabel, type ComponentCard, type LayerState } from './StatusPage.tsx'
 import { SourceManagementPage } from './SourceManagementPage.tsx'
+import { useWorkspaceStatus } from './use-workspace-status.ts'
+import { useSourceCatalog } from './use-source-catalog.ts'
+import { managedSourceTypeId, sourcePageEntryId, stoppedSourceTypeId, useWorkspaceNavigation, type Page, type SourceNavigationEntry } from './use-workspace-navigation.ts'
 import { translateZh, type MnemonTranslate } from "./locales.ts"
 
 import { MNEMON_SOURCE_PAGE_SLOT, type MemorySourcePageDirectory, type MemorySourcePageEntry } from "./source-pages.tsx"
-import type { MnemonSourceManagementClient } from "./dsh-context.ts"
 import type { MnemonActionSeat } from './action-seat.ts'
 import type { MnemonChangeSignal } from './change-signal.ts'
 import type { MnemonDisplayMode } from '../host/protocol.ts'
@@ -31,7 +32,7 @@ import { SelectField } from './page-controls.tsx'
 import { jsonRecord } from './is-record.ts'
 import sidebarCss from './MnemonSidebarView.module.css'
 import css from "./MnemonView.module.css"
-import { I18nContext, LocaleContext, useT, useLocale, message, PageHeader, EmptyState } from "./page-kit.tsx"
+import { I18nContext, LocaleContext, useT, useLocale, PageHeader, EmptyState } from "./page-kit.tsx"
 
 interface MnemonWorkbenchProps {
   connection: ClientConnectionHandle
@@ -70,44 +71,11 @@ export interface MnemonWorkspaceSelection {
   onAlign(): void
 }
 
-type SourcePage = `source:${string}`
-
-type ManagedSourcePage = `source-management:${string}`
-
-/** A configured memory layer whose Source is not running, so it has no page of its own to show. */
-type StoppedSourcePage = `source-stopped:${string}`
-
-type Page = 'status' | SourcePage | ManagedSourcePage | StoppedSourcePage
-
 const EMPTY_SOURCE_PAGE_SNAPSHOT: readonly MemorySourcePageEntry[] = Object.freeze([])
 
 const EMPTY_SOURCE_PAGE_DIRECTORY: MemorySourcePageDirectory = {
   getSnapshot: () => EMPTY_SOURCE_PAGE_SNAPSHOT,
   subscribe: () => () => {},
-}
-
-function sourcePage(entryId: string): SourcePage {
-  return `source:${entryId}`
-}
-
-function sourcePageEntryId(page: Page): string | undefined {
-  return page.startsWith('source:') ? page.slice('source:'.length) : undefined
-}
-
-function managedSourcePage(sourceTypeId: string): ManagedSourcePage {
-  return `source-management:${sourceTypeId}`
-}
-
-function managedSourceTypeId(page: Page): string | undefined {
-  return page.startsWith('source-management:') ? page.slice('source-management:'.length) : undefined
-}
-
-function stoppedSourcePage(sourceTypeId: string): StoppedSourcePage {
-  return `source-stopped:${sourceTypeId}`
-}
-
-function stoppedSourceTypeId(page: Page): string | undefined {
-  return page.startsWith('source-stopped:') ? page.slice('source-stopped:'.length) : undefined
 }
 
 /**
@@ -144,30 +112,6 @@ function CompositionStatus(props: { tone: StateDotState; label: string; strategy
   </span>
 }
 
-function bindSourceManagementClient(client: MnemonClient, instance: MemorySourceManagementInstance, taskClient: MnemonClient): MnemonSourceManagementClient {
-  return {
-    sourceInstanceKey: instance.sourceInstanceKey,
-    revision: instance.revision,
-    ...(instance.assistance === undefined || instance.assistance.length === 0 ? {} : { assistance: {
-      operations: instance.assistance,
-      execute: (operation: string, input: JsonValue, options: { expectedRevision: string; confirmed: boolean }) => {
-        // These clean task-Agent workflows follow the inspected Sidebar root;
-        // normal Source edits keep their existing session-aware write path.
-        const task = ['agent-search', 'supervise', 'body-create', 'body-metadata-maintain'].includes(operation)
-        return (task ? taskClient : client).assistSource(instance.sourceInstanceKey, operation, input, options.expectedRevision, options.confirmed)
-      },
-    } }),
-    read: (operation, input = null) => client.readSourceManagement(instance.sourceInstanceKey, operation, input),
-    mutate: (operation, input, options) => client.mutateSourceManagement(
-      instance.sourceInstanceKey,
-      operation,
-      input,
-      options.expectedRevision ?? instance.revision,
-      options.confirmed,
-    ),
-  }
-}
-
 function SourceDisabledPage(props: { title: string; onOpenConfiguration: (() => void) | undefined }): JSX.Element {
   const t = useT()
   return <div className={css.page}>
@@ -183,19 +127,6 @@ function SourceStoppedPage(props: { title: string; memoryOff: boolean; onOpenCon
     <PageHeader title={props.title} description={t(props.memoryOff ? 'layers.memoryOffDescription' : 'layers.stoppedDescription')} meta={t(props.memoryOff ? 'layers.memoryOffBadge' : 'layers.stoppedBadge')} {...(props.onOpenConfiguration === undefined ? {} : { action: <button type="button" className={css.secondaryButton} onClick={props.onOpenConfiguration}>{t('common.openConfiguration')}</button> })} />
     <EmptyState glyph="⊘" title={t(props.memoryOff ? 'layers.memoryOffTitle' : 'layers.stoppedTitle', { layer: props.title })}>{t(props.memoryOff ? 'layers.memoryOffText' : 'layers.stoppedText')}</EmptyState>
   </div>
-}
-
-interface SourceNavigationEntry {
-  id: string
-  page: Page
-  sourceTypeId?: string
-  label: string
-  detail: string
-  group: 'system' | 'storage' | 'tools' | 'sources'
-  glyph: string
-  primary: boolean
-  /** The layer is on, but its Source is not running. */
-  stopped?: boolean
 }
 
 function WorkspaceNavigation(props: { page: Page; onSelect(page: Page): void; sourcePages: readonly SourceNavigationEntry[]; disabledTypes: ReadonlySet<string>; memoryOff: boolean }): JSX.Element {
@@ -266,12 +197,9 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   const storageContext = settingsSnapshot.revision === undefined ? 'loading'
     : JSON.stringify([settingsSnapshot.value?.storageScope ?? null, settingsSnapshot.value?.dataDir ?? null, settingsSnapshot.value?.runtimeUserScope ?? null])
   const viewContextKey = `${clientContextKey}\u0000${storageContext}`
-  const [page, setPage] = useState<Page>('status')
   const workspaceToast = useToast()
   const showWorkspaceToast = workspaceToast.show
   const canvasRef = useRef<HTMLElement | null>(null)
-
-  const selectPage = useCallback((next: Page) => setPage(next), [])
 
   /** Pages share one plugin-owned scroll container; never mutate DSH ancestor scrollports. */
   const resetViewportScroll = useCallback(() => {
@@ -287,52 +215,10 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
     canvas.scrollTop = Math.max(0, canvas.scrollTop + element.getBoundingClientRect().top - canvas.getBoundingClientRect().top - inset)
   }, [])
 
-  // Reset before paint so a newly selected page never flashes at the previous
-  // page's scroll offset for one frame. The host still owns every ancestor.
-  useLayoutEffect(() => { resetViewportScroll() }, [viewContextKey, page, resetViewportScroll])
-  const [statusState, setStatusState] = useState<{ contextKey: string; value: StatusView | null; loading: boolean; error: string | null }>(() => ({ contextKey: viewContextKey, value: null, loading: true, error: null }))
-  const currentStatusState = statusState.contextKey === viewContextKey
-    ? statusState
-    : { contextKey: viewContextKey, value: null, loading: true, error: null }
-  const status = currentStatusState.value
-  const statusLoading = currentStatusState.loading
-  const statusError = currentStatusState.error
-  const statusRequest = useRef(0)
+  const { status, statusLoading, statusError, loadStatus } = useWorkspaceStatus(client, viewContextKey)
   const [revision, setRevision] = useState(0)
-  const [sourceCatalogState, setSourceCatalogState] = useState<{ contextKey: string; value: MemorySourceManagementCatalog | null; error: string | null }>(() => ({ contextKey: viewContextKey, value: null, error: null }))
+  const { sourceCatalogState, sourceCatalog, sourceInstances, sourceManagementClients, visibleSourcePages, managedSourceTypes } = useSourceCatalog(client, taskClient, revision, viewContextKey, sourcePageEntries)
   const [selectedSourceInstances, setSelectedSourceInstances] = useState<Record<string, string>>({})
-  const [navigationInput, setNavigationInput] = useState<{ page: string; value: JsonValue } | undefined>()
-  /** A tab opens its page fresh; only an anchor carries navigation into a page. */
-  const openTab = useCallback((next: Page) => { setNavigationInput(undefined); setPage(next) }, [])
-
-  useEffect(() => {
-    let active = true
-    void client.sourceManagementCatalog().then(value => {
-      if (active) setSourceCatalogState({ contextKey: viewContextKey, value, error: null })
-    }).catch(reason => {
-      if (active) setSourceCatalogState({ contextKey: viewContextKey, value: null, error: message(reason) })
-    })
-    return () => { active = false }
-  }, [client, revision, viewContextKey])
-
-  const sourceCatalog = sourceCatalogState.contextKey === viewContextKey ? sourceCatalogState.value : null
-  const sourceInstances = sourceCatalog?.sources ?? []
-  const sourceManagementClients = useMemo(() => new Map(sourceInstances
-    .map(source => [source.sourceInstanceKey, bindSourceManagementClient(client, source, taskClient)])), [client, sourceInstances, taskClient])
-  const visibleSourcePages = useMemo(() => {
-    const visibleTypes = new Set(sourceInstances.map(source => source.sourceTypeId))
-    return sourcePageEntries.filter(entry => visibleTypes.has(entry.sourceTypeId))
-  }, [sourceInstances, sourcePageEntries])
-  const managedSourceTypes = useMemo(() => {
-    const byType = new Map<string, MemorySourceManagementInstance[]>()
-    for (const source of sourceInstances) {
-      if (sourcePageEntries.some(entry => entry.sourceTypeId === source.sourceTypeId) && (source.management.fields?.length ?? 0) === 0) continue
-      const current = byType.get(source.sourceTypeId)
-      if (current === undefined) byType.set(source.sourceTypeId, [source])
-      else current.push(source)
-    }
-    return [...byType.entries()].sort(([left], [right]) => left.localeCompare(right))
-  }, [sourceInstances, sourcePageEntries])
   // Configured layers whose Source is not running: its component is off, or
   // nothing is composed. They keep a tab that says so instead of vanishing.
   const stoppedLayers = status?.memorySystem?.configuration.layers
@@ -361,98 +247,10 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   // A stopped layer whose Source component is switched off is off: the
   // configuration shows that component as the layer's own switch.
   const switchedOff = useMemo(() => new Set(dashboard === null ? [] : [...stoppedTypes].filter(id => sourceOf(dashboard, id)?.enabled === false)), [dashboard, stoppedTypes])
-  const sourceNavigationEntries = useMemo<SourceNavigationEntry[]>(() => {
-    const entries: SourceNavigationEntry[] = []
-    const stopped = (sourceTypeId: string, label: string): SourceNavigationEntry => ({
-      id: 'stopped:' + sourceTypeId, page: stoppedSourcePage(sourceTypeId), sourceTypeId, label, detail: sourceTypeId, group: 'sources', glyph: '◇', primary: true, stopped: true,
-    })
-    const stoppedShown = new Set<string>()
-    // A Source's first primary page carries the component's name; its other pages keep their own.
-    const named = new Set<string>()
-    const tabName = (sourceTypeId: string, label: string): string => {
-      if (named.has(sourceTypeId)) return label
-      named.add(sourceTypeId)
-      return sourceName(sourceTypeId, label)
-    }
-    // Registration order, so a layer keeps its place while its Source is stopped.
-    for (const entry of sourcePageEntries) {
-      const primary = entry.navigation?.primary ?? true
-      if (visibleSourcePages.includes(entry)) {
-        entries.push({
-          id: entry.id, page: sourcePage(entry.id), sourceTypeId: entry.sourceTypeId, label: primary ? tabName(entry.sourceTypeId, entry.label) : entry.label,
-          detail: entry.navigation?.detail ?? entry.sourceTypeId, group: entry.navigation?.group ?? 'sources',
-          glyph: entry.navigation?.glyph ?? '◇', primary,
-        })
-      } else if (stoppedTypes.has(entry.sourceTypeId) && !stoppedShown.has(entry.sourceTypeId) && primary) {
-        stoppedShown.add(entry.sourceTypeId)
-        entries.push(stopped(entry.sourceTypeId, tabName(entry.sourceTypeId, entry.label)))
-      }
-    }
-    // A layer whose client pages left with its component keeps its tab, named by that component.
-    for (const sourceTypeId of stoppedTypes) {
-      if (!stoppedShown.has(sourceTypeId) && dashboard !== null && sourceOf(dashboard, sourceTypeId) !== undefined) entries.push(stopped(sourceTypeId, sourceName(sourceTypeId)))
-    }
-    entries.push(...managedSourceTypes.map(([sourceTypeId, instances]) => ({
-      id: 'management:' + sourceTypeId, page: managedSourcePage(sourceTypeId), sourceTypeId,
-      label: sourceName(sourceTypeId, instances[0]!.management.label), detail: sourceTypeId, group: 'sources' as const, glyph: '◇', primary: true,
-    })))
-    return entries
-  }, [dashboard, managedSourceTypes, sourceName, sourcePageEntries, stoppedTypes, visibleSourcePages])
-
-  // A page follows its layer: to the stopped page when its Source stops, and
-  // back to the layer's own page when it runs again.
-  useEffect(() => {
-    if (sourceCatalog === null) return
-    const entryId = sourcePageEntryId(page)
-    const managedTypeId = managedSourceTypeId(page)
-    const stoppedTypeId = stoppedSourceTypeId(page)
-    const whileStopped = (sourceTypeId: string | undefined): Page => sourceTypeId !== undefined && stoppedTypes.has(sourceTypeId) ? stoppedSourcePage(sourceTypeId) : 'status'
-    if (entryId !== undefined && !visibleSourcePages.some(entry => entry.id === entryId)) {
-      setPage(whileStopped(sourcePageEntries.find(entry => entry.id === entryId)?.sourceTypeId))
-    } else if (managedTypeId !== undefined && !managedSourceTypes.some(([sourceTypeId]) => sourceTypeId === managedTypeId)) {
-      setPage(whileStopped(managedTypeId))
-    } else if (stoppedTypeId !== undefined && !stoppedTypes.has(stoppedTypeId)) {
-      const resumed = visibleSourcePages.find(entry => entry.sourceTypeId === stoppedTypeId && (entry.navigation?.primary ?? true))
-      setPage(resumed !== undefined ? sourcePage(resumed.id)
-        : managedSourceTypes.some(([sourceTypeId]) => sourceTypeId === stoppedTypeId) ? managedSourcePage(stoppedTypeId) : 'status')
-      showWorkspaceToast({ text: t('feedback.layerResumed', { layer: sourceName(stoppedTypeId, resumed?.label) }), tone: 'success' })
-    }
-  }, [managedSourceTypes, page, sourcePageEntries, stoppedTypes, visibleSourcePages, sourceCatalog, showWorkspaceToast, sourceName, t])
-
-  useLayoutEffect(() => { setNavigationInput(undefined) }, [viewContextKey])
-
-  /** Anchors address Source page ids; no Source component is imported here. */
-  const applyAnchor = useCallback((anchor: MnemonAnchor) => {
-    setNavigationInput({ page: anchor.page, value: { seed: anchor.seed ?? '', nonce: Date.now() } })
-    selectPage(anchor.page === 'status' ? 'status' : sourcePage(anchor.page))
-  }, [selectPage])
-  useEffect(() => {
-    const held = consumeMnemonAnchor(sessionId)
-    if (held !== null) applyAnchor(held)
-    return subscribeMnemonAnchor(sessionId, applyAnchor)
-  }, [sessionId, applyAnchor])
-
-  const loadStatus = useCallback(async () => {
-    const request = ++statusRequest.current
-    setStatusState(current => ({ contextKey: viewContextKey, value: current.contextKey === viewContextKey ? current.value : null, loading: true, error: null }))
-    try {
-      const summary = await client.statusSummary()
-      if (request !== statusRequest.current) return
-      // A full status also reads the CLI version, which the summary has only after one did.
-      const needsDeepStatus = summary.memoryBodies?.some(body => body.statusLoading === true) === true
-        || summary.commandFound === true && summary.version === undefined
-      setStatusState({ contextKey: viewContextKey, value: summary, loading: needsDeepStatus, error: null })
-      if (!needsDeepStatus) return
-      try {
-        const next = await client.status()
-        if (request === statusRequest.current) setStatusState({ contextKey: viewContextKey, value: next, loading: false, error: null })
-      } catch (reason) {
-        if (request === statusRequest.current) setStatusState({ contextKey: viewContextKey, value: summary, loading: false, error: message(reason) })
-      }
-    } catch (reason) {
-      if (request === statusRequest.current) setStatusState({ contextKey: viewContextKey, value: null, loading: false, error: message(reason) })
-    }
-  }, [client, viewContextKey])
+  const { page, navigationInput, openTab, sourceNavigationEntries } = useWorkspaceNavigation({
+    sessionId, viewContextKey, resetViewportScroll, sourceCatalog, sourcePageEntries, visibleSourcePages, managedSourceTypes, stoppedTypes, dashboard, sourceName, showWorkspaceToast,
+  })
+  // Runs after the catalog and component-name reads, so the three requests keep their order.
   useEffect(() => { void loadStatus() }, [loadStatus])
 
   const mutate = useCallback(() => { setRevision(value => value + 1); void loadStatus() }, [loadStatus])
