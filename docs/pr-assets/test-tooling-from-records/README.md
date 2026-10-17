@@ -64,11 +64,13 @@ Both skip there. Run without the gate as scratch tests before the specs were wri
 | Requests seen | — | Counted in `<port file>.count` | `report` callback | `report` callback; a `Fake embeddings:` line each, run with `node` |
 | Port | Written to a port file | Written to a port file | The caller listens | The caller listens; `--port`, `--port-file` |
 
-`--archive-copies` uses it with the model `fixture-embed` and the same delay, 12 seconds unless `MNEMON_E2E_EMBEDDING_DELAY_MS` says otherwise. The profile gets the same endpoint (`http://127.0.0.1:<port>/v1`), model and protocol as before, and the fixture prints the same `Archive copies:` line per embedding request. What differs is nothing the Mnemon CLI asks for: a route other than the model list and the embeddings now answers 404, and a vector has 8 dimensions, one per hashed word, instead of 256 from a hash of the whole text. The vectors reach the CLI only when the delay is set shorter than the 10 seconds Mnemon allows a CLI call.
+`--archive-copies` uses it with the model `fixture-embed` and the same delay, 12 seconds unless `MNEMON_E2E_EMBEDDING_DELAY_MS` says otherwise. The profile gets the same endpoint (`http://127.0.0.1:<port>/v1`), model and protocol as before, and the fixture prints the same `Archive copies:` line per embedding request. Two things differ. A route other than the model list and the embeddings now answers 404; the Mnemon CLI requests none. And a vector has 8 dimensions, one per hashed word, instead of 256 from a hash of the whole text; vectors reach the CLI only when the delay is set shorter than the 10 seconds Mnemon allows a CLI call.
+
+Run through a linked path, such as `/tmp/...` on macOS, the command now starts. Node runs a script it reaches through a link from its real path, and the entry check compared that with the link, so the script exited without starting. `scripts/fixtures/openviking-protocol.mjs` had the same check and gets the same fix.
 
 Checked:
 
-- `tests/fake-embeddings-fixture.spec.mjs`: both protocols, one vector per input, word overlap and an empty text, a request's own dimensions, the missing model in both protocols, the delay held for embeddings but not for the listing, a client that hangs up, and refused routes and bodies. With `MNEMON_NATIVE_TEST_CLI` set it also runs the Mnemon CLI against it.
+- `tests/fake-embeddings-fixture.spec.mjs`: both protocols, one vector per input, word overlap and an empty text, a request's own dimensions, the missing model in both protocols, the delay held for embeddings but not for the listing, and refused routes and bodies. It also runs the script as a command through a linked path, with `--port-file` and `--delay-ms 60000`: after a client hangs up mid-delay, SIGTERM ends the process within 10 seconds. Without the hang-up handling it is still running then, and with the old entry check it never starts. With `MNEMON_NATIVE_TEST_CLI` set the spec also runs the Mnemon CLI against the service.
 - The Mnemon CLI 0.2.10 in a scratch data directory, three memories remembered while no service answered:
 
 | Service | `embed --status` before | `embed --all` | Requests seen |

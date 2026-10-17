@@ -185,7 +185,7 @@ pnpm e2e:serve
 | `--remember-target` | 预置中文 Lumen 项目（其中「调研归档」空间已停用），除非由 `--docs-demo` 预置。先发送 `remember-target-check`，再发送 `remember-archive-check`。`Remember target:` | [#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387) | [指定的记忆空间](../../pr-assets/issue-387-explicit-space-target/README.zh-CN.md) |
 | `--recall-budget` | 预置中文 Lumen 项目（除非由 `--docs-demo` 预置），并使用一个在同一回合内提出三个不同召回问题的模型。发送 `recall-budget-check`。`Recall budget:` | [#389](https://github.com/omdsh-dev/dsh-mnemon/issues/389) | [召回预算](../../pr-assets/issue-389-recall-budget/README.zh-CN.md) |
 
-`--archive-copies` 的慢速嵌入服务也可以单独运行，供 Mnemon CLI 探测使用，或作为记忆空间页面嵌入设置中的 Endpoint。`node scripts/fixtures/fake-embeddings.mjs` 在 `http://127.0.0.1:<端口>` 提供 Ollama API，在 `http://127.0.0.1:<端口>/v1` 提供 OpenAI 兼容 API，为每段文本返回确定的向量，并为每个嵌入请求输出一行 `Fake embeddings:`：
+`--archive-copies` 的慢速嵌入服务也可以单独运行，供 Mnemon CLI 探测使用，或作为 Mnemon Native 嵌入设置中的 Endpoint。`node scripts/fixtures/fake-embeddings.mjs` 在 `http://127.0.0.1:<端口>` 提供 Ollama API，在 `http://127.0.0.1:<端口>/v1` 提供 OpenAI 兼容 API，为每段文本返回确定的向量，并为每个嵌入请求输出一行 `Fake embeddings:`：
 
 - `--port <n>` 指定端口（默认取空闲端口），`--port-file <文件>` 写入实际使用的端口；
 - `--delay-ms <毫秒>` 让每个嵌入响应延迟返回，模型列表不受影响，如同响应缓慢的服务；

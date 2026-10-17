@@ -64,11 +64,13 @@
 | 请求记录 | — | 计数写入 `<端口文件>.count` | `report` 回调 | `report` 回调；用 `node` 运行时每个请求输出一行 `Fake embeddings:` |
 | 端口 | 写入端口文件 | 写入端口文件 | 由调用方监听 | 由调用方监听；`--port`、`--port-file` |
 
-`--archive-copies` 使用它，模型为 `fixture-embed`，延迟不变（默认 12 秒，可用 `MNEMON_E2E_EMBEDDING_DELAY_MS` 修改）。profile 中的 Endpoint（`http://127.0.0.1:<端口>/v1`）、模型与协议与之前相同，夹具也照旧为每个嵌入请求输出一行 `Archive copies:`。不同之处都不是 Mnemon CLI 会请求的：模型列表与嵌入之外的路径现在返回 404；向量为 8 维、每个词按哈希落到一维，而不是由整段文本的哈希生成的 256 维。只有当延迟被设得短于 Mnemon 给一次 CLI 调用的 10 秒时，向量才会到达 CLI。
+`--archive-copies` 使用它，模型为 `fixture-embed`，延迟不变（默认 12 秒，可用 `MNEMON_E2E_EMBEDDING_DELAY_MS` 修改）。profile 中的 Endpoint（`http://127.0.0.1:<端口>/v1`）、模型与协议与之前相同，夹具也照旧为每个嵌入请求输出一行 `Archive copies:`。有两处不同。模型列表与嵌入之外的路径现在返回 404，Mnemon CLI 不会请求这些路径。向量为 8 维、每个词按哈希落到一维，而不是由整段文本的哈希生成的 256 维；只有当延迟被设得短于 Mnemon 给一次 CLI 调用的 10 秒时，向量才会到达 CLI。
+
+通过链接路径运行时（例如 macOS 上的 `/tmp/...`），这个命令现在能够启动。Node 从真实路径运行通过链接找到的脚本，而入口检查拿它与链接路径比较，于是脚本没有启动就退出了。`scripts/fixtures/openviking-protocol.mjs` 有同样的检查，也做了同样的修正。
 
 检查结果：
 
-- `tests/fake-embeddings-fixture.spec.mjs`：两种协议、每个输入一个向量、词语重叠与空文本、请求自定的维度、两种协议下的缺少模型、嵌入响应延迟而模型列表不延迟、客户端断开，以及被拒绝的路径与请求体。设置 `MNEMON_NATIVE_TEST_CLI` 时，还会让 Mnemon CLI 对着它运行。
+- `tests/fake-embeddings-fixture.spec.mjs`：两种协议、每个输入一个向量、词语重叠与空文本、请求自定的维度、两种协议下的缺少模型、嵌入响应延迟而模型列表不延迟，以及被拒绝的路径与请求体。它还通过链接路径以命令方式运行脚本（`--port-file` 与 `--delay-ms 60000`）：客户端在延迟中途断开后，SIGTERM 在 10 秒内结束进程。去掉断开处理时，进程那时仍在运行；沿用旧的入口检查时，它根本不会启动。设置 `MNEMON_NATIVE_TEST_CLI` 时，这个测试还会让 Mnemon CLI 对着该服务运行。
 - 在临时数据目录中运行 Mnemon CLI 0.2.10，三条记忆在没有嵌入服务应答时写入：
 
 | 服务 | 之前的 `embed --status` | `embed --all` | 收到的请求 |
