@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Seed one Provider Lab Memory Space per Provider through the public plugin composition; see provider-lab/README.md.
 
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
