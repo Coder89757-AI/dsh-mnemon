@@ -82,6 +82,7 @@ export const MNEMON_SETTINGS_NAMESPACE = 'mnemon'
 export const MNEMON_UI_SETTINGS_NAMESPACE = 'mnemon-ui'
 export * from './view-protocol.ts'
 export * from './memory-tools.ts'
+export * from './sync-rules.ts'
 
 /**
  * Every endpoint the Host serves on each channel, by the names both sides use: the client's calls
@@ -763,9 +764,6 @@ export interface MnemonMachineIdentity {
  * which the name then follows, or a name a person typed, which stays as given.
  */
 export type MnemonMachineLabelSource = 'hostname' | 'custom'
-
-/** The longest name an installation carries; a host name past it is shortened. */
-export const MNEMON_MACHINE_LABEL_MAX = 120
 
 /** Which machine wrote one runtime entry, so a merge can tell two installations apart. */
 export interface MnemonEntryOrigin {
