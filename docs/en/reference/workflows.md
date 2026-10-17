@@ -121,7 +121,7 @@ durable candidate
 spawn write worker
        |
        +-- list Memory Spaces
-       +-- choose the narrowest suitable scope
+       +-- the named space, or the narrowest suitable active scope
        +-- recall when duplicate/conflict checking is useful
        +-- create a new scope only for a recurring distinct domain
        +-- remember / link / forget / merge as requested
@@ -130,6 +130,10 @@ structured receipt
 ```
 
 The first Memory Space created in an empty storage root uses Mnemon's native `default` ID; the Host generates later IDs. A successful write to an inactive target activates it. This activation affects only DSH routing, and merging a source database is non-destructive.
+
+When `mnemon_remember` names a Memory Space, the worker writes there or nowhere. The Host checks the named space before the worker starts: an unknown space, one whose Provider is off or takes no writes, and one that is switched off fail at once with the reason. A model that wants a switched-off space back switches it on first with `mnemon_memory_body_update`; a space the user picks on the Memory Spaces page comes back on with the write. A guard DSH attaches to the worker before it runs refuses `mnemon_remember` or `mnemon_link` into any other space, and any creation or change of spaces.
+
+Without a named space, the worker chooses among active spaces and those it creates; the guard refuses a write or a link into a space that was switched off when the run started, and switching such a space on. Saving a memory never merges spaces. Save to memory follows the same rules, so with every space switched off it saves nothing unless the worker creates a space. The result's `memoryBodyIds` are the spaces the Source receipts name, including a write inside a Code Mode program that failed afterwards; a worker that reports a write no receipt shows ends as `unknown`. `activatedMemoryBodyIds` lists a switched-off space the write switched on. A DSH without Agent ownership or scoped tool guards runs the worker unguarded, as before; a worker DSH publishes out of the guard's sight fails the write instead. Once its run has ended, a delegated worker is refused memory tools: DSH 0.2.1 resumes a finished worker from its saved state when another Agent sends it a message, and that worker cannot write again.
 
 Runtime `add` / `replace` / `remove` and Document `create` / `update` do not need a model to perform storage I/O; they enter the deterministic control layer through the coordinator. Only capacity maintenance and archiving start dedicated workers.
 

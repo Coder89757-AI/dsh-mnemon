@@ -758,8 +758,9 @@ export class MnemonLifecycle {
     return this.runTaskAgent(sessionId, root, signal, agent => this.coordinator.answer(agent, query, evidence, signal))
   }
 
+  /** A write the user sent from the page: a space they picked that is switched off comes back on (#387). */
   remember(sessionId: string, request: RememberRequest, signal = new AbortController().signal) {
-    return this.coordinator.remember(this.liveAgent(sessionId), request, signal)
+    return this.coordinator.remember(this.liveAgent(sessionId), request, signal, { activateTarget: true })
   }
 
   runtime(sessionId: string, request: RuntimeMemoryMutation, signal = new AbortController().signal) {
