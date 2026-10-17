@@ -4,7 +4,7 @@
 
 v0.5.31 之后的技术债审计列出了一些小问题：同一件事在几处各写一遍，或者保留着没有写明理由的代码。本改动处理其中五项（L3、L6、L7、L8 与 M5(a)），以及 [Source 拥有自己的存储格式](../source-owned-formats/README.zh-CN.md)（#416）之后仍留在 Host 中的规则副本。这一批改动的维护者规则是：用户和模型看到的内容一律不变。某一项若需要这类改动，或会与进行中的工作冲突，就保持原样，并在下文说明。
 
-测试版本：分支 `claude/small-cleanups`，在 main `f41a121f`（#416）上编写，之后合入 main `d0cf29c0`（#417、#418），2026-10-17（Asia/Shanghai），Node 24.19.0、pnpm 10.13.1，锁定的 DSH 0.2.1-rc.1；根测试另在安装的 DSH 0.2.0-rc.2 上运行。下列检查均在合入后的分支上通过，其中 `verify`、`verify:plugins`、安装的 DSH、Git 同步与 `serve-e2e.mjs` 在合入前也已通过；包对比以及在基础版本 Host 模块上的运行，是在 `f41a121f` 与合入前的本分支之间进行的。
+测试版本：分支 `claude/small-cleanups`，在 main `f41a121f`（#416）上编写，先合入 main `d0cf29c0`（#417、#418），再合入 `ca94e889`（#419，以及把开发基线换成 DSH 0.2.1-rc.2 的 #420），2026-10-17（Asia/Shanghai），Node 24.19.0、pnpm 10.13.1，锁定的 DSH 0.2.1-rc.2；根测试另在安装的 DSH 0.2.0-rc.2 上运行。下列检查均在最终合入的版本上通过，其中 `verify`、`verify:plugins`、安装的 DSH、Git 同步与 `serve-e2e.mjs` 在此前两个状态（合入前，DSH 0.2.1-rc.1）上也已通过；包对比以及在基础版本模块上的运行，都是在 `f41a121f` 与本分支之间进行的。
 
 ## 改动内容
 
@@ -33,7 +33,7 @@ v0.5.31 之后的技术债审计列出了一些小问题：同一件事在几处
 - **浏览器包。** 分别从 main 与本分支构建的 `lib/client.js` 只有两处不同：组件行从 `src/client/starter-rows.ts` 区段移到 `src/host/starter-components.ts`，八项内容相同；`SHIPPED_PACKAGES` 改由这些行生成，不再是写有同样八个包名的字面量（931,923 字节变为 931,666 字节）。
 - **Host 包。** `lib/index.js` 只在各项所述之处不同：`resolveConfig` 中 `toolviews` 那一行、改为调用 `MEMORY_SPACE_ID_PATTERN.test` 的 store 检查、`main-strategy.ts` 的两个函数及其三处调用、改名的辅助函数、用于安装建议的增强列表、快照标题中的 `RUNTIME_PROJECTION_FILES[target]`，以及一处导入的顺序。
 - **记忆空间。** 它的 `lib/client.js` 与 `lib/provider-sdk.js` 逐字节不变；`lib/contracts.js` 增加四个导出，其他 chunk 在原先比较字面量之处调用它们。
-- **新测试放在之前的代码上。** 随附组件测试在 main 的 `component-copy.ts` 上通过；新的 settings 与 live-config 测试在 main 的 Host 模块上通过：`toolviews` 的写入本来就被拒绝，已保存的 profile 本来就能通过校验。config 与旧设置导入测试与 main 的差别只在于解析后的配置不再包含 `toolviews`。提示测试固定了 main 写出的标题文本。
+- **新测试放在之前的代码上。** 随附组件测试在 main 的 `component-copy.ts` 上通过；新的 settings 与 live-config 测试在 main 的 Host 模块上通过：`toolviews` 的写入本来就被拒绝，已保存的 profile 本来就能通过校验。config 与旧设置导入测试与 main 的差别只在于解析后的配置不再包含 `toolviews`。提示测试固定了 main 写出的标题文本；评审后新增的测试（面板中的主策略、schema 中的声明、登记表创建与 Source 请求解析中的上限）在基础版本的模块上同样通过。
 - **脚本。** 三个脚本都无需构建即可加载 `src/host/starter-components.ts`：已在 Node 24.19 与 25.1 上直接导入检查，并由 `verify` 中的 `pnpm run verify:headless`、`verify:plugins`（它两次运行 `verify-headless-profile.mjs`）、Git 同步端到端运行，以及启动 `serve-e2e.mjs` 直到它提供 WebUI 来验证。Node 从 22.18 起无需参数即可运行 `.ts` 文件，开发需要 22.19 或更高版本，CI 中运行这些脚本的地方（`verify:plugins` 与发布工作流）使用 Node 24。
 
 新增与扩展的测试：
@@ -84,11 +84,11 @@ git checkout -- src/host
 | 检查 | 结果 |
 |---|---|
 | Lockfile | `pnpm install --frozen-lockfile --lockfile-only` 不改变 `pnpm-lock.yaml`；清单文件没有改动 |
-| `pnpm run verify` | 合入后通过：文档链接与锚点（4,589 个本地链接、340 个锚点）、类型检查、51 个文件的确定性输出、每个插件的类型检查与测试（17 个包共 577 项通过、3 项跳过；记忆空间 277 项通过、2 项跳过）、根测试（2,059 项通过、6 项跳过，142 个文件）、真实 Headless 启用（38 个工具，其中 8 个属于 Mnemon），含旧设置导入与停用 Starter 的检查、包内容（61 个文件）、导入 15 个 Node 入口并检查 34 个公开类型依赖、publint 与 attw。合入前结果相同，根测试为 2,051 项通过、6 项跳过（141 个文件） |
-| 测试数量 | 根测试新增 10 项（`f41a121f` 上为 2,041 项）。记忆空间新增 3 项（274 项变为 277 项） |
+| `pnpm run verify` | 在最终合入的版本上通过：文档链接与锚点（4,639 个本地链接、346 个锚点）、类型检查、51 个文件的确定性输出、每个插件的类型检查与测试（17 个包共 578 项通过、3 项跳过；记忆空间 278 项通过、2 项跳过）、根测试（2,075 项通过、7 项跳过，146 个文件）、真实 Headless 启用（38 个工具，其中 8 个属于 Mnemon），含旧设置导入与停用 Starter 的检查、包内容（61 个文件）、导入 15 个 Node 入口并检查 34 个公开类型依赖、publint 与 attw。合入前：根测试 2,051 项通过、6 项跳过（141 个文件），插件测试 577 项 |
+| 测试数量 | 根测试新增 12 项（`f41a121f` 上为 2,041 项）。记忆空间新增 4 项（274 项变为 278 项） |
 | `verify:plugins` | 通过：17 个独立插件仓库（各自安装、类型检查、测试与构建）、18 个打包制品、外部消费者（构建、类型检查、测试）、真实 DSH 从 0.5.29 升级时只安装打包的 Starter，以及同时启用三个可选策略插件 |
-| 在安装的 DSH 0.2.0-rc.2 上运行根测试 | 合入后 2,059 项通过、6 项跳过（142 个文件）；合入前为 2,051 项与 6 项 |
-| Git 同步端到端 | 在 DSH 0.2.1-rc.1 上 64 项检查全部通过：两个真实 DSH Web 实例向真实的裸仓库发布并从中拉取 |
+| 在安装的 DSH 0.2.0-rc.2 上运行根测试 | 最终合入的版本上 2,072 项通过、10 项跳过（146 个文件），多跳过的 3 项是只在 DSH 0.2.1 上运行的真实宿主探测；合入前为 2,051 项与 6 项 |
+| Git 同步端到端 | 在 DSH 0.2.1-rc.2 上 64 项检查全部通过，此前在 0.2.1-rc.1 上同样通过：两个真实 DSH Web 实例向真实的裸仓库发布并从中拉取 |
 | `serve-e2e.mjs` | 与之前一样安装 profile（Starter 与 13 个组件包，排除四个自带 bundle patch 的包），启动 WebUI；它打印了地址，没有启动 token 时返回 401；Ctrl-C 后删除夹具 |
-| 新测试放在基础版本的 Host 模块上 | 换用 `f41a121f` 的 `settings.ts`、`config.ts`、`live-config.ts`、`protocol.ts` 与 `legacy-settings-import.ts` 后，四个相关文件中的 103 项测试有 101 项通过；未通过的两项断言解析后的配置不含 `toolviews` |
+| 新测试放在基础版本的 Host 模块上 | 换用 `f41a121f` 的 `settings.ts`、`config.ts`、`live-config.ts`、`protocol.ts` 与 `legacy-settings-import.ts` 后，四个相关文件中的 104 项测试有 102 项通过；未通过的两项断言解析后的配置不含 `toolviews` |
 | `release:intent` | 已验证 `dsh-mnemon` 与 `dsh-mnemon-source-memory-spaces` 的 changeset 覆盖 |
