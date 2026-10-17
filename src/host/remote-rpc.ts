@@ -90,7 +90,8 @@ export class MnemonRemoteService extends TypertRemoteService {
 
   @Remote('settings')
   async settings(endpoint: string, payload: unknown, signal: AbortSignal): Promise<RpcResult<unknown>> {
-    const access = Object.hasOwn(REMOTE_SETTINGS, endpoint) ? REMOTE_SETTINGS[endpoint as keyof typeof REMOTE_SETTINGS] : undefined
+    // Object.hasOwn would read a non-string name, such as ["get"], as its text.
+    const access = typeof endpoint === 'string' && Object.hasOwn(REMOTE_SETTINGS, endpoint) ? REMOTE_SETTINGS[endpoint as keyof typeof REMOTE_SETTINGS] : undefined
     if (access === 'management' && !this.handlers.management) return denied()
     if (access === undefined) return unknownSettingsEndpoint(endpoint)
     const response = await this.handlers.settings(endpoint, payload, signal)

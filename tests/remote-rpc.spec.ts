@@ -69,4 +69,16 @@ describe('Mnemon API Gateway service', () => {
     expect(reader.handlers.settings).toHaveBeenCalledTimes(1)
     expect(manager.handlers.settings).toHaveBeenCalledTimes(2)
   })
+
+  it('refuses a settings endpoint that is not a string as unknown, without asking the settings handler', async () => {
+    for (const management of [false, true]) {
+      const { service, handlers, signal } = fixture(management)
+      for (const endpoint of [['get'], ['mutate'], 7, null]) {
+        await expect(service.settings(endpoint as unknown as string, {}, signal)).resolves.toEqual({
+          ok: false, error: { code: 'bad-request', message: `unknown remote Mnemon settings endpoint: ${String(endpoint)}`, details: { issues: [] } },
+        })
+      }
+      expect(handlers.settings).not.toHaveBeenCalled()
+    }
+  })
 })
