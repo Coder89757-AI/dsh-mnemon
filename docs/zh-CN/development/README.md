@@ -146,7 +146,7 @@ pnpm e2e:serve
 
 `pnpm e2e:serve` 接受下列选项，分为两类：
 
-- **准备类选项**改动 profile、模型桩或 WebUI 的运行方式：`--strategy-extensions`、`--live-model`、`--plugin`、`--better-sidebar`、`--electron`、`--trusted-host`、`--remote-management`、`--without-mnemon-cli`、`--second-runtime`、`--review-failure`、`--runtime-archive` 与 `--archive-copies`。最后两个还会在回环地址上启动替身服务：一个 Hindsight 服务和一个响应缓慢的嵌入服务。
+- **准备类选项**改动 profile、模型桩或 WebUI 的运行方式：`--strategy-extensions`、`--live-model`、`--log-model-requests`、`--plugin`、`--better-sidebar`、`--electron`、`--trusted-host`、`--remote-management`、`--without-mnemon-cli`、`--second-runtime`、`--review-failure`、`--runtime-archive` 与 `--archive-copies`。最后两个还会在回环地址上启动替身服务：一个 Hindsight 服务和一个响应缓慢的嵌入服务。
 - **脚本化模型**决定模型在某项检查中做什么：`--document-protection`、`--review-evidence`、`--document-archive`、`--openviking-write`、`--runtime-routing`、`--result-tool-cache`、`--runtime-write-scope`、`--legacy-session-replay`、`--idle-review`、`--review-layers`、`--strict-template`、`--general-strategy`、`--exact-id`、`--save-action`、`--profile-compaction`、`--remember-target`、`--recall-budget` 与 `--docs-demo`。同一时间只运行一个脚本化模型，所以请一次只用一个：同时给出多个时，以 `scripts/serve-e2e.mjs` 中排在最前的为准；`--live-model` 会关闭全部脚本化模型。它们都可以与准备类选项组合。
 
 除了这些替身服务，以及 `--openviking-write` 需要的 OpenViking 协议夹具，存储、工具、传输和浏览器都是真实运行，不使用个人凭据或记忆。每个夹具都以自己的前缀输出各步，前缀见表格。完整步骤以及修复前后的结果见对应记录；每个选项背后的文件见 [scripts/README.md](../../../scripts/README.md)（英文）。
@@ -155,6 +155,7 @@ pnpm e2e:serve
 |---|---|---|---|
 | `--strategy-extensions` | 打开随附的三个增强：范围组合、轻量上下文与主动记录 | — | [策略贡献验证](../../pr-assets/strategy-extensions-20260901/README.md) |
 | `--live-model` | 改由 DeepSeek API 作答，而不是回环模型桩，脚本化模型随之关闭。密钥读取 `DEEPSEEK_API_KEY`，设置了 `DEEPSEEK_BASE_URL` 时也读取它作为端点，两者都不会保存 | — | — |
+| `--log-model-requests` | 每行 `Fixture model request:` 还以 JSON 给出该请求所用的模型、由谁发出（`conversation` 为会话，`title` 为 DSH 的会话标题，`memory task` 为带有 Mnemon 完成协议的子 Agent）、工具数量，以及请求设定时的思考模式与推理强度。不能与替换模型桩的 `--live-model` 同用 | — | [测试工具](../../pr-assets/test-tooling-from-records/README.zh-CN.md) |
 | `--docs-demo`（中文）、`--docs-demo=en` | 预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间。先问结账（英文演示为 checkout），再让它记住新的目标（remember）。加上 `--live-model` 时由真实模型作答；界面变化后应以这种方式重新采集截图集。`Docs demo:` | — | [截图集](../../assets/webui-v0.5.19/README.md) |
 | `--plugin=<包目录>` | 再把一个测试用插件链接进 profile，可重复使用以链接多个 | [#340](https://github.com/omdsh-dev/dsh-mnemon/issues/340) | [Slot 之外的设置](../../pr-assets/issue-340-settings-outside-slots/README.zh-CN.md) |
 | `--better-sidebar=<包目录>` | 把一个布局或皮肤包（例如 Better Sidebar 或 ORCA LINK 皮肤）链接进 profile | [#232](https://github.com/omdsh-dev/dsh-mnemon/issues/232) | [ORCA LINK 侧栏](../../pr-assets/issue-232-orca-sidebar/README.md) |
