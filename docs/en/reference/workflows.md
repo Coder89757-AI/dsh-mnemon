@@ -2,7 +2,7 @@
 
 [简体中文](../../zh-CN/reference/workflows.md) | **English** | [Documentation Center](../README.md)
 
-This page describes the **Layered strategy**, the default. The **General strategy** offers every available Source in one shared budget and leaves routing to the model: named tools serve their own Sources, and every other route is read with `mnemon_view_route` and changed with `mnemon_view_action`. It has no recall envelope beyond each route's own limits, no Runtime capacity maintenance or archival, and no idle review. See [Strategies and enhancements](../guides/capabilities.md#strategies-and-enhancements).
+This page describes the **Layered strategy**, the default. The **General strategy** offers every available Source in one shared budget and leaves routing to the model: named tools serve their own Sources, and every other route is read with `mnemon_view_route` and changed with `mnemon_view_action`. When a profile mounts another Source of one type beside the Starter's, such as a second runtime track, the named tools serve the Starter instance and the other keeps its exact routes and offers. The Layered strategy composes one Source per role, so a second Source of one role there needs **Scoped composition** switched on, which by default admits every eligible Source; without it every turn fails with "found ambiguous … Sources". It has no recall envelope beyond each route's own limits, no Runtime capacity maintenance or archival, and no idle review. See [Strategies and enhancements](../guides/capabilities.md#strategies-and-enhancements).
 
 ## Per-Turn Context
 
@@ -37,6 +37,14 @@ agent/pre-step(step=1)
 Source snapshotting does not run semantic recall. Prime only initializes routing state and does not run asynchronous CLI status queries.
 
 A child captures and retains its live parent's pinned View and runtime at `agent/created`, before its driver starts. Its own turns pin that retained View, even after the parent finishes or moves to a newer generation. The delegation is released when the child activation is disposed. A cold resume receives a new delegation; an explicitly Host-created background child with no parent model turn snapshots a fresh scoped View. Children have their own turn authority without root-only cues or idle review. See [the authority lifecycle](../development/architecture.md#lifecycle-and-failures).
+
+### Delegated child sessions
+
+Every task dsh-mnemon delegates to a child Agent starts with one line of its own, `[dsh-mnemon:delegated <operation>]`, and the task follows on the next line: `review` for idle review, `write` for writes and Save to memory, and `answer`, `placement`, `migration`, `compaction`, `document-archive`, `metadata-maintenance` and `reconcile` for the others. Later releases may add operations, so match the pattern rather than this list. DSH records the task as a user message (`source.kind: "user"`) in the child's session, whose header carries `origin: "subagent"` and `parentSession`.
+
+That whole session is dsh-mnemon's own work, not something the user wrote. A plugin that reads sessions, such as one that collects a workspace's work, can leave out a session with `origin: "subagent"` whose first user message after any inherited turns has a first line matching `^\[dsh-mnemon:delegated [a-z-]+\]$`. A forked child starts with a copy of its parent's turns (`isSeeded: true` in its header, ending at `session/end-seed`), and the task follows them. A task started from the Memory System page runs in a top-level session with no user message of its own, and its child carries the line. Sessions recorded before this line existed start with the task itself, for idle review `Bounded completed checkpoint (untrusted evidence; …`, which this contract does not cover. Mnemon's other user-role messages, recall and reminders among them, carry `source.kind: "dsh-mnemon"` ([Compatibility](./compatibility.md#dsh-017-settings-recovery)).
+
+DSH starts a child in its parent's working directory; dsh-mnemon's start request has no directory of its own. dsh-mnemon relies on it too: with a per-workspace storage scope, a child no longer bound to its parent's runtime, such as one resumed after a restart, finds its workspace's memory through it.
 
 ## Agent Recall
 
@@ -77,9 +85,9 @@ and 4,800 total content characters for this executing Agent turn
 
 This admission envelope is the Layered strategy's per-turn policy; the General strategy applies only each route's own limits and call budget.
 
-The model-facing tool deliberately exposes no `category`, `source`, or `intent` filter: a guessed filter must not hide exact evidence. Recall is not forced: a root turn normally issues zero Provider queries. If the LLM calls it, the Host permits one initial query and at most one LLM-chosen, materially different refinement after evidence inspection. Same-query and concurrent repeats join or replay; a third distinct query replays the latest evidence without reaching a Provider. One Related traversal may follow, but only from a `memoryBodyId + id` admitted by either Recall attempt; its repeated result is replayed in the same way.
+The model-facing tool deliberately exposes no `category`, `source`, or `intent` filter: a guessed filter must not hide exact evidence. Recall is not forced: a root turn normally issues zero Provider queries. If the LLM calls it, the Host permits one initial query and at most one LLM-chosen, materially different refinement after evidence inspection. Same-query and concurrent repeats join or replay; a third distinct query runs nothing and says so, without reaching a Provider. One Related traversal may follow, but only from a `memoryBodyId + id` admitted by either Recall attempt; the same traversal again replays its result, and a different one runs nothing.
 
-Recall, Related and the single Documents search slot are budgeted per executing Agent turn. Parallel calls share that turn's state; sibling tasks, later turns and cold-resumed activations do not share cached evidence or consume each other's budget. Replays are restricted to the requested Memory Space subset. Document search is separately bounded to four records, 2,600 query-local characters per record, and 6,000 content characters total. The model-facing Memory Space catalog is capped at 16 entries, and `mnemon_status` returns only a compact health aggregate. Full records, provider settings, paths, and per-Space statistics remain available to Web/RPC control-plane surfaces, not conversation history.
+Recall, Related and the single Documents search slot are budgeted per executing Agent turn. Parallel calls share that turn's state; sibling tasks, later turns and cold-resumed activations do not share cached evidence or consume each other's budget. A child Agent runs its task, from its prompt through its last step, as one turn with one budget; a later message that continues the child starts another turn with a fresh budget. Repeating a Recall or Related read that already ran in the turn replays its own evidence, restricted to the requested Memory Space subset. A different read past the budget, a second Documents search included, runs no query and returns `notRun: true`, `budgetExhausted: true` and an empty `results` under its own query, never another read's evidence; a parallel call first waits for the reads in flight, since a failed one gives its place back. A Related traversal from an insight the turn's Recall did not admit also returns `notRun: true`. Document search is separately bounded to four records, 2,600 query-local characters per record, and 6,000 content characters total. The model-facing Memory Space catalog is capped at 16 entries, and `mnemon_status` returns only a compact health aggregate. Full records, provider settings, paths, and per-Space statistics remain available to Web/RPC control-plane surfaces, not conversation history.
 
 If the user has already supplied current facts, or the repository can answer directly, the Agent should not recall merely to “show memory.”
 
@@ -113,7 +121,7 @@ durable candidate
 spawn write worker
        |
        +-- list Memory Spaces
-       +-- choose the narrowest suitable scope
+       +-- the named space, or the narrowest suitable active scope
        +-- recall when duplicate/conflict checking is useful
        +-- create a new scope only for a recurring distinct domain
        +-- remember / link / forget / merge as requested
@@ -122,6 +130,12 @@ structured receipt
 ```
 
 The first Memory Space created in an empty storage root uses Mnemon's native `default` ID; the Host generates later IDs. A successful write to an inactive target activates it. This activation affects only DSH routing, and merging a source database is non-destructive.
+
+When `mnemon_remember` names a Memory Space, the worker writes there or nowhere. The Host checks the named space before the worker starts: an unknown space, one whose Provider is off or takes no writes, and one that is switched off fail at once with the reason. A model that wants a switched-off space back switches it on first with `mnemon_memory_body_update`; a space the user picks on the Memory Spaces page comes back on with the write. A guard DSH attaches to the worker before it runs refuses `mnemon_remember` or `mnemon_link` into any other space, and any creation or change of spaces.
+
+Without a named space, the worker chooses among active spaces and those it creates; the guard refuses a write or a link into a space that was switched off when the run started, and switching such a space on. Saving a memory never merges spaces. Save to memory follows the same rules, so with every space switched off it saves nothing unless the worker creates a space. The result's `memoryBodyIds` are the spaces the Source receipts name, including a write inside a Code Mode program that failed afterwards; a worker that reports a write no receipt shows ends as `unknown`. `activatedMemoryBodyIds` lists a switched-off space the write switched on. A DSH without Agent ownership or scoped tool guards runs the worker unguarded, as before; a worker DSH publishes out of the guard's sight fails the write instead. Once its run has ended, a delegated worker is refused memory tools: DSH 0.2.1 resumes a finished worker from its saved state when another Agent sends it a message, and that worker cannot write again.
+
+Mnemon Native saves a memory without a vector when embedding does not succeed, the service down or its model missing, and says so in its receipt (`embedded: false`). A write through the task Agent lists such memories in `unembedded`, with a `hint`: semantic matching misses them until their vectors are filled in, from **Test status** in the Mnemon Native embedding settings once the embedding service answers, while keyword, link and recency recall still reach them. That runs through the storage root and embedding settings DSH uses, which a terminal `mnemon` command may not share. `/mnemon remember` adds a line that says so, and so does the receipt of **Save to memory**, in a conversation or on the Memory Spaces page, whether the task Agent wrote the memory or the text went straight to a space; the line appears only when the write put a memory somewhere.
 
 Runtime `add` / `replace` / `remove` and Document `create` / `update` do not need a model to perform storage I/O; they enter the deterministic control layer through the coordinator. Only capacity maintenance and archiving start dedicated workers.
 
