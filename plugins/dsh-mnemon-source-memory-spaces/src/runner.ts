@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { JsonValue } from './contracts.ts'
+import { MEMORY_SPACE_ID_PATTERN, MNEMON_ACTIVE_STORE_FILE, type JsonValue } from './contracts.ts'
 import type { ResolvedMemorySpacesConfig as ResolvedConfig } from './config.ts'
 import { ProcessError, runProcess, type ProcessFailureReason, type ProcessOptions, type ProcessRunner } from './providers/process.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
@@ -101,11 +101,11 @@ export function createRunner(config: ResolvedConfig, processRunner: ProcessRunne
   // resolveMemorySpacesConfig always yields a custom scope with an absolute dataDir.
   const effectiveDataDir = (): string => config.dataDir!
   const persistedStore = (): string => {
-    const active = join(effectiveDataDir(), 'active')
+    const active = join(effectiveDataDir(), MNEMON_ACTIVE_STORE_FILE)
     if (existsSync(active)) {
       try {
         const value = readFileSync(active, 'utf8').trim()
-        if (/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(value)) return value
+        if (MEMORY_SPACE_ID_PATTERN.test(value)) return value
       } catch {
         // Fall through to Mnemon's own default.
       }

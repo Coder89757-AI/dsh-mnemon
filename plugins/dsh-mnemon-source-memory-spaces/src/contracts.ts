@@ -669,6 +669,108 @@ export interface EntityRelatedView {
   sources: MemoryReadSource[]
 }
 
+// The files below are this Source's own: Mnemon Native's stores, the registry beside them and the
+// third-party Provider registry. A Host that copies them, as a Mnemon Pack or a sync does, or
+// counts them for a storage inventory, reads their names and rules from here instead of keeping
+// a copy that drifts when the Source changes.
+
+/** The directory under a storage root that holds Mnemon's stores, one per Native space, and their registry. */
+export const MEMORY_SPACES_DIRECTORY = 'data'
+/** The registry of Native spaces. The published v1 name and its `bodies` key stay for existing stores and Packs. */
+export const MEMORY_SPACE_REGISTRY_FILE = '.dsh-memory-bodies.json'
+/** A Native space's Mnemon store, in the directory its space id names. */
+export const MEMORY_SPACE_DATABASE_FILE = 'mnemon.db'
+/** A space id, which also names its store's directory. */
+export const MEMORY_SPACE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
+/** Mnemon's own record of its default store, one space id, at the storage root. */
+export const MNEMON_ACTIVE_STORE_FILE = 'active'
+/** Third-party Provider services and the spaces they serve, in the storage root's `state` directory. No Pack carries it. */
+export const MEMORY_PROVIDER_REGISTRY_FILE = 'memory-providers.json'
+
+/** One Native space as a copy of the registry, such as a Mnemon Pack, carries it. */
+export interface MemorySpaceRegistryEntry {
+  id: string
+  name: string
+  description: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MemorySpaceRegistryFile {
+  version: 1
+  bodies: MemorySpaceRegistryEntry[]
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Read a registry as a copy of it carries it: each id unique and usable as a directory name,
+ * every name, description and time present, or the whole registry is refused. Only the fields of
+ * the entry above are kept, so a copy holds nothing else, and a registry written back from one
+ * no longer holds what else an entry recorded, such as a Native space's `placement` decision or
+ * `metadataSource`.
+ */
+export function parseMemorySpaceRegistry(value: unknown): MemorySpaceRegistryFile {
+  const registry = isObject(value) ? value : undefined
+  if (registry?.version !== 1 || !Array.isArray(registry.bodies)) throw new Error('Memory Space registry is invalid')
+  const ids = new Set<string>()
+  const bodies = registry.bodies.map((raw): MemorySpaceRegistryEntry => {
+    const body = isObject(raw) ? raw : undefined
+    if (typeof body?.id !== 'string' || !MEMORY_SPACE_ID_PATTERN.test(body.id) || ids.has(body.id)) throw new Error('Memory Space registry contains an invalid or duplicate id')
+    if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 100 || typeof body.description !== 'string' || body.description.length > 1000) throw new Error('Memory Space registry contains invalid metadata')
+    if (typeof body.createdAt !== 'string' || typeof body.updatedAt !== 'string') throw new Error('Memory Space registry contains invalid timestamps')
+    ids.add(body.id)
+    return { id: body.id, name: body.name, description: body.description, active: body.active === true, createdAt: body.createdAt, updatedAt: body.updatedAt }
+  })
+  return { version: 1, bodies }
+}
+
+/** What a stored registry holds, counted without judging each space. */
+export interface MemorySpaceRegistrySummary {
+  /** Whether it is the version 1 registry this Source writes; a legacy version 2 file, migrated when the Source next loads it, is not. */
+  valid: boolean
+  /** Every listed space that is an object, whichever version lists it. */
+  spaces: number
+  active: number
+}
+
+/** Count the spaces of a parsed registry for a read-only inventory. It never throws. */
+export function summarizeMemorySpaceRegistry(value: unknown): MemorySpaceRegistrySummary {
+  const registry = isObject(value) ? value : undefined
+  const listed = registry?.bodies
+  const spaces = Array.isArray(listed) ? listed.filter(isObject) : []
+  return {
+    valid: registry?.version === 1 && Array.isArray(listed),
+    spaces: spaces.length,
+    active: spaces.filter(space => space.active === true).length,
+  }
+}
+
+/** What a stored Provider registry holds, counted without judging each entry. */
+export interface MemoryProviderRegistrySummary {
+  /** Whether the file is an object at all. Without one, every count is 0. */
+  valid: boolean
+  /** Provider services with saved settings, enabled or not. */
+  services: number
+  /** Spaces a third-party Provider serves: every entry of the list, well-formed or not. */
+  connections: number
+}
+
+/** Count a parsed Provider registry for a read-only inventory. It never throws. */
+export function summarizeMemoryProviderRegistry(value: unknown): MemoryProviderRegistrySummary {
+  const registry = isObject(value) ? value : undefined
+  const services = registry?.services
+  const listed = registry?.bodies
+  return {
+    valid: registry !== undefined,
+    services: isObject(services) ? Object.keys(services).length : 0,
+    connections: Array.isArray(listed) ? listed.length : 0,
+  }
+}
+
 // Published type spellings retained for independently installed v0.5.x consumers.
 /** @deprecated Use CreateMemorySpaceRequest. The wire shape is unchanged. */
 export type CreateMemoryBodyRequest = CreateMemorySpaceRequest

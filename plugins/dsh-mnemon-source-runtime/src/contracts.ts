@@ -124,3 +124,71 @@ export function parseRuntimeBranches(value: unknown): string[] | undefined {
   }
   return branches
 }
+
+// The files below are this Source's own. A Host that copies them, as a Mnemon Pack or a sync
+// does, or counts them for a storage inventory, reads their names and rules from here instead
+// of keeping a copy that drifts when the Source changes.
+
+/** The Runtime Source's directory under a storage root. */
+export const RUNTIME_DIRECTORY = 'runtime'
+/** The entries themselves, the source of truth the projections are written from. */
+export const RUNTIME_MEMORIES_FILE = 'memories.json'
+/** Each target's projection: its entries' plain content, the file a person reads. */
+export const RUNTIME_PROJECTION_FILES = { user: 'USER.md', memory: 'MEMORY.md' } as const satisfies Readonly<Record<RuntimeMemoryTarget, string>>
+/** Created exclusively while the files above are read or written; whoever copies them takes it too. */
+export const RUNTIME_LOCK_FILE = '.memories.lock'
+/** A lock file older than this was left by a process that stopped, and may be taken over. */
+export const RUNTIME_LOCK_STALE_MS = 30_000
+/** The local archive of entries that left MEMORY.md while no Memory Space could take them (#336). */
+export const RUNTIME_ARCHIVE_DIRECTORY = 'archived'
+/** The longest content one entry may hold, in UTF-8 bytes. */
+export const RUNTIME_ENTRY_MAX_BYTES = 8 * 1024
+
+type RuntimeEntryText = Pick<RuntimeMemoryEntry, 'target' | 'content'>
+
+// Made on first use: a module-level encoder would run in every browser bundle that loads these contracts.
+let utf8: TextEncoder | undefined
+
+function joinedContent(entries: ReadonlyArray<RuntimeEntryText>, target: RuntimeMemoryTarget): string {
+  return entries.filter(entry => entry.target === target).map(entry => entry.content).join(RUNTIME_ENTRY_DELIMITER)
+}
+
+/** The UTF-8 bytes one target's entries take against its limit: their contents joined by the delimiter. */
+export function runtimeBytes(entries: ReadonlyArray<RuntimeEntryText>, target: RuntimeMemoryTarget): number {
+  utf8 ??= new TextEncoder()
+  return utf8.encode(joinedContent(entries, target)).byteLength
+}
+
+/** One target's projection file, USER.md or MEMORY.md, exactly as the Runtime Source writes it. */
+export function runtimeProjection(entries: ReadonlyArray<RuntimeEntryText>, target: RuntimeMemoryTarget): string {
+  const content = joinedContent(entries, target)
+  return content === '' ? '' : `${content}\n`
+}
+
+/** What a stored memories.json holds, counted without judging each entry. */
+export interface RuntimeMemoriesSummary {
+  /** Whether the file has an entry list at all. Without one, every count is 0. */
+  valid: boolean
+  /** Every entry that is an object, whatever its target. */
+  entries: number
+  user: number
+  memory: number
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Count the entries of a parsed memories.json for a read-only inventory. It never throws: a file
+ * without an entry list is not `valid`, and a malformed entry is counted or skipped, never refused.
+ */
+export function summarizeRuntimeMemories(value: unknown): RuntimeMemoriesSummary {
+  const entries = isObject(value) && Array.isArray(value.entries) ? value.entries.filter(isObject) : []
+  return {
+    valid: isObject(value) && Array.isArray(value.entries),
+    entries: entries.length,
+    user: entries.filter(entry => entry.target === 'user').length,
+    memory: entries.filter(entry => entry.target === 'memory').length,
+  }
+}

@@ -22,10 +22,10 @@ import type {
   UpdateMemorySpaceRequest,
 } from './contracts.ts'
 import type { ProviderMemorySpace } from './providers/adapter.ts'
+import { MEMORY_PROVIDER_REGISTRY_FILE, MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY } from './contracts.ts'
 
 const NATIVE_REGISTRY_VERSION = 1
 const PROVIDER_REGISTRY_VERSION = 4
-const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
 const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9-]{0,127}$/u
 const DISCONNECTS_VERSION = 1
 /** Disconnected namespaces remembered per Provider; the oldest go first past this. */
@@ -249,7 +249,7 @@ function normalizePlacementDecision(value: unknown, providerId: MemoryProviderId
 
 export function validateMemorySpaceId(value: string): string {
   const normalized = value.trim()
-  if (!ID_PATTERN.test(normalized)) throw new Error('memoryBodyId must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
+  if (!MEMORY_SPACE_ID_PATTERN.test(normalized)) throw new Error('memoryBodyId must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
   return normalized
 }
 
@@ -286,10 +286,10 @@ export class MemorySpaceRegistry {
     sharedState?: MemorySpaceRegistry['state'],
   ) {
     this.state = sharedState ?? { spaces: [], services: {}, serviceEnabled: {}, disconnected: {} }
-    this.directory = join(runner.effectiveDataDir(), 'data')
+    this.directory = join(runner.effectiveDataDir(), MEMORY_SPACES_DIRECTORY)
     // Keep the published v1 filename and serialized bodies key for existing stores and Packs.
-    this.registryPath = join(this.directory, '.dsh-memory-bodies.json')
-    this.providerRegistryPath = join(runner.effectiveDataDir(), 'state', 'memory-providers.json')
+    this.registryPath = join(this.directory, MEMORY_SPACE_REGISTRY_FILE)
+    this.providerRegistryPath = join(runner.effectiveDataDir(), 'state', MEMORY_PROVIDER_REGISTRY_FILE)
     this.disconnectsPath = join(runner.effectiveDataDir(), 'state', 'memory-provider-disconnects.json')
     if (sharedState === undefined) this.reload()
   }
@@ -879,7 +879,7 @@ export class MemorySpaceRegistry {
         const parsed = JSON.parse(readFileSync(this.registryPath, 'utf8')) as NativeRegistryFile | LegacyProviderRegistryFile
         if ((parsed.version === NATIVE_REGISTRY_VERSION || parsed.version === 2) && Array.isArray(parsed.bodies)) {
           migratedProviderRegistry = parsed.version === 2
-          this.spaces = parsed.bodies.filter(body => ID_PATTERN.test(body.id)).map(body => {
+          this.spaces = parsed.bodies.filter(body => MEMORY_SPACE_ID_PATTERN.test(body.id)).map(body => {
             // Earlier dsh-mnemon builds gave an already-existing upstream
             // `default` Store a synthetic Chinese product name. That made a
             // compatibility import look like a newly-created default Memory
@@ -953,7 +953,7 @@ export class MemorySpaceRegistry {
           this.spaces.push(...parsed.bodies
             .filter(body => storedProviderId(body.providerId)
               && (!this.providerCatalog.has(body.providerId) || !this.isNative(body.providerId))
-              && ID_PATTERN.test(body.id) && !existingIds.has(body.id))
+              && MEMORY_SPACE_ID_PATTERN.test(body.id) && !existingIds.has(body.id))
             .map(body => {
               const providerId = body.providerId
               if (!this.providerCatalog.has(providerId)) {
@@ -1033,7 +1033,7 @@ export class MemorySpaceRegistry {
     let changed = false
     const knownIds = new Set(this.spaces.map(body => body.id))
     for (const entry of readdirSync(this.directory, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !ID_PATTERN.test(entry.name) || !existsSync(join(this.directory, entry.name, 'mnemon.db'))) continue
+      if (!entry.isDirectory() || !MEMORY_SPACE_ID_PATTERN.test(entry.name) || !existsSync(join(this.directory, entry.name, MEMORY_SPACE_DATABASE_FILE))) continue
       if (knownIds.has(entry.name)) continue
       this.spaces.push({
         id: entry.name,
@@ -1053,7 +1053,7 @@ export class MemorySpaceRegistry {
   private nativeStoreIds(): string[] {
     if (!existsSync(this.directory)) return []
     return readdirSync(this.directory, { withFileTypes: true })
-      .filter(entry => entry.isDirectory() && ID_PATTERN.test(entry.name))
+      .filter(entry => entry.isDirectory() && MEMORY_SPACE_ID_PATTERN.test(entry.name))
       .map(entry => entry.name)
       .sort()
   }
@@ -1075,7 +1075,7 @@ export class MemorySpaceRegistry {
       ? effectivePublicConnection
       : this.providerCatalog.publicScoped(body.providerId, 'memory', body.connection ?? {})
     const location = nativeProvider
-      ? join(this.directory, body.id, 'mnemon.db')
+      ? join(this.directory, body.id, MEMORY_SPACE_DATABASE_FILE)
       : providerDisplayLocation(descriptor, connection)
     const provider: MemorySpaceProvider = {
       id: descriptor.id,
