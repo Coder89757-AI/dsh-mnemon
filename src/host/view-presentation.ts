@@ -29,6 +29,36 @@ export function presentMemoryWake(generation: MemoryCompositionGeneration, view:
   return createMemoryWake(view, memoryWakeBindings(generation, view))
 }
 
+/**
+ * Why a generic View tool names no id this turn's View offers, told apart (#390); undefined when
+ * the id is offered. It names only what the MNEMON VIEW ROUTES envelope shows: an operation bound
+ * to a named tool is offered through that tool, and the envelope does not list its id.
+ */
+export function unofferedViewId(graph: MnemonRuntimeGraph, turn: ComposableMemoryTurn, kind: 'route' | 'action', id: unknown): string | undefined {
+  const view = turn.view
+  const offered = kind === 'route'
+    ? view.routes.map(route => ({ id: route.id, operation: route.sourceRouteId }))
+    : view.actionOffers.map(offer => ({ id: offer.id, operation: offer.sourceActionId }))
+  const label = kind === 'route' ? 'memory View Route' : 'memory ActionOffer'
+  if (typeof id !== 'string' || id === '') return `${label} needs ${kind === 'route' ? 'routeId' : 'offerId'}, the exact id of one it offers`
+  if (offered.some(entry => entry.id === id)) return undefined
+  const generation = graph.memoryComposition.generation(view.runtimeGeneration)
+  const bindings = generation === undefined ? {} : memoryWakeBindings(generation, view)
+  const named = (kind === 'route' ? bindings.routes : bindings.actions) ?? {}
+  const short = id.split('/').at(-1)!
+  const tools = [...new Set(offered
+    .filter(entry => named[entry.id] !== undefined && (entry.operation === short || entry.id.split('/').at(-1) === short))
+    .map(entry => named[entry.id]!))]
+  if (tools.length > 0) return `${label} is unavailable: ${id}; this View offers it as ${tools.join(' and ')}, so call that tool`
+  const shown = offered.filter(entry => named[entry.id] === undefined).map(entry => entry.id)
+  if (shown.length === 0) return `${label} is unavailable: ${id}; MNEMON VIEW ROUTES offers none by id this turn, only the named tools in MNEMON VIEW TOOLS`
+  const near = shown.filter(candidate => candidate.split('/').at(-1) === short)
+  if (near.length === 1) return `${label} is unavailable: ${id}; ids are exact as MNEMON VIEW ROUTES lists them: ${JSON.stringify(near[0])}`
+  // Ids that share the short form come first, so a limited list never leaves them out.
+  const listed = [...near, ...shown.filter(candidate => !near.includes(candidate))]
+  return `${label} is unavailable: ${id}; MNEMON VIEW ROUTES offers ${listed.slice(0, 12).map(candidate => JSON.stringify(candidate)).join(', ')}${listed.length > 12 ? ` and ${listed.length - 12} more` : ''}`
+}
+
 function memoryWakeBindings(generation: MemoryCompositionGeneration, view: ComposableMemoryView): MemoryWakeBindings {
   const instances = generation.sourceInstances()
   const routes: Record<string, string> = {}, actions: Record<string, string> = {}
