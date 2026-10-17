@@ -17,7 +17,7 @@ import { SourceSession } from '../src/host/source-session.ts'
 import type { ComposableMemoryTurn } from '../src/core/turns.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { compositionFixture } from './fixtures/composition.ts'
-import { assertDshOutputSchema, MnemonSubagentCoordinator, spaceWriteGuard } from "../src/host/subagent.ts"
+import { assertDshOutputSchema, MnemonSubagentCoordinator, spaceWriteGuard, type RuntimeMaintenanceTaskRunner } from "../src/host/subagent.ts"
 import { CONTINUATION_TEXT } from '../src/host/continuation-turn.ts'
 import { DEFAULT_THREE_TIER_VIEW_STRATEGY } from 'dsh-mnemon-strategy-default-three-tier'
 import { registerTools } from "../src/host/tools.ts"
@@ -3122,7 +3122,8 @@ describe('What delegated children read', () => {
     const read: Record<string, Array<ReturnType<typeof childText>>> = {}
 
     const writes: Array<[string, string, unknown]> = [
-      ['remember', 'remember', { content: 'The release train leaves on Thursdays.', category: 'decision', importance: 4, tags: ['release'], entities: ['DSH'], source: 'agent' }],
+      ['remember', 'remember', { content: 'The release train leaves on Thursdays.', category: 'decision', importance: 4, tags: ['release', 'schedule'], entities: ['DSH'], source: 'agent',
+        metadata: { ticket: 'REL-12', reviewed: true } }],
       ['remember in a named space', 'remember', { content: 'The release train leaves on Thursdays.', memoryBodyId: 'project' }],
       ['supervised writeback', 'supervised-writeback', { content: 'I prefer short status updates.\nBlockers first.' }],
       ['link', 'link', { sourceId: 'm1', targetId: 'm2', type: 'causal', weight: 0.8, reason: 'The red gate caused the rollback.', memoryBodyId: 'project' }],
@@ -3181,7 +3182,7 @@ describe('What delegated children read', () => {
       { content: `The project uses pnpm. ${'Pin the lockfile. '.repeat(18)}`, importance: 'normal' },
       { content: `Deploys go through staging. ${'Stage before production. '.repeat(12)}`, importance: 'normal' },
     ])
-    plan.entries[3]!.branches = ['release/1.2']
+    plan.entries[3]!.branches = ['release/1.2', 'release/1.3']
     const routing = subagents(undefined)
     routing.start.mockImplementation(async (_provider, request) => {
       const indexes = /Allowed source indexes for this batch: ([\d, ]+)\./u.exec(request!.prompt[0]!.text)![1]!.split(', ').map(Number)
@@ -3217,7 +3218,7 @@ describe('What delegated children read', () => {
     const content = 'Canary before production.\nKeep the exact original.'
     const document = {
       id: 'release-design', title: 'Release design', description: 'Release gates and rollbacks', status: 'active', revision: 2,
-      filename: 'release-design-0a1b2c3d.md', relativePath: '.mnemon/documents/active/release-design-0a1b2c3d.md', sourcePaths: ['docs/release.md'],
+      filename: 'release-design-0a1b2c3d.md', relativePath: '.mnemon/documents/active/release-design-0a1b2c3d.md', sourcePaths: ['docs/release.md', 'docs/rollback.md'],
       content, contentHash: createHash('sha256').update(content).digest('hex'),
     } as unknown as DocumentView
     const controller = {
@@ -3231,10 +3232,44 @@ describe('What delegated children read', () => {
     await new MnemonSubagentCoordinator(archiving.value, runtimeSource(undefined, indexSpaces, controller), toolRegistry().value).archiveDocument(parent(), document.id, signal)
     read['document archive'] = archiving.start.mock.calls.map(childText)
 
+    // Reconciliation runs as a maintenance task, through the task runner, over evidence it reads from the graph.
+    const reconciling = subagents({ title: 'Memory is coherent', summary: 'Nothing to change.', action: 'none', operations: [] })
+    const local = (content: string, overrides: object = {}) => ({ content, target: 'memory', importance: 'normal', created_at: '2026-08-14T12:00:00.000Z', updated_at: '2026-08-14T12:00:00.000Z', ...overrides })
+    const usage = (target: 'memory' | 'user') => ({ target, used: 120, limit: 1_024, entryCount: 1, markdownPath: `/fixture/${target}.md` })
+    const desktop = { id: 'machine-b', label: 'desktop', createdAt: '2026-08-14T12:00:00.000Z' }
+    const reconcileGraph = {
+      directory: '/fixture',
+      packs: { identity: () => ({ id: 'machine-a', label: 'laptop', createdAt: '2026-08-14T12:00:00.000Z' }) },
+      memoryComposition: { acquire: () => ({ generation: {}, release: () => {} }) },
+      source: (type: string) => ({ forGeneration: () => ({ read: async () => type === 'runtime'
+        ? { entries: [
+          local('Release notes go out on Thursdays.'),
+          local('Release notes ship every Thursday.', { origin: { machine: 'machine-b', label: 'desktop' } }),
+          local('Pin the lockfile.\nNever float it.', { importance: 'critical', branches: ['main', 'release'] }),
+          local('Prefers short answers.', { target: 'user' }),
+        ], targets: { memory: usage('memory'), user: usage('user') } }
+        : { activeBytes: 400, limitBytes: 1_024, documents: [
+          { id: 'release-design', title: 'Release design', status: 'active', sizeBytes: 400, description: 'Release gates\nand rollbacks' },
+          { id: 'old-design', title: 'Old design', status: 'archived', sizeBytes: 100, description: '' },
+        ] } }) }),
+      sync: { readRemoteForEvidence: async () => ({
+        remoteOnly: [{ target: 'memory', importance: 'normal', content: 'Canary first.', origin: { machine: 'machine-b', label: 'desktop' } }],
+        conflicts: [{ target: 'memory', similarity: 0.8,
+          local: { target: 'memory', importance: 'normal', content: 'Deploy on Fridays.' }, remote: { target: 'memory', importance: 'normal', content: 'Never deploy on Fridays.' } }],
+        truncated: false, remoteTombstones: [{ target: 'user', contentHash: 'removed-entry', deletedAt: '2026-08-15T12:00:00.000Z' }],
+        branch: 'mnemon/sync', remote: { machine: desktop },
+      }) },
+      reviews: { list: () => [{ status: 'pending', opinions: [{ author: 'user', text: 'Keep the Thursday rule.', createdAt: '2026-08-16T12:00:00.000Z' }] }], create: vi.fn() },
+    } as unknown as MnemonRuntimeGraph
+    const maintenanceTask: RuntimeMaintenanceTaskRunner = (_scope, _signal, operation) => operation(parent())
+    await new MnemonSubagentCoordinator(reconciling.value, runtimeSource(), toolRegistry().value, undefined, undefined, maintenanceTask)
+      .reconcile(reconcileGraph, { storage: 'global' }, signal, { guidance: 'Merge the two Thursday rules.' })
+    read.reconcile = reconciling.start.mock.calls.map(childText)
+
     expect(read).toEqual({
       remember: [
         { label: 'Mnemon remember', persona: 'c2ef08b302b643b680f1e7d7e953981027d0e780d15ec931282a20fc4e20eeb6',
-          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '1c94043671206c5af33b1d8e881e0441757035383476ec7a3387675796d554c5' },
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '1751ae61c39e985c6bd27da78fae45834a688eb7c33325675c7d92417ed341a4' },
       ],
       'remember in a named space': [
         { label: 'Mnemon remember', persona: 'c2ef08b302b643b680f1e7d7e953981027d0e780d15ec931282a20fc4e20eeb6',
@@ -3296,7 +3331,7 @@ describe('What delegated children read', () => {
         { label: 'Route runtime memory archive batch 1/2', persona: '4d53843ba45153bce9650aa3b15569e55b0d07f822b171c1a122c365be9f65ed',
           completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: 'fda9ce8daf3e1fac2f4037dc241f45f04b799ff8b94a43fc524be18de9de77ac' },
         { label: 'Route runtime memory archive batch 2/2', persona: '4d53843ba45153bce9650aa3b15569e55b0d07f822b171c1a122c365be9f65ed',
-          completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: '1977c9c604ef4d0f836e8d44c61087eb21fc9766d3e4b0adc3f9ca93533ba70d' },
+          completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: '1fdd3fa010d4969e2767ec1bcfe8c68a2c4a5c4692beda0458873dbc51f957a4' },
       ],
       'USER.md compaction': [
         { label: 'Consolidate local user profile', persona: '101adc0217657b569b62f9b4593db4b6c05c9b99d5b50f4bce00ff7c88b03f96',
@@ -3304,7 +3339,11 @@ describe('What delegated children read', () => {
       ],
       'document archive': [
         { label: 'Plan managed document archive', persona: '079d9b022c83a76432b2e30df74c2ab0645ab9ad0699d9d97ad16200dc9b3193',
-          completion: '9143f4291d02cb26cc81397c7d938749873a632e191c879609f59d6bb52cf788', task: 'e1fe6b4ad47e3f4812c36f8559044860150f8714dae2061c1e69db1b19602774' },
+          completion: '9143f4291d02cb26cc81397c7d938749873a632e191c879609f59d6bb52cf788', task: 'a99518a38c81da67924e77e8a3952e62cda37231f50d20753eb93b3c04761561' },
+      ],
+      reconcile: [
+        { label: 'Reconcile merged local memory', persona: '93c711b3dc920e849710fae0dc4e70106e1721d650bfd220a384b9140ab0631f',
+          completion: '21d623ec8e8b59dd4c1ec2f11569c1395f86180dd92d8fb905a70cf1edda0e7d', task: 'de45a175f4d54a02d45fb2d80e3de6457e71d631a098d968de5fe962e5d3f826' },
       ],
     })
   })
