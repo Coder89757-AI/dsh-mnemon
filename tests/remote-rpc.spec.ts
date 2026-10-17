@@ -30,6 +30,11 @@ describe('Mnemon API Gateway service', () => {
     await expect(service.pack('export', {}, signal)).resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
     await expect(service.sync('status', {}, signal)).resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
     await expect(service.viewWrite('apply', {}, signal)).resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    // Reading the review ledger needs the grant too, as the Interfaces reference says.
+    for (const endpoint of ['view', 'opinion', 'decide', 'reopen', 'reconcile', 'apply']) {
+      await expect(service.review(endpoint, {}, signal)).resolves.toMatchObject({ ok: false, error: { code: 'bad-request', message: 'remote Mnemon management requires remoteAccess: trusted-host' } })
+    }
+    expect(handlers.review).not.toHaveBeenCalled()
     expect(handlers.read).toHaveBeenCalledWith('status-summary', { workspaceId: 'workspace' }, signal)
     expect(handlers.view).toHaveBeenCalledWith('dashboard', {}, signal)
     expect(handlers.activation).toHaveBeenCalledWith('body', { active: true }, signal)
@@ -68,5 +73,17 @@ describe('Mnemon API Gateway service', () => {
     }
     expect(reader.handlers.settings).toHaveBeenCalledTimes(1)
     expect(manager.handlers.settings).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses a settings endpoint that is not a string as unknown, without asking the settings handler', async () => {
+    for (const management of [false, true]) {
+      const { service, handlers, signal } = fixture(management)
+      for (const endpoint of [['get'], ['mutate'], 7, null]) {
+        await expect(service.settings(endpoint as unknown as string, {}, signal)).resolves.toEqual({
+          ok: false, error: { code: 'bad-request', message: `unknown remote Mnemon settings endpoint: ${String(endpoint)}`, details: { issues: [] } },
+        })
+      }
+      expect(handlers.settings).not.toHaveBeenCalled()
+    }
   })
 })

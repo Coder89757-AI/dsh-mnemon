@@ -167,7 +167,7 @@ RPC is an internal Host-to-client bridge, not a stable external HTTP API. Pages 
 | `/dsh-mnemon-write` | Every other mutation | Needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-pack` | Backup export and import | Needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-sync` | Git repository sync: configuration, push, preview and pull | Needs `remoteAccess: trusted-host` |
-| `/dsh-mnemon-review` | Reconciliation proposals, review opinions and applying an accepted plan | Reads allowed; `reconcile` and `apply` need `remoteAccess: trusted-host` |
+| `/dsh-mnemon-review` | Reconciliation proposals, review opinions and applying an accepted plan | Needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-settings` | Host and interface settings | `get` allowed; `mutate` needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-view` | Memory composition reads | Allowed |
 | `/dsh-mnemon-view-settings` | Saving memory composition, installing a component | Needs `remoteAccess: trusted-host` |
