@@ -36,6 +36,10 @@
     "./native-cli": {
       "types": "./lib/native-cli.d.ts",
       "default": "./lib/native-cli.js"
+    },
+    "./space-identity": {
+      "types": "./lib/space-identity.d.ts",
+      "default": "./lib/space-identity.js"
     }
   },
   "files": [
