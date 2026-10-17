@@ -2,7 +2,7 @@ import z from '@deepseek-ai/schemastery'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { MemoryPersistenceStrategy, ResolvedMemoryPersistenceStrategy, MemoryPlacementCapability, MemoryPlacementPreference, MemoryProviderId, MemoryProviderConnection, MnemonEmbeddingConfig, ResolvedMnemonEmbeddingConfig, RecallQualityConfig, ResolvedRecallQualityConfig } from './contracts.ts'
-import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MEMORY_SPACE_ID_PATTERN, MNEMON_EMBEDDING_PROTOCOLS, NATIVE_PROVIDER_ID } from './contracts.ts'
+import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MEMORY_PLACEMENT_CAPABILITIES, MEMORY_SPACE_ID_PATTERN, MNEMON_EMBEDDING_PROTOCOLS, NATIVE_PROVIDER_ID } from './contracts.ts'
 import { DEFAULT_TIMEOUT_MS, DEFAULT_RECALL_LIMIT, DEFAULT_RECALL_QUALITY_POLICY, DEFAULT_RECALL_LOW_SCORE_THRESHOLD, DEFAULT_RECALL_HIGH_SCORE_THRESHOLD, DEFAULT_RECALL_CANDIDATE_MULTIPLIER, DEFAULT_RECALL_MAX_MEDIUM_RESULTS, DEFAULT_RECALL_MAX_UNKNOWN_RESULTS } from './defaults.ts'
 
 export interface MemorySpacesConfig {
@@ -32,6 +32,8 @@ export interface ResolvedMemorySpacesConfig {
 
 export const MemorySpacesConfig = z.object({
   dataDir: z.string(), cliPath: z.string(), store: z.string(),
+  // The Starter's settings take 100–120,000 ms for the same value. One range for both is on the
+  // roadmap; until then each keeps its own, so that stored values validate as they did.
   timeoutMs: z.number().step(1).min(1).max(600_000),
   defaultRecallLimit: z.number().step(1).min(1).max(50),
   writeEnabled: z.boolean(), embedding: z.any(), recallQuality: z.any(), persistenceStrategy: z.any(),
@@ -39,7 +41,7 @@ export const MemorySpacesConfig = z.object({
 
 function optionalText(value: string | undefined): string | undefined { return value?.trim() || undefined }
 const MEMORY_PROVIDER_ID = /^[a-z][a-z0-9-]{0,127}$/u
-const MEMORY_PLACEMENT_CAPABILITY_SET = new Set(['graph', 'entities', 'related', 'exact-write', 'link', 'forget'])
+const MEMORY_PLACEMENT_CAPABILITY_SET = new Set<string>(MEMORY_PLACEMENT_CAPABILITIES)
 const MEMORY_PLACEMENT_PREFERENCE_SET = new Set(['balanced', 'local-first', 'shared-first'])
 export function resolvePersistenceStrategy(value: MemoryPersistenceStrategy | undefined): ResolvedMemorySpacesConfig['persistenceStrategy'] {
   const mode = value?.mode ?? 'manual'

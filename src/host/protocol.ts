@@ -1264,13 +1264,3 @@ export interface VersionUpdateResult {
   restartRequired: boolean
   output?: string
 }
-
-// Default-product form values; Source configuration is validated again by its owner.
-export const CATEGORIES = ['preference', 'decision', 'fact', 'insight', 'context', 'general'] as const
-export const SOURCES = ['user', 'agent', 'external'] as const
-export const EDGE_TYPES = ['temporal', 'semantic', 'causal', 'entity'] as const
-export const INTENTS = ['WHY', 'WHEN', 'ENTITY', 'GENERAL'] as const
-export const DEFAULT_EMBEDDING_ENDPOINT = 'http://localhost:11434'
-export const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text'
-export const DEFAULT_EMBEDDING_PROTOCOL = 'auto'
-export const MNEMON_EMBEDDING_PROTOCOLS = ['auto', 'ollama', 'openai'] as const

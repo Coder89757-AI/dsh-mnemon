@@ -19,7 +19,7 @@ import { MemoryProviderCatalog } from './providers/catalog.ts'
 import { finalizeLlmPlacement, rulesOnlyPlacement } from './provider-placement.ts'
 import { resolveMemorySpacesConfig, type MemorySpacesConfig } from './config.ts'
 import { MemorySpaceProviderSnapshot } from './providers/host.ts'
-import { isNativeProvider, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH } from './contracts.ts'
+import { CATEGORIES, EDGE_TYPES, INTENTS, isNativeProvider, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH, SOURCES } from './contracts.ts'
 import type {
   Category,
   CreateMemorySpaceRequest,
@@ -36,10 +36,10 @@ import type {
   UpdateMemorySpaceRequest,
 } from './contracts.ts'
 
-const CATEGORIES = new Set<Category>(['preference', 'decision', 'fact', 'insight', 'context', 'general'])
-const SOURCES = new Set<Source>(['user', 'agent', 'external'])
-const INTENTS = new Set<Intent>(['WHY', 'WHEN', 'ENTITY', 'GENERAL'])
-const EDGES = new Set<EdgeType>(['temporal', 'semantic', 'causal', 'entity'])
+const CATEGORY_SET = new Set<Category>(CATEGORIES)
+const SOURCE_SET = new Set<Source>(SOURCES)
+const INTENT_SET = new Set<Intent>(INTENTS)
+const EDGE_SET = new Set<EdgeType>(EDGE_TYPES)
 
 function grantIds(grant: MemoryReadGrant): string[] {
   return stringArray(record(grant.value, 'Memory Spaces ReadGrant').memoryBodyIds, 'memoryBodyIds', 10_000) ?? []
@@ -571,9 +571,9 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           const category = text(input.category, 'category', 30, false) as Category | undefined
           const source = text(input.source, 'source', 30, false) as Source | undefined
           const intent = text(input.intent, 'intent', 30, false) as Intent | undefined
-          if (category !== undefined && !CATEGORIES.has(category)) throw new Error(`unsupported category: ${category}`)
-          if (source !== undefined && !SOURCES.has(source)) throw new Error(`unsupported source: ${source}`)
-          if (intent !== undefined && !INTENTS.has(intent)) throw new Error(`unsupported intent: ${intent}`)
+          if (category !== undefined && !CATEGORY_SET.has(category)) throw new Error(`unsupported category: ${category}`)
+          if (source !== undefined && !SOURCE_SET.has(source)) throw new Error(`unsupported source: ${source}`)
+          if (intent !== undefined && !INTENT_SET.has(intent)) throw new Error(`unsupported intent: ${intent}`)
           const requestedSpaces = stringArray(input.memoryBodyIds, 'memoryBodyIds', 10_000) ?? allowedBodies
           if (requestedSpaces.some(id => !allowedBodies.includes(id))) throw new Error('Recall requested a Memory Space outside this View ReadGrant')
           const mode = text(input.mode, 'mode', 20, false) as 'smart' | 'keyword' | 'basic' | undefined
@@ -593,7 +593,7 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           if (owner === undefined) throw new Error('related-memory traversal requires evidence already admitted by this View, or an id found in a Memory Space it can read')
           if (!allowedBodies.includes(owner)) throw new Error('related-memory owner is outside this View ReadGrant')
           const edge = text(input.edge, 'edge', 30, false) as EdgeType | undefined
-          if (edge !== undefined && !EDGES.has(edge)) throw new Error(`unsupported edge: ${edge}`)
+          if (edge !== undefined && !EDGE_SET.has(edge)) throw new Error(`unsupported edge: ${edge}`)
           const results = await service.related(id, integer(input.depth, 2, 1, 5), edge, request.signal, owner)
           return evidence(request, results)
         }
@@ -648,8 +648,8 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           if (!writableBodies.includes(bodyId)) throw new Error('remember destination is outside this View scope')
           const category = text(input.category, 'category', 30, false) as Category | undefined
           const source = text(input.source, 'source', 30, false) as Source | undefined
-          if (category !== undefined && !CATEGORIES.has(category)) throw new Error(`unsupported category: ${category}`)
-          if (source !== undefined && !SOURCES.has(source)) throw new Error(`unsupported source: ${source}`)
+          if (category !== undefined && !CATEGORY_SET.has(category)) throw new Error(`unsupported category: ${category}`)
+          if (source !== undefined && !SOURCE_SET.has(source)) throw new Error(`unsupported source: ${source}`)
           result = await service.remember({
             content: text(input.content, 'content', 100_000)!,
             ...(category === undefined ? {} : { category }), ...(source === undefined ? {} : { source }),
@@ -668,7 +668,7 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           }
           bodyId = sourceSpace
           const edge = text(input.type, 'type', 30, false) as EdgeType | undefined
-          if (edge !== undefined && !EDGES.has(edge)) throw new Error(`unsupported edge: ${edge}`)
+          if (edge !== undefined && !EDGE_SET.has(edge)) throw new Error(`unsupported edge: ${edge}`)
           const weight = typeof input.weight === 'number' ? input.weight : 0.5
           result = await service.link(sourceId, targetId, edge, weight, text(input.reason, 'reason', 1_000, false), request.signal, bodyId) as MemoryJsonValue
         } else if (request.offer.sourceActionId === 'forget') {

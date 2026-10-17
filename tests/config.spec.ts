@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parse } from 'yaml'
+import { MEMORY_PLACEMENT_CAPABILITIES } from 'dsh-mnemon-source-memory-spaces/contracts'
+import { Config as RuntimeConfig } from 'dsh-mnemon-source-runtime'
+import { RUNTIME_MEMORY_LIMIT_MAX_BYTES, RUNTIME_MEMORY_LIMITS } from 'dsh-mnemon-source-runtime/contracts'
 import { Config, resolveConfig } from "../src/host/config.ts"
 
 afterEach(() => vi.unstubAllEnvs())
@@ -119,6 +124,39 @@ describe('Mnemon config and resolution', () => {
     expect(() => resolveConfig({ runtimeMemory: { memoryLimitBytes: 0 } })).toThrow('MEMORY.md limit')
     expect(() => resolveConfig({ runtimeMemory: { userLimitBytes: 1.5 } })).toThrow('USER.md limit')
     expect(() => resolveConfig({ runtimeMemory: { maintenanceMaxTokens: 1_000_001 } })).toThrow('maintenance maxTokens')
+  })
+
+  it('defaults and bounds the Runtime limits as the Runtime Source does', () => {
+    expect(resolveConfig({}).runtimeMemory).toMatchObject({ memoryLimitBytes: RUNTIME_MEMORY_LIMITS.memory, userLimitBytes: RUNTIME_MEMORY_LIMITS.user })
+    expect(Config({}).runtimeMemory).toMatchObject({ memoryLimitBytes: RUNTIME_MEMORY_LIMITS.memory, userLimitBytes: RUNTIME_MEMORY_LIMITS.user })
+    for (const [key, file] of [['memoryLimitBytes', 'MEMORY.md'], ['userLimitBytes', 'USER.md']] as const) {
+      expect(resolveConfig({ runtimeMemory: { [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES } }).runtimeMemory[key]).toBe(RUNTIME_MEMORY_LIMIT_MAX_BYTES)
+      expect(RuntimeConfig({ [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES })[key]).toBe(RUNTIME_MEMORY_LIMIT_MAX_BYTES)
+      expect(() => resolveConfig({ runtimeMemory: { [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 } }))
+        .toThrow(`dsh-mnemon: Runtime ${file} limit must be an integer within 1..${RUNTIME_MEMORY_LIMIT_MAX_BYTES} bytes`)
+      expect(() => Config({ runtimeMemory: { [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 } })).toThrow()
+      expect(() => RuntimeConfig({ [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 })).toThrow()
+    }
+  })
+
+  it('takes the placement capabilities Memory Spaces lists, and only those', () => {
+    const persistenceStrategy = { mode: 'automatic' as const, rules: { requiredCapabilities: [...MEMORY_PLACEMENT_CAPABILITIES] } }
+    expect(Config({ persistenceStrategy }).persistenceStrategy?.rules?.requiredCapabilities).toEqual([...MEMORY_PLACEMENT_CAPABILITIES])
+    expect(resolveConfig({ persistenceStrategy }).persistenceStrategy.rules.requiredCapabilities).toEqual([...MEMORY_PLACEMENT_CAPABILITIES])
+    expect(() => Config({ persistenceStrategy: { rules: { requiredCapabilities: ['telepathy' as never] } } })).toThrow()
+  })
+
+  it('writes only the code defaults into the Starter patch', () => {
+    // The mnemon Entry of the bundle patch, its disabled expression kept as data.
+    const rows = parse(readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8'), {
+      customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => ({ __jsExpr: value }) }],
+    }) as Array<{ insert: Array<{ config: Array<{ id: string; config?: Record<string, unknown> }> }> }>
+    const patched = rows[0]!.insert[0]!.config.find(row => row.id === 'mnemon')!.config!
+    expect(Object.keys(patched).sort()).toEqual(['defaultRecallLimit', 'embedding', 'idleReviewMs', 'lifecycleEnabled', 'recallMode', 'recallQuality',
+      'remoteAccess', 'routingGuidance', 'tabEnabled', 'timeoutMs', 'writeEnabled', 'writebackMode'])
+    // The defaults DSH's form shows, and the ones the Host applies, which take embedding and recall quality from Memory Spaces.
+    expect(Config({})).toMatchObject(patched)
+    expect(resolveConfig({})).toMatchObject(patched)
   })
 
   it('inherits the DSH new-session model by default and validates fixed task routes', () => {
