@@ -154,7 +154,7 @@ mnemon:
 
 运行时记忆页面显示每个文件的已用大小与上限。
 
-![从回合打开的运行时记忆：在 MEMORY.md 与 USER.md 的条目中高亮被纠正的结账页目标](../../assets/webui-v0.5.32/zh-CN/memory-runtime.jpg)
+![运行时记忆：USER.md 与 MEMORY.md 及其默认上限](../../assets/webui-v0.5.32/zh-CN/memory-runtime-limits.jpg)
 
 ### Mnemon Native 嵌入
 

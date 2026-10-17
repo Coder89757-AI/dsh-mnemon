@@ -10,9 +10,9 @@ Captured on **2026-10-17 (Asia/Shanghai)** from a real local DSH 0.2.1-rc.2 WebU
 
 | Flow / 流程 | English | 简体中文 |
 |---|---|---|
-| Recall: an answer that uses memory, and one click to what it read / 召回：用到记忆的回答，一键打开读到的内容 | [recall.mp4](./en/recall.mp4) · [GIF](./en/recall.gif) · 17 s | [recall.mp4](./zh-CN/recall.mp4) · [GIF](./zh-CN/recall.gif) · 15 秒 |
-| Save to memory: edit the candidate, see where it can go, the task Agent writes, the receipt leads to the result / 存入记忆：编辑候选内容，查看可以存到哪里，任务 Agent 写入，回执直达结果 | [save.mp4](./en/save.mp4) · [GIF](./en/save.gif) · 39 s | [save.mp4](./zh-CN/save.mp4) · [GIF](./zh-CN/save.gif) · 35 秒 |
-| Correct: a correction replaces the runtime entry, and its item opens it / 纠正：替换运行时记忆，点击条目直达 | [correct.mp4](./en/correct.mp4) · 14 s | [correct.mp4](./zh-CN/correct.mp4) · 13 秒 |
+| Recall: an answer that uses memory, and one click to what it read / 召回：用到记忆的回答，一键打开读到的内容 | [recall.mp4](./en/recall.mp4) · [GIF](./en/recall.gif) · 17 s | [recall.mp4](./zh-CN/recall.mp4) · [GIF](./zh-CN/recall.gif) · 13 秒 |
+| Save to memory: edit the candidate, see where it can go, the task Agent writes, the receipt leads to the result / 存入记忆：编辑候选内容，查看可以存到哪里，任务 Agent 写入，回执直达结果 | [save.mp4](./en/save.mp4) · [GIF](./en/save.gif) · 39 s | [save.mp4](./zh-CN/save.mp4) · [GIF](./zh-CN/save.gif) · 34 秒 |
+| Correct: a correction replaces the runtime entry, and its item opens it / 纠正：替换运行时记忆，点击条目直达 | [correct.mp4](./en/correct.mp4) · 14 s | [correct.mp4](./zh-CN/correct.mp4) · 14 秒 |
 | Memory System: the four pages, the graph and an Agent answer with citations / 记忆系统：四个页面、图谱与带引用的 Agent 回答 | [memory.mp4](./en/memory.mp4) · [GIF](./en/memory.gif) · 29 s | [memory.mp4](./zh-CN/memory.mp4) · [GIF](./zh-CN/memory.gif) · 28 秒 |
 | Plugins: DSH's Plugins page, then composition, component pages and storage / 插件：DSH 的插件页，再到记忆组合、组件页与存储 | [plugins.mp4](./en/plugins.mp4) · [GIF](./en/plugins.gif) · 25 s | [plugins.mp4](./zh-CN/plugins.mp4) · [GIF](./zh-CN/plugins.gif) · 25 秒 |
 
@@ -22,9 +22,9 @@ Frames are Chrome screencast frames played at their own timestamps (H.264, 30 fp
 
 ## What changed since v0.5.19 / 与 v0.5.19 相比的变化
 
-The [v0.5.19 gallery](../webui-v0.5.19/README.md) was captured on DSH 0.1.7-rc.2 and stays as a dated record. This one keeps its flows and screen names and adds two screens.
+The [v0.5.19 gallery](../webui-v0.5.19/README.md) was captured on DSH 0.1.7-rc.2 and stays as a dated record. This one keeps its flows and screen names and adds three screens: the two below, and `memory-runtime-limits`, the top of the Runtime memory page with its size-against-limit cards, taken on a fresh fixture of the same build before any conversation.
 
-[v0.5.19 图集](../webui-v0.5.19/README.md)采集于 DSH 0.1.7-rc.2，作为带日期的记录保留。本图集保留它的流程与截图名称，并新增两张截图。
+[v0.5.19 图集](../webui-v0.5.19/README.md)采集于 DSH 0.1.7-rc.2，作为带日期的记录保留。本图集保留它的流程与截图名称，并新增三张截图：下面提到的两张，以及 `memory-runtime-limits`，即运行时记忆页面顶部的容量卡片，在同一构建的全新夹具上、对话开始前截取。
 
 - **Sidebar.** Settings moved under **More**, and DSH added **Automation tasks**. / **侧边栏**：设置移到**更多**中，DSH 新增了**自动化任务**。
 - **Plugins page.** DSH 0.2.1 groups plugins into built-in plugin settings, experimental plugins and **Installed plugins**, where dsh-mnemon is listed (new screen `plugins-list`). / **插件页**：DSH 0.2.1 把插件分为内置插件配置、实验性插件与**已安装插件**，可组合记忆列在已安装插件中（新增截图 `plugins-list`）。
@@ -42,7 +42,7 @@ The [v0.5.19 gallery](../webui-v0.5.19/README.md) was captured on DSH 0.1.7-rc.2
 | Model / 模型 | DeepSeek API, `deepseek-flash` (DeepSeek-V4.1-Flash in the WebUI), for the conversation, the task Agent and the Agent answer / 对话、任务 Agent 与 Agent 查询均使用 |
 | Runtime / 运行环境 | macOS 15.6, Node.js 24.19.0, Mnemon CLI 0.2.10 |
 | Browser / 浏览器 | Headless Google Chrome 155 over the DevTools protocol, light color scheme / 通过 DevTools 协议驱动的无头 Chrome 155，浅色 |
-| Desktop / 桌面 | 1280 × 800 at 2x, stored 1920 px wide; 24 screens per locale; the Plugins page at 1280 × 858 so the whole page fits / 2 倍像素采集，保存为 1920 像素宽；每种语言 24 张；插件页以 1280 × 858 截取，整页可见 |
+| Desktop / 桌面 | 1280 × 800 at 2x, stored 1920 px wide; 25 screens per locale; the Plugins page at 1280 × 858 so the whole page fits / 2 倍像素采集，保存为 1920 像素宽；每种语言 25 张；插件页以 1280 × 858 截取，整页可见 |
 | Phone / 窄屏 | 390 × 844 at 2x; 3 screens per locale / 2 倍像素；每种语言 3 张 |
 | Data / 数据 | A fictional project, Lumen: 3 profile and 5 working-memory entries, 5 active and 1 archived document, 3 native memory spaces (2 active) with 17 memories / 虚构项目 Lumen：3 条用户画像与 5 条工作记忆，5 份活跃档案与 1 份归档，3 个原生记忆空间（2 个激活）共 17 条记忆 |
 | Embedding / 嵌入 | Off, as a default install has it, with no embedding service; see below / 与默认安装一样关闭，也没有嵌入服务；见下文 |
@@ -62,6 +62,7 @@ Each locale is one pass over a fresh fixture: `node scripts/serve-e2e.mjs --docs
 | A correction and its writes / 纠正及其写入 | [chat-correction](./en/chat-correction.jpg) | [chat-correction](./zh-CN/chat-correction.jpg) |
 | Status / 状态 | [memory-status](./en/memory-status.jpg) | [memory-status](./zh-CN/memory-status.jpg) |
 | Runtime memory, opened from a turn / 从回合打开的运行时记忆 | [memory-runtime](./en/memory-runtime.jpg) | [memory-runtime](./zh-CN/memory-runtime.jpg) |
+| Runtime memory from the top, with its size-against-limit cards (new; a fresh fixture, before any conversation) / 运行时记忆页面顶部的容量卡片（新增；在全新夹具上、对话开始前截取） | [memory-runtime-limits](./en/memory-runtime-limits.jpg) | [memory-runtime-limits](./zh-CN/memory-runtime-limits.jpg) |
 | Project Documents, opened from a turn / 从回合打开的项目档案 | [memory-documents](./en/memory-documents.jpg) | [memory-documents](./zh-CN/memory-documents.jpg) |
 | Memory Spaces / 记忆空间 | [memory-spaces](./en/memory-spaces.jpg) | [memory-spaces](./zh-CN/memory-spaces.jpg) |
 | Graph with an entity selected / 选中实体的图谱 | [memory-graph](./en/memory-graph.jpg) | [memory-graph](./zh-CN/memory-graph.jpg) |
@@ -85,6 +86,6 @@ Each locale is one pass over a fresh fixture: `node scripts/serve-e2e.mjs --docs
 
 ## Validation / 校验
 
-Both locales were captured with no browser console errors, and each screen, recording, reply, receipt and Agent answer was checked by eye for the intended state. The manifest records every file's viewport, dimensions, duration, size and SHA-256, and what each turn read or wrote. The gallery holds 72 media files, 21.8 MB. In the Chinese pass, Ask Agent's recall returned four of the five memories that mention ClickHouse and left out the September 12 incident, so the answer says its evidence records no incident; the English pass cites it. The manifest notes this with the run. The capture reflects the stated revision, model and environment only; it does not measure model accuracy, cover live third-party Providers or DSH 0.2.0, or establish complete phone support.
+Both locales were captured with no browser console errors, and each screen, recording, reply, receipt and Agent answer was checked by eye for the intended state. The manifest records every file's viewport, dimensions, duration, size and SHA-256, and what each turn read or wrote. The gallery holds 74 media files, 22.2 MB. The capture reflects the stated revision, model and environment only; it does not measure model accuracy, cover live third-party Providers or DSH 0.2.0, or establish complete phone support.
 
-两种语言采集过程中浏览器控制台均无错误，每张截图、每段录制，以及每条回复、回执与 Agent 回答都经过人工检查。manifest 记录了每个文件的视口、尺寸、时长、大小与 SHA-256，以及每一轮读到和写入的内容。本图集共 72 个媒体文件，21.8 MB。中文这一遍里，Agent 查询召回了提到 ClickHouse 的五条记忆中的四条，没有包括 9 月 12 日的事故，因此回答说证据中没有事故记录；英文这一遍引用了它。manifest 在这一遍的记录中注明了这一点。本组素材只代表上述版本、模型与环境，不衡量模型准确率，不涉及在线第三方 Provider 或 DSH 0.2.0，也不代表完整的手机端支持。
+两种语言采集过程中浏览器控制台均无错误，每张截图、每段录制，以及每条回复、回执与 Agent 回答都经过人工检查。manifest 记录了每个文件的视口、尺寸、时长、大小与 SHA-256，以及每一轮读到和写入的内容。本图集共 74 个媒体文件，22.2 MB。本组素材只代表上述版本、模型与环境，不衡量模型准确率，不涉及在线第三方 Provider 或 DSH 0.2.0，也不代表完整的手机端支持。

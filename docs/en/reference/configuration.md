@@ -154,7 +154,7 @@ Storage byte limits count entry content and delimiters. The model snapshot's imp
 
 The Runtime memory page shows each file's size against its limit.
 
-![Runtime memory opened from a turn: the corrected checkout target highlighted among the MEMORY.md and USER.md entries](../../assets/webui-v0.5.32/en/memory-runtime.jpg)
+![Runtime memory with USER.md and MEMORY.md against their default limits](../../assets/webui-v0.5.32/en/memory-runtime-limits.jpg)
 
 ### Mnemon Native embeddings
 
