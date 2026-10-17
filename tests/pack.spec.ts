@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Worker } from 'node:worker_threads'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import { resolveConfig } from "../src/host/config.ts"
@@ -9,8 +10,9 @@ import { MnemonPackManager, MNEMON_PACK_FORMAT, MNEMON_PACK_MIME, documentVersio
 import { createStorageRoot } from '../src/host/storage-root.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
-import { RUNTIME_ENTRY_DELIMITER } from 'dsh-mnemon-source-runtime/contracts'
-import { sqlite as nodeSqlite, writeSpace, type SpaceInsight } from './helpers/memory-space-db.ts'
+import { DOCUMENTS_DIRECTORY, DOCUMENTS_LOCK_FILE, DOCUMENTS_LOCK_STALE_MS } from 'dsh-mnemon-source-documents/contracts'
+import { RUNTIME_DIRECTORY, RUNTIME_ENTRY_DELIMITER, RUNTIME_LOCK_FILE, RUNTIME_LOCK_STALE_MS, RUNTIME_PROJECTION_FILES, runtimeProjection } from 'dsh-mnemon-source-runtime/contracts'
+import { sqlite as nodeSqlite, writeSpace, type SpaceInsight } from '../plugins/dsh-mnemon-source-memory-spaces/tests/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []
@@ -692,5 +694,65 @@ describe('Mnemon Pack', () => {
     const source = await fixture('pack-wal', 12)
     writeFileSync(join(source.root, 'data', 'project', 'mnemon.db-wal'), 'pending')
     await expect(source.manager.exportPack('memory-spaces')).rejects.toThrow('not checkpointed')
+  })
+
+  it('carries and lands USER.md and MEMORY.md byte for byte as the Runtime Source writes them', async () => {
+    const root = temporary('pack-runtime-bytes')
+    const sources = await sourceFixture({ dataDir: root, workspace: temporary('pack-runtime-bytes-workspace') })
+    releases.push(sources.dispose)
+    for (const [target, content] of [
+      ['user', 'Prefers concise answers'], ['memory', '项目使用 pnpm workspace'], ['memory', 'A rare character \u{20BB7} takes four bytes'], ['user', 'Écrit en français'],
+    ] as const) await sources.runtime.mutate('mutate', { action: 'add', target, content, importance: 'normal' }, { confirmed: true })
+    const written = (file: string) => readFileSync(join(root, RUNTIME_DIRECTORY, file))
+    const created = runner(root)
+    const exported = await new MnemonPackManager(created.runner, created.config, undefined, now).exportPack('runtime')
+    const files = unzipSync(Buffer.from(exported.base64, 'base64'))
+    const stored = JSON.parse(written('memories.json').toString('utf8')) as { entries: Array<{ target: 'user' | 'memory'; content: string }> }
+    for (const target of ['user', 'memory'] as const) {
+      const file = RUNTIME_PROJECTION_FILES[target]
+      expect(Buffer.from(files[`payload/runtime/${file}`]!).equals(written(file)), file).toBe(true)
+      expect(Buffer.from(runtimeProjection(stored.entries, target), 'utf8').equals(written(file)), file).toBe(true)
+    }
+    expect(JSON.parse(Buffer.from(files['payload/runtime/memories.json']!).toString('utf8'))).toEqual(stored)
+
+    const target = temporary('pack-runtime-bytes-target')
+    const landed = runner(target)
+    await new MnemonPackManager(landed.runner, landed.config, undefined, now).importPack(exported.base64, { mode: 'replace' })
+    for (const file of Object.values(RUNTIME_PROJECTION_FILES)) expect(readFileSync(join(target, RUNTIME_DIRECTORY, file)).equals(written(file)), file).toBe(true)
+  })
+
+  it('takes over a Source lock only when that Source would, and waits for one it holds', async () => {
+    const source = await fixture('pack-source-locks', 14)
+    const runtimeLock = join(source.root, RUNTIME_DIRECTORY, RUNTIME_LOCK_FILE)
+    const documentsLock = join(source.root, DOCUMENTS_DIRECTORY, DOCUMENTS_LOCK_FILE)
+    // Left behind by a process that stopped: older than its Source's own stale rule.
+    for (const [lock, staleMs] of [[runtimeLock, RUNTIME_LOCK_STALE_MS], [documentsLock, DOCUMENTS_LOCK_STALE_MS]] as const) {
+      writeFileSync(lock, 'stopped\n')
+      const left = new Date(Date.now() - staleMs - 5_000)
+      utimesSync(lock, left, left)
+    }
+    await source.manager.exportPack('full')
+    expect([existsSync(runtimeLock), existsSync(documentsLock)]).toEqual([false, false])
+
+    // Held by a live writer: the export starts while it holds the lock and finishes after it lets go.
+    for (const [scope, lock] of [['runtime', runtimeLock], ['documents', documentsLock]] as const) {
+      writeFileSync(lock, 'held\n')
+      const released = new Float64Array(new SharedArrayBuffer(8))
+      const writer = new Worker(`
+        const { workerData } = require('node:worker_threads')
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)
+        // Stamped before the lock goes: nothing can take it earlier than this.
+        new Float64Array(workerData.released)[0] = Date.now()
+        require('node:fs').rmSync(workerData.lock, { force: true })
+      `, { eval: true, workerData: { lock, released: released.buffer } })
+      const exited = new Promise(resolve => writer.once('exit', resolve))
+      const exported = await source.manager.exportPack(scope)
+      const finished = Date.now()
+      await exited
+      expect(exported.manifest.components).toEqual([scope])
+      expect(released[0], scope).toBeGreaterThan(0)
+      expect(finished, scope).toBeGreaterThanOrEqual(released[0]!)
+      expect(existsSync(lock)).toBe(false)
+    }
   })
 })

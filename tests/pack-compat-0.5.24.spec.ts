@@ -173,6 +173,21 @@ describe('the Pack format shared with dsh-mnemon 0.5.24', () => {
     landed(target.root, source.root)
   })
 
+  it('names every entry as 0.5.24 does: the Sources\' own file names spell the payload', async () => {
+    // The Pack builds its entry names from each Source's contracts, so a Source that renamed a file
+    // would change the archive format with it. This list is the format, written out.
+    const source = await machine('compat-layout', 11)
+    const files = archive((await source.mine.exportPack('full')).base64)
+    const payload = Object.keys(files).filter(path => path.startsWith('payload/')).sort()
+    expect(payload.filter(path => !path.startsWith('payload/documents/active/'))).toEqual([
+      'payload/data/.dsh-memory-bodies.json', 'payload/data/project/mnemon.db', 'payload/documents/index.json',
+      'payload/runtime/MEMORY.md', 'payload/runtime/USER.md', 'payload/runtime/memories.json',
+    ])
+    expect(payload.filter(path => path.startsWith('payload/documents/active/'))).toEqual([expect.stringMatching(/^payload\/documents\/active\/design-11-[0-9a-f]{8}\.md$/u)])
+    const index = JSON.parse(Buffer.from(files['payload/documents/index.json']!).toString('utf8')) as { documents: Array<{ relativePath: string }> }
+    expect(index.documents.map(document => `payload/${document.relativePath}`)).toEqual(payload.filter(path => path.startsWith('payload/documents/active/')))
+  })
+
   it('carries one archive through both implementations without changing what it holds', async () => {
     const source = await machine('compat-round', 10)
     const written = await source.mine.exportPack('full')

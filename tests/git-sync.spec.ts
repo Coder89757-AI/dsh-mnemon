@@ -11,7 +11,7 @@ import type { MnemonGitHubAuth } from '../src/host/github-auth.ts'
 import { MnemonMachineStore, defaultMachineLabel } from '../src/host/machine-identity.ts'
 import { runProcess, type ProcessRunner } from '../src/host/process.ts'
 import { sourceFixture } from './fixtures/sources.ts'
-import { sqlite as nodeSqlite, writeSpace } from './helpers/memory-space-db.ts'
+import { sqlite as nodeSqlite, writeSpace } from '../plugins/dsh-mnemon-source-memory-spaces/tests/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []

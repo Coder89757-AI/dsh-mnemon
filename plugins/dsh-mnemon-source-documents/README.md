@@ -25,6 +25,10 @@ The `create` Action accepts `title`, `content`, and optional `description`, `sou
 
 `create` Action 接收 `title`、`content`，以及可选的 `description`、`sourcePaths`、`sessionIds`。它始终新建独立档案，拒绝 `action`、`id` 等 mutation 选择字段；容量不足时失败，不更新或归档已有档案。原有 `manage` Action 继续支持创建和更新。Mnemon 后台审查只获得仅创建档案工具，已有内容覆盖候选时跳过。本变更无需迁移档案格式。
 
+## Storage files
+
+The `./contracts` entry names this Source's directory, index and lock under a storage root (`documents/`, `index.json`, `.index.lock`; each document lies in `active/` or `archived/` by its status) and exports `parseDocumentIndex`, which reads an index as a backup or sync carries it, and `summarizeDocumentIndex`, which counts one for an inventory. They are pure and browser-safe. The `dsh-mnemon` Starter's backup, sync and storage inventory use them instead of keeping copies.
+
 ## Source-owned UI and tests
 
 The optional `./client` entry is an ordinary DSH Client plugin. This package owns its pages and `presentation/` resources and uses `dsh-mnemon/client` for the shared frame and scoped management client. It never receives a Host Context, credentials or another Source's controller.
