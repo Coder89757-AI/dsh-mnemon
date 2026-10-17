@@ -127,6 +127,8 @@ describe('Mnemon config and resolution', () => {
   })
 
   it('defaults and bounds the Runtime limits as the Runtime Source does', () => {
+    // The values stored settings are checked against.
+    expect([RUNTIME_MEMORY_LIMITS.memory, RUNTIME_MEMORY_LIMITS.user, RUNTIME_MEMORY_LIMIT_MAX_BYTES]).toEqual([10_240, 4_096, 1_048_576])
     expect(resolveConfig({}).runtimeMemory).toMatchObject({ memoryLimitBytes: RUNTIME_MEMORY_LIMITS.memory, userLimitBytes: RUNTIME_MEMORY_LIMITS.user })
     expect(Config({}).runtimeMemory).toMatchObject({ memoryLimitBytes: RUNTIME_MEMORY_LIMITS.memory, userLimitBytes: RUNTIME_MEMORY_LIMITS.user })
     for (const [key, file] of [['memoryLimitBytes', 'MEMORY.md'], ['userLimitBytes', 'USER.md']] as const) {
@@ -134,8 +136,8 @@ describe('Mnemon config and resolution', () => {
       expect(RuntimeConfig({ [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES })[key]).toBe(RUNTIME_MEMORY_LIMIT_MAX_BYTES)
       expect(() => resolveConfig({ runtimeMemory: { [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 } }))
         .toThrow(`dsh-mnemon: Runtime ${file} limit must be an integer within 1..${RUNTIME_MEMORY_LIMIT_MAX_BYTES} bytes`)
-      expect(() => Config({ runtimeMemory: { [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 } })).toThrow()
-      expect(() => RuntimeConfig({ [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 })).toThrow()
+      expect(() => Config({ runtimeMemory: { [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 } })).toThrow(`$.runtimeMemory.${key} expected number <= 1048576 but got 1048577`)
+      expect(() => RuntimeConfig({ [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 })).toThrow(`$.${key} expected number <= 1048576 but got 1048577`)
     }
   })
 
@@ -143,7 +145,8 @@ describe('Mnemon config and resolution', () => {
     const persistenceStrategy = { mode: 'automatic' as const, rules: { requiredCapabilities: [...MEMORY_PLACEMENT_CAPABILITIES] } }
     expect(Config({ persistenceStrategy }).persistenceStrategy?.rules?.requiredCapabilities).toEqual([...MEMORY_PLACEMENT_CAPABILITIES])
     expect(resolveConfig({ persistenceStrategy }).persistenceStrategy.rules.requiredCapabilities).toEqual([...MEMORY_PLACEMENT_CAPABILITIES])
-    expect(() => Config({ persistenceStrategy: { rules: { requiredCapabilities: ['telepathy' as never] } } })).toThrow()
+    expect(() => Config({ persistenceStrategy: { rules: { requiredCapabilities: ['telepathy' as never] } } }))
+      .toThrow('$.persistenceStrategy.rules.requiredCapabilities[0] expected "graph" | "entities" | "related" | "exact-write" | "link" | "forget" but got "telepathy"')
   })
 
   it('writes only the code defaults into the Starter patch', () => {

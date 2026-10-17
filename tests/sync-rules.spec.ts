@@ -1,8 +1,9 @@
 import { posix, win32 } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { branchValid, directoryValid, emailValid, machineNameValid, repositoryNameValid, repositoryProblem } from '../src/client/sync-view.ts'
+import { MNEMON_GITHUB_DEFAULT_CLIENT_ID, MnemonGitHubAuth } from '../src/host/github-auth.ts'
 import { machineLabel } from '../src/host/machine-identity.ts'
-import { githubRepositoryNameValid, MNEMON_MACHINE_LABEL_MAX, portableAbsolutePath, syncRepositoryProblem } from '../src/host/protocol.ts'
+import { MNEMON_MACHINE_LABEL_MAX, portableAbsolutePath, syncRepositoryProblem } from '../src/host/protocol.ts'
 import { syncAuthorEmail, syncBranch, syncRepositoryUrl, syncSubdirectory } from '../src/host/sync-config.ts'
 
 /** Whether a Host check takes a value, which it refuses by throwing. */
@@ -68,12 +69,24 @@ describe('sync setting rules shared by the form and the Host', () => {
     expect(() => syncSubdirectory('mnemon\0')).toThrow('sync directory must be a relative path inside the branch')
   })
 
-  it('name a machine and a GitHub repository by one rule on both sides', () => {
+  it('name a machine and a GitHub repository by one rule on both sides', async () => {
     const names = ['Studio', '  Studio  ', '', '   ', 'two\nlines', 'tab\tbed', 'line\u2028separated', 'x'.repeat(MNEMON_MACHINE_LABEL_MAX), 'x'.repeat(MNEMON_MACHINE_LABEL_MAX + 1)]
     for (const name of names) expect(machineNameValid(name), name).toBe(takes(machineLabel, name))
     expect(names.filter(machineNameValid)).toEqual(['Studio', '  Studio  ', 'x'.repeat(MNEMON_MACHINE_LABEL_MAX)])
+    // GitHub sign-in checks the name before it asks GitHub, which answers here with a created repository.
+    const grant = { version: 1 as const, accessToken: 'gho_rules', savedAt: 'now' }
+    const port = { available: () => true, describe: async () => ({ configured: true, writable: true }), read: async () => grant, write: async () => {}, clear: async () => {} }
+    const created = { name: 'memory', full_name: 'octocat/memory', clone_url: 'https://github.com/octocat/memory.git', private: true, default_branch: 'main', owner: { login: 'octocat' }, permissions: { push: true } }
+    const request = (async () => new Response(JSON.stringify(created), { status: 201, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch
+    const github = new MnemonGitHubAuth(port, MNEMON_GITHUB_DEFAULT_CLIENT_ID, () => 0, request)
     const repositories = ['mnemon-memory', ' memory ', 'a.b_c-d', '.', '..', '...', 'a/b', 'has space', '', 'x'.repeat(100), 'x'.repeat(101)]
-    for (const name of repositories) expect(repositoryNameValid(name), name).toBe(githubRepositoryNameValid(name.trim()))
+    for (const name of repositories) {
+      const accepted = await github.create(name, true).then(() => true, (error: Error) => {
+        expect(error.message).toBe('a GitHub repository name holds letters, digits, dots, dashes and underscores')
+        return false
+      })
+      expect(repositoryNameValid(name), name).toBe(accepted)
+    }
     expect(repositories.filter(repositoryNameValid)).toEqual(['mnemon-memory', ' memory ', 'a.b_c-d', '...', 'x'.repeat(100)])
   })
 })

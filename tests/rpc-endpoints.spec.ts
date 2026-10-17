@@ -25,17 +25,21 @@ const channels = Object.keys(MNEMON_RPC_ENDPOINTS) as MnemonRpcChannel[]
 const pairs = (entries: Iterable<readonly [string, string]>): string[] => [...new Set([...entries].map(([channel, endpoint]) => channel + ' ' + endpoint))].sort()
 const LISTED = pairs(channels.flatMap(channel => MNEMON_RPC_ENDPOINTS[channel].map(endpoint => [channel, endpoint] as const)))
 
-/** What each Host handler answers an endpoint it does not serve. */
-const UNKNOWN: Record<MnemonRpcChannel, (endpoint: string) => string> = {
-  [MNEMON_READ_CHANNEL]: endpoint => 'unknown read endpoint: ' + endpoint,
-  [MNEMON_ACTIVATION_CHANNEL]: endpoint => 'unknown activation endpoint: ' + endpoint,
-  [MNEMON_WRITE_CHANNEL]: endpoint => 'unknown write endpoint: ' + endpoint,
-  [MNEMON_PACK_CHANNEL]: endpoint => 'unknown Pack endpoint: ' + endpoint,
-  [MNEMON_SYNC_CHANNEL]: endpoint => 'unknown sync endpoint: ' + endpoint,
-  [MNEMON_REVIEW_CHANNEL]: endpoint => 'unknown review endpoint: ' + endpoint,
-  [MNEMON_SETTINGS_CHANNEL]: endpoint => 'unknown settings endpoint: ' + endpoint,
-  [MNEMON_VIEW_CHANNEL]: () => 'View operation is not available on this channel',
-  [MNEMON_VIEW_WRITE_CHANNEL]: () => 'View operation is not available on this channel',
+/**
+ * What each Host handler answers an endpoint it does not serve. The View handlers check a name
+ * against the list first, so one listed there that nothing dispatches gets their second answer.
+ */
+const VIEW_UNKNOWN = ['View operation is not available on this channel', 'Unknown View operation']
+const UNKNOWN: Record<MnemonRpcChannel, (endpoint: string) => readonly string[]> = {
+  [MNEMON_READ_CHANNEL]: endpoint => ['unknown read endpoint: ' + endpoint],
+  [MNEMON_ACTIVATION_CHANNEL]: endpoint => ['unknown activation endpoint: ' + endpoint],
+  [MNEMON_WRITE_CHANNEL]: endpoint => ['unknown write endpoint: ' + endpoint],
+  [MNEMON_PACK_CHANNEL]: endpoint => ['unknown Pack endpoint: ' + endpoint],
+  [MNEMON_SYNC_CHANNEL]: endpoint => ['unknown sync endpoint: ' + endpoint],
+  [MNEMON_REVIEW_CHANNEL]: endpoint => ['unknown review endpoint: ' + endpoint],
+  [MNEMON_SETTINGS_CHANNEL]: endpoint => ['unknown settings endpoint: ' + endpoint],
+  [MNEMON_VIEW_CHANNEL]: () => VIEW_UNKNOWN,
+  [MNEMON_VIEW_WRITE_CHANNEL]: () => VIEW_UNKNOWN,
 }
 
 /**
@@ -210,7 +214,7 @@ describe('RPC endpoint names', () => {
     for (const channel of channels) {
       for (const endpoint of probes) {
         const response = await handlers.get(channel)!(endpoint, {}, new AbortController().signal) as RpcResult<unknown>
-        if (!response.ok && response.error.message === UNKNOWN[channel](endpoint)) refused.push([channel, endpoint])
+        if (!response.ok && UNKNOWN[channel](endpoint).includes(response.error.message)) refused.push([channel, endpoint])
       }
     }
     const unknown = new Set(pairs(refused))
