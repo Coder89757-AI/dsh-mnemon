@@ -96,9 +96,10 @@ const LABELS: Readonly<Record<WriteOutcome, MnemonKey>> = {
 
 /**
  * What a task Agent did with a candidate: the outcome, the Agent's own
- * summary, and, when something was written, a way to see it.
+ * summary, and, when something was written, a way to see it. A memory saved
+ * without a vector says so on a line of its own (#388).
  */
-export function WriteReceipt(props: { action?: string | undefined; summary?: string | undefined; error?: string | undefined; t?: MnemonTranslate | undefined; onView?: (() => void) | undefined; viewLabel?: string | undefined }): JSX.Element {
+export function WriteReceipt(props: { action?: string | undefined; summary?: string | undefined; error?: string | undefined; unembedded?: boolean | undefined; t?: MnemonTranslate | undefined; onView?: (() => void) | undefined; viewLabel?: string | undefined }): JSX.Element {
   const shared = useT()
   const t = props.t ?? shared
   if (props.error !== undefined) {
@@ -113,6 +114,7 @@ export function WriteReceipt(props: { action?: string | undefined; summary?: str
     <Tag tone={TONES[outcome]}>{t(LABELS[outcome])}</Tag>
     {props.summary !== undefined && props.summary !== '' && <p>{props.summary}</p>}
     {props.onView !== undefined && viewable && <Button variant="ghost" size="sm" className={css.receiptAction} onClick={props.onView}>{props.viewLabel ?? t('receipt.view')}</Button>}
+    {props.unembedded === true && (outcome === 'written' || outcome === 'updated' || outcome === 'partial') && <p className={css.receiptNote}>{t('receipt.unembedded')}</p>}
   </div>
 }
 

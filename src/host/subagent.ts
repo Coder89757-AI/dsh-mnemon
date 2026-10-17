@@ -410,6 +410,21 @@ export interface DelegatedWriteResult {
   /** Spaces that were inactive and that this write switched on. */
   activatedMemoryBodyIds?: string[]
   documentIds?: string[]
+  /** Memories saved without a vector, as the Provider's receipt says (#388). */
+  unembedded?: Array<{ memoryBodyId?: string; id?: string }>
+  hint?: string
+}
+
+/** What a memory saved without a vector means for recall, and how its vector comes. */
+const UNEMBEDDED_HINT = 'Saved without a vector, because embedding did not succeed: semantic matching misses it until its vector is filled in, while keyword, link and recency recall still reach it. Once the embedding service answers, the user fills it in from Test status in the Mnemon Native embedding settings, which runs through the storage root and embedding settings DSH uses; a terminal mnemon command may reach neither.'
+
+/** The memories a write saved without a vector: Mnemon Native says so with `embedded: false` (#388). */
+function withoutVector(receipts: readonly CapturedToolReceipt[]): Array<{ memoryBodyId?: string; id?: string }> {
+  return receipts.filter(receipt => receipt.name === 'mnemon_remember').flatMap(receipt => {
+    const value = optionalObject(receipt.value)
+    if (value?.embedded !== false) return []
+    return [{ ...(typeof value.memoryBodyId === 'string' ? { memoryBodyId: value.memoryBodyId } : {}), ...(typeof value.id === 'string' ? { id: value.id } : {}) }]
+  })
 }
 
 export type CoordinatedDocumentResult = DocumentMutationResult & {
@@ -1491,6 +1506,8 @@ ${naturalRequest(request, target === undefined ? REQUEST_LABELS : TARGETED_WRITE
       .flatMap(receipt => spaceOf(receipt) ?? []))]
     const activated = [...new Set(writes.filter(receipt => mutationResultCommitted(receipt.value)).flatMap(receipt => spaceOf(receipt) ?? [])
       .filter(id => inactive!.has(id)))]
+    // Read from the same write receipts, so a vector-less write inside a failed Code Mode program counts too (#388).
+    const unembedded = withoutVector(writes)
     return {
       delegated: true,
       runId,
@@ -1501,6 +1518,7 @@ ${naturalRequest(request, target === undefined ? REQUEST_LABELS : TARGETED_WRITE
       memoryBodyIds: landed,
       ...(activated.length === 0 ? {} : { activatedMemoryBodyIds: activated }),
       documentIds: strings(value.documentIds),
+      ...(unembedded.length === 0 ? {} : { unembedded, hint: UNEMBEDDED_HINT }),
     }
   }
 

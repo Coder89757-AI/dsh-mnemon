@@ -1670,7 +1670,7 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
   const [memoryBodyId, setMemoryBodyId] = useState('')
   const [supervising, setSupervising] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [outcome, setOutcome] = useState<{ content: string; action?: string; summary?: string; error?: string } | null>(null)
+  const [outcome, setOutcome] = useState<{ content: string; action?: string; summary?: string; unembedded?: boolean; error?: string } | null>(null)
   useEffect(() => { if (props.seed !== '') setContent(props.seed) }, [props.seed])
   useEffect(() => {
     if (memoryBodyId === '' && props.memoryBodies.length > 0) setMemoryBodyId((props.memoryBodies.find(body => body.active) ?? props.memoryBodies[0])!.id)
@@ -1687,7 +1687,7 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
     setSupervising(true); setOutcome(null)
     try {
       const response = await props.client.supervise(candidate)
-      setOutcome({ content: candidate, action: response.action, summary: response.summary })
+      setOutcome({ content: candidate, action: response.action, summary: response.summary, unembedded: (response.unembedded ?? []).length > 0 })
       props.onMutate()
     } catch (reason) { setOutcome({ content: candidate, error: message(reason) }) } finally { setSupervising(false) }
   }
@@ -1698,7 +1698,8 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
     setSaving(true); setOutcome(null)
     try {
       const response = await props.client.remember({ content: candidate, category, importance, tags: tags.split(',').map(value => value.trim()).filter(Boolean), entities: entities.split(',').map(value => value.trim()).filter(Boolean), source: 'user', ...(memoryBodyId === '' ? {} : { memoryBodyId }) })
-      setOutcome({ content: candidate, action: typeof response.action === 'string' ? response.action : 'stored', summary: typeof response.summary === 'string' ? response.summary : '' })
+      // Mnemon Native says embedded: false for a memory it saved without a vector (#388).
+      setOutcome({ content: candidate, action: typeof response.action === 'string' ? response.action : 'stored', summary: typeof response.summary === 'string' ? response.summary : '', unembedded: response.embedded === false })
       props.onMutate()
     } catch (reason) { setOutcome({ content: candidate, error: message(reason) }) } finally { setSaving(false) }
   }
@@ -1708,7 +1709,7 @@ export function RememberPage(props: { client: MemorySpacesPageClient; agentAvail
       <div className={css.candidateHeading}><label htmlFor={candidateId}>{t('remember.candidate')}</label><TaskAgentTag available={props.agentAvailable} /></div>
       <textarea id={candidateId} value={content} onChange={event => setContent(event.target.value)} maxLength={8000} rows={8} placeholder={t('remember.placeholder')} />
       {!props.agentAvailable && <p className={css.sessionHint}>{t('remember.taskAgentHint')}</p>}
-      {outcome !== null && <WriteReceipt action={outcome.action} summary={outcome.summary} error={outcome.error} onView={props.onView} />}
+      {outcome !== null && <WriteReceipt action={outcome.action} summary={outcome.summary} error={outcome.error} unembedded={outcome.unembedded} onView={props.onView} />}
     </form>
     <details className={css.advancedWrite}>
       <summary><span><strong>{t('remember.advanced')}</strong><small>{t('remember.advancedHint')}</small></span><span>{t('remember.expand')}</span></summary>
