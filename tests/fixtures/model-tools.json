@@ -19,6 +19,19 @@
         "result"
       ],
       "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "recorded": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "recorded"
+      ],
+      "additionalProperties": false
     }
   },
   {
@@ -41,6 +54,10 @@
         "routeId",
         "input"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -63,6 +80,10 @@
         "offerId",
         "input"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -71,6 +92,10 @@
     "parameters": {
       "type": "object",
       "properties": {}
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -107,6 +132,10 @@
       "required": [
         "query"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -140,6 +169,10 @@
       "required": [
         "id"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -148,6 +181,10 @@
     "parameters": {
       "type": "object",
       "properties": {}
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -172,6 +209,10 @@
       "required": [
         "query"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -205,6 +246,10 @@
         "title",
         "content"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -248,6 +293,10 @@
       "required": [
         "action"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -302,6 +351,10 @@
         "action",
         "target"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -360,6 +413,10 @@
       "required": [
         "content"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -399,6 +456,10 @@
         "sourceId",
         "targetId"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -418,6 +479,10 @@
       "required": [
         "id"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -456,6 +521,10 @@
         "name",
         "description"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -480,6 +549,10 @@
       "required": [
         "memoryBodyId"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   {
@@ -507,6 +580,10 @@
         "targetMemoryBodyId",
         "sourceMemoryBodyIds"
       ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
     }
   }
 ]

@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest'
+import type { MnemonAnchorPage } from '../src/client/anchor.ts'
 import { TurnActivityProjection } from '../src/host/activity.ts'
+import type { namedToolPresentation } from '../src/host/activity-presentation.ts'
 import type { HostContextShape, HostSessionEvent, ToolDefinition } from '../src/host/dsh.ts'
-import { MEMORY_TOOLS, memoryTool } from '../src/host/protocol.ts'
+import { MEMORY_TOOLS, memoryTool, type MemoryToolPage } from '../src/host/protocol.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { modelMemoryWake, presentMemoryWake } from '../src/host/view-presentation.ts'
@@ -20,6 +22,15 @@ function registered(): ToolDefinition[] {
   return tools
 }
 
+/**
+ * What DSH shows the model of a tool: its name, description and input schema, deferLoading when a
+ * tool sets it, and the output schema the TypeScript declarations of Code Mode type its result with.
+ */
+function modelVisible(tool: ToolDefinition) {
+  const deferred = (tool as { deferLoading?: unknown }).deferLoading === true
+  return { name: tool.name, description: tool.description, parameters: tool.parameters, ...(deferred ? { deferLoading: true } : {}), output: tool.output.schema }
+}
+
 describe('memory tool table', () => {
   it('has a row for every memory tool the Host registers, in registration order, and for nothing else', () => {
     const names = registered().map(tool => tool.name)
@@ -29,9 +40,17 @@ describe('memory tool table', () => {
     expect(memoryTool('toString')).toBeUndefined()
   })
 
-  it('keeps every model-visible tool name, description and input schema byte-identical', () => {
-    const visible = registered().map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters }))
-    expect(JSON.stringify(visible, null, 2) + '\n').toBe(readFileSync(new URL('./fixtures/model-tools.json', import.meta.url), 'utf8'))
+  it('keeps every model-visible tool name, description, input and output schema byte-identical', () => {
+    // A checkout that turns line endings into CRLF changes no byte the model sees.
+    const fixture = readFileSync(new URL('./fixtures/model-tools.json', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+    expect(JSON.stringify(registered().map(modelVisible), null, 2) + '\n').toBe(fixture)
+  })
+
+  it('types the pages as anchor pages, and records activity only for the tools that read or write', () => {
+    expectTypeOf<MemoryToolPage>().toEqualTypeOf<MnemonAnchorPage>()
+    expectTypeOf<Parameters<typeof namedToolPresentation>[0]>().toEqualTypeOf<'mnemon_recall' | 'mnemon_related' | 'mnemon_document_search'
+      | 'mnemon_document_create' | 'mnemon_document_manage' | 'mnemon_runtime_memory' | 'mnemon_remember' | 'mnemon_link' | 'mnemon_forget'
+      | 'mnemon_memory_body_create' | 'mnemon_memory_body_update' | 'mnemon_memory_body_merge'>()
   })
 
   it('records the Source and operation each named tool runs, as its activity always named them', () => {
@@ -90,12 +109,34 @@ describe('memory tool table', () => {
 
   it('counts each settled call in the counter it always added to', () => {
     const names = [...Object.keys(MEMORY_TOOLS), 'mnemon_subagent_result', 'mnemon_notes_digest']
+    // One turn per call, so each turn shows exactly which counter its call added to.
     const events = names.flatMap((name, index): HostSessionEvent[] => [
-      { type: 'tool/call', seq: index * 2 + 1, data: { turn: 1, step: 1, callId: `call-${index}`, name, arguments: '{}' } },
-      { type: 'tool/result', seq: index * 2 + 2, data: { turn: 1, step: 1, message: { source: { callId: `call-${index}` } } } },
+      { type: 'tool/call', seq: index * 2 + 1, data: { turn: index + 1, step: 1, callId: `call-${index}`, name, arguments: '{}' } },
+      { type: 'tool/result', seq: index * 2 + 2, data: { turn: index + 1, step: 1, message: { source: { callId: `call-${index}` } } } },
     ])
-    expect(new TurnActivityProjection().snapshot(events).activities[0]).toMatchObject({
-      count: 18, recalls: 2, writes: 9, documentSearches: 1, inspections: 2, failures: 0,
+    const activities = new TurnActivityProjection().snapshot(events).activities
+    expect(activities.map(activity => activity.names)).toEqual(names.map(name => [name]))
+    const counters = ['recalls', 'writes', 'documentSearches', 'inspections', 'failures'] as const
+    const counted = Object.fromEntries(activities.map(activity => [activity.names[0], counters.filter(counter => activity[counter] > 0)]))
+    expect(counted).toEqual({
+      mnemon_view_route: [],
+      mnemon_view_action: [],
+      mnemon_memory_bodies: ['inspections'],
+      mnemon_recall: ['recalls'],
+      mnemon_related: ['recalls'],
+      mnemon_status: ['inspections'],
+      mnemon_document_search: ['documentSearches'],
+      mnemon_document_create: ['writes'],
+      mnemon_document_manage: ['writes'],
+      mnemon_runtime_memory: ['writes'],
+      mnemon_remember: ['writes'],
+      mnemon_link: ['writes'],
+      mnemon_forget: ['writes'],
+      mnemon_memory_body_create: ['writes'],
+      mnemon_memory_body_update: ['writes'],
+      mnemon_memory_body_merge: ['writes'],
+      mnemon_subagent_result: [],
+      mnemon_notes_digest: [],
     })
   })
 
