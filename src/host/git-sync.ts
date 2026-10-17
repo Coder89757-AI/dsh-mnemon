@@ -95,6 +95,12 @@ const GIT_LOCATION_ENV = new Set([
   'GIT_QUARANTINE_PATH',
   'GIT_CEILING_DIRECTORIES',
   'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  // How paths are read: GIT_LITERAL_PATHSPECS would turn the literal sync directory into
+  // a path named `:(literal)…`, and the clean below would quietly remove nothing.
+  'GIT_LITERAL_PATHSPECS',
+  'GIT_GLOB_PATHSPECS',
+  'GIT_NOGLOB_PATHSPECS',
+  'GIT_ICASE_PATHSPECS',
 ])
 
 /**
@@ -788,7 +794,10 @@ export class MnemonGitSync {
     // A payload the branch already holds is left untouched: the work tree
     // stays clean, so Git records no second commit for the same bytes.
     if (prepared.tip === undefined || !holdsPayload(before, entries)) this.writePayload(settings.subdir, entries)
-    const staged = await this.git(['add', '--all', '--', settings.subdir], { cwd: this.store.mirror(), signal })
+    // Every file of the payload is published, whatever ignore rules this machine or the branch
+    // has, such as a global `*.db`: the sync directory holds the branch's payload and what was
+    // just written there, nothing else, and a file the checksums list must reach the branch.
+    const staged = await this.git(['add', '--all', '--force', '--', settings.subdir], { cwd: this.store.mirror(), signal })
     if (staged.exitCode !== 0) throw new Error('git add failed: ' + tail(staged.stderr || staged.stdout))
     const changed = await this.git(['status', '--porcelain', '--', settings.subdir], { cwd: this.store.mirror(), signal })
     const committed = changed.stdout.trim() !== ''
@@ -1279,6 +1288,12 @@ export class MnemonGitSync {
     if (fetched.exitCode !== 0) throw remoteFailure('git fetch failed: ' + this.mask(tail(fetched.stderr || fetched.stdout), credential))
     const reset = await this.git(['reset', '--hard', '--quiet', 'FETCH_HEAD'], { cwd: mirror, signal })
     if (reset.exitCode !== 0) throw new Error('git reset failed: ' + tail(reset.stderr || reset.stdout))
+    // A reset keeps the files Git does not track, and the payload is read from the work tree:
+    // the -wal and -shm SQLite leaves beside a database something opened in place failed every
+    // sync as unchecksummed payload until someone deleted them (#396). The sync directory holds
+    // the branch's payload and nothing else; the rest of the mirror is left as it is.
+    const cleaned = await this.git(['clean', '-fdxq', '--', ':(literal)' + settings.subdir], { cwd: mirror, signal })
+    if (cleaned.exitCode !== 0) throw new Error('git clean failed: ' + tail(cleaned.stderr || cleaned.stdout))
     // The payload read next is the one fetched, which another machine can have moved on since
     // `ls-remote` answered, so the commit reported for it is the one now checked out.
     return { tip: await this.head(signal) }
