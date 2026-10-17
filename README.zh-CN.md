@@ -126,7 +126,7 @@ Starter 固定一组经过测试、各自独立版本的包。同一时间只运
 
 用 `dsh-mnemon/extension-sdk` 定义 Source 或 Strategy，通过标准插槽编写增强，或用 `dsh-mnemon-source-memory-spaces/provider-sdk` 编写记忆空间驱动。组件还可以把自己的设置和状态卡片加入 dsh-mnemon 的页面。你的仓库自己负责清单、依赖、测试与构建；DSH 负责安装和挂载，是否把它选为主策略是另一个独立决定。
 
-从[插件开发指南](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/development/extensions.md)开始。新能力与新 Provider 请先在 Issue 中讨论，再提交 PR，详见 [CONTRIBUTING](https://github.com/omdsh-dev/dsh-mnemon/blob/8466e3560a3b9de4e9f4b7302cbf005c84e8e69f/CONTRIBUTING.zh-CN.md)。
+从[插件开发指南](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/development/extensions.md)开始。新能力与新 Provider 请先在 Issue 中讨论，再提交 PR，详见 [CONTRIBUTING](https://github.com/omdsh-dev/dsh-mnemon/blob/main/CONTRIBUTING.zh-CN.md)。
 
 ## 数据与信任
 
@@ -136,7 +136,7 @@ Starter 固定一组经过测试、各自独立版本的包。同一时间只运
 - 已保存的 Provider 凭据只留在宿主上，不会被导出；但备份仍包含私有记忆，请妥善保护。
 - Source 与 Strategy 是受信任的进程内 JavaScript，**不是沙箱代码**；历史记忆永远不会凌驾于当前指令之上。
 
-[备份与恢复](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/operations.md) · [安全策略](https://github.com/omdsh-dev/dsh-mnemon/blob/8466e3560a3b9de4e9f4b7302cbf005c84e8e69f/SECURITY.md) · [版本历史](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/releases/README.md) · [路线图](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/roadmap.md)
+[备份与恢复](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/operations.md) · [安全策略](https://github.com/omdsh-dev/dsh-mnemon/blob/main/SECURITY.md) · [版本历史](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/releases/README.md) · [路线图](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/roadmap.md)
 
 ## 开发与验证
 

@@ -125,7 +125,7 @@ Memory Spaces Providers: [Mnemon Native](https://github.com/omdsh-dev/dsh-mnemon
 
 Define a Source or Strategy with `dsh-mnemon/extension-sdk`, add an enhancement through the standard slots, or write a Memory Spaces driver with `dsh-mnemon-source-memory-spaces/provider-sdk`. A component can also add its own settings and Status card to the pages dsh-mnemon shows. Your repository owns its manifest, dependencies, tests and build; DSH installs and mounts it, and choosing it as the main strategy is a separate decision.
 
-Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/development/extensions.md). Discuss new capabilities and Providers in an Issue before a pull request; see [CONTRIBUTING](https://github.com/omdsh-dev/dsh-mnemon/blob/8466e3560a3b9de4e9f4b7302cbf005c84e8e69f/CONTRIBUTING.md).
+Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/development/extensions.md). Discuss new capabilities and Providers in an Issue before a pull request; see [CONTRIBUTING](https://github.com/omdsh-dev/dsh-mnemon/blob/main/CONTRIBUTING.md).
 
 ## Data and trust
 
@@ -135,7 +135,7 @@ Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blo
 - Saved Provider credentials stay on the Host and are never exported. Backups still contain private memory; protect them.
 - Sources and Strategies are trusted in-process JavaScript, not sandboxed code. Remembered history never outranks current instructions.
 
-[Backup and recovery](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md) · [Security policy](https://github.com/omdsh-dev/dsh-mnemon/blob/8466e3560a3b9de4e9f4b7302cbf005c84e8e69f/SECURITY.md) · [Release history](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/releases/README.md) · [Roadmap](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/roadmap.md)
+[Backup and recovery](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md) · [Security policy](https://github.com/omdsh-dev/dsh-mnemon/blob/main/SECURITY.md) · [Release history](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/releases/README.md) · [Roadmap](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/roadmap.md)
 
 ## Develop and verify
 
