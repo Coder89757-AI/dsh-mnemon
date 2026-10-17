@@ -2,7 +2,7 @@
 
 [Design plans](./README.md) · [Roadmap](../en/roadmap.md)
 
-Status: planned, nothing here has shipped. Written on 2026-10-17 against `main` at `f41a121f` (v0.5.31 with #414, #415 and #416); file references are to that revision.
+Status: planned; item 12 is done ([record](../pr-assets/neutral-vector-note/README.md)), and nothing else here has shipped. Written on 2026-10-17 against `main` at `f41a121f` (v0.5.31 with #414, #415 and #416); file references are to that revision.
 
 After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421). Items 12 to 14 were found while capturing the [v0.5.32 gallery](../assets/webui-v0.5.32/README.md), and items 15 to 18 while reviewing it; their file references are to `main` at `03dd40a4` (#417 to #423 on top of `f41a121f`).
 
@@ -112,6 +112,8 @@ After v0.5.31, a review of the code, the documentation and the Host's compatibil
 **Change.** Word the line by its cause. When no embedding service is set up, neither in DSH's settings nor in the environment the Mnemon CLI reads, a neutral note says that semantic matching needs an embedding service and links to the Mnemon Native embedding settings; the caution stays for a service that is set up but did not answer or lacks the model. Decide whether the neutral note shows on every save or once per space.
 
 **Tests.** Save to memory through the task Agent and straight to a space, with the settings at their default and no service, with a configured service that is down, and with a working service, in both languages: the neutral note, the caution, and no line; a save to working memory or the user profile shows none of them.
+
+**Done** ([record](../pr-assets/neutral-vector-note/README.md)). The line is worded by whether DSH manages the Mnemon Native embedding settings (`embedding.enabled`). Off, the default, it is a neutral note in the hint colour: no embedding service is available, keyword search still finds the memory, and the vector can be filled in from Test status once a service is connected. On, it keeps the caution. The conversation's Save to memory reads the setting from the settings it already holds, the Memory Spaces page from its Source's status (a new optional `embeddingManaged`), and `/mnemon remember` from the Host's resolved configuration; `WriteReceipt` takes it as an optional `embeddingManaged`, and without it keeps the caution, as beside a Memory Spaces of 0.5.21 or earlier. The hint the model reads is unchanged. The note shows on every save without a vector, since each receipt stands alone. A service set up only in the environment the Mnemon CLI inherits gets the neutral note too: the WebUI cannot see that environment, and the note's advice holds for it.
 
 ## 13. A replaced runtime memory entry shows when it was first written
 
