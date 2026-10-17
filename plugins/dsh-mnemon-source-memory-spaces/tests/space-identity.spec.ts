@@ -2,8 +2,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MemorySpaceIdentity } from '../src/host/space-identity.ts'
-import { sqlite, writeSpace, type SpaceInsight } from './helpers/memory-space-db.ts'
+import { MnemonStoreIdentity } from '../src/mnemon-store-identity.ts'
+import { MemorySpaceIdentity } from '../src/space-identity.ts'
+import { sqlite, writeSpace, type SpaceInsight } from './memory-space-db.ts'
 
 const directories: string[] = []
 function temporary(): string {
@@ -48,6 +49,14 @@ function inspect<T>(root: string, bytes: Uint8Array, read: (database: InstanceTy
     database.close()
   }
 }
+
+describe('Memory Space identity entry', () => {
+  it('exposes the class alone, made from the directory its copies go in', async () => {
+    expect(Object.keys(await import('../src/space-identity.ts'))).toEqual(['MemorySpaceIdentity'])
+    expect(MemorySpaceIdentity.length).toBe(1)
+    expect(Object.getOwnPropertyNames(MemorySpaceIdentity.prototype).sort()).toEqual(['constructor', 'contains', 'dispose', 'merge', 'of'])
+  })
+})
 
 describe.skipIf(sqlite === undefined)('Memory Space identity', () => {
   it('stays the same when the space was only read, though its bytes change (#370)', () => {
@@ -201,7 +210,7 @@ describe.skipIf(sqlite === undefined)('Memory Space identity', () => {
   it('compares bytes, as merges did before, without node:sqlite, for a file that is not a database, or past the row limits', () => {
     const root = temporary()
     const database = space(root, 'real', { insights: INSIGHTS, edges: [['i-1', 'i-2']] })
-    const withoutSqlite = new MemorySpaceIdentity(root, () => undefined)
+    const withoutSqlite = new MnemonStoreIdentity(root, { sqlite: () => undefined })
     expect(withoutSqlite.of(database)).toMatch(/^bytes:[0-9a-f]{64}$/u)
     // The same memories after a read: equal to the identity, but not to the bytes.
     const read = space(root, 'read', { insights: INSIGHTS, edges: [['i-1', 'i-2']], reads: 1 })
@@ -211,11 +220,11 @@ describe.skipIf(sqlite === undefined)('Memory Space identity', () => {
     header.write('SQLite format 3\0', 0, 'binary')
     expect(identity.of(header)).toMatch(/^bytes:/u)
     // Two memories and an edge: three rows, one more than this identity reads.
-    const limited = new MemorySpaceIdentity(root, undefined, 2)
+    const limited = new MnemonStoreIdentity(root, { maxRows: 2 })
     expect(limited.of(database)).toMatch(/^bytes:/u)
-    expect(new MemorySpaceIdentity(root, undefined, 3).of(database)).toBe(identity.of(database))
+    expect(new MnemonStoreIdentity(root, { maxRows: 3 }).of(database)).toBe(identity.of(database))
     // A merge reads at most so many rows in all: the second space is past it.
-    const merge = new MemorySpaceIdentity(root, undefined, 10, 4)
+    const merge = new MnemonStoreIdentity(root, { maxRows: 10, maxMergeRows: 4 })
     expect(merge.of(database)).toMatch(/^content:/u)
     expect(merge.of(space(root, 'second', { insights: INSIGHTS }))).toMatch(/^bytes:/u)
     for (const used of [withoutSqlite, identity, limited, merge]) used.dispose()

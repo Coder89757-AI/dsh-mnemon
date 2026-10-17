@@ -1,6 +1,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { DOCUMENTS_DIRECTORY, DOCUMENTS_INDEX_FILE, summarizeDocumentIndex } from 'dsh-mnemon-source-documents/contracts'
+import {
+  MEMORY_PROVIDER_REGISTRY_FILE, MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY,
+  summarizeMemoryProviderRegistry, summarizeMemorySpaceRegistry,
+} from 'dsh-mnemon-source-memory-spaces/contracts'
+import { RUNTIME_DIRECTORY, RUNTIME_MEMORIES_FILE, RUNTIME_PROJECTION_FILES, summarizeRuntimeMemories } from 'dsh-mnemon-source-runtime/contracts'
 import type { ResolvedConfig } from './config.ts'
 import type { StorageRoot } from './storage-root.ts'
 import { createStorageRoot } from './storage-root.ts'
@@ -38,30 +44,26 @@ function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
-}
-
 function missing(kind: StorageAreaKind, path: string): StorageAreaInventory {
   return { kind, path, status: 'missing', bytes: 0, itemCount: 0, details: {} }
 }
 
+// Each area is read through its Source's own names and counting rules, so an inventory follows
+// the Source when its files change instead of reporting a store it no longer understands. The
+// Source says whether a file can be counted; the messages the Status page shows stay here.
 function runtimeArea(root: string): StorageAreaInventory {
-  const path = join(root, 'runtime')
-  const source = join(path, 'memories.json')
+  const path = join(root, RUNTIME_DIRECTORY)
+  const source = join(path, RUNTIME_MEMORIES_FILE)
   if (!existsSync(source)) return missing('runtime', path)
   try {
-    const file = record(readJson(source))
-    if (file === undefined || !Array.isArray(file.entries)) throw new Error('memories.json is not a valid runtime-memory source')
-    const entries = file.entries.map(record).filter((entry): entry is Record<string, unknown> => entry !== undefined)
-    const userEntries = entries.filter(entry => entry.target === 'user').length
-    const memoryEntries = entries.filter(entry => entry.target === 'memory').length
-    const projectionsHealthy = existsSync(join(path, 'USER.md')) && existsSync(join(path, 'MEMORY.md'))
+    const stored = summarizeRuntimeMemories(readJson(source))
+    if (!stored.valid) throw new Error('memories.json is not a valid runtime-memory source')
+    const projectionsHealthy = existsSync(join(path, RUNTIME_PROJECTION_FILES.user)) && existsSync(join(path, RUNTIME_PROJECTION_FILES.memory))
     return {
       kind: 'runtime', path,
-      status: entries.length === 0 ? 'empty' : projectionsHealthy ? 'ready' : 'invalid',
-      bytes: safeBytes(path), itemCount: entries.length,
-      details: { userEntries, memoryEntries, projectionsHealthy, source: 'memories.json' },
+      status: stored.entries === 0 ? 'empty' : projectionsHealthy ? 'ready' : 'invalid',
+      bytes: safeBytes(path), itemCount: stored.entries,
+      details: { userEntries: stored.user, memoryEntries: stored.memory, projectionsHealthy, source: RUNTIME_MEMORIES_FILE },
       ...(projectionsHealthy ? {} : { issue: 'USER.md or MEMORY.md projection is missing' }),
     }
   } catch (error) {
@@ -70,20 +72,19 @@ function runtimeArea(root: string): StorageAreaInventory {
 }
 
 function memorySpacesArea(root: string): StorageAreaInventory {
-  const path = join(root, 'data')
+  const path = join(root, MEMORY_SPACES_DIRECTORY)
   if (!existsSync(path)) return missing('memory-bodies', path)
   try {
-    const registryPath = join(path, '.dsh-memory-bodies.json')
-    const registry = existsSync(registryPath) ? record(readJson(registryPath)) : undefined
-    const bodies = Array.isArray(registry?.bodies) ? registry.bodies.map(record).filter((body): body is Record<string, unknown> => body !== undefined) : []
-    const databaseCount = readdirSync(path, { withFileTypes: true }).filter(entry => entry.isDirectory() && existsSync(join(path, entry.name, 'mnemon.db'))).length
-    const activeCount = bodies.filter(body => body.active === true).length
-    const invalidRegistry = existsSync(registryPath) && (registry?.version !== 1 || !Array.isArray(registry.bodies))
+    const registryPath = join(path, MEMORY_SPACE_REGISTRY_FILE)
+    const registry = existsSync(registryPath) ? summarizeMemorySpaceRegistry(readJson(registryPath)) : undefined
+    const registered = registry?.spaces ?? 0
+    const databaseCount = readdirSync(path, { withFileTypes: true }).filter(entry => entry.isDirectory() && existsSync(join(path, entry.name, MEMORY_SPACE_DATABASE_FILE))).length
+    const invalidRegistry = registry !== undefined && !registry.valid
     return {
       kind: 'memory-bodies', path,
-      status: invalidRegistry ? 'invalid' : databaseCount === 0 && bodies.length === 0 ? 'empty' : 'ready',
-      bytes: safeBytes(path), itemCount: Math.max(bodies.length, databaseCount),
-      details: { registeredBodies: bodies.length, activeBodies: activeCount, databases: databaseCount, registry: existsSync(registryPath) },
+      status: invalidRegistry ? 'invalid' : databaseCount === 0 && registered === 0 ? 'empty' : 'ready',
+      bytes: safeBytes(path), itemCount: Math.max(registered, databaseCount),
+      details: { registeredBodies: registered, activeBodies: registry?.active ?? 0, databases: databaseCount, registry: registry !== undefined },
       ...(invalidRegistry ? { issue: 'memory-space registry is invalid' } : {}),
     }
   } catch (error) {
@@ -92,19 +93,16 @@ function memorySpacesArea(root: string): StorageAreaInventory {
 }
 
 function documentsArea(root: string): StorageAreaInventory {
-  const path = join(root, 'documents')
-  const indexPath = join(path, 'index.json')
+  const path = join(root, DOCUMENTS_DIRECTORY)
+  const indexPath = join(path, DOCUMENTS_INDEX_FILE)
   if (!existsSync(indexPath)) return missing('documents', path)
   try {
-    const index = record(readJson(indexPath))
-    if (index === undefined || !Array.isArray(index.documents)) throw new Error('index.json is not a valid Documents index')
-    const documents = index.documents.map(record).filter((document): document is Record<string, unknown> => document !== undefined)
-    const active = documents.filter(document => document.status === 'active').length
-    const archived = documents.filter(document => document.status === 'archived').length
+    const index = summarizeDocumentIndex(readJson(indexPath))
+    if (!index.valid) throw new Error('index.json is not a valid Documents index')
     return {
-      kind: 'documents', path, status: documents.length === 0 ? 'empty' : 'ready',
-      bytes: safeBytes(path), itemCount: documents.length,
-      details: { activeDocuments: active, archivedDocuments: archived, index: 'index.json' },
+      kind: 'documents', path, status: index.documents === 0 ? 'empty' : 'ready',
+      bytes: safeBytes(path), itemCount: index.documents,
+      details: { activeDocuments: index.active, archivedDocuments: index.archived, index: DOCUMENTS_INDEX_FILE },
     }
   } catch (error) {
     return { kind: 'documents', path, status: 'invalid', bytes: safeBytes(path), itemCount: 0, details: {}, issue: error instanceof Error ? error.message : String(error) }
@@ -116,14 +114,14 @@ function stateArea(root: string): StorageAreaInventory {
   if (!existsSync(path)) return missing('state', path)
   try {
     const files = readdirSync(path, { withFileTypes: true }).filter(entry => entry.isFile())
-    const providerRegistry = join(path, 'memory-providers.json')
+    const providerRegistry = join(path, MEMORY_PROVIDER_REGISTRY_FILE)
     let providerConnections = 0
     let providerServices = 0
     if (existsSync(providerRegistry)) {
       try {
-        const registry = record(readJson(providerRegistry))
-        providerConnections = Array.isArray(registry?.bodies) ? registry.bodies.length : 0
-        providerServices = record(registry?.services) === undefined ? 0 : Object.keys(record(registry?.services)!).length
+        const registry = summarizeMemoryProviderRegistry(readJson(providerRegistry))
+        providerConnections = registry.connections
+        providerServices = registry.services
       } catch {}
     }
     return {

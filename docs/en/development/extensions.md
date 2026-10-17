@@ -175,7 +175,7 @@ Optional `ViewSpec.guidance` carries the Strategy's trusted `system`, `routing` 
 
 ## Open operations, bounded execution
 
-A Source owns its operation names, input schemas, storage, indexes and maintenance. There is no mandatory five-action taxonomy, summary tree, representation vocabulary or multidimensional budget protocol. A Strategy selects public operations it understands, by id, role and/or capability. Core derives `MemoryAvailableSource.routes/actions` from manifests, live facts and Host permissions; plugin authors do not duplicate descriptors in facts.
+A Source owns its operation names, input schemas, storage, indexes and maintenance. A third-party Source also owns the backup of its data: Mnemon Pack backups and Git sync cover only the official Runtime, Documents and Memory Spaces components, and never include a third-party Provider's data or credentials either. There is no mandatory five-action taxonomy, summary tree, representation vocabulary or multidimensional budget protocol. A Strategy selects public operations it understands, by id, role and/or capability. Core derives `MemoryAvailableSource.routes/actions` from manifests, live facts and Host permissions; plugin authors do not duplicate descriptors in facts.
 
 Core bounds projection characters, evidence characters/items and dispatched calls. These are payload ceilings, not complete LLM-prompt token estimates. Sources receive effective bounds and own excerpts and structured formatting; Core omits oversized evidence rather than manufacturing a summary or splitting JSON. Failed dispatched reads consume a call. There is no automatic retry.
 

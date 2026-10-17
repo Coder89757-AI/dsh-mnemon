@@ -175,7 +175,7 @@ export function apply(ctx: Context): void {
 
 ## 开放操作，有限执行
 
-Source 自己定义操作名、输入 schema、存储、索引和维护方式。不要求五类动作、摘要树、统一表示词汇或多维预算协议。Strategy 按 id、角色或权限能力选择自己理解的公开操作。Core 从 Manifest、动态 Facts 和 Host 权限生成 `MemoryAvailableSource.routes/actions`，作者不重复填写描述。
+Source 自己定义操作名、输入 schema、存储、索引和维护方式。第三方 Source 还要自己负责备份数据：Mnemon Pack 备份与 Git 同步只覆盖官方的运行时记忆、项目档案与记忆空间组件，也不包含第三方 Provider 的数据与凭据。不要求五类动作、摘要树、统一表示词汇或多维预算协议。Strategy 按 id、角色或权限能力选择自己理解的公开操作。Core 从 Manifest、动态 Facts 和 Host 权限生成 `MemoryAvailableSource.routes/actions`，作者不重复填写描述。
 
 Core 仅约束投影字符数、证据字符数/条数及已分派调用次数；这些是载荷上限，不是完整 LLM prompt 的 token 估算。Source 接收有效上限，自行提供摘录和结构化格式；Core 丢弃超限条目，不伪造摘要或切坏 JSON。已分派失败仍消耗调用次数，不自动重试。
 

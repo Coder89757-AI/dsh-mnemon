@@ -12,20 +12,14 @@ import {
 } from 'node:fs'
 import type { BigIntStats } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { DocumentCapacityPlan, DocumentMutation, DocumentMutationResult, DocumentRecord, DocumentSearchResult, DocumentSnapshot, DocumentStatus, DocumentView } from './contracts.ts'
+import type { DocumentCapacityPlan, DocumentIndex, DocumentMutation, DocumentMutationResult, DocumentRecord, DocumentSearchResult, DocumentSnapshot, DocumentStatus, DocumentView } from './contracts.ts'
 import { lexicalRequiredMatchCount, lexicalSearchTokens } from './search-tokens.ts'
-import { DOCUMENTS_VERSION, DOCUMENTS_ACTIVE_LIMIT_BYTES } from './contracts.ts'
+import { DOCUMENTS_VERSION, DOCUMENTS_ACTIVE_LIMIT_BYTES, DOCUMENTS_DIRECTORY, DOCUMENTS_INDEX_FILE, DOCUMENTS_LOCK_FILE, DOCUMENTS_LOCK_STALE_MS } from './contracts.ts'
 
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const LOCK_TIMEOUT_MS = 5_000
-const LOCK_STALE_MS = 30_000
 const LOCK_RETRY_MS = 20
 const MAX_EXCERPT_CACHE_ENTRIES = 2_048
-
-interface DocumentIndex {
-  version: typeof DOCUMENTS_VERSION
-  documents: DocumentRecord[]
-}
 
 export class DocumentCapacityError extends Error {
   readonly code = 'document-capacity' as const
@@ -192,12 +186,12 @@ export class DocumentController {
     if (!existsSync(this.workspaceRoot) || !statSync(this.workspaceRoot).isDirectory()) throw new Error(`document workspace is unavailable: ${this.workspaceRoot}`)
     if (!Number.isSafeInteger(limitBytes) || limitBytes < 1) throw new Error('active document limit must be a positive integer')
     this.storageRoot = storageRoot === undefined ? join(this.workspaceRoot, '.mnemon') : resolve(storageRoot)
-    this.managedRelativePrefix = storageRoot === undefined ? ['.mnemon', 'documents'].join('/') : 'documents'
-    this.directory = join(this.storageRoot, 'documents')
+    this.managedRelativePrefix = storageRoot === undefined ? ['.mnemon', DOCUMENTS_DIRECTORY].join('/') : DOCUMENTS_DIRECTORY
+    this.directory = join(this.storageRoot, DOCUMENTS_DIRECTORY)
     this.activeDirectory = join(this.directory, 'active')
     this.archivedDirectory = join(this.directory, 'archived')
-    this.indexPath = join(this.directory, 'index.json')
-    this.lockPath = join(this.directory, '.index.lock')
+    this.indexPath = join(this.directory, DOCUMENTS_INDEX_FILE)
+    this.lockPath = join(this.directory, DOCUMENTS_LOCK_FILE)
     this.initialize()
   }
 
@@ -520,7 +514,7 @@ export class DocumentController {
   }
 
   private pathFor(record: Pick<DocumentRecord, 'relativePath'>): string {
-    const legacyPrefix = ['.mnemon', 'documents'].join('/')
+    const legacyPrefix = ['.mnemon', DOCUMENTS_DIRECTORY].join('/')
     const relativePath = record.relativePath === legacyPrefix || record.relativePath.startsWith(`${legacyPrefix}/`)
       ? record.relativePath.slice('.mnemon/'.length)
       : record.relativePath
@@ -566,7 +560,7 @@ export class DocumentController {
         const code = (error as NodeJS.ErrnoException).code
         if (code !== 'EEXIST') throw error
         try {
-          if (Date.now() - statSync(this.lockPath).mtimeMs > LOCK_STALE_MS) rmSync(this.lockPath, { force: true })
+          if (Date.now() - statSync(this.lockPath).mtimeMs > DOCUMENTS_LOCK_STALE_MS) rmSync(this.lockPath, { force: true })
         } catch {}
         if (Date.now() >= deadline) throw new Error(`timed out waiting for document lock: ${this.lockPath}`)
         sleepSync(LOCK_RETRY_MS)

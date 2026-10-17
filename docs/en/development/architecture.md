@@ -42,6 +42,14 @@ Storage layout is part of the root package's Host infrastructure. The same resol
 
 The Host passes the resolved directory to each default Source. Sources continue to own their formats, transactions and Provider state; a layout change does not move their data. The opt-in global USER.md uses a separate global root while project data stays under the chosen workspace root. Settings and read-only inventory use the same layout resolver.
 
+Where the Host copies or counts a Source's files, as a Mnemon Pack, Git sync and the storage inventory on the Status page do, it takes each Source's file names, locks and parsers from that Source's `./contracts`:
+
+- Runtime: its directory, files and lock, and the USER.md/MEMORY.md projection and byte count its controller writes;
+- Documents: its directory, index parser and lock;
+- Memory Spaces: its store layout, registry parser and space counts. How two copies of a Mnemon store compare and merge ([#370](https://github.com/omdsh-dev/dsh-mnemon/issues/370), [#391](https://github.com/omdsh-dev/dsh-mnemon/issues/391)) lives behind its Node-only `./space-identity` entry.
+
+Only the Pack's own checks of an incoming file stay in the Host: the entries of memories.json, a document's front matter and content hash, and a store's SQLite header. The Pack builds its entry names from the Sources' names, and a test pins them to the version 1 format.
+
 ## Default plugin combination
 
 | Plugin | Memory authority | Default View contribution |
