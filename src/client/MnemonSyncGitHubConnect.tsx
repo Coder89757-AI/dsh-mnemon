@@ -4,7 +4,7 @@ import type { MnemonSyncGitHubRepository, MnemonSyncGitHubStatus } from '../host
 import { message } from './page-kit.tsx'
 import css from './MnemonSettingsCard.module.css'
 import { failureText, reasonOf } from './sync-view.ts'
-import type { RepositoryEditorProps } from './MnemonSyncSection.tsx'
+import type { RepositoryEditorProps } from './sync-repository-editor.ts'
 import { RepositoryPicker } from './MnemonSyncRepositoryPicker.tsx'
 
 /** Sign in with the GitHub device flow, then pick or create the repository. */

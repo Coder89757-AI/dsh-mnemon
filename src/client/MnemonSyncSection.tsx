@@ -17,6 +17,7 @@ import {
   AUTO_SYNC_CHOICES, credentialText, failureText, intervalLabel, issueText, onGitHub, reasonOf, repositoryName, repositoryProblem, transportOf, when,
 } from './sync-view.ts'
 import { FeedbackLine, type Feedback } from './sync-feedback.tsx'
+import type { RepositoryEditorProps } from './sync-repository-editor.ts'
 import { GitHubConnect } from './MnemonSyncGitHubConnect.tsx'
 import { AdvancedSettings } from './MnemonSyncAdvancedSettings.tsx'
 
@@ -300,24 +301,6 @@ function RepositoryState({ status, checking, t, onRecheck, onFix }: { status: Mn
       {!checking && <button type="button" className={css.syncInlineAction} onClick={onRecheck}>{t('config.syncRecheck')}</button>}
     </span>
   </span>
-}
-
-export interface RepositoryEditorProps {
-  client: MnemonClient
-  status: MnemonSyncStatus
-  github: MnemonSyncGitHubStatus | null
-  disabled: boolean
-  /** Whether a saved connection stays in place when the editor closes. */
-  cancellable: boolean
-  /** The way in the editor opens with, when the page asked for one. */
-  initialMode?: 'github' | 'address' | undefined
-  t: MnemonTranslate
-  onGitHub: (status: MnemonSyncGitHubStatus | null) => void
-  onReadGitHub: () => Promise<void>
-  /** Read the Host's state again after a change the editor made on its own. */
-  onRefresh: () => Promise<void>
-  onCancel: () => void
-  onConnected: () => Promise<void>
 }
 
 /** Connect a repository: through a GitHub sign-in, or by its address. */
