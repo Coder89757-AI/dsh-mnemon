@@ -4,7 +4,7 @@
 
 v0.5.31 之后的技术债审计发现：Starter 的 Host 复制了 Source 的值，几个通信结果类型声明在可在浏览器使用的协议之外，RPC 端点名称在两端都是随手写的字符串，设置表单又把 Host 的 Git 同步检查重新实现了一遍（M2 与 M3 两项）。本改动让它们各有唯一的归属。这一批改动的维护者规则仍然适用：用户和模型看到的内容一律不变，已保存的每项配置都和以前一样通过校验，超时范围也不例外（[计划第 4 项](../../plans/review-gaps-2026-10.md#4-one-timeout-range-for-mnemon-calls)日后再统一它们）。
 
-测试版本：分支 `claude/contracts-one-owner`，在 main `03dd40a4`（#423）上编写，随后合入 main `7a7e1ae1`（#424、#425），2026-10-17 至 2026-10-18（Asia/Shanghai），Node 24.19.0、pnpm 10.13.1，锁定的 DSH 0.2.1-rc.2；根测试另在安装的 DSH 0.2.0-rc.2 上运行。下列检查均在合入后的版本上通过；`verify`、`verify:plugins`、安装的 DSH 与 Git 同步在合入前也已通过。#425 把同步设置区块拆成几个模块，它们以相同名称从 `sync-view.ts` 导入表单的检查，因此无需改动。
+测试版本：分支 `claude/contracts-one-owner`，在 main `03dd40a4`（#423）上编写，随后合入 main `7a7e1ae1`（#424、#425），2026-10-17 至 2026-10-18（Asia/Shanghai），Node 24.19.0、pnpm 10.13.1，锁定的 DSH 0.2.1-rc.2；根测试另在安装的 DSH 0.2.0-rc.2 上运行。下列检查均在合入后的版本上通过；`verify`、`verify:plugins`、安装的 DSH 与 Git 同步在合入前也已通过。评审之后的修正按表格最后一行所列方式检查。#425 把同步设置区块拆成几个模块，它们以相同名称从 `sync-view.ts` 导入表单的检查，因此无需改动。
 
 ## 改动内容
 
@@ -16,8 +16,9 @@ v0.5.31 之后的技术债审计发现：Starter 的 Host 复制了 Source 的�
 | 超时范围 | Host 接受 100–120,000 ms 的 `timeoutMs`，记忆空间接受 1–600,000 ms | 不变。两处各加一条注释，写明另一处的范围，并说明统一它们已列入路线图 |
 | Starter patch 中的默认值 | `cordis.patch.yml` 为 `mnemon` Entry 重写了十二项设置，其中包括嵌入、召回质量与超时 | 不变，另加测试保证它写入的每个值都是代码中的默认值：既是 schema 的默认值（DSH 生成的表单显示的值），也是 `resolveConfig` 的默认值 |
 | 通信结果类型 | `src/host/subagent.ts` 声明了三个会经过 RPC 的结果：`DelegatedAnswerResult`（`agent-search` 附加到召回结果上的回答）、`CoordinatedDocumentResult`（文档的写入与归档）和 `CoordinatedRuntimeMemoryResult`（运行时记忆的写入，作为管理结果的值） | 移入 protocol.ts；subagent.ts 再导出它们，与它自 #411 起再导出 `DelegatedWriteResult` 的做法相同 |
-| RPC 端点名称 | 随手写的字符串：一端是客户端的 `MnemonClient`、设置作用域以及页面借给组件的操作，另一端是 Host 的分支判断 | protocol.ts 中的 `MNEMON_RPC_ENDPOINTS` 列出 Host 在九个通道上提供的全部端点，共 75 个，名称不变。`callMnemonRpc`、`MnemonClient` 的调用以及页面借给组件的操作都以它为类型，组件操作还按读写方式区分，拼错的名称、发到不提供它的通道或以不对应的方式调用的端点都无法通过编译。View 处理器改从这份列表读取名称，不再自写字面量；API Gateway 的设置检查把远程页面访问每个设置端点所需的条件记在一张以它为类型的映射中，日后新增的设置端点在给出条件之前无法通过编译 |
+| RPC 端点名称 | 随手写的字符串：一端是客户端的 `MnemonClient`、设置作用域以及页面借给组件的操作，另一端是 Host 的分支判断 | protocol.ts 中的 `MNEMON_RPC_ENDPOINTS` 列出 Host 在九个通道上提供的全部端点，共 75 个，名称不变。`callMnemonRpc`、`MnemonClient` 的调用以及页面借给组件的操作都以它为类型，组件操作还按读写方式区分。拼错的名称无法通过编译；调用本身写明通道或读写方式时，发到不提供它的通道或以不对应的方式调用的名称也无法通过编译；在运行时才选定通道或方式的调用，如 `assistSource` 与页面借出的操作，则接受其任一通道提供的名称。View 处理器改从这份列表读取名称，不再自写字面量；API Gateway 的设置检查把远程页面访问每个设置端点所需的条件记在一张以它为类型的映射中，日后新增的设置端点在给出条件之前无法通过编译；它只查找字符串，因此格式错误的名称仍得到未知端点的回答 |
 | Git 同步检查 | `src/client/sync-view.ts` 以“与 Host 的检查相同”为由，重新实现了 Host 对仓库地址、分支、目录与作者邮箱的检查（`sync-config.ts`）、对计算机名称的检查（`machine-identity.ts`）以及对 GitHub 仓库名称的检查（`github-auth.ts`） | 这些规则与 `MNEMON_MACHINE_LABEL_MAX` 移入 `src/host/sync-rules.ts`，它不导入任何模块，由 protocol.ts 再导出。两端都调用它；每条提示信息仍在原处，逐字不变 |
+| 接口参考（文档错误） | 通道表写着远程页面可以读取 `/dsh-mnemon-review`，只有 `reconcile` 与 `apply` 需要 trusted-host 授权 | 这一行改为需要 `remoteAccess: trusted-host`，与 `MnemonRemoteService.review` 以及表格下方的段落一致；有测试固定每个审查端点的拒绝 |
 
 ### 表单与 Host 的不同之处
 
@@ -56,14 +57,14 @@ v0.5.31 之后的技术债审计发现：Starter 的 Host 复制了 Source 的�
 | `tests/sync-rules.spec.ts` | 表单与 Host 接受相同的分支、目录、作者邮箱、计算机名称与 GitHub 仓库名称（后者经由 GitHub 登录自己的 `create` 检查），除本地路径外也接受相同的仓库地址；对本地路径，它把表单的规则与 Node 的 POSIX、Windows 规则并列固定；只有 Host 拒绝 NUL 字节，并给出它自己的信息 |
 | `tests/client-platform-boundary.spec.ts` | protocol.ts 以及它取用值的五个模块都不导入 Node 的模块；此前测试只读取 protocol.ts 本身 |
 | `tests/config.spec.ts` | patch 只把代码中的默认值写入 `mnemon` Entry；Host 对运行时记忆上限的默认值与范围和运行时记忆 Source 相同，即 10,240、4,096 与 1,048,576 字节；两个 schema 恰好接受列出的放置能力；均固定 schema 的提示信息 |
-| `tests/remote-rpc.spec.ts` | API Gateway 恰好能访问列出的设置端点，`mutate` 只在有 trusted-host 授权时可用，其他名称（包括 `constructor` 与 `__proto__`）都以原有信息拒绝 |
+| `tests/remote-rpc.spec.ts` | API Gateway 恰好能访问列出的设置端点，`mutate` 只在有 trusted-host 授权时可用，其他名称（包括 `constructor` 与 `__proto__`）都以原有信息拒绝；不是字符串的名称（如 `["get"]`）得到同样的回答，设置处理器不会被调用；每个审查端点都需要授权 |
 | 运行时记忆 `tests/contracts.spec.ts` | `RUNTIME_MEMORY_LIMITS` 与 `RUNTIME_MEMORY_LIMIT_MAX_BYTES` 就是其配置与控制器采用的值，控制器的提示信息不变 |
 | 记忆空间 `tests/config.spec.ts`、`tests/provider-placement.spec.ts` | 持久化策略恰好接受 `MEMORY_PLACEMENT_CAPABILITIES`，其他值以原有提示信息拒绝；放置可以按其中每一项检查 Provider |
 
 ## 兼容性
 
 - **版本差异。** Starter 的 Host 现在导入两个新导出：记忆空间的 `MEMORY_PLACEMENT_CAPABILITIES` 与运行时记忆的 `RUNTIME_MEMORY_LIMIT_MAX_BYTES`，因此这两个 Source 须与本版 Starter 一同发布，发布 PR 保持精确锁定。与 #416 相同，Node 从 Starter 自己的依赖解析它的导入，因此保留另一份 Source 的 profile 改变的是运行哪个 Source，而不是 Starter 导入什么。它新导入的其他值在锁定的版本中都已存在。较旧的 Starter 与这些 Source 一起使用时保留自己的副本，值也相同。若 Starter 与缺少这些导出的记忆空间或运行时记忆一起运行，将无法加载；精确锁定排除了这种情况，与 #416 的导入相同。没有 Source 使用 Starter 中的新内容，peer 下限不变。通信协议不变，因此仍打开着的旧版本页面与本版 Host 的交互一如既往。
-- **公开 SDK。** 只有新增：上述两个导出；`MemoryPlacementCapability` 的成员不变，现由列表推导。protocol.ts 不再声明的常量从来不是任何包的导出（`protocol.ts` 是内部文件，`dsh-mnemon/client` 也没有再导出它们），移动的类型在 subagent.ts 中仍可按原名取用。
+- **公开 SDK。** 只有新增：上述两个导出，两个包的 README 现在都写明了它们；`MemoryPlacementCapability` 的成员不变，现由列表推导。protocol.ts 不再声明的常量从来不是任何包的导出（`protocol.ts` 是内部文件，`dsh-mnemon/client` 也没有再导出它们），移动的类型在 subagent.ts 中仍可按原名取用。
 - **持久化数据与设置。** 不变：schema 的范围与默认值相同（patch 测试与现有的配置测试），同步设置文件接受的值相同（验证脚本在 POSIX 上运行；在 Windows 上，两个版本调用的是同一个 `path.isAbsolute`），写入的内容也没有变化。
 - **界面与模型。** 不变：浏览器包只有上述差别，表单的检查给出相同的判断、Host 给出相同的信息（见验证脚本），工具与 fixture 一致。
 - **Node 20。** `sync-rules.ts` 只使用表单原本就用的正则表达式与字符串方法。
@@ -96,7 +97,7 @@ cmp "$TMPDIR/branch.json" "$TMPDIR/main.json"
 |---|---|
 | lockfile | 清单与 lockfile 均无改动；`pnpm install --frozen-lockfile` |
 | `pnpm run verify` | 通过：文档链接与锚点（4,816 个本地链接、368 个锚点）、类型检查、56 个文件的确定性输出、每个插件的类型检查与测试（17 个包共 593 个通过、3 个跳过；运行时记忆 81 个，记忆空间 292 个、跳过 2 个）、根测试（151 个文件，2,108 个通过、7 个跳过）、真实 Headless 激活（共 38 个工具，其中 8 个属于 Mnemon），含旧设置导入与停用的 Starter、包内容（66 个文件）、导入 15 个 Node 入口并检查 35 个公开类型依赖、publint 与 attw |
-| 测试数量 | 根测试：新增 10 个（`7a7e1ae1` 上为 2,098 个），其中 6 个在两个新文件中、3 个在 `tests/config.spec.ts` 中、1 个在 `tests/remote-rpc.spec.ts` 中，另扩展 1 个。运行时记忆：新增 1 个（80 个变为 81 个）。记忆空间：新增 1 个（291 个变为 292 个），扩展 1 个 |
+| 测试数量 | 根测试：新增 11 个（`7a7e1ae1` 上为 2,098 个），其中 6 个在两个新文件中、3 个在 `tests/config.spec.ts` 中、2 个在 `tests/remote-rpc.spec.ts` 中，另扩展 2 个。运行时记忆：新增 1 个（80 个变为 81 个）。记忆空间：新增 1 个（291 个变为 292 个），扩展 1 个 |
 | `verify:plugins` | 通过：17 个独立插件仓库（各自安装、类型检查、测试与构建）、18 个打包产物、外部使用方（构建、类型检查、测试）、真实 DSH 只安装打包的 Starter 并激活其插件，以及三个可选策略插件同时激活 |
 | 安装的 DSH 0.2.0-rc.2 上的根测试 | 151 个文件，2,105 个通过、10 个跳过：多出的 3 个跳过是只适用于 DSH 0.2.1 的真实宿主探针 |
 | Git 同步端到端 | 在 DSH 0.2.1-rc.2 与 0.2.0-rc.2 上 64 项检查全部通过：两个真实的 DSH Web 实例经由共享的检查配置一个本地裸仓库，向它发布并从它拉取 |
@@ -104,3 +105,4 @@ cmp "$TMPDIR/branch.json" "$TMPDIR/main.json"
 | 新测试放在 main 的模块上 | 端点 5 个文件 57 个测试，配置与工具 3 个文件 49 个，同步 5 个文件 87 个 |
 | 包 | `lib/client.js` 增加 1,870 字节，只有共享的同步规则与借出操作的查找；记忆空间与运行时记忆的客户端包逐字节不变 |
 | `release:intent` | 已确认 `dsh-mnemon`、`dsh-mnemon-source-memory-spaces` 与 `dsh-mnemon-source-runtime` 的 changeset 覆盖 |
+| 评审之后：`1928b1ab`、`b2cbe87d`、`36fd588a` 与本记录 | 根包构建与 `pnpm run typecheck`；受影响的测试，其中 `tests/remote-rpc.spec.ts` 的新测试在去掉字符串检查时失败、换入 main 的 `remote-rpc.ts` 时通过，另有端点、配置、同步规则与两个边界测试（7 个文件 78 个测试）；`pnpm run test:root`（151 个文件，2,109 个通过、7 个跳过）；`node scripts/verify-docs.mjs`（4,816 个本地链接、368 个锚点）；同样三个包的 `release:intent` |
