@@ -1,6 +1,0 @@
----
-"dsh-mnemon": patch
-"dsh-mnemon-source-memory-spaces": patch
----
-
-Model tools no longer answer in ways that read as "nothing there" when something else went wrong (#390). `mnemon_view_route` and `mnemon_view_action` refuse an id the View does not offer by naming the tool that offers that operation, the exact id a short one stands for, or the ids the envelope lists, and never an id the envelope does not show. `mnemon_forget` refused for a space this turn's View does not read says which space and why: switched off, which stays the user's choice and reaches a forget from the next turn; its Provider turned off or not installed; or switched on after the turn began. `mnemon_recall` and `mnemon_document_search` say which items each finds, and `mnemon_related` that in a Mnemon Native space each neighbor names its edge type and `edge` follows one kind. `mnemon_status` says its aggregate sums the active, healthy spaces whose Provider reports statistics, and how many. A Document write, through the named tools or `mnemon_view_action`, returns the Document written with its content hash, without its body or a path, and the layer's totals instead of every Document with its paths. The interface reference gains a table of model tools against Mnemon CLI commands.
