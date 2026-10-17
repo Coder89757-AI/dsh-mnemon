@@ -4,7 +4,7 @@
 
 ## Environment and commands
 
-The plugin's Node engine floor is 20. The pinned complete DSH development profile is the published 0.2.1-rc.1 release (npm `next`) and needs Node `^22.19.0 || >=24.0.0`; use Node 24 for development. Root, Source Client tests and the external artifact consumer use that cohort, and `dsh-client-store` owns the public selector type used by the subagent projection adapter. Public Node entries are also smoke-tested on Node 20 in CI. DSH 0.2.0-rc.2 (npm `latest`) is supported as well: `tests/dsh-host-compatibility.spec.ts` runs DSH's own pre-install compatibility check over all 18 package manifests for the supported and unsupported releases, and CI runs the root tests against an installed 0.2.0-rc.2. To run them against another installation yourself:
+The plugin's Node engine floor is 20. The pinned complete DSH development profile is the published 0.2.1-rc.2 release (npm `next`) and needs Node `^22.19.0 || >=24.0.0`; use Node 24 for development. Root, Source Client tests and the external artifact consumer use that cohort, and `dsh-client-store` owns the public selector type used by the subagent projection adapter. Public Node entries are also smoke-tested on Node 20 in CI. DSH 0.2.0-rc.2 (npm `latest`) is supported as well: `tests/dsh-host-compatibility.spec.ts` runs DSH's own pre-install compatibility check over all 18 package manifests for the supported and unsupported releases, and CI runs the root tests against an installed 0.2.0-rc.2. To run them against another installation yourself:
 
 ```sh
 npm install --global --prefix <directory> @deepseek-ai/dsh@0.2.0-rc.2
