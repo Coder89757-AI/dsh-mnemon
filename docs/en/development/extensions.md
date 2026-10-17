@@ -106,7 +106,7 @@ DSH's own plugin list names a package from its `locale/en.json` and `locale/zh.j
 
 #### A component's own settings and Status card
 
-When declared options are not enough, a component adds its own settings to its page from its `./client` entry, the way the shipped components do: Runtime Memory's user profile scope, Memory Spaces' Providers and embedding, the Layered strategy's background tasks. A Source can also say what its card on the Memory System's Status page shows while it runs.
+When declared options are not enough, a component adds its own settings to its page from its `./client` entry, the way Memory Spaces brings its Providers and embedding. dsh-mnemon draws the other shipped components' settings through the same region: Runtime Memory's user profile scope and the Layered strategy's background tasks. A Source can also say what its card on the Memory System's Status page shows while it runs.
 
 ```tsx
 import { installMemoryComponentUI } from 'dsh-mnemon/client'
@@ -121,6 +121,14 @@ export function apply(ctx) {
 ```
 
 The settings render in the `mnemon.component.settings` region, keyed by the package name the plugin's declaration names, after the page's state, relations and declared options; the component's row gets a gear that opens them. They receive only what the page knows: `component` (`packageName`, `label`, `enabled`), `writable`, `language`, and the conversation's `sessionId` and `workspace` when there is one; bring your own services through your own registration. Registration waits until dsh-mnemon's configuration exists and ends with the returned function. Follow the page's interaction rules: switches and selectors apply when they change, typed values wait for your own **Apply**, and your settings never join another group's save.
+
+`dsh-mnemon/client` also exports what the shipped settings are drawn with, so a component's own settings look and behave like theirs: `SettingRow`, `SelectRow`, `ToggleRow` and `SettingSelect` (a row and the DSH selector), `useLive` and `useStaged` with `PanelActions` and `WriteFailure` (the two ways a group saves), `Callout`, `Reveal`, `GlobalLocationSetting`, and `memorySettingsStyles`, the configuration's class map of rows, cards, editor blocks and field grids. A component that imports them declares a `dsh-mnemon` peer floor of the first Starter that exports them, the one that also exports `MNEMON_COMPONENT_FALLBACK_PRIORITY`.
+
+dsh-mnemon keeps the settings of a shipped component for that component's versions that predate their own, and lends a shipped component's own settings what only it holds:
+
+- **Fallback.** A registration with `fallback: true` takes `MNEMON_COMPONENT_FALLBACK_PRIORITY`. DSH renders the lowest priority for each key, so the component's own registration, at the default priority, replaces it for as long as it stays registered, and the fallback returns when it goes. dsh-mnemon registers Memory Spaces' settings this way, taken from the Memory Spaces version it pins, for a Memory Spaces of 0.5.21 or earlier, which registers none.
+- **Registering only where dsh-mnemon yields.** dsh-mnemon 0.5.31 and earlier draw Memory Spaces' settings themselves, at the default priority, and DSH refuses a second registration of a package at the same priority. Memory Spaces therefore registers its own only when `dsh-mnemon/client` exports `MNEMON_COMPONENT_FALLBACK_PRIORITY`; a client bundle reads an export the loaded dsh-mnemon lacks as `undefined`.
+- **`host`.** The settings of a component dsh-mnemon serves, today Memory Spaces, also receive `host`: `host.configuration` reads the configuration keys lent to the component and `set`s the ones it owns through the page's revision-fenced settings write, `host.operations.read`/`write` call the Host operations dsh-mnemon serves the component in the page's conversation and workspace, and `host.changed()` has the Memory System read its pages again. Like a Source page's `management` client, it never hands over the settings service or the transport. Other components receive no `host`.
 
 The Status card renders in the `mnemon.component.status` region, keyed the same way, as a headline in `<strong>` and one line in `<p>` under the component's declared name. It receives `component`, `language`, and the Memory System's `sessionId` and `workspace` when there is one, and reads its own Source. Every Source component has a card whether or not it contributes one: a component that is off, or whose Source is not running, shows the page's own note instead, and one that contributed nothing shows that it runs. Tabs, the card and the header use the name the component declares.
 

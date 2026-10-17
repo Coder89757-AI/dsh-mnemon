@@ -112,6 +112,8 @@ Host 的 `MemoryExecutions` 统一持有 Core 回合及对应的运行时绑定�
 
 Source 自己拥有可选的 `./client` DSH 模块、页面、管理协议与测试，通过公开 Source 页面 SDK 注册到工作台的 `mnemon.source.page` Slot。Client 生命周期与 React 渲染仍由 DSH 管理。
 
+组件自己的设置在它于插件页中的组件页上遵循同样的原则：组件从自己的 `./client` 注册到 `mnemon.component.settings` 区域，记忆空间的 Provider 与嵌入就是这样提供的。这些设置需要 dsh-mnemon 的配置或 Host 操作时，页面借给它们一个限定范围的 `host`，而不是设置服务或传输层。对于尚未自带设置的组件版本，dsh-mnemon 把它的设置注册为后备，组件自己的注册会替代后备；详见[扩展开发](./extensions.md#组件自己的设置与状态卡片)。
+
 Host 交给页面的是限定实例的管理客户端与脱敏元信息，不是裸 RPC、Host Context 或 LLM grant。读取和带确认、修订栅栏的修改指向一个 Source。档案归档到记忆空间等默认协作由 Host 编排，也只调用公开管理协议。
 
 同一个共用工作台提供两个互斥的 DSH 入口。Sidebar 在[受支持的 DSH](../reference/compatibility.md) 公开的 `sidebar.panellist` 与 `main` Slot 中注册配对的 `mnemon` 入口。DSH 负责按钮、图标尺寸、标签、选中状态和主面板导航。`shell.overlay` 注册保留 Source 子 Slot 的渲染权限，将工作台 portal 到持久的原生主面板挂载点，从而保留切换面板时的页面状态和独立的 Better Sidebar 挂载点。未提供原生面板契约的替换布局继续使用现有入口及浮层回退。Sidebar 无会话也可打开，保留自己的工作区选择，与 Taskboard/SSH 协调，并通过 `layout.selectPanel(null)` 返回会话。会话标签页（`builtin`）使用 `conversation.view`，读写和任务均使用所属会话的存储范围，不提供独立工作区选择器。两个入口渲染同一组 Source 自有子 Slot，不创建第二个 React root、兜底页面注册表或复制业务页面。

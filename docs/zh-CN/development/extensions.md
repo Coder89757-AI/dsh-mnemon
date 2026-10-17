@@ -106,7 +106,7 @@ DSH 自己的插件列表从包内的 `locale/en.json` 与 `locale/zh.json`（`m
 
 #### 组件自己的设置与状态卡片
 
-声明的选项不够用时，组件可以在 `./client` 入口把自己的设置加入它的组件页，与随附组件的做法相同：运行时记忆的用户画像范围、记忆空间的 Provider 与嵌入、分层策略的后台任务。Source 还可以提供它运行时在记忆系统“状态”页卡片上显示的内容。
+声明的选项不够用时，组件可以在 `./client` 入口把自己的设置加入它的组件页，记忆空间就是这样带来它的 Provider 与嵌入。其他随附组件的设置仍由 dsh-mnemon 通过同一区域绘制：运行时记忆的用户画像范围、分层策略的后台任务。Source 还可以提供它运行时在记忆系统“状态”页卡片上显示的内容。
 
 ```tsx
 import { installMemoryComponentUI } from 'dsh-mnemon/client'
@@ -121,6 +121,14 @@ export function apply(ctx) {
 ```
 
 设置渲染在 `mnemon.component.settings` 区域，以插件声明中的包名为键，位于组件页的状态、关系与声明的选项之后；该组件的行会出现打开它们的齿轮。它只接收页面知道的信息：`component`（`packageName`、`label`、`enabled`）、`writable`、`language`，以及存在时对话的 `sessionId` 与 `workspace`；所需的服务请通过自己的注册注入。注册会等待 dsh-mnemon 的配置出现，调用返回的函数即结束。请遵循页面的交互规则：开关与下拉选择改动即生效，需要输入的值等待你自己的**应用**，且不并入其他分组的保存。
+
+`dsh-mnemon/client` 还导出随附设置所用的控件与样式，让组件自己的设置与它们外观和行为一致：`SettingRow`、`SelectRow`、`ToggleRow` 与 `SettingSelect`（设置行与 DSH 选择器），`useLive`、`useStaged` 以及 `PanelActions`、`WriteFailure`（一组设置的两种保存方式），`Callout`、`Reveal`、`GlobalLocationSetting`，以及配置页的类名表 `memorySettingsStyles`（设置行、卡片、编辑块与字段网格）。导入它们的组件，应把 `dsh-mnemon` peer 最低版本声明为首个导出它们的 Starter，也就是同时导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 的那一版。
+
+dsh-mnemon 会为随附组件尚未自带设置的旧版本保留这些设置，并把只有它掌握的内容借给随附组件自己的设置：
+
+- **后备注册。** 带 `fallback: true` 的注册使用 `MNEMON_COMPONENT_FALLBACK_PRIORITY`。DSH 对每个键只渲染优先级数值最低的注册，因此组件以默认优先级注册自己的设置后会替代后备注册，注销后后备注册重新出现。dsh-mnemon 以这种方式注册记忆空间的设置（取自它固定的记忆空间版本），供不注册设置的 0.5.21 及更早的记忆空间使用。
+- **只在 dsh-mnemon 让出时注册。** dsh-mnemon 0.5.31 及更早版本以默认优先级自己绘制记忆空间的设置，而 DSH 拒绝同一个包在同一优先级上的第二次注册。因此记忆空间只在 `dsh-mnemon/client` 导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 时注册自己的设置；客户端包读取已加载的 dsh-mnemon 缺少的导出时得到 `undefined`。
+- **`host`。** dsh-mnemon 服务的组件（目前是记忆空间）的设置还会收到 `host`：`host.configuration` 读取借给该组件的配置键，并通过页面带修订栅栏的设置写入 `set` 它拥有的键；`host.operations.read`/`write` 在页面所属的对话与工作区中调用 dsh-mnemon 为该组件提供的 Host 操作；`host.changed()` 让记忆系统重新读取它的页面。与 Source 页面的 `management` 客户端一样，它从不交出设置服务或传输层。其他组件不会收到 `host`。
 
 状态卡片渲染在 `mnemon.component.status` 区域，同样以包名为键，在组件声明的名称下方显示 `<strong>` 中的一行要点与 `<p>` 中的一行说明。它接收 `component`、`language`，以及存在时记忆系统的 `sessionId` 与 `workspace`，并自行读取自己的 Source。无论是否提供内容，每个 Source 组件都有一张卡片：组件已关闭或其 Source 未运行时显示页面自己的说明，未提供内容时显示正在运行。标签页、卡片与页头都使用组件声明的名称。
 
