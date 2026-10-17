@@ -10,7 +10,7 @@ import { createStorageRoot } from '../src/host/storage-root.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import { RUNTIME_ENTRY_DELIMITER } from 'dsh-mnemon-source-runtime/contracts'
-import { sqlite as nodeSqlite, writeSpace, type SpaceInsight } from './helpers/memory-space-db.ts'
+import { sqlite as nodeSqlite, writeSpace, type SpaceInsight } from '../plugins/dsh-mnemon-source-memory-spaces/tests/memory-space-db.ts'
 
 const directories: string[] = []
 const releases: Array<() => Promise<void>> = []
