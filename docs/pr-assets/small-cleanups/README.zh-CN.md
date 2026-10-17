@@ -10,17 +10,18 @@ v0.5.31 之后的技术债审计列出了一些小问题：同一件事在几处
 
 | 项目 | 之前 | 现在 |
 |---|---|---|
-| L3：`toolviews` 偏好 | `conversationInteraction.toolviews` 会被解析、补默认值、导入、在写入时拒绝，却从不被读取。它在 0.1.1 与 0.1.2 中控制对话内的工具卡片，0.1.3 起没有代码读取它 | 解析后的配置及其协议类型不再包含它。schema 仍带默认值声明它，因此已保存的 profile 照常通过校验，DSH 的表单不变；旧设置导入仍接受并带上它；两个设置命名空间仍拒绝写入它。`Config.conversationInteraction.toolviews` 标为已弃用 |
+| L3：`toolviews` 偏好 | `conversationInteraction.toolviews` 会被解析、补默认值、导入、在写入时拒绝，却从不被读取。它在 0.1.1 与 0.1.2 中控制对话内的工具卡片，0.1.3 起没有代码读取它 | 解析后的配置及其协议类型不再包含它。schema 仍带默认值声明它，这让 DSH 根据 schema 生成的表单保持原样；无论是否声明，已保存的值都能通过校验，因为未声明的键会被放行，另有测试固定这一声明。旧设置导入仍接受并带上它；两个设置命名空间仍拒绝写入它。`Config.conversationInteraction.toolviews` 标为已弃用 |
 | L6：记忆空间名称 | Host 导入已弃用的 `MemoryBody*` 别名（`subagent.ts`、`rpc.ts`、`protocol.ts` 与五个测试文件），辅助函数也以 body 命名 | 使用规范的 `MemorySpace*` 类型；`eligibleMemorySpaceContext`、`receiptMemorySpaceIds` 与协调器的 `scopeRelatedMemorySpace`。通信协议与存储中的名称保持不变：工具名、`bodies` 与 `body-*` 操作、`memoryBodyId` 字段、`memory-bodies` 存储类型、`.dsh-memory-bodies.json`、页面客户端的方法 |
-| L6：主策略 id | 插件管理把插件选择 `memoryView.strategyTypeId` 写入 `memoryTopology.strategyId` 后，三处各自读取这个字段 | `src/host/main-strategy.ts`：`withMainStrategy` 应用这一选择（插件管理），`mainStrategyTypeId` 是唯一的读取入口（生成选项、空闲审查、View 面板） |
+| L6：主策略 id | 插件管理把插件选择 `memoryView.strategyTypeId` 写入 `memoryTopology.strategyId` 后，三处各自读取这个字段 | `src/host/main-strategy.ts`：插件管理在解析配置的地方（运行时图与每次 View 请求）用 `withMainStrategy` 应用这一选择，`mainStrategyTypeId` 为组合、空闲审查与 View 面板读取结果。状态 RPC 仍发送整个拓扑，客户端只读取其中的各层；插件恢复重新提交已保存的选择，只为填好请求 |
 | L7：随附组件 | 列了六遍：客户端的随附判断与组件行、Host 的安装建议、`verify-headless-profile.mjs`、`serve-e2e.mjs`、`verify-sync-git.mjs` | `src/host/starter-components.ts`：按 patch 顺序的组件行、按建议顺序的增强，以及自带 bundle patch 的包。客户端通过 `protocol.ts` 取用；脚本直接导入它，因为它没有任何导入、只用可擦除的类型，Node 能把它当作 TypeScript 运行。`src/client/starter-rows.ts` 已删除 |
-| L8：兼容代码 | 没有写明理由或移除条件 | [兼容登记表](../../zh-CN/development/compatibility-register.md)（[English](../../en/development/compatibility-register.md)）：16 行，开发指南与“兼容性与升级”均有链接 |
-| M5(a)：Native Provider id | 记忆空间 Source 中约十几处 `'mnemon-native'`，其中一半写作 `(provider.typeId ?? provider.id) === 'mnemon-native'` | 记忆空间 `./contracts` 导出 `NATIVE_PROVIDER_ID` 与 `isNativeProvider()`；登记表、服务、目录、持久化策略默认值与 forget 说明都改用它们 |
-| #416 之后的规则副本 | 名称与描述的 100/1,000 字符上限在登记表解析中写一遍，每次登记表写入又写一遍；空间 id 的正则在 `src/host/config.ts` 与记忆空间的 `config.ts` 中各有一份；`src/host/subagent.ts` 中写死 USER.md/MEMORY.md | `MEMORY_SPACE_NAME_MAX_LENGTH` 与 `MEMORY_SPACE_DESCRIPTION_MAX_LENGTH`（新增）、`MEMORY_SPACE_ID_PATTERN` 与 `RUNTIME_PROJECTION_FILES`；提示信息不变 |
+| L8：兼容代码 | 没有写明理由或移除条件 | [兼容登记表](../../zh-CN/development/compatibility-register.md)（[English](../../en/development/compatibility-register.md)）：17 行，开发指南与“兼容性与升级”均有链接 |
+| M5(a)：Native Provider id | 记忆空间 Source 中约十几处 `'mnemon-native'`，其中一半写作 `(provider.typeId ?? provider.id) === 'mnemon-native'` | 记忆空间 `./contracts` 导出 `NATIVE_PROVIDER_ID` 与 `isNativeProvider()`；登记表、服务、目录、持久化策略默认值与 forget 说明都改用它们。服务中按 Provider id 判断的方法改名为 `isNativeProviderId` |
+| #416 之后的规则副本 | 名称与描述的 100/1,000 字符上限在登记表解析、每次登记表写入以及 Source 的创建与更新请求解析中各写一遍；空间 id 的正则在 `src/host/config.ts` 与记忆空间的 `config.ts` 中各有一份；`src/host/subagent.ts` 中写死 USER.md/MEMORY.md | `MEMORY_SPACE_NAME_MAX_LENGTH` 与 `MEMORY_SPACE_DESCRIPTION_MAX_LENGTH`（新增）、`MEMORY_SPACE_ID_PATTERN` 与 `RUNTIME_PROJECTION_FILES`；提示信息不变 |
 
 ### 保持原样的部分
 
 - **记忆空间 Source 之外的 `'mnemon-native'`。** 记忆空间 `src/client/pages.tsx` 中的三处，Starter 的 `src/client/component-settings.tsx`（两处）、`src/client/locales.ts`（`readSources.model.mnemon-native` 键），以及 `src/client/MnemonSaveAction.tsx` 与 `src/client/MnemonWorkbench.tsx`（各一处）。前三个文件属于把记忆空间设置移入其自身客户端的那项改动。Starter 的客户端目前不能从组件包取值：`tests/plugin-repository-boundary.spec.ts` 只允许展示资源和类型；那项改动为 Starter 从记忆空间取用的内容新增一个网关模块，并有自己的强制打包条目。它合入后，这两处 Starter 字面量应通过该网关取用常量；这里的实验确认，从 Source 的 contracts 强制打包这个常量后，`lib/client.js` 逐字节不变。
+- **记忆空间客户端中的空间上限。** `src/client/pages.tsx` 为名称与描述输入框设置了 `maxLength={100}` 与 `maxLength={1000}`（第 969-970 与 977-978 行）。这个文件同样属于设置迁移那项改动，因此与上面的字面量一起保留。
 - **提示文本。** `subagent.ts` 仍在 persona 文本和消息中写 USER.md 与 MEMORY.md，并用字面量上限（100、100、300）截断提示中的名称与 Provider 标签。这些是提示措辞与篇幅预算，不是 Source 规则的副本，模型看到的文本必须不变。
 - **`src/host/config.ts` 中的 `CUSTOM_PACK_ID`** 与空间 id 的模式相同，但它是另一条规则：自定义 Pack 的 id。
 - **restore 中的占位值。** `plugin-management.ts` 的 `restore()` 发送 `strategyTypeId: saved ?? 'default-three-tier'`，只因为请求结构需要这个字段；它只检查格式，不选择任何策略。
@@ -39,13 +40,15 @@ v0.5.31 之后的技术债审计列出了一些小问题：同一件事在几处
 
 | 位置 | 证明的内容 |
 |---|---|
-| `tests/config.spec.ts` | 已保存的 `toolviews` 被接受，且不出现在解析后的配置中；store 提示只接受空间 id，提示信息不变 |
+| `tests/config.spec.ts` | 已保存的 `toolviews` 被接受，且不出现在解析后的配置中；schema 仍声明它，生成的表单保留三个开关；store 提示只接受空间 id，提示信息不变 |
 | `tests/live-config.spec.ts` | DSH 的动态 Config 能校验含有 `toolviews` 的已保存 profile |
 | `tests/settings.spec.ts` | 两个命名空间都拒绝写入 `toolviews`，旧客户端的交互路径仍可写入 |
 | `tests/legacy-settings-import.spec.ts` | 含有 `toolviews` 的保留文件仍能导入，解析后的配置不含它 |
 | `tests/main-strategy.spec.ts` | 插件选择优先于拓扑 id；没有选择时原样返回配置对象 |
-| `tests/plugin-metadata.spec.ts` | 组件行与 bundle patch 一致（同前），也与 package.json 锁定的组件一致；增强就是随附的策略扩展，并默认关闭；自注册的包正是在清单中声明 bundle patch 的包；随附判断；Starter 以 `NATIVE_PROVIDER_ID` 安装 Mnemon Native |
-| 记忆空间 `tests/contracts.spec.ts` | `NATIVE_PROVIDER_ID` 就是 Native Provider 包给其描述、manifest 与驱动的 id；`isNativeProvider` 按类型、按 id 判断；名称与描述上限在登记表写入（含提示信息）与解析中的效果 |
+| `tests/view-management.spec.ts` | View 面板报告 profile 选择的主策略，没有选择时报告默认策略 |
+| `tests/plugin-metadata.spec.ts` | 组件行与 bundle patch 一致（同前），也与 package.json 锁定的组件一致，每个组件锁定一个确切版本（可以是预发布版本，绝不是范围）；增强就是随附的策略扩展，并默认关闭；自注册的包正是在清单中声明 bundle patch 的包；随附判断；Starter 以 `NATIVE_PROVIDER_ID` 安装 Mnemon Native |
+| 记忆空间 `tests/contracts.spec.ts` | `NATIVE_PROVIDER_ID` 就是 Native Provider 包给其描述、manifest 与驱动的 id；`isNativeProvider` 按类型、按 id 判断；名称与描述上限在登记表的创建与更新（含提示信息）以及解析中的效果 |
+| 记忆空间 `tests/source.spec.ts` | 同样的上限与提示信息也适用于 `body-create`、`body-update` 操作和模型的 `manage-spaces` Action |
 | 记忆空间 `tests/config.spec.ts` | store 提示只接受空间 id |
 | `tests/subagent.spec.ts` | 压缩提示中的快照标题，逐字节相同 |
 
