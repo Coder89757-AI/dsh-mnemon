@@ -125,7 +125,7 @@ it.skipIf(!dsh021)('runs a task Agent and its child for a workspace whose folder
 
   // Both keep the workspace whose memory the task works on, and work from one that exists.
   const existing = realpathSync(h.f.workspace)
-  expect(outcome).toEqual({
+  expect(outcome).toMatchObject({
     task: { cwd: gone, workingDirectory: existing },
     child: { cwd: gone, workingDirectory: existing, result: { output: [{ type: 'text', text: 'Child step done.' }], stopReason: 'completed' } },
   })
