@@ -29,7 +29,8 @@ import { saveActionModel } from './fixtures/save-action-model.mjs'
 import { profileCompactionModel } from './fixtures/profile-compaction-model.mjs'
 import { DOCS_DEMO_LANGUAGES, docsDemoAssistant, docsDemoModel, seedDocsDemo } from './fixtures/docs-demo.mjs'
 import { recallBudgetModel } from './fixtures/recall-budget-model.mjs'
-import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies, slowEmbeddingServer } from './fixtures/archive-copies.mjs'
+import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies } from './fixtures/archive-copies.mjs'
+import { fakeEmbeddingServer } from './fixtures/fake-embeddings.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const flags = new Set(process.argv.slice(2))
@@ -133,9 +134,11 @@ const archiveProvider = runtimeArchive ? createServer(async (request, response) 
   response.end(JSON.stringify(value))
 }) : undefined
 if (archiveProvider) await new Promise(resolveListen => archiveProvider.listen(0, '127.0.0.1', resolveListen))
-// Issue #339: an embedding service slower than the Mnemon CLI's default 10 s timeout.
+// Issue #339: an embedding service slower than the Mnemon CLI's default 10 s timeout, with one
+// `Archive copies:` line per embedding request, as the #339 record counts them.
 const embeddingDelayMs = Number(process.env.MNEMON_E2E_EMBEDDING_DELAY_MS ?? 12_000)
-const slowEmbedder = flags.has('--archive-copies') ? slowEmbeddingServer({ delayMs: embeddingDelayMs, report: event => console.log('Archive copies: ' + JSON.stringify(event)) }) : undefined
+const slowEmbedder = flags.has('--archive-copies') ? fakeEmbeddingServer({ model: 'fixture-embed', delayMs: embeddingDelayMs,
+  report: ({ event, request, delayMs }) => console.log('Archive copies: ' + JSON.stringify({ event, request, delayMs })) }) : undefined
 if (slowEmbedder) await new Promise(resolveListen => slowEmbedder.listen(0, '127.0.0.1', resolveListen))
 const protectionModel = flags.has('--document-protection') ? documentProtectionModel(event => console.log('Document protection: ' + JSON.stringify(event))) : undefined
 const reviewModel = flags.has('--review-evidence') ? reviewEvidenceModel(event => console.log('Review evidence: ' + JSON.stringify(event))) : undefined
