@@ -1,18 +1,24 @@
 # Compatibility and upgrades
 
-**English** | [简体中文](../../zh-CN/reference/compatibility.md) | [Documentation](../README.md)
+[简体中文](../../zh-CN/reference/compatibility.md) | **English** | [Documentation](../README.md)
 
 The Starter pins a tested combination of official plugins. The table records verification scope, not a promise that every upstream release or account configuration works.
 
 | Component | Baseline | What is verified |
 |---|---|---|
 | DSH | `0.2.1-rc.1` (npm `next`), `0.2.0-rc.2` (npm `latest`) | The supported hosts. 0.2.1-rc.1 is the pinned development baseline, and CI also runs every root test against an installed 0.2.0-rc.2. Both are checked through the WebUI, Headless and the Starter's activation contracts; see [DSH 0.2.0 and 0.2.1](#dsh-020-and-021) |
-| Node.js | `22.19` and `24` | Source CI and packed-artifact CI respectively; development requires `^22.19.0 || >=24.0.0` |
+| Node.js | `22.19` and `24` | Source CI and packed-artifact CI respectively; development requires `^22.19.0 \|\| >=24.0.0` |
 | Node.js 20 | Public package imports only | Does not establish that the DSH Host runs on Node 20 |
 | Mnemon Native CLI | `0.2.9` | Opt-in tests against a real CLI and disposable data; install the CLI separately |
 | Third-party Providers | Adapter contracts and fixtures | Does not establish live cloud-account conformance or upstream availability |
 
 dsh-mnemon supports `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`: DSH 0.2.0 from 0.2.0-rc.2, and DSH 0.2.1 and the later 0.2 releases from 0.2.1-rc.1, final releases included. DSH 0.2.1 reads the range from the Starter's `engines.dsh`; DSH 0.2.0 reads it from the Starter's DSH peers (`dsh-app-boot`, which is optional, and `dsh-typert-protocol`), which state the same range. Before DSH installs a plugin, and each time a profile starts, it checks the range against its own version, prereleases included, and refuses a release that excludes it or turns it off. `tests/dsh-host-compatibility.spec.ts` runs DSH's own check over all 18 package manifests, for the supported releases and for those no longer supported. The five Strategy packages require `dsh-mnemon ^0.5.17`, whose extension SDK they use; the Sources keep `^0.5.1`, and the Providers depend on the Memory Spaces Source instead.
+
+<a id="host-behavior-on-a-first-install"></a>
+
+Installing for the first time? How DSH chooses the registry, and why its result card shows the package's English description, is in [Install and start](../guides/installation.md#3-install-and-enable-dsh-mnemon); why a release younger than 24 hours can install an earlier one is under [Common problems](../guides/installation.md#common-problems).
+
+<a id="older-dsh-releases"></a>
 
 **Older DSH releases.** Keep the dsh-mnemon release that supports your DSH until you upgrade the host:
 
@@ -22,19 +28,38 @@ dsh-mnemon supports `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`: DSH 0.2.0 
 | `0.2.1-alpha.3` and later alphas | None works in full: memory subagents and **Check versions → Update** fail in 0.5.30. Upgrade DSH to `0.2.1-rc.1` (npm `next`) |
 | `0.1.5-rc.1` to `0.1.7-alpha.1` | `0.5.16` |
 
-What those hosts needed is kept under [Older DSH hosts](#older-dsh-hosts). Earlier Headless and WebUI records remain historical evidence.
+What those hosts needed is kept under [Older DSH hosts](#older-dsh-hosts). How each release was verified, and the earlier Headless and WebUI records that remain historical evidence, are under [Verification and evidence](#verification-and-evidence).
 
-Turn memory registers with a stable ID in DSH's `conversation.chat.turnTail` list slot and checks that the turn is complete before reading or showing activity. The sidebar placement and the `dsh-mnemon` page under Plugins follow DSH's public default/main session binding; the conversation-tab placement and Better Sidebar keep their explicit owning session. DSH keeps live settings in profile Config and edits a plugin's configuration on its page under Plugins; Mnemon's configuration page writes through it. Memory data and Provider formats do not change.
+## Upgrade the default installation
 
-See the [DSH 0.2.1-rc.1 record](../../pr-assets/dsh-021-rc1/README.md), [upgrade evidence](../../pr-assets/main-rebase-20260904/README.md) and [current development checks](../development/README.md). A passing mechanism test is not an LLM quality benchmark. OS-specific and real-CLI checks may be skipped unless their environment is explicitly available.
+1. Export a Mnemon Pack and protect any required Provider connection backup as described in [Operations](../guides/operations.md#backup-and-recovery).
+2. Upgrade `dsh-mnemon` in each DSH profile that uses it, with **Check versions → Update** or the [commands in Install and start](../guides/installation.md#update-and-uninstall). The Starter installs its exact plugin versions; do not update its child packages independently and assume the resulting mixture is tested. Moving to another DSH release as well? Follow the [upgrade order](#upgrade-order).
+3. Restart DSH after installing new package code. Check **Memory System → Status**, then read an existing Runtime entry, Document and active Memory Space.
+4. Verify the selected storage scope before writing. Changing the scope selects a different authority; it does not migrate data.
 
-The [v0.5.19 Light gallery](../../assets/webui-v0.5.19/README.md), captured on DSH 0.1.7-rc.2, covers the bilingual desktop pages, the Plugins page, and a conversation, Memory Spaces and the composition board at 390 × 844, where long names truncate. Pages changed since then, such as the Task Agent model choice on the Layered strategy's page, look different now. It does not retest every Host settings surface or physical phones, so phone support is not declared complete; the historical v0.5.2 layout failure at 390 px keeps its [versioned evidence](../../pr-assets/documentation-refresh/README.md).
+### Upgrade order
+
+Update dsh-mnemon on your current DSH first, then upgrade DSH. On DSH 0.1.7-rc.2 that means dsh-mnemon 0.5.30 first (`dsh plugin --profile web add dsh-mnemon@0.5.30`); then install DSH 0.2.0-rc.2 or 0.2.1-rc.1 and update dsh-mnemon again. If DSH was upgraded first, it turns an unsupported release off and memory data is untouched; updating the plugin brings it back. Do not use `allow-version` to let an unsupported release through.
+
+On DSH 0.2.1, **Check versions → Update** in dsh-mnemon 0.5.30 and earlier stops with `already-installed`. Quit DSH, run `dsh plugin --profile web add dsh-mnemon@<version>` (the `desktop` profile is managed on the desktop app's Plugins page instead), then start DSH again. Later updates go through **Check versions** as usual.
+
+### Upgrading from v0.4
+
+v0.5 preserves the default v0.4 storage, configuration and sidebar workflow. The optional conversation-tab placement (`builtin`) uses the same Source pages, and the retained `buildin` spelling is normalized. The General strategy and the three memory enhancements ship disabled. Memory composition on the Plugins page lists, switches and configures the installed components; there is no separate View tab.
+
+### Independent plugins
+
+Independent plugin authors use declared peer ranges and public exports. Old private controller imports are not a supported upgrade surface. Custom compositions must be verified separately from the Starter. See [Extensions](../development/extensions.md) and the [v0.5.0 release boundary](../releases/v0.5.0.md).
 
 <a id="dsh-02"></a>
 
 ## DSH 0.2.0 and 0.2.1
 
-dsh-mnemon runs the same on both releases, with the same memory data. Where the two differ, it takes the path each one offers:
+dsh-mnemon runs the same on both releases, with the same memory data.
+
+Turn memory registers with a stable ID in DSH's `conversation.chat.turnTail` list slot and checks that the turn is complete before reading or showing activity. The sidebar placement and the `dsh-mnemon` page under Plugins follow DSH's public default/main session binding; the conversation-tab placement and Better Sidebar keep their explicit owning session. DSH keeps live settings in profile Config and edits a plugin's configuration on its page under Plugins; Mnemon's configuration page writes through it. Memory data and Provider formats do not change.
+
+Where the two differ, dsh-mnemon takes the path each one offers:
 
 - **Memory subagents.** DSH 0.2.0 starts a child with the one-shot `subagents.start`, and its spawn and fork providers take the child's instructions and tool filter in the start request. DSH 0.2.1 starts every child as a managed activation (`startActivation`, [#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356)) and takes neither: a child runs with its parent's tools and instructions, or with an Agent Preset named for it. On DSH 0.2.1 dsh-mnemon starts each memory subagent with caller delivery, so the result returns to Mnemon and the conversation gets no completion notice, and it registers the child's instructions and tool list in the child's own scope while DSH publishes it, before its first step and before other plugins see it. Either way the child sees only its memory tools and its result tool. This covers Save to memory, Memory Space writes such as `mnemon_remember`, USER.md compaction, working-memory archiving, idle review, Document archive and Git sync's reconciliation review. On DSH 0.2.1 only a provider whose children DSH creates in this process, such as its spawn and fork, is used this way; any other is refused before it starts, so a memory task never runs with the conversation's tools.
 - **Continuable memory tasks on DSH 0.2.1.** Every local child is continuable there:
@@ -43,24 +68,9 @@ dsh-mnemon runs the same on both releases, with the same memory data. Where the 
 
   On DSH 0.2.0 a memory task cannot be resumed.
 - **Working directory.** Before each step DSH 0.2.1 returns an Agent to its session's original directory when the current one is gone, and stops it when that is gone too. A background memory task for a workspace whose folder was deleted or moved therefore keeps that workspace, whose memory it works on, and runs from the first existing workspace or where DSH started. DSH 0.2.0 keeps no working directory per session.
-- **Check versions → Update.** DSH 0.2.0 installs the new version through its own installer. With hot reload, DSH 0.2.1 no longer installs over a plugin the profile has: another version replaces it only after it is removed, which would stop dsh-mnemon halfway through its own update, and a failed install would leave the profile without it. There dsh-mnemon runs DSH's own `dsh plugin add` for the new version. It holds the profile's lock, uses the package manager DSH was started with, and refuses a release incompatible with the running DSH before it installs anything. Where DSH offers no such command, the error names the `dsh plugin` command to run with DSH stopped. On both releases a restart applies the update. dsh-mnemon 0.5.30 and earlier stop on DSH 0.2.1 with `DSH could not install dsh-mnemon@<version>: already-installed`; update those once from the command line, as in [Upgrade order](#upgrade-order).
+- **Check versions → Update.** DSH 0.2.0 installs the new version through its own installer. With hot reload, DSH 0.2.1 no longer installs over a plugin the profile has: another version replaces it only after it is removed, which would stop dsh-mnemon halfway through its own update, and a failed install would leave the profile without it. There dsh-mnemon runs DSH's own `dsh plugin add` for the new version ([how updates work](../guides/operations.md#version-checks-and-updates)). It holds the profile's lock, uses the package manager DSH was started with, and refuses a release incompatible with the running DSH before it installs anything. Where DSH offers no such command, the error names the `dsh plugin` command to run with DSH stopped. On both releases a restart applies the update. dsh-mnemon 0.5.30 and earlier stop on DSH 0.2.1 with `DSH could not install dsh-mnemon@<version>: already-installed`; update those once from the command line, as in [Upgrade order](#upgrade-order).
 - **Incompatible releases.** When DSH refuses an update as incompatible, the error names what the release needs: `requires DSH ^0.3.0` where DSH 0.2.1 reports the release's requirements, `requires @deepseek-ai/dsh ^0.3.0` where DSH 0.2.0 reports its peers.
 - **Plugins page.** DSH 0.2.0 lists the Starter's grouping row as an off component; see [the bundle component list on DSH 0.2.0](#the-bundle-component-list-on-dsh-020). DSH 0.2.1 lists only the components.
-
-**How it is verified.** The root tests run on the pinned 0.2.1-rc.1 and, in CI, against DSH 0.2.0-rc.2 installed from npm (`pnpm run test:installed-dsh`; see [Development](../development/README.md#environment-and-commands)); the real-host specs compose whichever DSH they run on. On both releases Headless passes with and without the optional Strategies, as do the Starter's activation contracts and Git sync's checks; only `--check-declared-rows` fails on 0.2.0-rc.2, on its grouping-row listing. The [DSH 0.2.1-rc.1 record](../../pr-assets/dsh-021-rc1/README.md) has the WebUI checks on both releases. Earlier records: the [0.2.0-rc.2 release acceptance](../../pr-assets/release-v0.5.22/README.md), [activations (#356)](../../pr-assets/issue-356-subagent-activation/README.md), [0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.md) and [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.md).
-
-### Upgrade order
-
-Update dsh-mnemon on your current DSH first, then upgrade DSH. On DSH 0.1.7-rc.2 that means dsh-mnemon 0.5.30 first; then install DSH 0.2.0-rc.2 or 0.2.1-rc.1 and update dsh-mnemon again. If DSH was upgraded first, it turns an unsupported release off and memory data is untouched; updating the plugin brings it back. Do not use `allow-version` to let an unsupported release through.
-
-On DSH 0.2.1, **Check versions → Update** in dsh-mnemon 0.5.30 and earlier stops with `already-installed`. Quit DSH, run `dsh plugin --profile web add dsh-mnemon@<version>` (the `desktop` profile is managed on the desktop app's Plugins page instead), then start DSH again. Later updates go through **Check versions** as usual.
-
-### Host behavior on a first install
-
-- When nobody has chosen a registry yet, **Add plugin** measures which one answers faster: in mainland China it usually defaults to the **Mainland China mirror**, elsewhere to the **Official npm registry**.
-- pnpm 11 does not pick versions published less than 24 hours ago. On a release day, installing plain `dsh-mnemon` can install the previous release; install `dsh-mnemon@<version>` instead, or wait 24 hours, as [Install and start](../guides/installation.md#common-problems) describes.
-- The install result card shows the package's English description; the name and description in the plugin list follow the interface language.
-- The `desktop` profile belongs to the desktop app, and DSH's command line refuses to manage it; desktop users install and manage plugins on the app's Plugins page.
 
 ## Desktop windows
 
@@ -106,22 +116,11 @@ DSH imports a `settings.yaml` left by an older host into the profile once and ke
 
 If the original `settings.yaml` still exists when Mnemon starts, DSH owns that import. Restart the profile once more after it finishes to recover Mnemon-specific preferences. DSH exposes no completion signal for its importer, so Mnemon deliberately waits for a new host process instead of racing it. A read-only or ambiguous root cannot be edited; malformed relevant sections are not partially imported or marked complete. Retain the backup and review the startup diagnostic before repairing it. Custom root IDs and another profile's hashed namespaces are not guessed.
 
-When rolling back to such an older host, keep a copy of the profile patch and retained settings backup, and reinstall the dsh-mnemon release that supports it (see [Older DSH releases](#compatibility-and-upgrades)). Settings edited since are not automatically exported back to the older settings file; restore the matching backup or reapply those preferences in the older host. Runtime, Documents, Memory Spaces, and Provider data are unaffected. See the [DSH 0.1.7 settings verification](../../pr-assets/issue-267-settings-migration/README.md).
-
-## Upgrade the default installation
-
-1. Export a Mnemon Pack and protect any required Provider connection backup as described in [Operations](../guides/operations.md#backup-and-recovery).
-2. Upgrade `dsh-mnemon` in each DSH profile that uses it. The Starter installs its exact plugin versions; do not update its child packages independently and assume the resulting mixture is tested.
-3. Restart DSH after installing new package code. Check **Memory System → Status**, then read an existing Runtime entry, Document and active Memory Space.
-4. Verify the selected storage scope before writing. Changing the scope selects a different authority; it does not migrate data.
-
-v0.5 preserves the default v0.4 storage, configuration and sidebar workflow. The optional conversation-tab placement (`builtin`) uses the same Source pages, and the retained `buildin` spelling is normalized. The General strategy and the three memory enhancements ship disabled. Memory composition on the Plugins page lists, switches and configures the installed components; there is no separate View tab.
-
-Independent plugin authors use declared peer ranges and public exports. Old private controller imports are not a supported upgrade surface. Custom compositions must be verified separately from the Starter. See [Extensions](../development/extensions.md) and the [v0.5.0 release boundary](../releases/v0.5.0.md).
+When rolling back to such an older host, keep a copy of the profile patch and retained settings backup, and reinstall the dsh-mnemon release that supports it (see [Older DSH releases](#older-dsh-releases)). Settings edited since are not automatically exported back to the older settings file; restore the matching backup or reapply those preferences in the older host. Runtime, Documents, Memory Spaces, and Provider data are unaffected. See the [DSH 0.1.7 settings verification](../../pr-assets/issue-267-settings-migration/README.md).
 
 ## Older DSH hosts
 
-These notes describe hosts that only the older dsh-mnemon releases in the [table above](#compatibility-and-upgrades) support.
+These notes describe hosts that only the older dsh-mnemon releases in the [table above](#older-dsh-releases) support.
 
 ### Desktop windows on DSH 0.1.7
 
@@ -135,6 +134,20 @@ Desktop may remove private `@deepseek-ai/*` packages from a plugin generation an
 
 In the affected `0.5.13` install, Desktop's fallback hides a missing `createVolatile` export behind `Cannot find package 'dsh-mnemon'`. Flattening `mnemon-bundle` does not fix that import failure. The Starter retains its group, root disable gate, independent Source/Strategy choices, private Provider children and existing settings namespaces. Update Mnemon in the owning profile and restart; no memory or configuration migration is required for this fix. See the [original Desktop reproduction and verification](../../pr-assets/issue-274-profile-generation/README.md).
 
-### Other records
+## Verification and evidence
+
+### The supported hosts
+
+The root tests run on the pinned 0.2.1-rc.1 and, in CI, against DSH 0.2.0-rc.2 installed from npm (`pnpm run test:installed-dsh`; see [Development](../development/README.md#environment-and-commands)); the real-host specs compose whichever DSH they run on. On both releases Headless passes with and without the optional Strategies, as do the Starter's activation contracts and Git sync's checks; only `--check-declared-rows` fails on 0.2.0-rc.2, on its grouping-row listing. The [DSH 0.2.1-rc.1 record](../../pr-assets/dsh-021-rc1/README.md) has the WebUI checks on both releases. Earlier records: the [0.2.0-rc.2 release acceptance](../../pr-assets/release-v0.5.22/README.md), [activations (#356)](../../pr-assets/issue-356-subagent-activation/README.md), [0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.md) and [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.md).
+
+See also the [upgrade evidence](../../pr-assets/main-rebase-20260904/README.md) and the [current development checks](../development/README.md). A passing mechanism test is not an LLM quality benchmark. OS-specific and real-CLI checks may be skipped unless their environment is explicitly available.
+
+### Product media
+
+The [v0.5.19 Light gallery](../../assets/webui-v0.5.19/README.md), captured on DSH 0.1.7-rc.2, covers the bilingual desktop pages, the Plugins page, and a conversation, Memory Spaces and the composition board at 390 × 844, where long names truncate. Pages changed since then, such as the Task Agent model choice on the Layered strategy's page, look different now. It does not retest every Host settings surface or physical phones, so phone support is not declared complete; the historical v0.5.2 layout failure at 390 px keeps its [versioned evidence](../../pr-assets/documentation-refresh/README.md).
+
+<a id="other-records"></a>
+
+### Older hosts
 
 The [DSH 0.1.5 verification](../../pr-assets/issue-223-dsh-015/README.md), [RC/alpha verification and before/after screenshots](../../pr-assets/issue-261-dsh-slots/README.md), [Host compatibility evidence](../../pr-assets/dsh-rc1-compat/README.md) and the [DSH 0.2.0-rc.1 installation gallery](../../assets/install-v0.5.19/README.md) record those hosts. An [upstream candidate patch](../../pr-assets/sidebar-native-20260926/upstream-fix.patch) for the bundle component list, verified in an isolated environment, omits containers from the display while retaining their actual plugin children; it was never part of a published DSH 0.1.7.

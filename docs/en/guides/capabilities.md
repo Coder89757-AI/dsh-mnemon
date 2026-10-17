@@ -1,6 +1,6 @@
 # Capability map
 
-[简体中文](../../zh-CN/guides/capabilities.md) | **English** | [Documentation hub](../README.md)
+[简体中文](../../zh-CN/guides/capabilities.md) | **English** | [Documentation](../README.md)
 
 dsh-mnemon is the memory system for DeepSeek Harness (DSH). It does not force every kind of knowledge into one database. It keeps frequent context, complete project narratives and long-term evidence apart, lets a main strategy decide how they reach each turn, and brings nine long-term memory Providers into one workflow.
 
@@ -74,7 +74,7 @@ Memory Spaces' page under **Plugins → dsh-mnemon** holds each Provider's reusa
 - **Document archive** indexes a cold reference before the Host moves the original, or archives locally without one when no Memory Space can take it;
 - **Provider for new spaces**, with smart selection, calls a model only when rules leave several candidates.
 
-Task Agents follow the model DSH keeps for new sessions, the one picked last in any conversation. **Task Agent model**, under Background tasks on the Layered strategy's page, can instead follow the conversation that asked for the work, as review does, or use a Provider and model of its own. Tasks are isolated: a failure shows on its own space or operation and never blocks the page.
+Task Agents follow the model DSH keeps for new sessions, the one picked last in any conversation. **Task Agent model**, under Background tasks on the Layered strategy's page, can instead follow the conversation that asked for the work, as review does, or use a Provider and model of its own; see [Configuration](../reference/configuration.md#background-task-agent-model-route). Tasks are isolated: a failure shows on its own space or operation and never blocks the page.
 
 ## Where it shows up
 
@@ -88,7 +88,7 @@ Task Agents follow the model DSH keeps for new sessions, the one picked last in 
 
 ## Storage scope
 
-**Global** uses `MNEMON_DATA_DIR` or `~/.mnemon`, shared by local workspaces. **Workspace** uses `<workspace>/.mnemon`; local backends such as Mnemon Native, Holographic and ByteRover can follow it. **Custom** is a global scope at a path you choose. **Centralized** keeps each workspace in its own subdirectory of one root, with an optional global `USER.md`. Switching never moves, merges or deletes a previous root. Remote Provider namespaces (workspaces, users, banks, projects, containers, URIs) never change with the DSH workspace. See the [storage model](../reference/storage-model.md).
+**Global** uses `MNEMON_DATA_DIR` or `~/.mnemon`, shared by local workspaces. **Workspace** uses `<workspace>/.mnemon`; local backends such as Mnemon Native, Holographic and ByteRover can follow it. **Custom** is a global scope at a path you choose. **Centralized** keeps each workspace in its own subdirectory of one root, with an optional global `USER.md`. Switching never moves, merges or deletes a previous root. Remote Provider namespaces (workspaces, users, banks, projects, containers, URIs) never change with the DSH workspace. [Storage scopes](../reference/configuration.md#storage-scopes) describes each scope, and the [storage model](../reference/storage-model.md) what a root holds.
 
 ## What it does not do
 

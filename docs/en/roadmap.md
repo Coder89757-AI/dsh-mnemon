@@ -1,6 +1,6 @@
 # Roadmap
 
-**English** | [简体中文](../zh-CN/roadmap.md) | [Documentation](./README.md)
+[简体中文](../zh-CN/roadmap.md) | **English** | [Documentation](./README.md)
 
 This page separates shipped foundations from remaining work. Future items are directions, not release promises.
 

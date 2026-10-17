@@ -116,6 +116,37 @@ Host 交给页面的是限定实例的管理客户端与脱敏元信息，不是
 
 同一个共用工作台提供两个互斥的 DSH 入口。Sidebar 在[受支持的 DSH](../reference/compatibility.md) 公开的 `sidebar.panellist` 与 `main` Slot 中注册配对的 `mnemon` 入口。DSH 负责按钮、图标尺寸、标签、选中状态和主面板导航。`shell.overlay` 注册保留 Source 子 Slot 的渲染权限，将工作台 portal 到持久的原生主面板挂载点，从而保留切换面板时的页面状态和独立的 Better Sidebar 挂载点。未提供原生面板契约的替换布局继续使用现有入口及浮层回退。Sidebar 无会话也可打开，保留自己的工作区选择，与 Taskboard/SSH 协调，并通过 `layout.selectPanel(null)` 返回会话。会话标签页（`builtin`）使用 `conversation.view`，读写和任务均使用所属会话的存储范围，不提供独立工作区选择器。两个入口渲染同一组 Source 自有子 Slot，不创建第二个 React root、兜底页面注册表或复制业务页面。
 
+## 安全边界
+
+以下是 Host 在进程、文件、WebUI 与任务 Agent 周围保持的边界。它们不是秘密扫描器：这对你保存的数据意味着什么，见[运维指南](../guides/operations.md#安全边界)；如何报告漏洞，见 [SECURITY.md](../../../SECURITY.md)。
+
+### 进程
+
+- CLI 使用 `spawn(command, args, { shell: false })`，不拼接 shell。
+- 每次调用的 stdout + stderr 合计限制 2 MiB。Mnemon Native 在内容列表、图谱，以及运行时记忆归档前的逐字比对中会读取整个记忆空间，这些读取随 Store 增长，上限为 128 MiB。
+- 调用失败时会写明原因：只有启动失败才提示安装 Mnemon 或设置 `mnemon.cliPath`；超时、取消和输出超出上限会各自说明。
+- 每次调用受 `timeoutMs` 与 AbortSignal 控制；取消先 `SIGTERM`，1.5 秒后 `SIGKILL`。
+- 单个 Runner 内调用串行；跨 DSH 进程仍依赖 Mnemon / SQLite 并发语义。
+
+### 文件
+
+- Runtime、Documents 和 Pack 操作使用进程内队列或组件锁。
+- lock 默认等待 5 秒，超过 30 秒才视为 stale。
+- 写入使用临时文件、staging 与 rename。
+- Runtime revision 阻止过期压缩覆盖；Document revision 阻止移动已更新原文。
+- `sourcePaths` 不能逃出发起会话工作区，也不能指向受管 Documents 目录。
+
+### Web 与模型
+
+- DSH 负责远程 RPC 与 stream 的认证或配对；Mnemon 的 API Gateway 映射对管理操作另行要求 `remoteAccess: trusted-host`，本地回环客户端与 DSH 桌面版窗口（`dsh-app://app/`）使用各自的通道。
+- Provider 目录和管理响应始终脱敏；界面只显示已配置字段名，不返回已保存凭据值。
+- WebUI 依据 Host 返回的可写 settings snapshot 判断产品能力，不再根据传输位置猜测权限；设置通道不可用时会显示明确诊断，而不是空白页。
+- WebUI 不直接读取 SQLite、启动进程、调用远程 Provider 或指定任意更新命令；Provider 网络访问只发生在 Host。
+- worker 使用 persona、工具白名单与 `maxDepth: 1`。固定结果工具仅接受当前子任务的可撤销请求 ID，并按每次操作的 schema 校验结果。
+- 蒸馏和 supervised writeback worker 不能调用 `mnemon_forget`；空闲审查的档案写入只开放仅创建工具，不能覆盖用户原文，也不能通过归档腾出容量。这些限制默认启用，无需增强插件。
+- 空闲审查每轮只写一层：建了项目档案后，修改工作记忆会被拒绝；修改工作记忆后，新建项目档案会被拒绝。`idleReview.runtimeMemory: false` 会完全收回它的运行时记忆工具。
+- 查询、候选、档案正文与历史记忆全部按不可信数据处理。
+
 ## 使用兼容与未来演进
 
 默认 Starter 保留存储选择、持久格式、具名工具及使用流程。`displayMode` 选择默认的 `sidebar` 或 `builtin`；Host 接受旧 `buildin`，并在配置可写时通过 DSH 带修订栅栏的设置写入器保存规范拼写。这只修改一项偏好，不改变记忆数据或 Core/Source 契约；其他配置键保留原有语义。这**不意味着**保留私有控制器、旧根包 `kernel/layers/provider-sdk` 入口和历史包装包。当前公开入口见[扩展开发](./extensions.md)。

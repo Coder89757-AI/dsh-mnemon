@@ -65,7 +65,7 @@ fix(client): honor trusted remote management grant
 
 ## 文档和持久化约束
 
-- 修改用户可见行为时检查 `ui-guide.md`、`getting-started.md`、`configuration.md` 和 `operations.md` 的中英文版本；
+- 修改用户可见行为时检查 `installation.md`、`getting-started.md`、`ui-guide.md`、`configuration.md`、`operations.md` 和 `compatibility.md`（受支持的 DSH 版本在此说明）的中英文版本；
 - 命令、配置键、路径和代码符号在两种语言中必须一致；
 - Runtime、Documents 和 Memory Space registry 的格式变更不得静默发生，必须提供旧格式处理和损坏输入测试；
 - 不得把用户偏好发送到长期 Memory Space，也不得在测试或文档示例中使用真实私有数据。

@@ -13,7 +13,7 @@ DSH_HOST_ROOT=<目录>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed
 
 此时所有 `@deepseek-ai/*` 导入（包括子路径）都从该安装解析（`scripts/installed-dsh.config.ts`），真实宿主测试通过 `tests/helpers/installed-dsh.ts` 组合它。与 `pnpm run test` 一样，先完成构建。两个版本的差异见[兼容性说明](../reference/compatibility.md#dsh-020-与-021)。
 
-DSH 的 UI primitives 在制品中导入 Markdown/高亮依赖，但其已发布 manifest 将这些包列为开发依赖。Root、三个 Source 与外部消费者显式声明完整依赖族，使独立 Client 测试可执行；Host 制品仍使用 DSH 提供的 UI 模块。测试同步使用公开的异步 Agent 工厂及持久化 `assistant/message` 事件。`tests/legacy-session-repair.spec.ts` 对普通和压缩格式的合成历史日志执行已发布 v0 → v3 迁移，检查显式副本修复、冷启动重读和带时间戳的 stream 回放。审计用例覆盖三个旧 Mnemon summary、兼容 v2 descriptor、packed 占位值展开、null→空字符串 delta name，以及具有已记录 provider ID 的闭合工具链；另验证多调用 provenance、owner 引用拒绝、原件及其他插件保留。`pnpm e2e:serve --legacy-session-replay` 还要求实际 WebUI 的回环续写服务器核对历史 wire call/result ID 与正文，匹配后才返回成功。
+DSH 的 UI primitives 在制品中导入 Markdown/高亮依赖，但其已发布 manifest 将这些包列为开发依赖。Root、三个 Source 与外部消费者显式声明完整依赖族，使独立 Client 测试可执行；Host 制品仍使用 DSH 提供的 UI 模块。测试同步使用公开的异步 Agent 工厂及持久化 `assistant/message` 事件。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -50,7 +50,7 @@ cordis.patch.yml   default Starter composition
 
 不再保留私有工作区包、控制器转发文件、业务 binding 或 compatibility 目录。兼容指用户配置、数据与使用流程，不是延续历史内部符号。
 
-较大改动之前写成的设计计划及其状态见 [docs/plans](../../plans/README.md)（英文）。
+较大改动之前写成的设计计划及其状态见 [docs/plans](../../plans/README.md)（英文）。[scripts/README.md](../../../scripts/README.md)（英文）列出每个脚本与夹具，以及它们的输入和环境变量。[Provider Lab](../../../provider-lab/README.md) 在本机回环地址上运行各第三方 Provider；[tests/fixtures/upgrade](../../../tests/fixtures/upgrade/README.md) 保存 `tests/upgrade.spec.ts` 用来升级的拆分前存储数据。
 
 插件 Client 测试需要根包的公开浏览器制品时，先构建根包：
 
@@ -85,7 +85,7 @@ MNEMON_NATIVE_TEST_CLI=/absolute/path/to/mnemon pnpm --filter dsh-mnemon-source-
 MNEMON_NATIVE_TEST_CLI=/absolute/path/to/mnemon pnpm exec vitest run tests/runtime-capacity-workflow.spec.ts -t 'two same-View Native'
 ```
 
-该测试不会发现个人数据根或安装二进制。这些检查不等于验证过所有真实远端服务或账号配置。Provider Lab 是需要明确启动的独立集成环境。
+该测试不会发现个人数据根或安装二进制。这些检查不等于验证过所有真实远端服务或账号配置。[Provider Lab](../../../provider-lab/README.md) 是需要明确启动的独立集成环境。
 
 OpenViking 提供显式启用的回环集成测试：`MNEMON_OPENVIKING_TEST_ENDPOINT=http://127.0.0.1:1933 pnpm --filter dsh-mnemon-provider-openviking exec vitest run tests/integration.spec.ts`。只使用临时后端。测试对唯一的中英文合成资料执行创建、精确读回、搜索、浏览和精确删除；普通 CI 跳过该测试。正式发布的 v0.4.20 服务配合本地确定性 embedding 可验证 HTTP、存储和索引契约，不能证明语义模型质量。
 
@@ -101,16 +101,18 @@ MNEMON_RUN_FLASH_STRESS=1 MNEMON_FLASH_STRESS_ROUNDS=8 MNEMON_FLASH_STRESS_REPOR
 
 测试逐一核对出站请求与返回模型均为 `deepseek-v4-flash`，使用非思考模式，始终不选择 Pro。模型提交前的文本变化与存储后的变化分别计数，所有项目事实均为合成数据，临时存储和会话在完成后清理。目标授权范围是硬性断言，主题归类匹配度单独作为模型质量指标报告。设置 `MNEMON_FLASH_STRESS_JSON_PROMPT=1` 可重跑带引号 JSON 输入诊断。普通 CI 默认跳过，需要明确授权使用真实 API。
 
-另一组自动记忆验收在四个并发 DSH 会话中模拟后端、前端、Android 和运维工作。开发提示包含已确定的决策、纠正和临时诊断，由模型自行选择记忆操作。开发任务实际读写临时 JSON 文件，默认生命周期真实执行空闲审阅；新的召回会话无法访问开发会话历史或配置文件。提供相同的凭据和 CLI 环境变量后运行：
+另一组自动记忆验收在四个并发 DSH 会话中模拟后端、前端、Android 和运维工作。开发提示包含已确定的决策、纠正和临时诊断，由模型自行选择记忆操作。开发任务实际读写临时 JSON 文件，默认生命周期真实执行空闲审查；新的召回会话无法访问开发会话历史或配置文件。提供相同的凭据和 CLI 环境变量后运行：
 
 ```sh
 MNEMON_RUN_FLASH_QUALITY=1 MNEMON_FLASH_QUALITY_REPORT=/tmp/mnemon-flash-quality.json pnpm exec vitest run tests/runtime-memory-flash-quality.spec.ts
 MNEMON_RUN_FLASH_QUALITY=1 MNEMON_FLASH_QUALITY_WAVES=24 MNEMON_FLASH_QUALITY_REPORT=/tmp/mnemon-flash-quality-long.json pnpm exec vitest run tests/runtime-memory-flash-quality.spec.ts -t 'four preconfigured'
 ```
 
-默认每会话 12 轮，扩展工作负载为 24 轮。两者均使用关闭思考的 Flash、guided 召回与写回，以及默认 10,240 字节记忆上限。只将空闲防抖从 30 秒缩短为 5 秒，审阅资格规则不变。测试记录保留事实、临时标记、纠正后的回答、模块归属、禁止写入回合、工具错误和归档。Vitest 成功仅表示实验执行完成：应检查 `finalEvaluation.automatedVerdict`，并逐条审阅过期文档、重复与归属错误，才能判断质量是否验收通过。[2026-09-09 验收报告](../../pr-assets/runtime-memory-quality-flash-20260909/README.zh-CN.md) 同时记录失败发现与通过项。普通 CI 跳过两个真实 API 用例。该模拟不能替代完整应用构建、真人半天工作流或 Windows 验证。
+默认每会话 12 轮，扩展工作负载为 24 轮。两者均使用关闭思考的 Flash、guided 召回与写回，以及默认 10,240 字节记忆上限。只将空闲防抖从 30 秒缩短为 5 秒，空闲审查的资格规则不变。测试记录保留事实、临时标记、纠正后的回答、模块归属、禁止写入回合、工具错误和归档。Vitest 成功仅表示实验执行完成：应检查 `finalEvaluation.automatedVerdict`，并逐条审阅过期文档、重复与归属错误，才能判断质量是否验收通过。[2026-09-09 验收报告](../../pr-assets/runtime-memory-quality-flash-20260909/README.zh-CN.md) 同时记录失败发现与通过项。普通 CI 跳过两个真实 API 用例。该模拟不能替代完整应用构建、真人半天工作流或 Windows 验证。
 
 生成的真实运行数据放在仓库外，上述命令已采用这种方式。遵循[证据存放规范](../../pr-assets/README.md)：提交摘要、复现输入与最小样例，完整脱敏数据作为 PR 附件保存，并注明 revision 和 SHA-256。
+
+`tests/legacy-session-repair.spec.ts` 对普通和压缩格式的合成历史日志执行已发布 v0 → v3 迁移，检查显式副本修复、冷启动重读和带时间戳的 stream 回放。审计用例覆盖三个旧 Mnemon summary、兼容 v2 descriptor、packed 占位值展开、null→空字符串 delta name，以及具有已记录 provider ID 的闭合工具链；另验证多调用 provenance、owner 引用拒绝、原件及其他插件保留。WebUI 中的续写检查见[夹具选项](#夹具选项)里的 `--legacy-session-replay`。
 
 性能回归对 100 次三 Source View 组合约束 wall/CPU 时间；确定性构建比较所有生成文件 hash。二者不承诺生产网络延迟或 LLM 质量。
 
@@ -130,62 +132,63 @@ pnpm --workspace-concurrency=1 -r build
 pnpm e2e:serve
 ```
 
-夹具输出临时工作区及 loopback URL，隔离 `DSH_HOME`、`MNEMON_DATA_DIR`、工作区和模型端点，并把 DSH 创建首个工作区所在的“文稿”目录也指向夹具内部。会话选择 **Mnemon E2E**：该测试自有 preset 去除 Shell 依赖，保留 Host 记忆工具。模型固定回复，因此这里只检查 UI/传输，不评价真实模型沉淀质量。Ctrl-C 停止并清理合成测试数据。
-
-`pnpm e2e:serve --review-evidence --strategy-extensions` 添加按 Agent 注册的合成概览工具及固定的父会话 / 审查调用，检查五个完整分块的继承，并在修复前后尝试相同的外部工具读取；见 [Issue #211 验证记录](../../pr-assets/issue-211-20260911/README.zh-CN.md)。`tests/review-evidence-host.spec.ts` 还覆盖真实 DSH native 与 Code Mode 中，在 Provider 的 start Promise 返回前发生的工具执行。
+夹具输出临时工作区及 loopback URL，隔离 `DSH_HOME`、`MNEMON_DATA_DIR`、工作区和模型端点，并把 DSH 创建首个工作区所在的“文稿”目录也指向夹具内部。会话选择 **Mnemon E2E**：该测试自有 preset 去除 Shell 依赖，保留 Host 记忆工具。模型固定回复，因此这里只检查 UI/传输，不评价真实模型沉淀质量。Ctrl-C 停止并清理合成测试数据；向输出的 PID 发送 `SIGUSR2` 会在保留数据的情况下重启 WebUI，设置 `MNEMON_E2E_PORT` 可让重启前后保持同一个地址。
 
 检查无会话 Sidebar、所有一级/二级页面、Runtime 增改删与清空分支、Documents 创建/搜索/读取、Provider 设置与发现、激活、故障态、取消弹窗、存入记忆、布局切换、locale、返回聊天后交互恢复。在“插件 → 可组合记忆”页面中，还要检查主策略选择器、各组件开关与组件页面、DSH 组件行及其打开的页面、默认/自定义存储位置，以及备份导入预览。读写/删除使用临时 Provider 或受控夹具，不能对个人记忆做实验。
 
-Issue #233 使用 `node scripts/fixtures/openviking-protocol.mjs` 与 `pnpm e2e:serve --openviking-write`。把 OpenViking 配置为 `http://127.0.0.1:19335`，account/user 为 `default`，不设置 API key，然后在 Mnemon E2E 中发送 `openviking-write-233`。模型夹具只驱动一次真实 Host 和受监督 writer 工具。协议夹具刻意返回有 cosmetic update、但未存储候选正文的抽取结果，用于暴露基线误报；`/__fixture` 明确标注并记录合成请求和文件。后端验收需再对临时真实 OpenViking 服务执行同样流程；协议夹具不能代表真实抽取或语义质量。
-
-验证内嵌 Electron Host 时，使用 `pnpm e2e:serve --electron=/absolute/path/to/electron`（macOS 指向 `Electron.app/Contents/MacOS/Electron`）。单独安装测试用 Electron，并通过 `MNEMON_CLI_PATH` 和 `npm_config_prefix` 指定隔离的 npm 安装。夹具将正式发布的 DSH Web 栈运行在 Electron 主进程内，Host 不设置 `ELECTRON_RUN_AS_NODE`。它为正式 Cordis loader 开放 Node internals，无需重新编译或修改 DSH 包。照常用 Ctrl-C 停止。
-
 另检查 `displayMode` 实时切换：Sidebar 与会话标签页（`builtin`）不得同时挂载，二者使用同一组 Source 页面。会话标签页的全局/工作区/集中工作区/自定义范围读写及任务遵循所属会话，隐藏范围控件，切换会话时清理旧数据与编辑器。验证旧 `buildin` 规范化，以及原生 Sidebar 皮肤和已支持布局插件下的折叠图标。
+
+区分上游 Profile/传输告警与 Mnemon 故障，不隐藏控制台。
+
+要在另一个 DSH 版本上启动 WebUI，先用 `npm install -g --prefix <目录> @deepseek-ai/dsh@0.2.0-rc.2` 安装，再设置 `MNEMON_E2E_DSH=<目录>/lib/node_modules/@deepseek-ai/dsh/lib/bin.js`。同一个变量也让 `node scripts/verify-headless-profile.mjs` 与 `node scripts/verify-sync-git.mjs` 改用该版本；请用 `node` 而不是 `pnpm` 运行，以免继承 `NODE_PATH`。要在该安装上运行根测试，按[环境与命令](#环境与命令)使用 `pnpm run test:installed-dsh`。
+
+### 夹具选项
+
+`pnpm e2e:serve` 接受下列选项，分为两类：
+
+- **准备类选项**改动 profile、模型桩或 WebUI 的运行方式：`--strategy-extensions`、`--live-model`、`--plugin`、`--better-sidebar`、`--electron`、`--trusted-host`、`--remote-management`、`--without-mnemon-cli`、`--second-runtime`、`--review-failure`、`--runtime-archive` 与 `--archive-copies`。最后两个还会在回环地址上启动替身服务：一个 Hindsight 服务和一个响应缓慢的嵌入服务。
+- **脚本化模型**决定模型在某项检查中做什么：`--document-protection`、`--review-evidence`、`--document-archive`、`--openviking-write`、`--runtime-routing`、`--result-tool-cache`、`--runtime-write-scope`、`--legacy-session-replay`、`--idle-review`、`--review-layers`、`--strict-template`、`--general-strategy`、`--exact-id`、`--save-action`、`--profile-compaction`、`--remember-target`、`--recall-budget` 与 `--docs-demo`。同一时间只运行一个脚本化模型，所以请一次只用一个：同时给出多个时，以 `scripts/serve-e2e.mjs` 中排在最前的为准；`--live-model` 会关闭全部脚本化模型。它们都可以与准备类选项组合。
+
+除了这些替身服务，以及 `--openviking-write` 需要的 OpenViking 协议夹具，存储、工具、传输和浏览器都是真实运行，不使用个人凭据或记忆。每个夹具都以自己的前缀输出各步，前缀见表格。完整步骤以及修复前后的结果见对应记录；每个选项背后的文件见 [scripts/README.md](../../../scripts/README.md)（英文）。
+
+| 选项 | 准备了什么 | Issue | 记录 |
+|---|---|---|---|
+| `--strategy-extensions` | 打开随附的三个增强：范围组合、轻量上下文与主动记录 | — | [策略贡献验证](../../pr-assets/strategy-extensions-20260901/README.md) |
+| `--live-model` | 改由 DeepSeek API 作答，而不是回环模型桩，脚本化模型随之关闭。密钥读取 `DEEPSEEK_API_KEY`，设置了 `DEEPSEEK_BASE_URL` 时也读取它作为端点，两者都不会保存 | — | — |
+| `--docs-demo`（中文）、`--docs-demo=en` | 预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间。先问结账（英文演示为 checkout），再让它记住新的目标（remember）。加上 `--live-model` 时由真实模型作答；界面变化后应以这种方式重新采集截图集。`Docs demo:` | — | [截图集](../../assets/webui-v0.5.19/README.md) |
+| `--plugin=<包目录>` | 再把一个测试用插件链接进 profile，可重复使用以链接多个 | [#340](https://github.com/omdsh-dev/dsh-mnemon/issues/340) | [Slot 之外的设置](../../pr-assets/issue-340-settings-outside-slots/README.zh-CN.md) |
+| `--better-sidebar=<包目录>` | 把一个布局或皮肤包（例如 Better Sidebar 或 ORCA LINK 皮肤）链接进 profile | [#232](https://github.com/omdsh-dev/dsh-mnemon/issues/232) | [ORCA LINK 侧栏](../../pr-assets/issue-232-orca-sidebar/README.md) |
+| `--electron=<可执行文件>` | 将正式发布的 DSH Web 栈运行在真实的 Electron 主进程内，Host 不设置 `ELECTRON_RUN_AS_NODE`，也无需重新编译 DSH；macOS 上指向 `Electron.app/Contents/MacOS/Electron`。通过 `npm_config_prefix` 给测试用 Electron 指定隔离的 npm 安装，通过 `MNEMON_CLI_PATH` 指定 CLI | [#201](https://github.com/omdsh-dev/dsh-mnemon/issues/201) | [Electron npm CLI](../../pr-assets/issue-201-electron-cli/README.md) |
+| `--trusted-host=<主机:端口>` | 把该授权主机（例如 `memory.test:4331`）加入 DSH 的浏览器信任边界，用于以远程页面身份检查 WebUI。同时把 `MNEMON_E2E_PORT` 设为同一端口，在测试浏览器中把该名称解析到 127.0.0.1（Chrome 可用 `--host-resolver-rules="MAP memory.test 127.0.0.1"` 并加 `--no-proxy-server`），再把打印出的启动 URL 中的回环地址换成该授权主机打开 | — | [插件配置](../../pr-assets/plugin-config-20260927/README.zh-CN.md) |
+| `--remote-management` | 设置 `remoteAccess: trusted-host`，因此与 `--trusted-host` 一起使用时，“插件 → 可组合记忆”页面可以保存 | — | [插件配置](../../pr-assets/plugin-config-20260927/README.zh-CN.md) |
+| `--without-mnemon-cli` | 把 `cliPath` 指向不存在的文件，即使 PATH 中有 Mnemon CLI，Host 也按未安装处理；请先连接另一个 Provider，例如 [Provider Lab](../../../provider-lab/README.md) 的服务 | — | [可选的 Mnemon CLI](../../pr-assets/optional-mnemon-cli-20260927/README.zh-CN.md) |
+| `--document-protection` | 空闲审查等待缩短为 5 秒，审查会尝试覆盖一份已有档案。两轮用户文本合计至少 320 字。`Document protection:` | [PR #199](https://github.com/omdsh-dev/dsh-mnemon/pull/199) | [档案保护](../../pr-assets/pr199-document-protection/README.md) |
+| `--review-failure` | 空闲审查等待缩短为 5 秒，每个委派子 Agent（例如审查）都会收到 HTTP 400 `CONTEXT_WINDOW_EXCEEDED`。发送一段超过 150 字符、带“Please remember”的长期决策，再确认一次。`Review fixture:` | [#210](https://github.com/omdsh-dev/dsh-mnemon/issues/210) | [空闲审查失败提示](../../pr-assets/issue-210-review-warning/README.md) |
+| `--review-evidence` | 与 `--strategy-extensions` 一起使用：空闲审查等待缩短为 5 秒，加入按 Agent 注册的合成概览工具，以及读取它的脚本化父会话与审查调用。按记录发送两轮。`Review evidence:` | [#211](https://github.com/omdsh-dev/dsh-mnemon/issues/211) | [审查证据](../../pr-assets/issue-211-20260911/README.zh-CN.md) |
+| `--document-archive` | 脚本决定归档选择；标题包含 `REJECT` 的档案会得到无效目标。在不同回合中依次发送 `archive-tool-222 prepare`、`archive-tool-222 update` 与 `archive-tool-222`。`Document archive:` | [#222](https://github.com/omdsh-dev/dsh-mnemon/issues/222) | [档案归档](../../pr-assets/issue-222-document-archive/README.md) |
+| `--openviking-write` | 面向 OpenViking 的脚本化写入。另外运行 `node scripts/fixtures/openviking-protocol.mjs`，这是一个替身服务，其 `/__fixture` 端点会报告合成的请求和文件；把 OpenViking 配置为 `http://127.0.0.1:19335`，account/user 为 `default`，不设置 API key，然后发送 `openviking-write-233`。替身不能证明真实抽取的效果，后端验收需再对临时的真实服务执行同样流程。`OpenViking write:` | [#233](https://github.com/omdsh-dev/dsh-mnemon/issues/233)、[#353](https://github.com/omdsh-dev/dsh-mnemon/issues/353) | [OpenViking 写入](../../pr-assets/issue-233-openviking-20260916/README.zh-CN.md)、[#353](../../pr-assets/issue-353-openviking-write/README.zh-CN.md) |
+| `--runtime-routing` | 工作记忆上限设为 1,600 字节，路由模型返回按分块计数的序号。创建并激活两个 Native 记忆空间，再添加超过上限的工作记忆条目。`Runtime routing:` | [#235](https://github.com/omdsh-dev/dsh-mnemon/issues/235) | [路由兜底](../../pr-assets/issue-235-runtime-routing/README.md) |
+| `--result-tool-cache` | 与 `MNEMON_CLI_PATH` 和 `--strategy-extensions` 一起使用：脚本化的写入任务连续写入两次。依次发送 `cache-round-239 first` 与 `cache-round-239 second`。`Result tool cache:` | [#239](https://github.com/omdsh-dev/dsh-mnemon/issues/239) | [固定结果工具](../../pr-assets/issue-239-result-tool/README.md) |
+| `--runtime-archive` | 一个记录所接收写入的回环 Hindsight 替身，以及 300 字节的工作记忆上限。在记忆空间页面用夹具输出的地址启用 Hindsight，再添加超过上限的工作记忆条目。`Runtime archive accepted writes:` | [#240](https://github.com/omdsh-dev/dsh-mnemon/issues/240) | [归档目标](../../pr-assets/issue-240-runtime-archive/README.md) |
+| `--runtime-write-scope` | 与 `MNEMON_CLI_PATH` 和 `--strategy-extensions` 一起使用，并启动全新临时夹具：工作记忆上限 512 字节，脚本模型限制子 Agent 调用次数，且需要真实的 create/update 回执。发送 `archive-scope-250`；`archive-scope-250 retry` 在新回合重试。`Runtime write scope:` | [#250](https://github.com/omdsh-dev/dsh-mnemon/issues/250) | [Runtime 写入范围](../../pr-assets/issue-250-runtime-write-scope/README.zh-CN.md) |
+| `--legacy-session-replay` | 与 `--strategy-extensions` 一起使用：只有修复后的旧会话重放出历史 call/result ID 与正文时，回环续写服务器才作答。`Legacy replay:` | [#251](https://github.com/omdsh-dev/dsh-mnemon/issues/251) | [旧会话修复](../../pr-assets/issue-251-legacy-repair/README.zh-CN.md) |
+| `--idle-review` | 与 `--strategy-extensions` 一起使用：防抖与最小尝试间隔均为 5 秒，每会话审查一次，审查写入后故意失败。连续发送两个至少 150 字符的用户回合。`Idle review:` | [#100](https://github.com/omdsh-dev/dsh-mnemon/issues/100)、[#255](https://github.com/omdsh-dev/dsh-mnemon/issues/255) | [空闲审查限制](../../pr-assets/idle-review-agent-team/README.zh-CN.md) |
+| `--review-layers` | 空闲窗口 5 秒、每个会话只审查一次，审查先把一条事实写成档案，再写入工作记忆。按记录中验证数据的两轮发送。`Review layers:` | [#319](https://github.com/omdsh-dev/dsh-mnemon/issues/319) | [每轮审查只写一层](../../pr-assets/issue-319-review-layers/README.zh-CN.md) |
+| `--strict-template` | 回环模型的行为与 Ollama 0.33 运行“要求用户查询的聊天模板”时一致，空闲审查 5 秒后运行、每会话一次。连续发送两个至少 150 字符的用户回合。`Strict template:` | [#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327) | [子 Agent 的用户消息](../../pr-assets/issue-327-subagent-user-turn/README.zh-CN.md) |
+| `--general-strategy` | 选中通用策略并停用分层策略。先发送 `general-strategy-check remember`，再发送 `general-strategy-check recall`。`General strategy:` | — | [主策略选择](../../pr-assets/main-strategy-choice-20260927/README.zh-CN.md) |
+| `--second-runtime` | 只能与 `--general-strategy` 一起使用：在 Starter 的运行时 Source 旁再挂载一个 `mnemon-source-runtime-global`，数据目录单独存放。发送 `general-strategy-check remember`；`General strategy:` 组合行会给出 `otherRuntimeOffer` | [#397](https://github.com/omdsh-dev/dsh-mnemon/issues/397) | [默认运行时实例](../../pr-assets/issue-397-default-runtime-instance/README.zh-CN.md) |
+| `--exact-id` | 与 `MNEMON_CLI_PATH` 一起使用：脚本化的写入与遗忘工作 Agent。依次运行 `/mnemon remember <内容>`、用 `/mnemon recall <关键词>` 读到 id，再运行 `/mnemon forget <ID>`。`Exact id:` | [#337](https://github.com/omdsh-dev/dsh-mnemon/issues/337) | [按精确 id 操作](../../pr-assets/issue-337-exact-id-actions/README.zh-CN.md) |
+| `--archive-copies` | 与 `MNEMON_CLI_PATH` 一起使用：工作记忆接近 640 字节上限，每个条目在一个 Native 记忆空间中都有逐字副本，嵌入替身 12 秒后才响应（`MNEMON_E2E_EMBEDDING_DELAY_MS`）。在运行时记忆页面添加夹具输出的那一条。`Archive copies:` | [#339](https://github.com/omdsh-dev/dsh-mnemon/issues/339) | [归档回执](../../pr-assets/issue-339-archive-receipt-evidence/README.zh-CN.md) |
+| `--save-action` | 与 `MNEMON_CLI_PATH` 一起使用：每轮都会收到一条值得保存的回复，脚本化的任务 Agent 写入收到的内容。用**存入记忆**保存一条回复，再修改已有回执的候选内容后再次提交。`Save action:` | [#342](https://github.com/omdsh-dev/dsh-mnemon/issues/342) | [修改后再存入](../../pr-assets/issue-342-edited-save/README.zh-CN.md) |
+| `--profile-compaction` | 把 USER.md 上限设为 100 字节，并关闭空闲审查。分三条消息发送 `记住：回答尽量简洁，不要冗长的开场白。`、`记住：回答使用简体中文。` 和 `记住：汇报时先列出阻塞项。`。`Profile compaction:` | [#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356) | [子 Agent activation](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md) |
+| `--remember-target` | 预置中文 Lumen 项目（其中「调研归档」空间已停用），除非由 `--docs-demo` 预置。先发送 `remember-target-check`，再发送 `remember-archive-check`。`Remember target:` | [#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387) | [指定的记忆空间](../../pr-assets/issue-387-explicit-space-target/README.zh-CN.md) |
+| `--recall-budget` | 预置中文 Lumen 项目（除非由 `--docs-demo` 预置），并使用一个在同一回合内提出三个不同召回问题的模型。发送 `recall-budget-check`。`Recall budget:` | [#389](https://github.com/omdsh-dev/dsh-mnemon/issues/389) | [召回预算](../../pr-assets/issue-389-recall-budget/README.zh-CN.md) |
+
+### 较早的记录
 
 [2026-09-04 main rebase 验证记录](../../pr-assets/main-rebase-20260904/README.md)列明精确的 v0.4.7/DSH rc.1 revision、registry 与源码覆盖完整测试、独立制品、插件组合重启持久化和真实双入口验证及其限制。
 
 [2026-08-30 npm 回归记录](../../pr-assets/npm-sidebar-cli/README.md#简体中文)保留了旧 Taskboard/SSH 与 CLI 调查。已移除的历史夹具不是当前 checkout 的命令；当前 WebUI 验证使用 `pnpm e2e:serve`。
-
-区分上游 Profile/传输告警与 Mnemon 故障，不隐藏控制台。
-
-文档归档回归使用 `pnpm e2e:serve --document-archive`：创建并启用临时的精确写入记忆空间，新建档案后从工作台归档。标题包含 `REJECT` 时夹具故意选择无效目标，检查档案仍为 active 且没有新增索引，再改名重试。在 Mnemon E2E 对话的三个回合中依次发送 `archive-tool-222 prepare`、`archive-tool-222 update`、`archive-tool-222`，会驱动真实的新建 → 更新 → 归档工具调用，并断言返回的 lineage。只有模型决策由脚本控制，存储、工具、传输和浏览器均为真实实现。搭配旧 Host 构建时，同一夹具可复现旧的回执序号不匹配错误。
-
-Runtime 写入范围回归使用 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --runtime-write-scope --strategy-extensions`，并启动全新临时夹具。在 Mnemon E2E 中发送 `archive-scope-250`。脚本模型先保存两条检查点，在已固定的 View 内创建并激活两个真实 Native 空间，再新增一条越限检查点。基线版本会在空间已激活的情况下拒绝新增；修复后的 Host 会把原文归档到两个有权限的目标，再提交新增内容。发送 `archive-scope-250 retry` 可在新回合重试同一份待新增输入。夹具限制子 Agent 调用次数，且必须收到真实 create/update 回执才完成调用。
-
-`pnpm e2e:serve --idle-review --strategy-extensions` 通过确定性回环模型选择验证部分失败。连续发送两个至少 150 字符的合成用户回合，再等待五秒；真实 reviewer 创建一份档案和一条 Runtime 记忆后，夹具故意返回模型错误。刷新记忆系统状态核对两份已提交回执，再发送更多回合，确认每会话一次的上限阻止新增子 Agent。与生产默认值的差别只有防抖和最小尝试间隔（均为 5 秒）以及 1 次会话上限。该夹具不模拟真实 Agent Teams policy；该组合由上文的可选 Agent Teams 矩阵覆盖。不使用个人凭据或记忆。详见[双语复现与证据](../../pr-assets/idle-review-agent-team/README.zh-CN.md)。
-
-`pnpm e2e:serve --strict-template` 复现 [#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327)。回环模型的行为与 Ollama 0.33 运行“要求用户查询的聊天模板”时一致：
-- 保留系统提示，以及其余消息中能放进窗口的最长后缀，并总是保留最后一条消息；
-- 截断后没有用户文本消息时返回 500 `no user query found in messages`；
-- 窗口在空闲审查发出第 3 次请求时确定。
-
-连续发送两个至少 150 字符的用户回合，再等待五秒。修复后，第 4 次审查请求被拒一次，随即带着用户消息重试，审查会创建档案“Review checkpoint storage”，状态页没有审查失败；未修复的构建则在状态页显示空闲审查失败，并列出已提交的档案回执。夹具以 `Strict template:` 行输出每次审查请求。与生产默认值的差别只有空闲审查的时间设置（5 秒、每会话一次）。详见[双语复现与证据](../../pr-assets/issue-327-subagent-user-turn/README.zh-CN.md)。
-
-`pnpm e2e:serve --general-strategy` 启动时已选中通用策略，并停用分层策略。先发送 `general-strategy-check remember`，下一回合再发送 `general-strategy-check recall`。脚本模型检查系统提示中包含通用记忆协议，且 Runtime、项目档案和记忆空间三个 Source 均已接入；随后通过具名 Runtime 工具保存一条事实，并且只有当这条事实以常驻记忆投影出现时，第二回合才答出它。夹具以 `General strategy:` 行输出每项检查。只有模型决策是脚本化的；策略、其 View、Runtime 写入和浏览器均为真实运行。
-
-在 `--general-strategy` 之外再加 `--second-runtime`，会像 profile patch 那样在 Starter 的运行时 Source 旁再挂载一个 `mnemon-source-runtime-global`，数据目录放在夹具内（[#397](https://github.com/omdsh-dev/dsh-mnemon/issues/397)）。此时 `general-strategy-check remember` 把事实写入 Starter 的 MEMORY.md（见 **记忆系统 → 运行时记忆**）；另一条轨的 `mutate` offer 留在 View 的路由信封里时，夹具的 `General strategy:` 组合行会输出 `otherRuntimeOffer: true`。不带 `--general-strategy` 的 `--second-runtime` 会被拒绝：分层策略每个角色只组合一个 Source。没有修复的构建会以 "Runtime Action is ambiguous" 让这次写入失败。见[双语复现与证据](../../pr-assets/issue-397-default-runtime-instance/README.zh-CN.md)。
-
-`MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --exact-id` 用于检查按精确 id 遗忘（[#337](https://github.com/omdsh-dev/dsh-mnemon/issues/337)）。在 Mnemon E2E 对话中依次运行 `/mnemon remember <内容>`、用 `/mnemon recall <关键词>` 读到它的 id，再运行 `/mnemon forget <ID>`。脚本化的工作 Agent 写入收到的内容、遗忘收到的精确 id，各自在自己的 View 中运行；夹具以 `Exact id:` 行输出每一步。修复后这条记忆会被软删除；没有修复的构建会报告遗忘需要 View 已接纳的证据。只有工作 Agent 的决策是脚本化的；命令、工具和 Native 存储都是真实运行。见[双语复现与证据](../../pr-assets/issue-337-exact-id-actions/README.zh-CN.md)。
-
-`MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --archive-copies` 用于复现 [#339](https://github.com/omdsh-dev/dsh-mnemon/issues/339)。Host 启动前，它把工作记忆写到接近 640 字节的上限，并把每个条目逐字写入一个 Native 记忆空间，就像此前一次失败的归档留下的那样。嵌入请求发往本机一个 12 秒后才响应的服务（可用 `MNEMON_E2E_EMBEDDING_DELAY_MS` 调整），比 CLI 默认的 10 秒超时更长。在运行时记忆页面添加夹具输出的那一条。修复后，Host 不经检索即可归档并添加；没有修复的构建会为每个副本检索，第一次检索超时，归档随之失败。夹具以 `Archive copies:` 行输出每次嵌入请求。见[双语复现与证据](../../pr-assets/issue-339-archive-receipt-evidence/README.zh-CN.md)。
-
-`MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm e2e:serve --save-action` 用于检查**存入记忆**（[#342](https://github.com/omdsh-dev/dsh-mnemon/issues/342)）。每轮对话都会收到一条值得保存的回复。点击其下的**存入记忆**并提交候选内容，再修改已有回执的候选内容后再次提交。脚本化的任务 Agent 先读取记忆空间目录，没有空间时创建一个 Native 空间，写入收到的候选内容并汇报 Provider 回执；夹具以 `Save action:` 行输出每一步。两次提交都会写入，原样再次提交则返回第一次的回执。只有模型决策是脚本化的；对话框、任务 Agent 的工具与 Native 写入均为真实运行。见[双语复现与证据](../../pr-assets/issue-342-edited-save/README.zh-CN.md)。
-
-`pnpm e2e:serve --remember-target` 预置同一个中文 Lumen 项目（其中「调研归档」空间已停用），并使用一个脚本模型，把记忆存入指定的空间（[#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387)）。发送 `remember-target-check` 后，根 Agent 先列出空间，再带着「Lumen 项目」的 id 调用 `mnemon_remember` 保存一条调研结论；写入任务 Agent 先尝试描述更贴切的「调研归档」，再写入它被指定的空间。回复会引用回执中的空间。修复后守卫会拒绝第一次尝试，「调研归档」保持停用；没有修复的构建会把记忆存进「调研归档」并把它重新激活。发送 `remember-archive-check` 后，根 Agent 自己指定「调研归档」：修复后 Host 会在任何写入任务 Agent 运行之前拒绝这个已停用的空间，回复会引用原因；没有修复的构建会把记忆存进去并把它打开。夹具以 `Remember target:` 行输出每一步。见[双语复现与证据](../../pr-assets/issue-387-explicit-space-target/README.zh-CN.md)。
-
-`pnpm e2e:serve --profile-compaction` 用于复现 [#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356)：USER.md 写满后，再写入会启动压缩用的子 Agent。这个 profile 把 USER.md 上限设为 100 字节，并关闭空闲审查。在 Mnemon E2E 对话中分三条消息发送 `记住：回答尽量简洁，不要冗长的开场白。`、`记住：回答使用简体中文。` 和 `记住：汇报时先列出阻塞项。`。脚本模型用 `mnemon_runtime_memory` 保存每条事实。第三条写入时 USER.md 已满，压缩子 Agent 先合并已保存的两条，再加入新条目。夹具以 `Profile compaction:` 行输出每一步。只有模型决策是脚本化的；工具、子 Agent 及其结果工具和 Runtime 写入都是真实运行。见[双语复现与证据](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)。
-
-要在另一个 DSH 版本上启动 WebUI，先用 `npm install -g --prefix <目录> @deepseek-ai/dsh@0.2.0-rc.2` 安装，再设置 `MNEMON_E2E_DSH=<目录>/lib/node_modules/@deepseek-ai/dsh/lib/bin.js`。同一个变量也让 `node scripts/verify-headless-profile.mjs` 与 `node scripts/verify-sync-git.mjs` 改用该版本；请用 `node` 而不是 `pnpm` 运行，以免继承 `NODE_PATH`。要在该安装上运行根测试，按[环境与命令](#环境与命令)使用 `pnpm run test:installed-dsh`。
-
-`pnpm e2e:serve --plugin=<包目录>` 会再把一个测试用插件链接进 profile，可重复使用以链接多个。[issue #340 证据](../../pr-assets/issue-340-settings-outside-slots/README.zh-CN.md)用它加入一个设置分区，像某些外壳那样不经过 DSH 的 slot 渲染器绘制 `dsh-mnemon` 配置页。
-
-`pnpm e2e:serve --without-mnemon-cli` 把 `cliPath` 指向不存在的文件，即使 PATH 中有 Mnemon CLI，Host 也按未安装处理。用它确认：状态页不显示 Mnemon Native 卡片，版本对话框把 CLI 列为可选，插件页停用向量测试，新建记忆空间从已就绪的 Provider 开始。先连接一个 Provider，例如在“插件 → 可组合记忆”页面中连接 Provider Lab 的服务。
-
-`pnpm e2e:serve --docs-demo`（中文）或 `--docs-demo=en` 会预置[文档截图集](../../assets/webui-v0.5.19/README.md)使用的虚构项目 Lumen：用户画像与工作记忆、六份项目档案和三个记忆空间，都在宿主启动前通过各 Source 自己的管理操作写入。包含“结账”（英文演示为 “checkout”）的消息会经真实 View 工具完成一次档案检索与两次记忆空间召回后作答；随后包含“记住”（英文演示为 “remember”）的消息（例如新的 LCP 目标）会替换对应的工作记忆条目。脚本只决定模型调用哪些工具，不涉及任何个人数据。加上 `--live-model` 则改由 DeepSeek API 作答，密钥从 `DEEPSEEK_API_KEY` 读取；此时提问会经过真实的模型、任务 Agent 与 Agent 查询，图集即以这种方式采集。界面变化后应使用该夹具重新采集截图集。
-
-`pnpm e2e:serve --recall-budget` 预置同一个中文 Lumen 项目，并使用一个脚本模型：发送 `recall-budget-check` 后，它在同一回合内提出三个不同的召回问题（[#389](https://github.com/omdsh-dev/dsh-mnemon/issues/389)）。分层策略每回合允许两次；回复会说明第三次调用返回了什么，也就是不读提示的模型会怎样理解它。修复后第三次查询不会执行，并如实说明（`notRun`、`budgetExhausted`）；没有修复的构建会返回第二次查询的 evidence。夹具以 `Recall budget:` 行输出第三次的结果。见[双语复现与证据](../../pr-assets/issue-389-recall-budget/README.zh-CN.md)。
-
-`pnpm e2e:serve --trusted-host=memory.test:4331` 把该授权主机加入 DSH 的浏览器信任边界，用于以远程页面身份检查 WebUI；再加 `--remote-management` 即设置 `remoteAccess: trusted-host`。同时设置 `MNEMON_E2E_PORT=4331` 使端口一致，在测试浏览器中把该名称解析到 127.0.0.1（Chrome 可用 `--host-resolver-rules="MAP memory.test 127.0.0.1"` 并加 `--no-proxy-server`），再把打印出的启动 URL 中的回环地址换成 `memory.test:4331` 打开。未授权时“插件 → 可组合记忆”页面为只读；授权后，保存会经 API Gateway 持久化。
 
 ## 发布
 

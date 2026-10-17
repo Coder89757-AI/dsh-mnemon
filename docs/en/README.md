@@ -1,6 +1,6 @@
 # Documentation
 
-**English** | [简体中文](../zh-CN/README.md) | [Project home](../../README.md)
+[简体中文](../zh-CN/README.md) | **English** | [Project home](../../README.md)
 
 dsh-mnemon gives DeepSeek Harness three kinds of memory: **runtime memory** in every turn, **Project Documents** searched when a question needs them, and **Memory Spaces** for durable evidence on the Provider you choose. A main strategy decides how they take part in each turn; you pick it, and any enhancements, on the Plugins page. Start with the default Layered strategy; you never need to manage plugins to use it.
 
@@ -36,6 +36,7 @@ dsh-mnemon gives DeepSeek Harness three kinds of memory: **runtime memory** in e
 | Adapt a skin to Mnemon backgrounds and transparency | [Skin development](./development/skin-integration.md) |
 | Build, test and capture a real WebUI | [Development and verification](./development/README.md) |
 | Version and release independent packages | [Release process](./development/releasing.md) |
+| Contribute: the rules, the scripts and the design plans | [CONTRIBUTING](../../CONTRIBUTING.md) · [Scripts](../../scripts/README.md) · [Design plans](../plans/README.md) |
 
 ## What is new
 

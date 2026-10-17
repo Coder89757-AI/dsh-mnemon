@@ -1,3 +1,4 @@
+// Install the Starter into an isolated Headless profile of real DSH and verify its tools, settings and disabled state.
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { existsSync } from 'node:fs'

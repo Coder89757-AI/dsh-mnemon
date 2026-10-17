@@ -1,6 +1,6 @@
 # Composable View Memory Architecture
 
-[简体中文](../../zh-CN/development/architecture.md) | **English** | [Documentation Center](../README.md)
+[简体中文](../../zh-CN/development/architecture.md) | **English** | [Documentation](../README.md)
 
 The system has three domain concepts: a **Source** owns memory and its operations; a **Strategy** proposes how available Sources participate; a **View** is the bounded context and interaction shape presented to the LLM for one scope and scenario. Runtime, Documents and Memory Spaces are the default composition, not Core's universal memory taxonomy.
 
@@ -113,6 +113,37 @@ Each Source owns its optional `./client` DSH module, pages, management operation
 The Host supplies a scoped management client and sanitized instance metadata, not raw RPC/Host Context or an LLM grant. Reads and confirmed revision-fenced mutations address one Source. Default workflow assistance (such as Document-to-Space archival) lives in Host coordination and uses those same public operations.
 
 One shared workspace has two mutually exclusive DSH placements. Sidebar contributes the matching `mnemon` entry to the public `sidebar.panellist` and `main` slots of the [supported DSH releases](../reference/compatibility.md). DSH owns the button, icon size, label, selected state and main-panel navigation. The `shell.overlay` registration retains Source child-render authority and portals the workspace into a persistent native main seat, preserving page state across panel switches and the independent Better Sidebar seat. Replacement layouts without the native panel contracts retain the existing launcher and overlay fallback. Sidebar opens without a conversation, keeps its own workspace selection, coordinates with Taskboard/SSH and returns through `layout.selectPanel(null)`. The conversation tab (`builtin`) uses `conversation.view` and the owning session's storage scope for reads, writes and tasks, with no independent workspace picker. Both placements render the same Source-owned child Slots. No separate React root, fallback page registry or cloned business page exists.
+
+## Security boundaries
+
+These are the boundaries the Host keeps around processes, files, the WebUI and the task Agents. They are not a secret scanner; the [operations guide](../guides/operations.md#security-boundaries) says what that means for the data you store, and [SECURITY.md](../../../SECURITY.md) how to report a vulnerability.
+
+### Process
+
+- CLI uses `spawn(command, args, { shell: false })`.
+- stdout + stderr are capped at 2 MiB per call. Mnemon Native reads a whole Memory Space for its contents list, its graph and the exact-content check before runtime memory archives entries; those reads grow with the Store and are capped at 128 MiB.
+- A call that fails says why: only a failed launch suggests installing Mnemon or setting `mnemon.cliPath`, while a timeout, a cancellation and an output over the cap each name themselves.
+- Calls use `timeoutMs` and AbortSignal; cancellation sends `SIGTERM`, then `SIGKILL` after 1.5 seconds.
+- One Runner serializes calls; separate DSH processes still rely on Mnemon / SQLite concurrency.
+
+### Files
+
+- Runtime, Documents, and Pack operations use in-process queues or component locks.
+- Lock wait defaults to 5 seconds; stale threshold is 30 seconds.
+- Writes use temporary files, staging, and rename.
+- Runtime revisions block stale compaction; Document revisions block movement of updated originals.
+- `sourcePaths` cannot escape the initiating workspace or point into managed Documents.
+
+### Web and model
+
+- DSH owns authentication or pairing for remote RPCs and streams. Mnemon's API Gateway projection additionally requires `remoteAccess: trusted-host` for management; local loopback clients and DSH desktop windows (`dsh-app://app/`) use their own channels.
+- Provider catalogs and management responses are redacted; the UI receives configured field names, never saved credential values.
+- The WebUI follows the Host's writable settings snapshot instead of inferring capability from transport locality; an unavailable settings channel renders an explicit diagnostic rather than an empty page.
+- The WebUI neither reads SQLite, starts processes, calls remote providers, nor supplies arbitrary update commands; provider network access remains inside the Host.
+- Workers use persona, tool allowlists, and `maxDepth: 1`. A stable result tool accepts only the current child's revocable request ID and validates each operation's result schema.
+- Distillation and supervised writeback workers cannot call `mnemon_forget`. Idle review has only the create-only Documents tool for document writes, so it cannot replace user originals or archive documents to make room. These restrictions are enabled by default and do not require an enhancement plugin.
+- Idle review writes each pass to one layer: after it creates a Document, working-memory changes are refused, and after a working-memory change, a Document is refused. `idleReview.runtimeMemory: false` removes its runtime memory tool entirely.
+- Queries, candidates, Document bodies, and historical memory are treated as untrusted data.
 
 ## Compatibility and future evolution
 

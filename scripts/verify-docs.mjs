@@ -1,3 +1,4 @@
+// Check local links and anchors in tracked Markdown, the en/zh-CN page twins, and that both READMEs name every official plugin.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
