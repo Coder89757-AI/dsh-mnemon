@@ -21,6 +21,8 @@
 | `src/client/workspace-mount.tsx` | `mountMnemonSidebarLauncher` | 产品中已由 `mountMnemonSidebarNavigation` 取代，后者的回退入口就是同一行与同一套面板协调 |
 | `src/client/MnemonSettingsCard.module.css` | 减少动效规则中的 `.boardRowCopy` | 没有元素使用这个类 |
 
+有一处声明是移动而不是删除。`supervise` RPC 的结果在 Host 中声明了两次（`subagent.ts` 的 `DelegatedWriteResult`、`lifecycle.ts` 的 `SupervisedWritebackResult`），客户端的 `supervise()` 又内联声明了一份更窄的类型。现在两者都放在 `src/host/protocol.ts`（CONTRIBUTING 规定 wire 类型的位置），Host 模块与客户端都使用它们；Host 模块仍导出这两个名称。
+
 ## 检查方式
 
 - [`harness/public-exports.mjs`](./harness/public-exports.mjs) 让 TypeScript 列出 root 包与每个插件的每个公开入口经由任意层级的再导出所公开的声明。移除之前，上表中的名称都不在其中；而 `dsh-mnemon/client` 公开的 `memoryPageStyles` 与 `IconChevronLeftOutline14` 能被找到，说明这项检查确实能识别公开名称。

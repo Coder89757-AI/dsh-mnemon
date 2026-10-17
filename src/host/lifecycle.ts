@@ -15,14 +15,14 @@ import type {
 import type { Insight, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { RuntimeMemoryMutation } from 'dsh-mnemon-source-runtime/contracts'
 import type { DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
-import { IdleReviewError, MnemonSubagentCoordinator, type DelegatedWriteResult } from './subagent.ts'
+import { IdleReviewError, MnemonSubagentCoordinator } from './subagent.ts'
 import { scoreReviewActivity } from './review-activity.ts'
 import { idleReviewBlockReason } from './review-tools.ts'
 import { TurnActivityProjection, type TurnMemoryActivity, type TurnMemoryActivitySnapshot } from './activity.ts'
 import { applyMemoryViewGuidance } from './guidance.ts'
 import { modelMemoryWake } from './view-presentation.ts'
 import { AgentMemoryTurn, openAgentTurn, type DelegatedMemoryView } from './agent-memory-turn.ts'
-import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, TaskAgentModelCatalog } from "./protocol.ts"
+import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, SupervisedWritebackResult, TaskAgentModelCatalog } from "./protocol.ts"
 import type { PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { MemoryWake } from "../core/contracts/index.ts"
 import { agentScope, type MnemonAgentRuntimeSource } from './runtime.ts'
@@ -55,11 +55,9 @@ function llmService(value: unknown): HostLlmService | undefined {
 }
 
 export type { TurnMemoryActivity, TurnMemoryActivitySnapshot } from './activity.ts'
-export type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot } from "./protocol.ts"
+export type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, SupervisedWritebackResult } from "./protocol.ts"
 
 export { MNEMON_PLUGIN_SOURCE }
-
-export interface SupervisedWritebackResult extends DelegatedWriteResult { sessionId: string }
 
 interface AgentEventPayload {
   agent: HostAgent

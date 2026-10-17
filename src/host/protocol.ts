@@ -507,6 +507,26 @@ export interface SubagentCounters {
   lastAt?: string
 }
 
+/** What a delegated memory write did, as the write task Agent's receipts show it. */
+export interface DelegatedWriteResult {
+  delegated: true
+  runId: string
+  provider: string
+  summary: string
+  action: string
+  /** Where the memory went: the spaces its receipts name, else what the writer reported. */
+  memoryBodyIds: string[]
+  /** Spaces that were inactive and that this write switched on. */
+  activatedMemoryBodyIds?: string[]
+  documentIds?: string[]
+  /** Memories saved without a vector, as the Provider's receipt says (#388). */
+  unembedded?: Array<{ memoryBodyId?: string; id?: string }>
+  hint?: string
+}
+
+/** The `supervise` RPC result: a delegated write for the conversation that asked for it. */
+export interface SupervisedWritebackResult extends DelegatedWriteResult { sessionId: string }
+
 export type LifecyclePhase = 'idle' | 'prime' | 'recall' | 'writeback' | 'review' | 'supervised' | 'error'
 
 export interface LifecycleCounters {

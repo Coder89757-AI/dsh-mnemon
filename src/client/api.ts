@@ -40,6 +40,7 @@ import {
   type MnemonEmbeddingFill,
   type MnemonEmbeddingStatus,
   type StatusView,
+  type SupervisedWritebackResult,
   type TaskAgentModelCatalog,
   type TurnMemoryActivity,
   type TurnMemoryActivitySnapshot,
@@ -184,7 +185,7 @@ export class MnemonClient {
     return this.call(MNEMON_READ_CHANNEL, 'assistant-message', { sessionId: this.sessionId, messageId })
   }
 
-  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[]; unembedded?: Array<{ memoryBodyId?: string; id?: string }> }> {
+  supervise(content: string, idempotencyKey?: string): Promise<SupervisedWritebackResult> {
     return this.call(MNEMON_WRITE_CHANNEL, 'supervise', this.scoped({ content, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) }))
   }
 

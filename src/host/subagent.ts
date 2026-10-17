@@ -8,7 +8,7 @@ import { SourceSession, sourceFailure } from './source-session.ts'
 import { threeTierActionWorkflow } from 'dsh-mnemon-strategy-default-three-tier/extension-sdk'
 import { receipt as mutationReceipt } from '../sdk/input.ts'
 import { allowsParticipation, assertParticipation } from './access.ts'
-import { namedToolInstance, type MemorySpaceMetadataMaintenanceResult, type MemorySpaceMetadataUpdate, type MemoryPlacementDecision, type MnemonReconcileOptions, type MnemonReconcileResult, type SubagentCounters } from './protocol.ts'
+import { namedToolInstance, type DelegatedWriteResult, type MemorySpaceMetadataMaintenanceResult, type MemorySpaceMetadataUpdate, type MemoryPlacementDecision, type MnemonReconcileOptions, type MnemonReconcileResult, type SubagentCounters } from './protocol.ts'
 import { emptyDocumentSnapshot, foreignMachines, parseReconcileResult, pendingOpinions, RECONCILE_PERSONA, RECONCILE_SCHEMA, reconcilePrompt, type MnemonReconcileEvidence } from './reconcile.ts'
 import { DEFAULT_MEMORY_VIEW_BUDGET, type ComposableMemoryView, type MemoryEvidence, type MemoryJsonValue, type MemoryMigrationLineage, type MemoryMutationReceipt, type MemoryOperationScope, type MemorySourceManagementRequest, type MemorySourceManagementResult } from '../core/contracts/index.ts'
 import type { MemoryCompositionGeneration } from '../core/composition.ts'
@@ -20,7 +20,7 @@ import { startWithContinuationTurns } from './continuation-turn.ts'
 import { childComposition, startSubagent, type SubagentStartAgents } from './subagent-start.ts'
 import type { IdleReviewFailure } from './protocol.ts'
 
-export type { SubagentCounters } from "./protocol.ts"
+export type { DelegatedWriteResult, SubagentCounters } from "./protocol.ts"
 
 type AgentRuntimeSource = MnemonAgentRuntimeSource
 
@@ -393,22 +393,6 @@ export interface RecallResult {
   budgetExhausted?: true
   /** Core read identity/usage; truncated also includes the Host's final admission limits. */
   memoryEvidence?: Omit<MemoryEvidence, 'items'>
-  hint?: string
-}
-
-export interface DelegatedWriteResult {
-  delegated: true
-  runId: string
-  provider: string
-  summary: string
-  action: string
-  /** Where the memory went: the spaces its receipts name, else what the writer reported. */
-  memoryBodyIds: string[]
-  /** Spaces that were inactive and that this write switched on. */
-  activatedMemoryBodyIds?: string[]
-  documentIds?: string[]
-  /** Memories saved without a vector, as the Provider's receipt says (#388). */
-  unembedded?: Array<{ memoryBodyId?: string; id?: string }>
   hint?: string
 }
 

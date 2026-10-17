@@ -21,6 +21,8 @@ Tested revision: the branch `claude/remove-dead-code`, on top of [#386](https://
 | `src/client/workspace-mount.tsx` | `mountMnemonSidebarLauncher` | Replaced in the product by `mountMnemonSidebarNavigation`, whose fallback entry is the same row and panel coordination |
 | `src/client/MnemonSettingsCard.module.css` | `.boardRowCopy` in the reduced-motion rule | No element has the class |
 
+One declaration is moved rather than removed. The result of the `supervise` RPC was declared twice in the Host (`DelegatedWriteResult` in `subagent.ts`, `SupervisedWritebackResult` in `lifecycle.ts`) and again inline, narrower, in the client's `supervise()`. Both now live in `src/host/protocol.ts`, where CONTRIBUTING keeps wire types, and the Host modules and the client use them; the Host modules still export the names.
+
 ## How it was checked
 
 - [`harness/public-exports.mjs`](./harness/public-exports.mjs) asks TypeScript which declarations each public entry of the root package and of every plugin exposes, through any chain of re-exports. Before the removal, none of the names above was exposed; `memoryPageStyles` and `IconChevronLeftOutline14`, which `dsh-mnemon/client` exposes, were found, so the check sees public names.
