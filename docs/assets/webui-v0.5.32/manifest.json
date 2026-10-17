@@ -9,7 +9,7 @@
   "hostVersion": "0.2.1-rc.2",
   "mnemonCliVersion": "0.2.10",
   "model": "DeepSeek API, deepseek-flash (shown as DeepSeek-V4.1-Flash)",
-  "browser": "Headless Google Chrome driven over the DevTools protocol",
+  "browser": "Headless Google Chrome 155 (155.0.8059.84) driven over the DevTools protocol",
   "fixture": "node scripts/serve-e2e.mjs --docs-demo --live-model (zh-CN) and --docs-demo=en --live-model: a disposable Profile, a seeded fictional project, and the live DeepSeek API answering",
   "data": {
     "project": "Lumen (fictional)",
@@ -27,7 +27,7 @@
     "credentials": false
   },
   "conversation": "Each locale is one pass over a fresh fixture. The questions are typed; the model decides which memory tools to call, the task Agent performs the Save to memory and the Agent answer, and every reply is the model's own. Another run gives different wording and may read different documents.",
-  "recordingNote": "Chrome screencast frames played at their own timestamps (H.264 CRF 27, 30 fps, no audio; GIF 880 px, 8 fps). Waits for the model play faster, with an on-screen badge: 4x for chat replies, 6x for the task Agent and the Agent answer. The save recording joins four consecutive segments; the pauses between them, while its screenshots were taken, are left out. A drawn cursor ring shows where each click lands.",
+  "recordingNote": "Chrome screencast frames played at their own timestamps (H.264 CRF 27, 30 fps, no audio; GIF 880 px, 8 fps, one 256-colour palette per GIF). Waits for the model play faster, with an on-screen badge: 4x for chat replies, 6x for the task Agent and the Agent answer. The save recording joins four consecutive segments; the pauses between them, while its screenshots were taken, are left out. A drawn cursor ring shows where each click lands.",
   "runs": {
     "en": {
       "turns": {
@@ -482,8 +482,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 16.63,
-      "bytes": 699601,
-      "sha256": "5818e12df398b34926dde23cf788704bb88bbf75182638fccd12914aa9bfe37e"
+      "bytes": 844199,
+      "sha256": "dbf5c7e65894d7b31dbaa698bd69fccb0c2b17f4e6497dd88ec7164d5e719d6a"
     },
     {
       "file": "en/save.mp4",
@@ -506,8 +506,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 38.88,
-      "bytes": 1783137,
-      "sha256": "d030461c85552d3d49edb5cb41a8d5203741853f2b4b9b324a0e3c87178526d2"
+      "bytes": 2108291,
+      "sha256": "df08779912622ea1ab839189fa098d1a2b7d6e4184f7fd4e32ee03c46dcb7f28"
     },
     {
       "file": "en/correct.mp4",
@@ -542,8 +542,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 28.88,
-      "bytes": 1143951,
-      "sha256": "dc3a55284285ec2c02fee0357bdfd23355d95afae424293e106d89701e3ed09b"
+      "bytes": 1374990,
+      "sha256": "9d06779abadad1049c2b337e56c32005a8b841c68d6feca6658361fba175b24a"
     },
     {
       "file": "en/plugins.mp4",
@@ -566,8 +566,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 24.51,
-      "bytes": 1480804,
-      "sha256": "6d379d7eab523a94bc90da07cb602c94a26fec31f06c5b971c5fb76344acde3c"
+      "bytes": 1739555,
+      "sha256": "551acf9ff40848dc0fd4682462941add9f5b11ae384d9c63d022d2e8bb0059f4"
     },
     {
       "file": "zh-CN/chat-correction.jpg",
@@ -927,8 +927,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 13.13,
-      "bytes": 475739,
-      "sha256": "d14f7b2ba56bbc7d4704c4d949a34a283dabe011212a634fac7a152b3ac16ec8"
+      "bytes": 559497,
+      "sha256": "85dafe6af511c71d8015ce6ecee7ec5b47255619aa0b545e232e23f8b1c120e7"
     },
     {
       "file": "zh-CN/save.mp4",
@@ -951,8 +951,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 34.38,
-      "bytes": 1427368,
-      "sha256": "0c52093e8bcdd099f853120f332fc71ed8096cf1c9a37b70fce17b6c05901593"
+      "bytes": 1650977,
+      "sha256": "fed7624c004b196d472814c94ffdc450cb26556333c38b957ae4a9d83a2d09b7"
     },
     {
       "file": "zh-CN/correct.mp4",
@@ -987,8 +987,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 28.01,
-      "bytes": 986758,
-      "sha256": "a46beaa45489f3cbbd2c2935e892b14045b38f6a68d9ea4a0aadd980f5696c99"
+      "bytes": 1184177,
+      "sha256": "b813da8baf232b6101e491d1070452a33cb22ed2838864f988cf00cc7989b9cf"
     },
     {
       "file": "zh-CN/plugins.mp4",
@@ -1011,8 +1011,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 24.63,
-      "bytes": 1298791,
-      "sha256": "4b9e5858d6bfd97cda49e4883915be2f7d9935a0780568d20f94a05587dc9333"
+      "bytes": 1487272,
+      "sha256": "ee9182117b66094ec04887bc52b883b7c3ddb091588f347ae1ed83757cd7f2bc"
     }
   ]
 }

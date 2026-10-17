@@ -1,6 +1,6 @@
 # v0.5.32 Light WebUI, live model / v0.5.32 浅色界面，真实模型
 
-Captured on **2026-10-17 (Asia/Shanghai)** from a real local DSH 0.2.1-rc.2 WebUI in **light** appearance, in English and Chinese, with the **live DeepSeek model** answering. [English guide](../../en/guides/ui-guide.md) · [中文指南](../../zh-CN/guides/ui-guide.md) · [Media index](../README.md) · [Manifest](./manifest.json)
+Captured on **2026-10-17 (Asia/Shanghai)** from a real local DSH 0.2.1-rc.2 WebUI in **light** appearance, in English and Chinese, with the **live DeepSeek model** answering. [English guide](../../en/guides/ui-guide.md) · [中文指南](../../zh-CN/guides/ui-guide.md) · [Media index](../README.md) · [Manifest](./manifest.json) · [Capture record](../../pr-assets/webui-gallery-v0532/README.md) / [采集记录](../../pr-assets/webui-gallery-v0532/README.zh-CN.md)
 
 本组素材于 **2026-10-17（Asia/Shanghai）**从真实本地 DSH 0.2.1-rc.2 WebUI 采集，中英文均为**浅色**界面，由**真实的 DeepSeek 模型**作答。
 
@@ -16,9 +16,9 @@ Captured on **2026-10-17 (Asia/Shanghai)** from a real local DSH 0.2.1-rc.2 WebU
 | Memory System: the four pages, the graph and an Agent answer with citations / 记忆系统：四个页面、图谱与带引用的 Agent 回答 | [memory.mp4](./en/memory.mp4) · [GIF](./en/memory.gif) · 29 s | [memory.mp4](./zh-CN/memory.mp4) · [GIF](./zh-CN/memory.gif) · 28 秒 |
 | Plugins: DSH's Plugins page, then composition, component pages and storage / 插件：DSH 的插件页，再到记忆组合、组件页与存储 | [plugins.mp4](./en/plugins.mp4) · [GIF](./en/plugins.gif) · 25 s | [plugins.mp4](./zh-CN/plugins.mp4) · [GIF](./zh-CN/plugins.gif) · 25 秒 |
 
-Frames are Chrome screencast frames played at their own timestamps (H.264, 30 fps, no audio); the GIFs are 880 px at 8 fps. Waits for the model play faster, with a badge in the lower right corner: 4x for chat replies, 6x for the task Agent and the Agent answer. The save recording joins four consecutive segments; the pauses between them, while its screenshots were taken, are left out. A drawn cursor ring shows where each click lands; there is no composited UI.
+Frames are Chrome screencast frames played at their own timestamps (H.264, 30 fps, no audio); the GIFs are 880 px at 8 fps, each with one 256-colour palette. Waits for the model play faster, with a badge in the lower right corner: 4x for chat replies, 6x for the task Agent and the Agent answer. The save recording joins four consecutive segments; the pauses between them, while its screenshots were taken, are left out. A drawn cursor ring shows where each click lands; there is no composited UI.
 
-画面来自 Chrome 屏幕录制，按原始时间戳播放（H.264，30 fps，无音轨）；GIF 为 880 像素、8 fps。等待模型的片段加速播放，右下角有标记：对话回复 4 倍速，任务 Agent 与 Agent 查询 6 倍速。存入记忆的录制由四段连续操作拼接而成，只去掉了中间截图时的停顿。画面中绘制的光标圆环指示点击位置，没有拼接的界面。
+画面来自 Chrome 屏幕录制，按原始时间戳播放（H.264，30 fps，无音轨）；GIF 为 880 像素、8 fps，每个使用一套 256 色调色板。等待模型的片段加速播放，右下角有标记：对话回复 4 倍速，任务 Agent 与 Agent 查询 6 倍速。存入记忆的录制由四段连续操作拼接而成，只去掉了中间截图时的停顿。画面中绘制的光标圆环指示点击位置，没有拼接的界面。
 
 ## What changed since v0.5.19 / 与 v0.5.19 相比的变化
 
@@ -28,10 +28,10 @@ The [v0.5.19 gallery](../webui-v0.5.19/README.md) was captured on DSH 0.1.7-rc.2
 
 - **Sidebar.** Settings moved under **More**, and DSH added **Automation tasks**. / **侧边栏**：设置移到**更多**中，DSH 新增了**自动化任务**。
 - **Plugins page.** DSH 0.2.1 groups plugins into built-in plugin settings, experimental plugins and **Installed plugins**, where dsh-mnemon is listed (new screen `plugins-list`). / **插件页**：DSH 0.2.1 把插件分为内置插件配置、实验性插件与**已安装插件**，可组合记忆列在已安装插件中（新增截图 `plugins-list`）。
-- **dsh-mnemon's page.** The breadcrumb reads **Plugins**; Storage has a **Git sync** row; DSH 0.2.1's component list has nine rows, without the Starter's readiness and group rows. / **可组合记忆页面**：面包屑为**插件**；存储中新增 **Git 同步**一行；DSH 0.2.1 的组件列表共九行，不再有 Starter 的就绪条目与分组条目。
+- **dsh-mnemon's page.** In Chinese the breadcrumb reads 插件 where it read 插件列表 (English already read **Plugins**); Storage has a **Git sync** row; DSH 0.2.1's component list has nine rows, without the Starter's readiness and group rows. / **可组合记忆页面**：中文面包屑由**插件列表**改为**插件**（英文原本就是 Plugins）；存储中新增 **Git 同步**一行；DSH 0.2.1 的组件列表共九行，不再有 Starter 的就绪条目与分组条目。
 - **Layered strategy's page.** **Write runtime memory** is new, and **Task Agent model** offers **Follow global**. / **分层策略页面**：新增**写入运行时记忆**，**任务 Agent 模型**提供**跟随全局**。
 - **Save to memory.** The dialog has **Save to**: the task Agent decides by default, or working memory, the user profile or an active Memory Space (new screen `chat-save-target`). / **存入记忆**：对话框新增**保存到**：默认由任务 Agent 决定，也可以选工作记忆、用户画像或某个已激活的记忆空间（新增截图 `chat-save-target`）。
-- **Receipts and model.** A save reports when the memory has no vector yet; the model shows as DeepSeek-V4.1-Flash. / **回执与模型**：记忆暂时没有向量时，存入的回执会写明；模型显示为 DeepSeek-V4.1-Flash。
+- **Receipts and model.** A save to a Memory Space reports when the memory has no vector yet; the model shows as DeepSeek-V4.1-Flash. / **回执与模型**：存入记忆空间的记忆暂时没有向量时，回执会写明；模型显示为 DeepSeek-V4.1-Flash。
 
 ## Environment and data / 环境与数据
 
@@ -45,11 +45,11 @@ The [v0.5.19 gallery](../webui-v0.5.19/README.md) was captured on DSH 0.1.7-rc.2
 | Desktop / 桌面 | 1280 × 800 at 2x, stored 1920 px wide; 25 screens per locale; the Plugins page at 1280 × 858 so the whole page fits / 2 倍像素采集，保存为 1920 像素宽；每种语言 25 张；插件页以 1280 × 858 截取，整页可见 |
 | Phone / 窄屏 | 390 × 844 at 2x; 3 screens per locale / 2 倍像素；每种语言 3 张 |
 | Data / 数据 | A fictional project, Lumen: 3 profile and 5 working-memory entries, 5 active and 1 archived document, 3 native memory spaces (2 active) with 17 memories / 虚构项目 Lumen：3 条用户画像与 5 条工作记忆，5 份活跃档案与 1 份归档，3 个原生记忆空间（2 个激活）共 17 条记忆 |
-| Embedding / 嵌入 | Off, as a default install has it, with no embedding service; see below / 与默认安装一样关闭，也没有嵌入服务；见下文 |
+| Embedding / 嵌入 | No embedding service ran; the Mnemon Native embedding settings stay at their default; see below / 采集期间没有运行嵌入服务，Mnemon Native 嵌入设置保持默认；见下文 |
 
-Each locale is one pass over a fresh fixture: `node scripts/serve-e2e.mjs --docs-demo --live-model` (Chinese) or `--docs-demo=en --live-model` (English) seeds a disposable Profile through the Sources' own management operations, then the WebUI talks to the DeepSeek API with a key read from `DEEPSEEK_API_KEY`. The questions are typed; the model decides which memory tools to call, the task Agent performs Save to memory and the Agent answer, and every reply, write and receipt is the model's own. Another run words things differently and may read other documents. Embedding is off in this capture, so each save reports that the memory has no vector yet; semantic matching needs an embedding service, set up in the Mnemon Native embedding settings on [Memory Spaces' page](../../en/guides/ui-guide.md#memory-spaces-page). No personal memory or credentials appear, and the storage path shown is the fixture's temporary directory.
+Each locale is one pass over a fresh fixture: `node scripts/serve-e2e.mjs --docs-demo --live-model` (Chinese) or `--docs-demo=en --live-model` (English) seeds a disposable Profile through the Sources' own management operations, then the WebUI talks to the DeepSeek API with a key read from `DEEPSEEK_API_KEY`. The questions are typed; the model decides which memory tools to call, the task Agent performs Save to memory and the Agent answer, and every reply, write and receipt is the model's own. Another run words things differently and may read other documents. No embedding service ran during this capture (the Mnemon Native embedding settings stay at their default), so each save to a Memory Space reports that it has no vector; semantic matching needs an embedding service, set up in the Mnemon Native embedding settings on [Memory Spaces' page](../../en/guides/ui-guide.md#memory-spaces-page). No personal memory or credentials appear, and the storage path shown is the fixture's temporary directory.
 
-每种语言都在全新的夹具上完整走一遍：`node scripts/serve-e2e.mjs --docs-demo --live-model`（中文）或 `--docs-demo=en --live-model`（英文）先通过各 Source 自己的管理操作预置一次性 Profile，再由 WebUI 通过 `DEEPSEEK_API_KEY` 中的密钥调用 DeepSeek API。问题是逐字输入的；模型自己决定调用哪些记忆工具，任务 Agent 完成存入记忆与 Agent 查询，每条回复、写入与回执都由模型生成。再次运行时措辞会不同，读到的档案也可能不同。本次采集未开启嵌入，因此每次存入都会提示这条记忆暂时没有向量；语义匹配需要嵌入服务，可在[记忆空间页面](../../zh-CN/guides/ui-guide.md#memory-spaces-page)的 Mnemon Native 嵌入设置中配置。素材中没有个人记忆或凭据，界面中显示的存储路径是夹具的临时目录。
+每种语言都在全新的夹具上完整走一遍：`node scripts/serve-e2e.mjs --docs-demo --live-model`（中文）或 `--docs-demo=en --live-model`（英文）先通过各 Source 自己的管理操作预置一次性 Profile，再由 WebUI 通过 `DEEPSEEK_API_KEY` 中的密钥调用 DeepSeek API。问题是逐字输入的；模型自己决定调用哪些记忆工具，任务 Agent 完成存入记忆与 Agent 查询，每条回复、写入与回执都由模型生成。再次运行时措辞会不同，读到的档案也可能不同。采集期间没有运行嵌入服务（Mnemon Native 嵌入设置保持默认），因此每次存入记忆空间都会提示这条记忆没有向量；语义匹配需要嵌入服务，可在[记忆空间页面](../../zh-CN/guides/ui-guide.md#memory-spaces-page)的 Mnemon Native 嵌入设置中配置。素材中没有个人记忆或凭据，界面中显示的存储路径是夹具的临时目录。
 
 ## Screens / 截图
 
@@ -86,6 +86,6 @@ Each locale is one pass over a fresh fixture: `node scripts/serve-e2e.mjs --docs
 
 ## Validation / 校验
 
-Both locales were captured with no browser console errors, and each screen, recording, reply, receipt and Agent answer was checked by eye for the intended state. The manifest records every file's viewport, dimensions, duration, size and SHA-256, and what each turn read or wrote. The gallery holds 74 media files, 22.2 MB. The capture reflects the stated revision, model and environment only; it does not measure model accuracy, cover live third-party Providers or DSH 0.2.0, or establish complete phone support.
+Both locales were captured with no browser console errors, and each screen, recording, reply, receipt and Agent answer was checked by eye for the intended state. The manifest records every file's viewport, dimensions, duration, size and SHA-256, and what each turn read or wrote. The gallery holds 74 media files, 23.8 MB. The capture reflects the stated revision, model and environment only; it does not measure model accuracy, cover live third-party Providers or DSH 0.2.0, or establish complete phone support.
 
-两种语言采集过程中浏览器控制台均无错误，每张截图、每段录制，以及每条回复、回执与 Agent 回答都经过人工检查。manifest 记录了每个文件的视口、尺寸、时长、大小与 SHA-256，以及每一轮读到和写入的内容。本图集共 74 个媒体文件，22.2 MB。本组素材只代表上述版本、模型与环境，不衡量模型准确率，不涉及在线第三方 Provider 或 DSH 0.2.0，也不代表完整的手机端支持。
+两种语言采集过程中浏览器控制台均无错误，每张截图、每段录制，以及每条回复、回执与 Agent 回答都经过人工检查。manifest 记录了每个文件的视口、尺寸、时长、大小与 SHA-256，以及每一轮读到和写入的内容。本图集共 74 个媒体文件，23.8 MB。本组素材只代表上述版本、模型与环境，不衡量模型准确率，不涉及在线第三方 Provider 或 DSH 0.2.0，也不代表完整的手机端支持。
