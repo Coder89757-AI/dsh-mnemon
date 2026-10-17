@@ -17,7 +17,8 @@
 | `src/client/use-source-catalog.ts` | 新增 | `useSourceCatalog`：正在运行的 Source 实例、为每个实例绑定的管理客户端，以及由它们得到的页面与管理标签页 | 76 |
 | `src/client/use-workspace-navigation.ts` | 新增 | `useWorkspaceNavigation`：打开的页面、标签页、锚点以及跟随所属层的页面，连同页面 id 辅助函数 | 162 |
 | `src/client/is-record.ts` | 4 | 新增工作台与管理页共用的 `jsonRecord` | 10 |
-| `src/client/MnemonSyncSection.tsx` | 823 | 同步区块、仓库状态行、编辑器及其地址表单 | 429 |
+| `src/client/MnemonSyncSection.tsx` | 823 | 同步区块、仓库状态行、编辑器及其地址表单 | 412 |
+| `src/client/sync-repository-editor.ts` | 新增 | 仓库编辑器及其打开的 GitHub 登录共用的 props（`9482d145`） | 22 |
 | `src/client/MnemonSyncGitHubConnect.tsx` | 新增 | 通过设备流程登录 GitHub | 156 |
 | `src/client/MnemonSyncRepositoryPicker.tsx` | 新增 | 仓库选择器 | 99 |
 | `src/client/MnemonSyncAdvancedSettings.tsx` | 新增 | 本机名称、分支、目录与提交作者 | 160 |
@@ -37,7 +38,7 @@
 - 每个新模块按原顺序放入原文件中的若干代码块，注释随代码一起移动。被同级模块导入的声明加上了 `export`，这些行没有其他改动。
 - 每个新模块只导入自身代码用到的内容，并且只导入原文件此前已经加载的模块，因此两个构建产物仍按相同顺序加载每个已有模块，新模块在其来源模块之前加载。文件不再需要的导入已删除。
 - 记忆空间的 `pages.tsx` 逐个按名称再导出，而不是用 `export *`，因此页面共用的辅助函数仍属内部实现，`src/client.ts` 继续从它 `export *`。
-- 只有一个测试改动，且只改了它读取的文件：`tests/client-modal-css.spec.ts` 检查工作台与各页面源码中的每个对话框页脚，现在读取代码移入的模块。
+- 只有一个测试改动，且只改了它读取的文件：`tests/client-modal-css.spec.ts` 检查客户端源码中的每个对话框页脚，现在不再使用手工列出的文件清单，而是读取 Starter 与各内置 Source 的全部客户端源码，新模块中的对话框也会被检查；它找到的仍是同样的 12 处页脚（`9482d145`，审查之后）。
 
 ## 工作区 hook
 

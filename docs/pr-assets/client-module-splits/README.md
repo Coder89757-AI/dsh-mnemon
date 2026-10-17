@@ -17,7 +17,8 @@ Baseline: main `03dd40a4`, the merge of #423, whose tree is that of `a214dd07`. 
 | `src/client/use-source-catalog.ts` | new | `useSourceCatalog`: the running Source instances, a management client bound to each, and the pages and management tabs they give | 76 |
 | `src/client/use-workspace-navigation.ts` | new | `useWorkspaceNavigation`: the open page, the tabs, anchors and a page following its layer, with the page id helpers | 162 |
 | `src/client/is-record.ts` | 4 | Also `jsonRecord`, which the workbench and the management page share | 10 |
-| `src/client/MnemonSyncSection.tsx` | 823 | The section, the repository's state line, the editor and its address form | 429 |
+| `src/client/MnemonSyncSection.tsx` | 823 | The section, the repository's state line, the editor and its address form | 412 |
+| `src/client/sync-repository-editor.ts` | new | The props the repository editor and the GitHub sign-in it opens take (`9482d145`) | 22 |
 | `src/client/MnemonSyncGitHubConnect.tsx` | new | The GitHub sign-in through the device flow | 156 |
 | `src/client/MnemonSyncRepositoryPicker.tsx` | new | The repository picker | 99 |
 | `src/client/MnemonSyncAdvancedSettings.tsx` | new | This computer's name, the branch, the directory and the commit author | 160 |
@@ -37,7 +38,7 @@ How the code moved:
 - Each new module holds blocks of its old file in their old order, with their comments. A declaration that a sibling module now imports gained `export`; nothing else in those lines changed.
 - Each new module imports only what its code uses, and only modules the file it came from had already loaded, so both bundles still load every existing module in the same order, and a new module loads before the module it came from. Imports a file no longer needs are gone from it.
 - Memory Spaces' `pages.tsx` re-exports each name by name, not with `export *`, so the helpers the pages share stay internal while `src/client.ts` goes on exporting `*` from it.
-- One test changed, and only in the files it reads: `tests/client-modal-css.spec.ts` checks every dialog footer in the source of the workbench and of the pages, and now reads the modules that code moved to.
+- One test changed, and only in the files it reads: `tests/client-modal-css.spec.ts` checks every dialog footer in the client sources, and now reads every client source of the Starter and the shipped Sources instead of a hand-kept list, so a dialog in a new module is checked too; it finds the same twelve footers (`9482d145`, after the review).
 
 ## The workspace hooks
 
