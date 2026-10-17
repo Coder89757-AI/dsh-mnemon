@@ -1,6 +1,6 @@
 # Building Memory Plugins
 
-[简体中文](../../zh-CN/development/extensions.md) | **English** | [Documentation Center](../README.md)
+[简体中文](../../zh-CN/development/extensions.md) | **English** | [Documentation](../README.md)
 
 Choose the ownership boundary before writing code. The complete external examples under [plugin-consumer](../../../scripts/fixtures/plugin-consumer) are compiled and tested against packed artifacts outside this repository.
 
@@ -146,7 +146,7 @@ Third-party packages continue to use DSH's native Profile/Loader workflow. Insta
 | `dsh-mnemon-strategy-light-context` | `projection` | One shared projection cap; not incremental injection or summarization |
 | `dsh-mnemon-strategy-auto-capture` | `capture` | Current-turn instructions, targets and explicit recording Action ids; no background Agent or direct writes |
 
-The Starter installs all three packages and registers their DSH Entries disabled. The switches are therefore always available, while the default composition, allocation and guidance preserve v0.4 behavior. Enabling one contributes to the selected main Strategy without changing it; disabling it removes only that contribution and never deletes Source data. The General strategy (`dsh-mnemon-strategy-general`) accepts the same three slots. Runtime currently has no expansion route: an aggressively small resident cap can hide hot context and needs workload-level evaluation.
+The Starter installs all three packages and registers their DSH Entries disabled. The switches are therefore always available, while the default composition, allocation and guidance preserve v0.4 behavior. Enabling one contributes to the selected main Strategy without changing it; disabling it removes only that contribution and never deletes Source data. The General strategy (`dsh-mnemon-strategy-general`) accepts the same three slots. Runtime currently has no expansion route: an aggressively small resident cap can hide runtime memory and needs workload-level evaluation.
 
 Source keys in `scoped` must retain any Loader include prefix. Omitting its configuration deterministically selects existing instances by role/key and creates no storage. The board's **Options** panel edits the fields the package declares; Profile configuration remains available for automation.
 
