@@ -44,13 +44,16 @@ Each language's first pass is kept. Every reply, Save to memory candidate and re
 - `docs/{en,zh-CN}/guides/getting-started.md`: the recall alt text.
 - `docs/assets/README.md`: the gallery's description.
 - `.changeset/webui-gallery-v0532.md`: names the embedding service.
-- Left as they are:
-  - The first capture's record.
-  - Items 13 to 18 of the [review plan](../../plans/review-gaps-2026-10.md). They still describe current behavior, but some of the times and counts they quote come from the first capture.
+- Items 12 to 18 of the [review plan](../../plans/review-gaps-2026-10.md) and the matching roadmap entries, in both languages:
+  - They quoted times, seconds and counts from the first capture that the new gallery no longer shows.
+  - They now name the screen or recording that shows each behavior and leave those figures out.
+  - Where they still quote the first capture (item 12's receipts and item 14's cut-off summary), they say so.
+  - Their file references now cite `main` at `44a3cfc8`, after the client and Host module splits (#425, #428); item 12, done before them, keeps `03dd40a4`.
+- Left as it is: the first capture's record.
 
 ## Checks
 
-- `node scripts/verify-docs.mjs`: 4,883 local links and 368 Markdown anchors, the bilingual paths and the official plugin coverage verified.
+- `node scripts/verify-docs.mjs`: 4,899 local links and 368 Markdown anchors, the bilingual paths and the official plugin coverage verified.
 - `pnpm exec vitest run tests/docs.spec.mjs tests/package-locales.spec.mjs tests/changesets.spec.mjs`: 3 files, 39 tests passed.
 - `pnpm run release:intent` against `origin/main`: the changeset covers `dsh-mnemon`.
 - No DeepSeek key, WebUI token or home-directory path in any changed file. Every image and recording was also scanned with `strings`.

@@ -44,13 +44,16 @@
 - `docs/{en,zh-CN}/guides/getting-started.md`：召回截图的替代文本。
 - `docs/assets/README.md`：对图集的描述。
 - `.changeset/webui-gallery-v0532.md`：写明了嵌入服务。
-- 保持不变：
-  - 第一次采集的记录。
-  - [审查计划](../../plans/review-gaps-2026-10.md)的第 13 至 18 项。它们描述的仍是当前行为，但其中引用的部分时间与计数来自第一次采集。
+- [审查计划](../../plans/review-gaps-2026-10.md)第 12 至 18 项，以及路线图中对应的条目（中英文）：
+  - 它们引用了第一次采集中的时间、秒数与计数，新图集里已经看不到。
+  - 现在改为指明体现各个行为的截图或录屏，不再写这些数字。
+  - 仍然引用第一次采集之处（第 12 项的回执、第 14 项被截断的摘要）会注明。
+  - 文件引用改为对应 `main` 的 `44a3cfc8`，即客户端与 Host 模块拆分（#425、#428）之后；第 12 项在拆分之前已完成，仍对应 `03dd40a4`。
+- 保持不变：第一次采集的记录。
 
 ## 检查
 
-- `node scripts/verify-docs.mjs`：4,883 个本地链接与 368 个 Markdown 锚点、双语路径和官方插件覆盖全部通过。
+- `node scripts/verify-docs.mjs`：4,899 个本地链接与 368 个 Markdown 锚点、双语路径和官方插件覆盖全部通过。
 - `pnpm exec vitest run tests/docs.spec.mjs tests/package-locales.spec.mjs tests/changesets.spec.mjs`：3 个文件、39 项测试通过。
 - 以 `origin/main` 为基准的 `pnpm run release:intent`：changeset 覆盖 `dsh-mnemon`。
 - 改动的文件中没有 DeepSeek 密钥、WebUI token 或用户主目录路径，每张图像与每段录制也用 `strings` 扫描过。

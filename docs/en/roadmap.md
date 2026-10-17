@@ -37,10 +37,10 @@ A review of the code after v0.5.31 found these concrete gaps. Each one changes w
 - **Memory Spaces shows no error while it starts.** Right after it is switched on, its settings show "not installed" for about a second while the Source starts; they should read as loading.
 - **A Provider list reload cannot undo a switch or a save.** A quiet reload already under way when the user switches or saves a Provider can answer after the change and show the list from before it until the next read.
 - **A replaced runtime memory entry shows when it last changed.** The Runtime memory page shows each entry's creation time, so a corrected entry keeps the time it was first written. Found while capturing the v0.5.32 gallery.
-- **At 390 px the active Memory System tab, the turn memory bar's summary and the space cards' counts stay in sight.** On a phone the active tab can sit off-screen in English, and the bar's summary and a space card's counts are cut off. Found while capturing the v0.5.32 gallery.
+- **At 390 px the active Memory System tab, the turn memory bar's summary and the space cards' counts stay in sight.** On a phone the active tab can sit off-screen in English, a space card's counts are cut short, and the bar's summary is cut once it outgrows the row. Found while capturing the v0.5.32 gallery.
 - **Memory Spaces shows a placeholder, not zeros, while a space is checked.** Until a space's status answers, its card reads 0 memories, 0 edges and 0 B, so a slow Provider looks like an empty space. Found while reviewing the v0.5.32 gallery.
 - **A turn's item opens its page without an empty moment.** Until the Memory System's Source catalog answers, a page opened from a turn shows an empty canvas and only the Status tab; it should show the page as loading. Found while reviewing the v0.5.32 gallery.
-- **The graph's entity count matches the Entities page.** The Overview graph draws at most 24 entities and its footer counts only those, so it can read 24 where the Entities page reads 26. Found while reviewing the v0.5.32 gallery.
+- **The graph's entity count matches the Entities page.** The Overview graph draws at most 24 entities and its footer counts only those, so it reads 24 when the Entities page counts more. Found while reviewing the v0.5.32 gallery.
 - **Graph labels stay readable.** In a dense graph, node labels overlap one another and run past the right edge. Found while reviewing the v0.5.32 gallery.
 
 ## Later: controlled maintenance and extension growth
