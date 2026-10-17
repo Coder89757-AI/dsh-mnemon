@@ -5,17 +5,16 @@ import { MnemonClient } from './api.ts'
 import type { MnemonKey, MnemonTranslate } from './locales.ts'
 import css from './MnemonSettingsCard.module.css'
 import { message } from './page-kit.tsx'
-import { SelectRow, ToggleRow, type SettingOption } from './settings-controls.tsx'
+import { SelectRow, type SettingOption } from './settings-controls.tsx'
 import { useLive, useScope } from './settings-panel.tsx'
 
 /**
- * Where the background task Agents run: DSH's new-session route, which may
- * yield to the asking conversation's own model, or a fixed Provider and model.
+ * Where the background task Agents run: the model DSH keeps for new sessions
+ * (`inherit`), the model of the conversation that asked for the work
+ * (`conversation`), or a Provider and model of their own (`fixed`).
  */
 export interface TaskAgentRoute {
-  mode: 'inherit' | 'fixed'
-  /** An inherited route takes the asking conversation's model first; off by default. */
-  follow: boolean
+  mode: 'inherit' | 'conversation' | 'fixed'
   provider: string
   model: string
 }
@@ -33,20 +32,23 @@ export interface TaskAgentCatalogState {
 
 export function routeOf(value: Config | undefined): TaskAgentRoute {
   const configured = value?.taskAgentModel
-  const fixed = configured?.mode === 'fixed'
   return {
-    mode: fixed ? 'fixed' : 'inherit',
-    follow: !fixed && configured?.followConversation === true,
+    mode: configured?.mode === 'fixed' ? 'fixed' : configured?.followConversation === true ? 'conversation' : 'inherit',
     provider: configured?.provider?.trim() ?? '',
     model: configured?.model?.trim() ?? '',
   }
 }
 
-/** What a route stores: an inherited one only its switch, and only when it is on; a fixed one its Provider and model. */
+/**
+ * What a choice stores. Following the conversation is an inherited route with
+ * `followConversation`, a key a release without it ignores, so that release
+ * still reads the route as following global rather than failing on a mode it
+ * does not know.
+ */
 function stored(route: TaskAgentRoute): TaskAgentModelConfig {
-  return route.mode === 'inherit'
-    ? { mode: 'inherit', ...(route.follow ? { followConversation: true } : {}) }
-    : { mode: 'fixed', provider: route.provider, model: route.model }
+  return route.mode === 'fixed' ? { mode: 'fixed', provider: route.provider, model: route.model }
+    : route.mode === 'conversation' ? { mode: 'inherit', followConversation: true }
+    : { mode: 'inherit' }
 }
 
 /** The route choosing a fixed model starts from: the saved one, else DSH's default, else the first listed. */
@@ -60,22 +62,22 @@ export function startingRoute(catalog: TaskAgentModelCatalog, current: TaskAgent
 }
 
 /**
- * The route the next task Agent takes: a fixed route's own model; for an
- * inherited one, the asking conversation's route when the setting follows it
- * and that conversation is open, else the route the Host reports for an
- * inherited setting. It is put together from the parts the Host reported, so a
- * switch shows its effect at once. Until this page has read the settings, it
- * cannot know the stored route, and states the one the Host resolved.
+ * The route the next task Agent takes: a custom route's own model; the asking
+ * conversation's route when the choice follows it and that conversation is
+ * open; else the route the Host reports for following global. It is put
+ * together from the parts the Host reported, so a choice shows its effect at
+ * once. Until this page has read the settings, it cannot know the stored
+ * choice, and states the route the Host resolved.
  */
 export function effectiveRoute(route: TaskAgentRoute, catalog: TaskAgentModelCatalog | null, settled = true): { provider: string; model: string; source: TaskAgentRouteSource } | undefined {
   if (!settled) return catalog?.effective
   if (route.mode === 'fixed') return route.provider === '' || route.model === '' ? undefined : { provider: route.provider, model: route.model, source: 'fixed' }
-  if (route.follow && catalog?.session !== undefined) return { ...catalog.session, source: 'session' }
+  if (route.mode === 'conversation' && catalog?.session !== undefined) return { ...catalog.session, source: 'session' }
   // A Host from before the inherited route was reported still names DSH's default.
   return catalog?.inherited ?? (catalog?.defaultSelection === undefined ? undefined : { ...catalog.defaultSelection, source: 'dsh-default' })
 }
 
-export function routeSourceKey(source: TaskAgentRouteSource): MnemonKey {
+function routeSourceKey(source: TaskAgentRouteSource): MnemonKey {
   return `config.taskAgentSource.${source}`
 }
 
@@ -93,8 +95,6 @@ export function useTaskAgentModel(options: {
   connection?: ClientConnectionHandle | undefined
   sessionId?: string | undefined
   workspaceId?: string | undefined
-  /** Stating the route needs no model directory; a page that only states it reads the route alone. */
-  routeOnly?: boolean | undefined
 }): {
   route: TaskAgentRoute
   /** The page has read the stored settings, so the route above is the stored one. */
@@ -107,7 +107,6 @@ export function useTaskAgentModel(options: {
   /** Read the model directory again after a read that failed. */
   retry: () => void
   setMode: (mode: TaskAgentRoute['mode']) => void
-  setFollow: (follow: boolean) => void
   setRoute: (route: { provider: string; model: string }) => void
 } {
   const { scope, connection, sessionId, workspaceId } = options
@@ -137,8 +136,8 @@ export function useTaskAgentModel(options: {
     })
   }, [client])
   useEffect(() => () => { request.current += 1 }, [])
-  // A fixed route shows every Provider's models where it can be changed; what was read already is not read again.
-  const fullFixed = saved.mode === 'fixed' && options.routeOnly !== true
+  // A fixed route shows every Provider's models; what was read already is not read again.
+  const fullFixed = saved.mode === 'fixed'
   useEffect(() => {
     if (fullFixed ? level() === 'full' : level() !== 'none') return
     load(fullFixed)
@@ -151,18 +150,18 @@ export function useTaskAgentModel(options: {
     if (!catalog.full || catalog.value === null) return
     setChoosing(false)
     const start = startingRoute(catalog.value, route.value)
-    if (start !== undefined) route.set({ mode: 'fixed', follow: false, ...start })
+    if (start !== undefined) route.set({ mode: 'fixed', ...start })
   }, [choosing, catalog])
   const setMode = (mode: TaskAgentRoute['mode']): void => {
-    if (mode === 'inherit') {
+    if (mode !== 'fixed') {
       setChoosing(false)
-      // Backing out of a fixed model that was never written keeps the stored route, its switch included.
-      if (route.value.mode === 'inherit') return
-      route.set({ mode: 'inherit', follow: false, provider: '', model: '' })
+      // Backing out of a custom model that was never written keeps the stored choice.
+      if (route.value.mode === mode) return
+      route.set({ mode, provider: '', model: '' })
       return
     }
     const start = catalog.full && catalog.value !== null ? startingRoute(catalog.value, route.value) : undefined
-    if (start !== undefined) { route.set({ mode: 'fixed', follow: false, ...start }); return }
+    if (start !== undefined) { route.set({ mode: 'fixed', ...start }); return }
     setChoosing(true)
     load(true)
   }
@@ -172,16 +171,15 @@ export function useTaskAgentModel(options: {
     catalog,
     choosing,
     failed: route.failed,
-    // A fixed route, or one being chosen, needs every Provider's models again, not just the route.
+    // A custom route, or one being chosen, needs every Provider's models again, not just the route.
     retry: () => { load(fullFixed || choosing || level() === 'full') },
     setMode,
-    setFollow: follow => { route.set({ mode: 'inherit', follow, provider: '', model: '' }) },
-    setRoute: next => { route.set({ mode: 'fixed', follow: false, ...next }) },
+    setRoute: next => { route.set({ mode: 'fixed', ...next }) },
   }
 }
 
 /** The route a page states: where the next task runs, and why. */
-export function EffectiveRoute(props: { route: TaskAgentRoute; settled?: boolean | undefined; choosing?: boolean | undefined; catalog: TaskAgentModelCatalog | null; state: TaskAgentCatalogState['state']; t: MnemonTranslate }): JSX.Element {
+function EffectiveRoute(props: { route: TaskAgentRoute; settled?: boolean | undefined; choosing?: boolean | undefined; catalog: TaskAgentModelCatalog | null; state: TaskAgentCatalogState['state']; t: MnemonTranslate }): JSX.Element {
   const { t } = props
   const effective = props.choosing === true ? undefined : effectiveRoute(props.route, props.catalog, props.settled !== false)
   return <span className={css.routeValue}>
@@ -192,10 +190,9 @@ export function EffectiveRoute(props: { route: TaskAgentRoute; settled?: boolean
 }
 
 /**
- * The task Agent model rows: the mode, the switch that lets an inherited route
- * follow its conversation, the Provider and model a fixed route uses, and the
- * route the background work will actually take. A read that fails keeps the
- * reason on the page and offers to read again.
+ * The task Agent model rows: the choice of route, the Provider and model a
+ * custom route uses, and the route the background work will actually take. A
+ * read that fails keeps the reason on the page and offers to read again.
  */
 export function TaskAgentModelRows(props: {
   mode: TaskAgentRoute['mode']
@@ -209,7 +206,6 @@ export function TaskAgentModelRows(props: {
   error?: string | null | undefined
   disabled: boolean
   onMode: (mode: TaskAgentRoute['mode']) => void
-  onFollow: (follow: boolean) => void
   onRoute: (route: { provider: string; model: string }) => void
   /** Read the model directory again; without it a failed read only states its reason. */
   retry?: (() => void) | undefined
@@ -244,10 +240,9 @@ export function TaskAgentModelRows(props: {
     <SelectRow id="mnemon-task-agent" label={t('config.taskAgentTitle')} value={props.mode} disabled={props.disabled} onChange={props.onMode}
       options={[
         { value: 'inherit', label: t('config.taskAgentInherit'), detail: t('config.taskAgentInheritHint') },
+        { value: 'conversation', label: t('config.taskAgentConversation'), detail: t('config.taskAgentConversationHint') },
         { value: 'fixed', label: t('config.taskAgentFixed'), detail: t('config.taskAgentFixedHint'), ...(props.state === 'unavailable' ? { disabled: true } : {}) },
       ]} />
-    {props.mode === 'inherit' && <ToggleRow id="mnemon-task-agent-follow" label={t('config.taskAgentFollow')} hint={t('config.taskAgentFollowHint')}
-      checked={route.follow} disabled={props.disabled} onChange={props.onFollow} />}
     {fixed && <>
       <SelectRow id="mnemon-task-agent-provider" label={t('config.taskAgentProvider')} value={route.provider} disabled={props.disabled || props.state !== 'ready'} options={providers} onChange={chooseProvider} />
       <SelectRow id="mnemon-task-agent-model" label={t('config.taskAgentModel')} value={route.model} disabled={props.disabled || props.state !== 'ready' || group === undefined} options={models}

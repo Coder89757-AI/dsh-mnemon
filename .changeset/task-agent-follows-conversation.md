@@ -2,6 +2,12 @@
 "dsh-mnemon": patch
 ---
 
-Task Agents can follow the conversation that asked for the work. DSH sets its new-session default to the model last picked in any conversation, and task Agents (Save to memory, Ask Agent, tidying and archiving) use it, while review and other subagent delegations already take their conversation's route. Under **Task Agent model → Follow the main route**, the new **Prefer the conversation's model** switch (`taskAgentModel.followConversation`, off by default) gives task Agents that route too: the provider, model and reasoning effort of the conversation's last request, or the route it was created with before the first, while the conversation is open. A conversation that is not open keeps the DSH default, and the switch never takes another conversation's route. With the switch off nothing changes, and a release that does not know the switch reads the route as before.
+**Task Agent model**, under **Background tasks** on the Layered strategy's page, is one choice of three. **Follow the main route** is now **Follow global** and **Choose a model** is now **Custom**; the new **Follow the conversation** lets task Agents follow the conversation that asked for the work.
 
-The status page now states the model task Agents run on and where it comes from, under **Background tasks**. Its gear opens the same choice as the Layered strategy's page, so a profile on any strategy can change it, and both read the stored setting, so a change on one shows on the other at once. A model directory that cannot be read says so and offers **Read again**. A dialog leaves Escape and Tab to a menu opened above it.
+- **Follow global**, the default, works as before. Task Agents use the model DSH keeps for new sessions, and DSH sets that to the model last picked in any conversation.
+- **Follow the conversation** (`taskAgentModel.followConversation`) applies while that conversation is open. Task Agents (Save to memory, Ask Agent, tidying and archiving) get the route DSH already gives the conversation's own delegated work, such as review: the provider, model and reasoning effort of its last request, or its creation route before the first. Otherwise they follow global, and never take another conversation's route.
+- **Custom** pins a Provider and model, as **Choose a model** did.
+
+The choice is stored as a key of its own, so a release that does not know it reads it as Follow global.
+
+The page reads the stored choice live and shows where the route comes from. Giving up a custom model before it was written keeps the choice, and **Read again** reads the whole model directory for a custom route. A dialog leaves Escape and Tab to a menu opened above it.

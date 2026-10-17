@@ -30,11 +30,6 @@ import { Callout, Reveal, useToast } from './feedback.tsx'
 import feedbackCss from './MnemonFeedback.module.css'
 import { Button, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SelectField } from './page-controls.tsx'
-import { EffectiveRoute, TaskAgentModelRows, useTaskAgentModel } from './task-agent-model.tsx'
-import { SettingsGear } from './CompositionBoard.tsx'
-import { MnemonDialog } from './MnemonDialog.tsx'
-import { WriteFailure } from './settings-panel.tsx'
-import settingsCss from './MnemonSettingsCard.module.css'
 import { isRecord } from './is-record.ts'
 import sidebarCss from './MnemonSidebarView.module.css'
 import css from "./MnemonView.module.css"
@@ -350,53 +345,6 @@ function SourceManagementPage(props: {
   </div>
 }
 
-/** What the Status page needs to state the background task route and open its choice. */
-interface BackgroundTaskContext {
-  scope: ClientSettingsScope<Config>
-  connection?: ClientConnectionHandle | undefined
-  sessionId?: string | undefined
-  workspaceId?: string | undefined
-  /** The settings grant; without it the route is stated and nothing more. */
-  writable: boolean
-}
-
-/**
- * The model the next background task runs on, stated on the page a reader
- * opens first. The gear opens the same choice the Layered strategy's page
- * offers, so a profile on any strategy can change it; both read the stored
- * setting, so they never disagree.
- */
-function BackgroundTaskSummary(props: { context: BackgroundTaskContext }): JSX.Element {
-  const t = useT()
-  const { context } = props
-  const [open, setOpen] = useState(false)
-  // The page states the route; the model directory is read once the choice is open.
-  const settings = useTaskAgentModel({ ...context, routeOnly: !open })
-  const { catalog } = settings
-  return <section className={css.backgroundTask} aria-labelledby="mnemon-status-background">
-    <div className={css.statusSectionHeader}>
-      <div><h3 id="mnemon-status-background">{t('config.backgroundTitle')}</h3><p>{t('status.backgroundDescription')}</p></div>
-      {context.writable && <SettingsGear label={t('status.backgroundChange')} onOpen={() => setOpen(true)} />}
-    </div>
-    <div className={css.backgroundRoute}>
-      <span>{t('config.taskAgentTitle')}</span>
-      <EffectiveRoute route={settings.route} settled={settings.settled} choosing={settings.choosing} catalog={catalog.value} state={catalog.state} t={t} />
-    </div>
-    {catalog.state === 'error' && <p className={css.backgroundFailure}>
-      {t('config.taskAgentLoadFailed', { error: catalog.error ?? '' })}
-      <Button variant="ghost" size="sm" onClick={settings.retry}>{t('config.taskAgentRetry')}</Button>
-    </p>}
-    {open && <MnemonDialog title={t('config.backgroundTitle')} description={t('status.backgroundDescription')} closeLabel={t('common.close')} onClose={() => setOpen(false)}>
-      <div className={settingsCss.rows}>
-        <TaskAgentModelRows mode={settings.choosing ? 'fixed' : settings.route.mode} route={settings.route} settled={settings.settled} choosing={settings.choosing}
-          catalog={catalog.value} state={catalog.state} error={catalog.error} retry={settings.retry}
-          disabled={!context.writable} onMode={settings.setMode} onFollow={settings.setFollow} onRoute={settings.setRoute} t={t} />
-      </div>
-      <WriteFailure error={settings.failed} t={t} />
-    </MnemonDialog>}
-  </section>
-}
-
 function StatusPage(props: {
   client: MnemonClient
   status: StatusView | null
@@ -412,8 +360,6 @@ function StatusPage(props: {
   onRefresh: () => void
   /** Where Providers that are off can be turned on. */
   onOpenConfiguration?: (() => void) | undefined
-  /** The route the background task Agents take, and where to change it. */
-  background: BackgroundTaskContext
 }): JSX.Element {
   const t = useT()
   // DSH swapped this client in during a Starter update started here: show how it ended.
@@ -457,7 +403,6 @@ function StatusPage(props: {
 
       <div className={css.asyncStatusBlock}>{status !== null && (status.providerServices !== undefined || (status.memoryBodies !== undefined && nativeInUse(status))) && <ProviderHealth status={status} services={status.providerServices ?? []} onOpenConfiguration={props.onOpenConfiguration} />}</div>
       <div className={css.asyncStatusBlock}><StorageDomains catalog={storage} selected={selectedScope} selectedKind={selectedScopeKind} areaName={props.areaName} /></div>
-      <div className={css.asyncStatusBlock}><BackgroundTaskSummary context={props.background} /></div>
       {versionsOpen && <VersionDialog client={props.client} writeEnabled={props.writeEnabled} resumedUpdate={resumedUpdate} onClose={() => { setResumedUpdate(undefined); setVersionsOpen(false) }} onRefreshStatus={props.onRefresh} />}
     </div>
   )
@@ -844,8 +789,6 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   }, [settingsSnapshot.revision, viewContextKey, refreshAll])
   const activationEnabled = status?.writeEnabled === true
   const writeEnabled = activationEnabled && settingsSnapshot.status === 'ready' && settingsSnapshot.writable
-  // The task Agent route is a setting, so it follows the settings grant rather than the memory write grant.
-  const backgroundWritable = settingsSnapshot.status === 'ready' && settingsSnapshot.writable
   // A remote page without the management grant says why it cannot write.
   const remoteReadOnly = activationEnabled && settingsSnapshot.status === 'ready' && !settingsSnapshot.writable && isRemoteConnection(connection)
   const workspaceContext = status?.workspaceContext
@@ -995,8 +938,7 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
         <section key={viewContextKey} className={appearanceClass(css.canvas, sidebarCss.canvas)} ref={canvasRef} data-testid="mnemon-canvas" data-lock-page-header={(activeSourcePage?.navigation?.stickyHeader !== false) ? '' : undefined}>
           {page === 'status' && <WorkbenchStatusContext.Provider value={status}>
             <StatusPage client={client} status={status} loading={statusLoading} writeEnabled={writeEnabled} attention={notice !== undefined}
-              components={componentCards} renderCard={renderCard} areaName={areaName} onRefresh={() => void loadStatus()} onOpenConfiguration={openConfiguration}
-              background={{ scope: settingsScope, connection, sessionId, workspaceId, writable: backgroundWritable }} />
+              components={componentCards} renderCard={renderCard} areaName={areaName} onRefresh={() => void loadStatus()} onOpenConfiguration={openConfiguration} />
           </WorkbenchStatusContext.Provider>}
           {activeManagedSourceInstance !== undefined && managedSourcePageContent}
           {activeSourcePage !== undefined && customSourcePage}

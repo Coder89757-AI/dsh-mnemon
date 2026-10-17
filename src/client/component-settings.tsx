@@ -455,7 +455,7 @@ export function ThreeTierSettings(props: ShippedSettingsServices & { page: Memor
     <div className={css.rows}>
       <TaskAgentModelRows mode={taskAgent.choosing ? 'fixed' : taskAgent.route.mode} route={taskAgent.route} settled={taskAgent.settled} choosing={taskAgent.choosing}
         catalog={taskAgent.catalog.value} state={taskAgent.catalog.state} error={taskAgent.catalog.error} retry={taskAgent.retry}
-        disabled={disabled} onMode={taskAgent.setMode} onFollow={taskAgent.setFollow} onRoute={taskAgent.setRoute} t={t} />
+        disabled={disabled} onMode={taskAgent.setMode} onRoute={taskAgent.setRoute} t={t} />
       <IdleReviewRows choice={choice.value} limits={limits} disabled={disabled} onChoice={next => choice.set({ ...choice.value, ...next })} t={t} />
     </div>
     <WriteFailure error={taskAgent.failed ?? choice.failed} t={t} />
