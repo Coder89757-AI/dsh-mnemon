@@ -4,7 +4,7 @@
 
 Status: planned, nothing here has shipped. Written on 2026-10-17 against `main` at `f41a121f` (v0.5.31 with #414, #415 and #416); file references are to that revision.
 
-After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421).
+After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421). Items 12 to 14 were found while capturing the [v0.5.32 gallery](../assets/webui-v0.5.32/README.md).
 
 ## 1. Backups and Git sync drop a Native space's placement decision
 
@@ -104,3 +104,27 @@ After v0.5.31, a review of the code, the documentation and the Host's compatibil
 **Change.** Start a new request version when a switch or a save begins, so a read that started before it is discarded.
 
 **Tests.** With a quiet read held open, switch a Provider and save one; the page keeps the new state when the held read answers.
+
+## 12. A default install's save receipt reads as a failure
+
+**Today.** Found while capturing the v0.5.32 gallery. With the Mnemon Native embedding settings at their default, off, dsh-mnemon leaves embedding to the Mnemon CLI's own defaults. On a machine where no embedding service answers, every write comes back with `embedded: false`, and since #388 every Save to memory receipt, in a conversation and on the Memory Spaces page, ends in the caution tone with "Saved without a vector: embedding did not succeed, so this memory is left out of semantic matching for now. Once the embedding service answers, fill it in from Test status in the Mnemon Native embedding settings." (未生成向量：嵌入没有成功，…). The memory is saved, and keyword, link and recency recall reach it; but someone who never set up embedding reads a failure on every save, as the gallery's receipts show.
+
+**Change.** Word the line by its cause. When no embedding service is set up, neither in DSH's settings nor in the environment the Mnemon CLI reads, a neutral note says that semantic matching needs an embedding service and links to the Mnemon Native embedding settings; the caution stays for a service that is set up but did not answer or lacks the model. Decide whether the neutral note shows on every save or once per space.
+
+**Tests.** Save to memory through the task Agent and straight to a space, with embedding off and no service, with a configured service that is down, and with a working service, in both languages: the neutral note, the caution, and no line.
+
+## 13. A replaced runtime memory entry shows when it was first written
+
+**Today.** Found while capturing the v0.5.32 gallery; v0.5.19's screens show the same. A runtime memory entry stores `created_at` and `updated_at`, and a replace keeps `created_at` and sets `updated_at`. The Runtime memory page shows each entry's `created_at` and sorts by it (`plugins/dsh-mnemon-source-runtime/src/client/pages.tsx:114` and `:131`), so it never shows `updated_at`. In the English gallery, the checkout target corrected at 9:49 PM still reads 10/17/2026, 9:47:14 PM, the time the demo was seeded, like the entries nobody changed.
+
+**Change.** Keep the order the [UI guide](../en/guides/ui-guide.md#runtime-memory) describes, where editing an older entry keeps its place, and show when an entry last changed: its update time beside the creation time whenever the two differ.
+
+**Tests.** An entry added, replaced by the Agent, edited on the page, and kept by a capacity compaction: the order stays and each shows the right times, in both languages.
+
+## 14. At 390 px the active tab and some counts are out of sight
+
+**Today.** Found while capturing the v0.5.32 gallery; v0.5.19's phone screens show the same. At 390 × 844, the Memory System's page tabs scroll sideways without a scrollbar (`.nav` in `src/client/MnemonView.module.css`), and nothing brings the active tab into view: in English, Memory Spaces, the fourth tab, is off-screen while its page is open. At the same width the turn memory bar's summary is cut off ("Turn memory recalled 1 document se…"), and a space card on Memory Spaces' Overview shortens its counts to "11 m… 138… 17…".
+
+**Change.** When a page opens, scroll the tab strip itself so the active tab shows; `scrollIntoView` would also move DSH's sliding phone frame. Let the bar's summary and a card's counts wrap at phone width instead of truncating.
+
+**Tests.** At 390 px in both languages: each tab, opened from the sidebar and from a turn's item, is in view without the phone frame moving; the summary and the counts read in full.

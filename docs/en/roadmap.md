@@ -36,6 +36,9 @@ A review of the code after v0.5.31 found these concrete gaps. Each one changes w
 - **SDK helpers for the code every Source and Provider repeats:** page presentation, refreshing on a new revision, navigation seeds, and a packaged Provider's entry with a default status check.
 - **Memory Spaces shows no error while it starts.** Right after it is switched on, its settings show "not installed" for about a second while the Source starts; they should read as loading.
 - **A Provider list reload cannot undo a switch or a save.** A quiet reload already under way when the user switches or saves a Provider can answer after the change and show the list from before it until the next read.
+- **A default install's save receipt does not read as a failure.** Without an embedding service, every Save to memory receipt warns that embedding did not succeed, even where nobody set up embedding; that case should get a neutral note pointing to the embedding settings. Found while capturing the v0.5.32 gallery.
+- **A replaced runtime memory entry shows when it last changed.** The Runtime memory page shows each entry's creation time, so a corrected entry keeps the time it was first written. Found while capturing the v0.5.32 gallery.
+- **At 390 px the active Memory System tab and the bar's counts stay in sight.** On a phone the active tab can sit off-screen in English, and the turn memory bar's summary and a space card's counts are cut off. Found while capturing the v0.5.32 gallery.
 
 ## Later: controlled maintenance and extension growth
 
