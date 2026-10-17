@@ -40,7 +40,7 @@ function populatedDataDir(): string {
   return dataDir
 }
 
-function fixture(writeEnabled = true): { service: MemorySpacesService; process: ReturnType<typeof vi.fn<ProcessRunner>>; dataDir: string } {
+function fixture(writeEnabled = true, embedding?: { enabled: boolean; endpoint?: string }): { service: MemorySpacesService; process: ReturnType<typeof vi.fn<ProcessRunner>>; dataDir: string } {
   const process = vi.fn<ProcessRunner>(async (_command, args) => {
     if (args.includes('--version')) return { stdout: 'mnemon version 0.1.2\n', stderr: '', exitCode: 0 }
     if (args.includes('status')) return {
@@ -80,6 +80,7 @@ function fixture(writeEnabled = true): { service: MemorySpacesService; process: 
     timeoutMs: 4321,
     defaultRecallLimit: 7,
     writeEnabled,
+    ...(embedding === undefined ? {} : { embedding }),
   })
   const runner = createRunner(config, process)
   return { service: createService(runner, config, createRegistry(runner, true)), process, dataDir }
@@ -310,6 +311,16 @@ describe('MemorySpacesService', () => {
     expect(status.memoryBodies).toEqual([expect.objectContaining({ id: 'work', active: true, mnemonDefault: true })])
     expect(process).toHaveBeenCalledWith(FAKE_CLI, ['--data-dir', dataDir, '--store', 'work', 'status'], expect.anything())
     expect(process).toHaveBeenCalledWith(FAKE_CLI, ['--version'], expect.anything())
+  })
+
+  // A memory without a vector is what an install without an embedding service expects; the page words its receipt by this.
+  it('says whether DSH manages the embedding settings, in the summary and in the full status', async () => {
+    const unmanaged = fixture().service
+    expect(unmanaged.statusSummary().embeddingManaged).toBe(false)
+    expect((await unmanaged.status()).embeddingManaged).toBe(false)
+    const managed = fixture(true, { enabled: true, endpoint: 'http://127.0.0.1:9' }).service
+    expect(managed.statusSummary().embeddingManaged).toBe(true)
+    expect((await managed.status()).embeddingManaged).toBe(true)
   })
 
   it('keeps the CLI version in summaries until the installed binary changes', async () => {

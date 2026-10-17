@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { Button, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { isDefaultSourceInstance, type ClientConnectionHandle, type ClientSettingsScope, type Config, type StatusView } from "../host/protocol.ts"
+import { isDefaultSourceInstance, type ClientConnectionHandle, type ClientSettingsScope, type ClientSettingsSnapshot, type Config, type StatusView } from "../host/protocol.ts"
 import { MnemonClient } from './api.ts'
 import { dispatchMnemonAnchor } from './anchor.ts'
 import type { MnemonKey } from './locales.ts'
@@ -43,6 +43,8 @@ interface SaveOutcome {
   note?: SaveNote
   /** A memory was saved without a vector (#388). */
   unembedded?: boolean
+  /** Whether DSH managed the embedding settings when the write answered, which words a missing vector. */
+  embeddingManaged?: boolean
   error?: string
 }
 
@@ -84,6 +86,15 @@ function saveDestinations(status: Partial<StatusView> | undefined, taskAgent: bo
     ...(runtimeOn ? (Object.keys(RUNTIME_PLACES) as RuntimePlace[]).map(value => ({ value, label: t(RUNTIME_PLACES[value]) })) : []),
     ...spaces.map(body => ({ value: `space:${body.id}` as const, label: body.name, detail: t('saveAction.to.space', { provider: body.provider.label }) })),
   ]
+}
+
+/**
+ * Whether DSH managed the Mnemon Native embedding settings when a write
+ * answered, as the settings say. While they are not read it says nothing, and
+ * the receipt keeps the caution.
+ */
+function embeddingManagement(snapshot: ClientSettingsSnapshot<Config>): Pick<SaveOutcome, 'embeddingManaged'> {
+  return snapshot.value === undefined ? {} : { embeddingManaged: snapshot.value.embedding?.enabled === true }
 }
 
 /** The default instance of a Source type, as the workbench picks it, else the first. */
@@ -286,7 +297,8 @@ export const MnemonSaveAction = memo(function MnemonSaveAction({ messageId, sess
       ? client.supervise(content, messageId).then(result => ({ action: result.action, summary: result.summary, unembedded: (result.unembedded ?? []).length > 0 }))
       : saveDirectly(client, target, selected?.label ?? target, content, t)
     void written
-      .then(result => ({ content, destination: target, ...result }), (reason: unknown) => ({ content, destination: target, error: message(reason) }))
+      .then(result => ({ content, destination: target, ...result, ...embeddingManagement(settingsScope.getSnapshot()) }),
+        (reason: unknown) => ({ content, destination: target, error: message(reason) }))
       .then((result: SaveOutcome) => {
         inFlightRef.current = undefined
         // The task Agent's request is keyed by its reply and can be sent again
@@ -369,7 +381,7 @@ export const MnemonSaveAction = memo(function MnemonSaveAction({ messageId, sess
             {writeEnabled === true && status !== undefined && usable.length === 0 && <small className={css.placeNote} data-tone="blocked">{t('saveAction.noPlace')}</small>}
           </div>
         )}
-        {outcome !== null && <WriteReceipt t={t} action={outcome.action} summary={receiptSummary} error={outcome.error} unembedded={outcome.unembedded} onView={viewMemory}
+        {outcome !== null && <WriteReceipt t={t} action={outcome.action} summary={receiptSummary} error={outcome.error} unembedded={outcome.unembedded} embeddingManaged={outcome.embeddingManaged} onView={viewMemory}
           {...(isRuntimePlace(outcome.destination) ? { viewLabel: t('receipt.viewRuntime') } : {})} />}
       </Modal>
     </div>
