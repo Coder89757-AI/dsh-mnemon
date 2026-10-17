@@ -441,7 +441,7 @@ export class MemorySpacesService {
     return descriptor.typeId ?? descriptor.id
   }
 
-  private isNativeProvider(providerId: string): boolean {
+  private isNativeProviderId(providerId: string): boolean {
     return this.providerTypeId(providerId) === NATIVE_PROVIDER_ID
   }
 
@@ -1435,7 +1435,7 @@ export class MemorySpacesService {
       return this.createSpace({
         ...body,
         ...(providerId === undefined ? {} : { providerId }),
-        ...(providerId === undefined || this.isNativeProvider(providerId) || connection === undefined ? {} : { connection }),
+        ...(providerId === undefined || this.isNativeProviderId(providerId) || connection === undefined ? {} : { connection }),
       }, signal)
     }
 
@@ -1462,7 +1462,7 @@ export class MemorySpacesService {
 
   async updateProviderService(providerId: MemorySpace['provider']['id'], settings: Record<string, string | number | boolean>, clearSecrets: readonly string[] = [], enabled = true, signal?: AbortSignal) {
     this.assertWritable()
-    if (this.isNativeProvider(providerId)) throw new Error('Mnemon Native service settings are managed by the native configuration')
+    if (this.isNativeProviderId(providerId)) throw new Error('Mnemon Native service settings are managed by the native configuration')
     if (!enabled) return this.memorySpaces.updateProviderService(providerId, settings, clearSecrets, false)
     const connection = this.memorySpaces.resolveProviderService(providerId, settings, clearSecrets)
     const provider = this.providers.get(providerId)
@@ -1506,7 +1506,7 @@ export class MemorySpacesService {
   }
 
   private async runRediscovery(trigger: MemorySpaceRediscovery['trigger'], signal: AbortSignal | undefined, providerTimeoutMs: number): Promise<MemorySpaceRediscovery> {
-    const services = this.memorySpaces.providerServices().items.filter(item => item.enabled && !this.isNativeProvider(item.providerId))
+    const services = this.memorySpaces.providerServices().items.filter(item => item.enabled && !this.isNativeProviderId(item.providerId))
     const results = await Promise.all(services.map(async (item): Promise<MemorySpaceRediscoveryResult | undefined> => {
       const provider = this.providers.get(item.providerId)
       if (provider?.discover === undefined) return undefined

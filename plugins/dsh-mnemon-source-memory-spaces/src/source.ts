@@ -19,7 +19,7 @@ import { MemoryProviderCatalog } from './providers/catalog.ts'
 import { finalizeLlmPlacement, rulesOnlyPlacement } from './provider-placement.ts'
 import { resolveMemorySpacesConfig, type MemorySpacesConfig } from './config.ts'
 import { MemorySpaceProviderSnapshot } from './providers/host.ts'
-import { isNativeProvider } from './contracts.ts'
+import { isNativeProvider, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH } from './contracts.ts'
 import type {
   Category,
   CreateMemorySpaceRequest,
@@ -90,8 +90,8 @@ function createSpaceRequest(value: MemoryJsonValue): CreateMemorySpaceRequest {
     }),
   }
   return {
-    name: text(input.name, 'name', 100)!,
-    description: text(input.description, 'description', 1_000)!,
+    name: text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH)!,
+    description: text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)!,
     ...(typeof input.active !== 'boolean' ? {} : { active: input.active }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(connection === undefined ? {} : { connection }),
@@ -106,8 +106,8 @@ function updateSpaceRequest(value: MemoryJsonValue): { memoryBodyId: string; req
   return {
     memoryBodyId: text(input.memoryBodyId, 'memoryBodyId', 300)!,
     request: {
-      ...(text(input.name, 'name', 100, false) === undefined ? {} : { name: text(input.name, 'name', 100, false)! }),
-      ...(text(input.description, 'description', 1_000, false) === undefined ? {} : { description: text(input.description, 'description', 1_000, false)! }),
+      ...(text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH, false) === undefined ? {} : { name: text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH, false)! }),
+      ...(text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, false) === undefined ? {} : { description: text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, false)! }),
       ...(typeof input.active !== 'boolean' ? {} : { active: input.active }),
       ...(connection === undefined ? {} : { connection }),
       ...(stringArray(input.clearSecrets, 'clearSecrets', 100) === undefined ? {} : { clearSecrets: stringArray(input.clearSecrets, 'clearSecrets', 100)! }),
@@ -626,8 +626,8 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
             bodyId = text(input.memoryBodyId, 'memoryBodyId', 300)!
             if (!writableBodies.includes(bodyId)) throw new Error('Memory Space update is outside this View scope')
             const body = service.updateSpace(bodyId, {
-              ...(input.name === undefined ? {} : { name: text(input.name, 'name', 100)! }),
-              ...(input.description === undefined ? {} : { description: text(input.description, 'description', 1_000)! }),
+              ...(input.name === undefined ? {} : { name: text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH)! }),
+              ...(input.description === undefined ? {} : { description: text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)! }),
               ...(typeof input.active === 'boolean' ? { active: input.active } : {}),
             })
             result = { action: 'updated', memoryBodyId: body.id, name: body.name, description: body.description, active: body.active }

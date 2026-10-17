@@ -102,7 +102,7 @@ describe('Memory Spaces storage contracts', () => {
     expect(parseMemorySpaceRegistry({ version: 1, bodies: [entry({ name: 'n'.repeat(100), description: 'd'.repeat(1000) })] }).bodies).toHaveLength(1)
   })
 
-  it('limit a space name and description by the rule the registry writes and a copy is read with', () => {
+  it('limit a space name and description by the rule the registry writes and a copy is read with', async () => {
     expect([MEMORY_SPACE_NAME_MAX_LENGTH, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH]).toEqual([100, 1000])
     const dataDir = dataDirectory()
     mkdirSync(join(dataDir, MEMORY_SPACES_DIRECTORY, 'project'), { recursive: true })
@@ -115,6 +115,11 @@ describe('Memory Spaces storage contracts', () => {
     expect(() => registry.update('project', { description: `${description}d` })).toThrow('description is too long (max 1000 characters)')
     const stored = JSON.parse(readFileSync(registry.registryPath, 'utf8')) as unknown
     expect(parseMemorySpaceRegistry(stored).bodies).toMatchObject([{ id: 'project', name, description }])
+    // Creating a space checks both before anything else; at the limits, whatever stops this
+    // fixture's create later, it is not their length.
+    await expect(registry.create({ name: `${name}n`, description: 'Facts' })).rejects.toThrow('name is too long (max 100 characters)')
+    await expect(registry.create({ name, description: `${description}d` })).rejects.toThrow('description is too long (max 1000 characters)')
+    expect(await registry.create({ name, description }).then(() => '', (error: unknown) => String(error))).not.toContain('too long')
   })
 
   it('name the Mnemon Native Provider as its own package does', () => {
