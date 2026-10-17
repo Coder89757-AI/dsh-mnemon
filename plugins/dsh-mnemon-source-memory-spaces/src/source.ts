@@ -19,6 +19,7 @@ import { MemoryProviderCatalog } from './providers/catalog.ts'
 import { finalizeLlmPlacement, rulesOnlyPlacement } from './provider-placement.ts'
 import { resolveMemorySpacesConfig, type MemorySpacesConfig } from './config.ts'
 import { MemorySpaceProviderSnapshot } from './providers/host.ts'
+import { isNativeProvider } from './contracts.ts'
 import type {
   Category,
   CreateMemorySpaceRequest,
@@ -144,7 +145,7 @@ function outsideView(service: MemorySpacesService, memoryBodyId: string): string
   if (!body.active) return `${space} is switched off, so this turn's View does not read it and cannot forget from it. Whether it is on is the user's choice, on the Memory Spaces page; once it is on, a forget there works from the next turn`
   if (body.providerEnabled === false) return `${space} uses ${body.provider.label}, which is turned off on the dsh-mnemon page under Plugins`
   const provider = catalog.providers.find(candidate => candidate.id === body.provider.id)
-  if (provider?.serviceConfigured === false) return `${space} uses ${body.provider.label}, which is not available here${(provider.typeId ?? provider.id) === 'mnemon-native' ? ': the Mnemon CLI is not installed' : ''}`
+  if (provider?.serviceConfigured === false) return `${space} uses ${body.provider.label}, which is not available here${isNativeProvider(provider) ? ': the Mnemon CLI is not installed' : ''}`
   return `${space} was switched on after this turn began, so this turn's View does not read it yet; a forget there works from the next turn`
 }
 

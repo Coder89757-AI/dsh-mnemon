@@ -28,7 +28,9 @@ import {
   CATEGORIES,
   EDGE_TYPES,
   INTENTS,
+  NATIVE_PROVIDER_ID,
   SOURCES,
+  isNativeProvider,
   normalizeEntityKey,
   type Category,
   type CreateMemorySpaceRequest,
@@ -440,11 +442,11 @@ export class MemorySpacesService {
   }
 
   private isNativeProvider(providerId: string): boolean {
-    return this.providerTypeId(providerId) === 'mnemon-native'
+    return this.providerTypeId(providerId) === NATIVE_PROVIDER_ID
   }
 
   private isNativeSpace(body: MemorySpace): boolean {
-    return (body.provider.typeId ?? body.provider.id) === 'mnemon-native'
+    return isNativeProvider(body.provider)
   }
 
   constructor(
@@ -525,7 +527,7 @@ export class MemorySpacesService {
       items,
       providers: this.providerCatalog.providers.map(provider => ({
         ...provider,
-        serviceConfigured: (provider.typeId ?? provider.id) === 'mnemon-native' ? this.runner.commandFound : enabled.has(provider.id),
+        serviceConfigured: isNativeProvider(provider) ? this.runner.commandFound : enabled.has(provider.id),
       })),
       persistenceStrategy: {
         mode: this.config.persistenceStrategy.mode,

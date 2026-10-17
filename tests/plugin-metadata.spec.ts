@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { memoryPlugin as documents } from 'dsh-mnemon-source-documents'
 import { memoryPlugin as spaces } from 'dsh-mnemon-source-memory-spaces'
+import { NATIVE_PROVIDER_ID } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { memoryPlugin as runtime } from 'dsh-mnemon-source-runtime'
 import { memoryPlugin as capture } from 'dsh-mnemon-strategy-auto-capture'
 import { memoryPlugin as threeTier } from 'dsh-mnemon-strategy-default-three-tier'
@@ -57,5 +58,10 @@ describe('component package metadata', () => {
     const withOwnPatch = STARTER_COMPONENT_ROWS.map(row => row.packageName)
       .filter(name => (read(`plugins/${name}/package.json`) as { dsh?: { bundle?: { patch?: string } } }).dsh?.bundle?.patch !== undefined)
     expect([...STARTER_SELF_REGISTERING_PACKAGES].sort()).toEqual(withOwnPatch.sort())
+  })
+
+  it('installs Mnemon Native under the id Memory Spaces knows it by', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    expect(patch).toMatch(new RegExp(`- use: dsh-mnemon-provider-mnemon-native\n\\s+instanceId: ${NATIVE_PROVIDER_ID}\n`, 'u'))
   })
 })
