@@ -4,7 +4,7 @@
 
 Some evidence records carried tooling that later work needs again: two probes of DSH 0.2.1 behavior that ran only from their records, three fake embedding services (two of them Python), and a copy of the e2e fixture's model stub made to log each request's model. This change moves what is still needed into `tests/` and `scripts/`, where it runs with the rest and is kept working. The records stay as they were, and nothing in the published packages changes.
 
-Tested revision: the branch `claude/test-tooling-from-records`, on top of main `4996a796`, on 2026-10-17 (Asia/Shanghai): macOS 15.6 arm64, Node 24.19.0, pnpm 10.13.1, the pinned DSH 0.2.1-rc.1 and DSH 0.2.0-rc.2 installed from npm, Mnemon CLI 0.2.10, headless Chrome.
+Tested revision: the branch `claude/test-tooling-from-records`, started on main `4996a796` and, after an independent review, merged with main `33b336c9` (#416, #417), on 2026-10-17 (Asia/Shanghai): macOS 15.6 arm64, Node 24.19.0, pnpm 10.13.1, the pinned DSH 0.2.1-rc.1 and DSH 0.2.0-rc.2 installed from npm, Mnemon CLI 0.2.10, headless Chrome.
 
 ## What moved
 
@@ -96,6 +96,15 @@ Save to memory with `--save-action` (send `我们的发布流程是什么？`, t
 
 Each save ended `已存入` (saved) with no browser console error. The [record of PR #354](../background-tasks-card/README.md) read the model of each request from its copy of the stub; with the option, the fixture's own stub prints it. That copy also gave each conversation a title of its own for its screenshots, which stays in that record.
 
+## Independent review
+
+A review of the first version found two gaps, both fixed on this branch:
+
+- The fake service's hang-up test closed the service in-process, which passes without the hang-up handling: `closeAllConnections()` lets `server.close()` finish while a held answer's timer still runs. Run as a command, such a build stayed up for the rest of the delay after SIGTERM. The test now runs the script as a command, as described above.
+- When the resumed compaction child settles, DSH's notice of it wakes the conversation for a fifth model request, which could start after the spec's last wait and overlap its teardown. The spec now waits for that request.
+
+It also asked for the request body to be parsed once with `--log-model-requests`, for the first task-directory case to match DSH's subagent result rather than pin it, for the entry check that a linked path defeated (in `openviking-protocol.mjs` too), for exact wording in this record, and for the name the other pages give the Mnemon Native embedding settings.
+
 ## Compatibility
 
 - Tests, test fixtures, scripts and documentation only. No published file changes, so there is no changeset, and the product behaves as before.
@@ -109,6 +118,7 @@ From the worktree, through Node 24.19 and pnpm 10.13.1:
 
 ```sh
 pnpm exec vitest run tests/task-agent-cwd-host.spec.ts tests/resumed-memory-task-host.spec.ts tests/fake-embeddings-fixture.spec.mjs tests/model-request-log.spec.mjs
+DSH_HOST_ROOT=<DSH 0.2.1-rc.2 installation>/lib/node_modules/@deepseek-ai/dsh pnpm exec vitest run --config scripts/installed-dsh.config.ts <the same files>
 MNEMON_NATIVE_TEST_CLI=/opt/homebrew/bin/mnemon pnpm exec vitest run tests/fake-embeddings-fixture.spec.mjs
 pnpm run typecheck
 pnpm run verify
@@ -116,10 +126,10 @@ MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run 
 DSH_HOST_ROOT=<DSH 0.2.0-rc.2 installation>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed-dsh
 ```
 
-Results:
+Results, on the branch merged with main `33b336c9`:
 
-- The four new spec files on DSH 0.2.1-rc.1: 3 real-host tests, 7 fixture tests and 4 logging tests passed; the real-CLI case skipped, and passed with `MNEMON_NATIVE_TEST_CLI` (8 of 8).
-- `pnpm run verify`: the documentation links, the typecheck, the deterministic build (49 files), every plugin's build, typecheck and tests, root tests 2,068 passed and 7 skipped (145 files, the four new ones included), Headless, and the package checks (59 files, 1,995,423 unpacked bytes, publint and attw).
+- The four new spec files on DSH 0.2.1-rc.1, and on DSH 0.2.1-rc.2 installed from npm: 3 real-host tests, 7 fixture tests and 4 logging tests passed; the real-CLI case skipped, and passed with `MNEMON_NATIVE_TEST_CLI` (8 of 8).
+- `pnpm run verify`: the documentation links, the typecheck, the deterministic build (49 files), every plugin's build, typecheck and tests, root tests 2,055 passed and 7 skipped (144 files, the four new ones included), Headless, and the package checks (59 files, 1,980,706 unpacked bytes, publint and attw).
 - `pnpm run verify:plugins` without a Mnemon CLI: 17 independent plugin repositories and 18 packed artifacts, the packed Starter and the three optional Strategies in real DSH.
-- `pnpm run test:installed-dsh` against DSH 0.2.0-rc.2: 2,065 passed and 10 skipped (145 files); the two real-host spec files skip there (3 tests).
+- `pnpm run test:installed-dsh` against DSH 0.2.0-rc.2: 2,052 passed and 10 skipped (144 files); the two real-host spec files skip there (3 tests).
 - `pnpm run release:intent` against the merge base: no published package inputs changed, so no release intent is required.

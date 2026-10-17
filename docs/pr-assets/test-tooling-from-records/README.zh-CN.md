@@ -4,7 +4,7 @@
 
 一些验收记录里带着后续工作还要用到的工具：两个只能从记录中运行的 DSH 0.2.1 行为探针，三个假的嵌入服务（其中两个是 Python），以及一份为给每个请求记下模型而复制的 e2e 夹具模型桩。本次改动把仍然需要的部分移到 `tests/` 与 `scripts/`，随其余测试一起运行并持续维护。各记录保持原样，已发布的包没有任何变化。
 
-测试版本：分支 `claude/test-tooling-from-records`，基于 main `4996a796`，2026-10-17（Asia/Shanghai）：macOS 15.6 arm64、Node 24.19.0、pnpm 10.13.1，锁定的 DSH 0.2.1-rc.1 与从 npm 安装的 DSH 0.2.0-rc.2，Mnemon CLI 0.2.10，无界面 Chrome。
+测试版本：分支 `claude/test-tooling-from-records`，从 main `4996a796` 开始，经独立审查后合并了 main `33b336c9`（#416、#417），2026-10-17（Asia/Shanghai）：macOS 15.6 arm64、Node 24.19.0、pnpm 10.13.1，锁定的 DSH 0.2.1-rc.1 与从 npm 安装的 DSH 0.2.0-rc.2，Mnemon CLI 0.2.10，无界面 Chrome。
 
 ## 移动了什么
 
@@ -96,6 +96,15 @@
 
 每次保存都以 `已存入` 结束，浏览器控制台没有错误。[PR #354 的记录](../background-tasks-card/README.zh-CN.md)是从它复制的模型桩中读取每个请求的模型；有了这个选项，夹具自己的模型桩就会输出。那份副本还为截图给每个对话起了不同的标题，这一点留在那份记录中。
 
+## 独立审查
+
+对第一版的审查发现两处不足，都已在本分支修正：
+
+- 假嵌入服务的断开测试在进程内关闭服务，即使没有断开处理也能通过：`closeAllConnections()` 让 `server.close()` 完成，而被延迟的响应的计时器仍在运行。以命令方式运行时，这样的版本在收到 SIGTERM 后会一直运行到延迟结束。现在的测试以命令方式运行脚本，见上文。
+- 续接的压缩子 Agent 结束时，DSH 发出的通知会唤醒对话，产生第五个模型请求；这个请求可能在测试最后一次等待之后才开始，与清理过程重叠。现在测试会等待这个请求。
+
+审查还要求：`--log-model-requests` 只解析一次请求体；第一个任务目录用例匹配而不是钉死 DSH 的子 Agent 结果；修正被链接路径绕过的入口检查（`openviking-protocol.mjs` 同样如此）；本记录的措辞更准确；以及沿用其他页面对 Mnemon Native 嵌入设置的称呼。
+
 ## 兼容性
 
 - 只改动测试、测试夹具、脚本与文档。没有已发布的文件变化，因此不需要 changeset，产品行为不变。
@@ -109,6 +118,7 @@
 
 ```sh
 pnpm exec vitest run tests/task-agent-cwd-host.spec.ts tests/resumed-memory-task-host.spec.ts tests/fake-embeddings-fixture.spec.mjs tests/model-request-log.spec.mjs
+DSH_HOST_ROOT=<DSH 0.2.1-rc.2 安装目录>/lib/node_modules/@deepseek-ai/dsh pnpm exec vitest run --config scripts/installed-dsh.config.ts <同样的文件>
 MNEMON_NATIVE_TEST_CLI=/opt/homebrew/bin/mnemon pnpm exec vitest run tests/fake-embeddings-fixture.spec.mjs
 pnpm run typecheck
 pnpm run verify
@@ -116,10 +126,10 @@ MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run 
 DSH_HOST_ROOT=<DSH 0.2.0-rc.2 安装目录>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed-dsh
 ```
 
-结果：
+结果（合并 main `33b336c9` 之后的分支）：
 
-- DSH 0.2.1-rc.1 上的四个新测试文件：3 个真实宿主测试、7 个夹具测试与 4 个日志测试通过；真实 CLI 用例默认跳过，设置 `MNEMON_NATIVE_TEST_CLI` 后通过（8 个中 8 个）。
-- `pnpm run verify`：文档链接、类型检查、确定性构建（49 个文件）、每个插件的构建、类型检查与测试，根测试 2,068 个通过、7 个跳过（145 个文件，含四个新文件），Headless，以及包检查（59 个文件，解包 1,995,423 字节，publint 与 attw）。
+- DSH 0.2.1-rc.1 以及从 npm 安装的 DSH 0.2.1-rc.2 上的四个新测试文件：3 个真实宿主测试、7 个夹具测试与 4 个日志测试通过；真实 CLI 用例默认跳过，设置 `MNEMON_NATIVE_TEST_CLI` 后通过（8 个中 8 个）。
+- `pnpm run verify`：文档链接、类型检查、确定性构建（49 个文件）、每个插件的构建、类型检查与测试，根测试 2,055 个通过、7 个跳过（144 个文件，含四个新文件），Headless，以及包检查（59 个文件，解包 1,980,706 字节，publint 与 attw）。
 - 不提供 Mnemon CLI 的 `pnpm run verify:plugins`：17 个独立插件仓库与 18 个打包制品，以及真实 DSH 中的打包 Starter 与三个可选策略。
-- 对 DSH 0.2.0-rc.2 运行 `pnpm run test:installed-dsh`：2,065 个通过、10 个跳过（145 个文件）；两个真实宿主测试文件在那里跳过（3 个测试）。
+- 对 DSH 0.2.0-rc.2 运行 `pnpm run test:installed-dsh`：2,052 个通过、10 个跳过（144 个文件）；两个真实宿主测试文件在那里跳过（3 个测试）。
 - 以合并基点运行 `pnpm run release:intent`：没有已发布包的输入发生变化，不需要发布意图。
