@@ -425,7 +425,8 @@ describe('default Runtime capacity workflow across Host entry points', () => {
   it('leaves Source-local capacity semantics intact when an independent Strategy is selected', async () => {
     const f = await fixture()
     const definition = defineMemoryStrategy({
-      manifest: { ...DEFAULT_THREE_TIER_VIEW_STRATEGY.manifest, typeId: 'external', packageName: 'external-strategy' },
+      // It composes as the Layered strategy does, but declares none of its workflows.
+      manifest: { ...DEFAULT_THREE_TIER_VIEW_STRATEGY.manifest, typeId: 'external', packageName: 'external-strategy', workflows: [] },
       compose: (...args) => ({ ...DEFAULT_THREE_TIER_VIEW_STRATEGY.compose(...args), strategyTypeId: 'external' }),
     })
     await f.mount({ inject: ['mnemonMemory'], apply: ctx => installMemory(ctx, { strategies: [definition] }) }, { instanceId: 'external' })
@@ -434,6 +435,22 @@ describe('default Runtime capacity workflow across Host entry points', () => {
     await expect(f.execute('mnemon_runtime_memory', { action: 'add', target: 'memory', content: pending }, f.child)).rejects.toMatchObject({ code: 'runtime-capacity' })
     expect(await f.write('source-management-mutate', await f.management())).toMatchObject({ ok: false })
     expect(f.coordinator.snapshot().migrations).toBe(0)
+    expect(f.start).not.toHaveBeenCalled()
+  })
+
+  it('archives for an independent Strategy that declares Runtime capacity maintenance', async () => {
+    const f = await fixture()
+    const body = await f.memorySpace()
+    const definition = defineMemoryStrategy({
+      manifest: { ...DEFAULT_THREE_TIER_VIEW_STRATEGY.manifest, typeId: 'external', packageName: 'external-strategy', workflows: ['runtime-capacity'] },
+      compose: (...args) => ({ ...DEFAULT_THREE_TIER_VIEW_STRATEGY.compose(...args), strategyTypeId: 'external' }),
+    })
+    await f.mount({ inject: ['mnemonMemory'], apply: ctx => installMemory(ctx, { strategies: [definition] }) }, { instanceId: 'external' })
+    f.live.swap(createRuntimeGraph({ ...f.config, memoryTopology: { ...f.config.memoryTopology, strategyId: 'external' } }, f.workspace, f.extensions))
+    const turn = await f.begin()
+    expect(turn.view.strategyTypeId).toBe('external')
+    await expect(f.execute('mnemon_runtime_memory', { action: 'add', target: 'memory', content: pending }, f.child))
+      .resolves.toMatchObject({ added: pending, maintenance: { memoryBodyIds: [body.id] } })
     expect(f.start).not.toHaveBeenCalled()
   })
 
