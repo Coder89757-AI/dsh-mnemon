@@ -4,7 +4,7 @@
 
 两个 Host 模块已经大到一次评审难以看完：`src/host/subagent.ts` 有 2,378 行、147 KB，其中记忆任务协调器 `MnemonSubagentCoordinator` 一个类就占 1,467 行；`src/host/tools.ts` 的 `registerTools` 是一个 439 行的函数，注册全部 16 个记忆工具。本改动来自技术债审查的 H2 项：按两个文件本已存在的边界拆分，委派子 Agent 的人设、结果 schema 与任务文本、DSH 输出 schema 检查、回执恢复、运行时容量工作流和文档归档工作流各自移入自己的模块，记忆工具按工具族逐组注册。用户与模型看到的都没有变化。代码原样移动；离开协调器的方法改为把用到的协调器状态作为参数传入；`subagent.ts` 导出同样的名称；构建出的 Host 产物包含同样的语句，唯一的例外是协调器类、由其方法变成的 13 个函数，以及工具注册函数，而它们都由原代码组成。
 
-基线：main `bd70979f`，即 #426（M2 与 M3）的合并提交；本改动从该分支的最新提交 `a8c40265` 开始，main 在其后新增的四个提交都没有涉及这两个模块。改动：`0236a9e0`（固定文本的测试）、`5a5c16c2`（`subagent.ts`）、`4b4de316`（`tools.ts`），并在 `bad852aa` 合并了 main，2026-10-18（Asia/Shanghai），macOS 15.6 arm64，Node 24.19.0，pnpm 10.13.1，锁定的 DSH 0.2.1-rc.2；根测试另在已安装的 DSH 0.2.0-rc.2 上运行，真实宿主测试另在已安装的 0.2.1-rc.2 上运行。
+基线：main `bd70979f`，即 #426（M2 与 M3）的合并提交；本改动从该分支的最新提交 `a8c40265` 开始，main 在其后新增的四个提交都没有涉及这两个模块。改动：`0236a9e0`（固定文本的测试）、`5a5c16c2`（`subagent.ts`）、`4b4de316`（`tools.ts`），并在 `bad852aa` 合并了 main，以及评审后扩展固定内容的 `ea19a2ec`，2026-10-18（Asia/Shanghai），macOS 15.6 arm64，Node 24.19.0，pnpm 10.13.1，锁定的 DSH 0.2.1-rc.2；根测试另在已安装的 DSH 0.2.0-rc.2 上运行，真实宿主测试另在已安装的 0.2.1-rc.2 上运行。
 
 ## 移动内容
 
@@ -35,10 +35,10 @@
 
 **先固定文本。** 在移动任何代码之前，`0236a9e0` 在基线上新增了两个测试：
 
-- `tests/subagent.spec.ts` 中的“What delegated children read”通过协调器启动每一类委派子 Agent，所用的 Provider 像 DSH 0.2.0 的 Provider 一样在启动请求中接收子 Agent 的人设：8 种写入操作、基于证据的回答、Provider 放置、元数据维护、经 spawn 与经 fork、开启与关闭运行时记忆的空闲审查、MEMORY.md 归档路由的两个批次（其中一条长于路由摘录，一条带分支）、USER.md 压缩，以及文档归档。对这 19 个子 Agent，测试逐一固定其标签，以及人设、人设之后的完成协议（其中包含结果 schema，并去掉每次运行随机生成的 requestId）与任务的 SHA-256。其中有 13 种不同的人设、7 种不同的完成协议和 17 种不同的任务。在人设或任务文本中加一个空格，测试即会失败。
+- `tests/subagent.spec.ts` 中的“What delegated children read”通过协调器启动每一类委派子 Agent，所用的 Provider 像 DSH 0.2.0 的 Provider 一样在启动请求中接收子 Agent 的人设：8 种写入操作、基于证据的回答、Provider 放置、元数据维护、经 spawn 与经 fork、开启与关闭运行时记忆的空闲审查、MEMORY.md 归档路由的两个批次（其中一条长于路由摘录，一条带分支）、USER.md 压缩、文档归档，以及对合并后记忆的对账；对账经维护任务运行器执行，所用的证据包括另一台机器写入的条目、分支、文档、同步分支一侧的差异与一条审阅意见。对这 20 个子 Agent，测试逐一固定其标签，以及人设、人设之后的完成协议（其中包含结果 schema，并去掉每次运行随机生成的 requestId）与任务的 SHA-256。其中有 14 种不同的人设、8 种不同的完成协议和 18 种不同的任务。任务中凡由分隔符连接的列表都有两个元素（请求的标签、被路由条目的分支、文档的源路径），并且有一个请求字段是对象，因此这些分隔符也被固定。在人设或任务文本中加一个空格，测试即会失败；把上述任一分隔符改动一个字符，同样会失败。
 - `tests/tool-cards.spec.ts` 按注册顺序固定每个记忆工具在对话中显示的调用卡片与结果卡片。
 
-两个测试在基线上通过，每次移动之后不加修改仍然通过。固定每个工具名称、描述、输入与输出 schema 以及注册顺序的 `tests/memory-tools.spec.ts` 与 `tests/fixtures/model-tools.json` 没有改动，也都通过。
+两个测试在基线上通过，每次移动之后不加修改仍然通过。评审之后，`ea19a2ec` 加入了对账子 Agent 以及上述列表与对象；扩展后的固定内容在移动之前的代码 `a8c40265` 上通过，在移动之后同样通过。固定每个工具名称、描述、输入与输出 schema 以及注册顺序的 `tests/memory-tools.spec.ts` 与 `tests/fixtures/model-tools.json` 没有改动，也都通过。
 
 **源码。** 两次移动由 [`harness/split-subagent.py`](./harness/split-subagent.py) 与 [`harness/split-tools.py`](./harness/split-tools.py) 完成：它们按行号从基线文件中截取代码，把离开类的方法去掉两个空格的缩进（模板字符串中的行属于模型文本，不去缩进），并且只应用其中列出的替换，每处替换都检查出现次数是否符合预期。在 `a8c40265` 上，或在这两个文件与之相同的 main `bd70979f` 上运行，它们都逐字节写出 `4b4de316` 的 8 个文件。客户端拆分留下的 [`moved-lines.mjs`](../client-module-splits/harness/moved-lines.mjs) 把前后代码行作为多重集比较，不计导入与空行，需在仓库根目录运行：
 
@@ -93,6 +93,7 @@
 | `DSH_HOST_ROOT=<DSH 0.2.1-rc.2> pnpm exec vitest run --config scripts/installed-dsh.config.ts` | 152 个文件，2,111 个通过、7 个跳过，其中包括真实宿主测试，与锁定的 DSH 上相同 |
 | `node scripts/verify-sync-git.mjs` | 在锁定的 DSH 0.2.1-rc.2 上 64 项检查全部通过：两个真实的 DSH Web 实例配置本地裸仓库，向其发布并从中拉取 |
 | `pnpm exec vitest run tests/subagent.spec.ts tests/tool-cards.spec.ts tests/memory-tools.spec.ts`，在 `0236a9e0`、`5a5c16c2` 与 `4b4de316` 之后各运行一次 | 每次分别通过 149、1 与 7 个测试 |
+| 用 `ea19a2ec` 的固定内容运行 `pnpm exec vitest run tests/subagent.spec.ts`，分别在 `ea19a2ec` 与 `a8c40265` 的文件上 | 两处都通过 149 个测试 |
 | `pnpm exec tsc -p tsconfig.json --noEmit --noUnusedLocals` | 8 个模块中没有未使用的导入或局部变量 |
 | `python3 docs/pr-assets/host-module-splits/harness/split-subagent.py . a8c40265 <dir>` 与 `split-tools.py . a8c40265 <dir>` | 逐字节写出 `4b4de316` 的 8 个文件 |
 | `node docs/pr-assets/client-module-splits/harness/moved-lines.mjs [--indent] --before a8c40265:<file> --after 4b4de316:<files>` | 见“等价性”中的源码表格 |
