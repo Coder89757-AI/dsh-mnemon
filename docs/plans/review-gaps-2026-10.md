@@ -4,7 +4,7 @@
 
 Status: planned, nothing here has shipped. Written on 2026-10-17 against `main` at `f41a121f` (v0.5.31 with #414, #415 and #416); file references are to that revision.
 
-After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421).
+After v0.5.31, a review of the code, the documentation and the Host's compatibility branches produced a list of follow-ups. The ones that keep behavior unchanged (consolidation, refactors, documentation and tests) went into pull requests of their own. The items below change what users, plugin authors or the model see, so each one needs its own decision and pull request. The [roadmap](../en/roadmap.md#next-gaps-from-the-october-2026-review) lists them in the same order. Items 10 and 11 were found later in the same batch, while Memory Spaces' settings moved into Memory Spaces (#421). Items 12 to 14 were found while capturing the [v0.5.32 gallery](../assets/webui-v0.5.32/README.md), and items 15 to 18 while reviewing it; their file references are to `main` at `03dd40a4` (#417 to #423 on top of `f41a121f`).
 
 ## 1. Backups and Git sync drop a Native space's placement decision
 
@@ -104,3 +104,59 @@ After v0.5.31, a review of the code, the documentation and the Host's compatibil
 **Change.** Start a new request version when a switch or a save begins, so a read that started before it is discarded.
 
 **Tests.** With a quiet read held open, switch a Provider and save one; the page keeps the new state when the held read answers.
+
+## 12. A default install's save receipt reads as a failure
+
+**Today.** Found while capturing the v0.5.32 gallery. With the Mnemon Native embedding settings at their default, where **Manage embedding settings in DSH** is off, dsh-mnemon supplies no override and leaves embedding to the Host environment and the Mnemon CLI's own defaults. On a machine where no embedding service answers, every write to a Mnemon Native space comes back with `embedded: false`, and since #388 every receipt for a save that lands in a Memory Space, in a conversation and on the Memory Spaces page, ends in the caution tone with "Saved without a vector: embedding did not succeed, so this memory is left out of semantic matching for now. Once the embedding service answers, fill it in from Test status in the Mnemon Native embedding settings." (未生成向量：嵌入没有成功，…). Saves to working memory or the user profile never carry the line: `saveDirectly` in `src/client/MnemonSaveAction.tsx:96-120` sets `unembedded` only for a write to a space. The memory is saved, and keyword, link and recency recall reach it; but someone who never set up embedding reads a failure on every save to a Memory Space, as the gallery's receipts show.
+
+**Change.** Word the line by its cause. When no embedding service is set up, neither in DSH's settings nor in the environment the Mnemon CLI reads, a neutral note says that semantic matching needs an embedding service and links to the Mnemon Native embedding settings; the caution stays for a service that is set up but did not answer or lacks the model. Decide whether the neutral note shows on every save or once per space.
+
+**Tests.** Save to memory through the task Agent and straight to a space, with the settings at their default and no service, with a configured service that is down, and with a working service, in both languages: the neutral note, the caution, and no line; a save to working memory or the user profile shows none of them.
+
+## 13. A replaced runtime memory entry shows when it was first written
+
+**Today.** Found while capturing the v0.5.32 gallery; v0.5.19's screens show the same. A runtime memory entry stores `created_at` and `updated_at`, and a replace keeps `created_at` and sets `updated_at`. The Runtime memory page shows each entry's `created_at` and sorts by it (`plugins/dsh-mnemon-source-runtime/src/client/pages.tsx:114` and `:131`), so it never shows `updated_at`. In the English gallery, the checkout target corrected at 9:49 PM still reads 10/17/2026, 9:47:14 PM, the time the demo was seeded, like the entries nobody changed.
+
+**Change.** Keep the order the [UI guide](../en/guides/ui-guide.md#runtime-memory) describes, where editing an older entry keeps its place, and show when an entry last changed: its update time beside the creation time whenever the two differ.
+
+**Tests.** An entry added, replaced by the Agent, edited on the page, and kept by a capacity compaction: the order stays and each shows the right times, in both languages.
+
+## 14. At 390 px the active tab, the turn bar's summary and the space cards' counts are out of sight
+
+**Today.** Found while capturing the v0.5.32 gallery; v0.5.19's phone screens show the same. At 390 × 844, the Memory System's page tabs scroll sideways without a scrollbar (`.nav` in `src/client/MnemonView.module.css`), and nothing brings the active tab into view: in English, Memory Spaces, the fourth tab, is off-screen while its page is open. At the same width the turn memory bar's summary is cut off ("Turn memory recalled 1 document se…"), and a space card on Memory Spaces' Overview shortens its counts to "11 m… 138… 17…".
+
+**Change.** When a page opens, scroll the tab strip itself so the active tab shows; `scrollIntoView` would also move DSH's sliding phone frame. Let the bar's summary and a card's counts wrap at phone width instead of truncating.
+
+**Tests.** At 390 px in both languages: each tab, opened from the sidebar and from a turn's item, is in view without the phone frame moving; the summary and the counts read in full.
+
+## 15. Memory Spaces shows empty counts while a space is still being checked
+
+**Today.** Found while reviewing the v0.5.32 gallery. Memory Spaces' Overview first shows the space directory, which answers without waiting for the Providers (`spaceDirectory` in Memory Spaces' `src/service.ts`), and then each space's status. A Mnemon Native space card takes its memories, edges and size from the status's `stats` and shows zero while there are none (`plugins/dsh-mnemon-source-memory-spaces/src/client/pages.tsx:1031`). Until a space's status answers, its card therefore reads "0 memories", "0 edges" and "0 B" while its status line reads "Checking"; in the Chinese memory recording the cards do so at 9.9 s, before the real counts appear. A slow Provider therefore looks like an empty space.
+
+**Change.** Show a placeholder for the counts while a space's status is loading and whenever its status brought no `stats`; a space whose status reports no memories keeps its zeros.
+
+**Tests.** With a space's status read held open, its card shows the placeholder and then the counts; an empty space shows zeros; a space whose status read fails shows no zeros; in both languages.
+
+## 16. Opening a turn's item can show an empty Memory System for a moment
+
+**Today.** Found while reviewing the v0.5.32 gallery. When the Memory System opens, and whenever its session, workspace or storage settings change, it reads its status and its Source catalog for that view again, and until the catalog answers it has none (`sourceCatalog` in `src/client/MnemonWorkbench.tsx:620`): its tabs list only Status, and its header reads "Checking" while the status loads (`:817`). A turn's item opens a Source page, and until the catalog arrives nothing in the canvas matches that page (`:938-948`), so the canvas stays empty. In the gallery's recall recordings this lasts a frame or two (Chinese at 10.0 s, English at 13.5 s); on a slower Host it lasts as long as the catalog read.
+
+**Change.** While the catalog loads, show the target page as loading in the canvas, and its tab as pending, instead of an empty page.
+
+**Tests.** Open a document, a memory and a runtime entry from a turn with the catalog read held open: the canvas shows a loading state, and the target page opens when the read answers; opening Status directly is unchanged.
+
+## 17. The graph's footer counts only the entities it draws
+
+**Today.** Found while reviewing the v0.5.32 gallery. The Overview graph keeps the 24 entities that most memories carry (`enrichMultiSpaceGraph`, `plugins/dsh-mnemon-source-memory-spaces/src/client/pages.tsx:293`), and its footer counts the entity nodes it drew (`:906`, `:1059`), so it reads "2 spaces · 16 memories · 24 entities" and "Showing 42 / 42 elements". The Entities page counts every distinct entity of the same two spaces (`entities` in Memory Spaces' `src/service.ts:1120`) and reads "26 active entities". With 24 entities or fewer the two agree, as on the freshly seeded demo, where both read 22.
+
+**Change.** Count every entity in the footer and say how many the graph draws, for example "24 of 26 entities", and count the entities left out in the elements total.
+
+**Tests.** Spaces with fewer and with more than 24 entities: the footer's entity total matches the Entities page, and its drawn count matches the nodes on screen.
+
+## 18. Graph labels overlap and run past the right edge
+
+**Today.** Found while reviewing the v0.5.32 gallery. With 22 nodes or more, every third node gets a label of up to 19 characters to its right (`plugins/dsh-mnemon-source-memory-spaces/src/client/pages.tsx:607` and `:627`), with no check against other labels or the edge of the view, while nodes are kept only 58 units inside the graph's 930-unit-wide view box (`clampGraphPosition`, `:339`). In the gallery's graph a node sits on "Changesets", "No production depl…" runs into "A PR needs at leas…", and a label at the right edge is cut off after "Code re".
+
+**Change.** Place a label to the left of its node when it would cross the right edge, and leave out a label that would overlap one already placed; the selected node always keeps its label.
+
+**Tests.** A dense graph at the Overview's size, and the same graph after Natural spread and Uniform reset: no label crosses the edge of the view or overlaps another, and the selected node's label shows.

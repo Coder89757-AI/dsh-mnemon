@@ -4,7 +4,7 @@
 
 dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**运行时记忆**、问题需要时才检索的**项目档案**，以及存放在你所选 Provider 上的长期证据**记忆空间**。主策略决定它们如何参与每一轮对话，主策略与增强都在插件页中选择。从默认的分层策略开始即可，日常使用无需管理插件。
 
-[![可组合记忆插件页中的记忆组合面板](../assets/webui-v0.5.19/zh-CN/plugin-composition.jpg)](./guides/ui-guide.md#在插件页中)
+[![可组合记忆插件页中的记忆组合面板](../assets/webui-v0.5.32/zh-CN/plugin-composition.jpg)](./guides/ui-guide.md#在插件页中)
 
 ## 使用记忆系统
 
@@ -42,4 +42,4 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 
 [v0.5.31](./releases/v0.5.31.md) 支持 DSH 0.2.1-rc.1 与 0.2.0-rc.2，在 DSH 0.2.1 上恢复记忆子 Agent 与检查版本 → 更新，让任务 Agent 可以跟随发起工作的会话所用的模型，并阻止 Git 同步发布不一致的项目档案。[v0.5.30](./releases/v0.5.30.md) 让记忆写入指定的记忆空间，显示并补齐每个空间的向量，使 Git 同步不再多出空间副本、不再因未跟踪的文件失败，并让召回等工具说明自己没有做的事。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
 
-指南描述当前版本。截图与录屏来自 [v0.5.19 图集](../assets/webui-v0.5.19/README.md)，安装步骤来自[安装图集](../assets/install-v0.5.19/README.md)；带日期的 PR 记录只证明其标注的代码修订与环境。内部 Host RPC 不属于对外插件 SDK。
+指南描述当前版本。截图与录屏来自 [v0.5.32 图集](../assets/webui-v0.5.32/README.md)，安装步骤来自[安装图集](../assets/install-v0.5.19/README.md)；带日期的 PR 记录只证明其标注的代码修订与环境。内部 Host RPC 不属于对外插件 SDK。
