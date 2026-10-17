@@ -72,6 +72,8 @@ dsh-mnemon 在两个版本上运行方式相同，使用同一份记忆数据。
 - **不兼容的版本。** DSH 以不兼容为由拒绝更新时，错误信息会写明该版本的要求：DSH 0.2.1 报告版本的 requirements，显示为 `requires DSH ^0.3.0`；DSH 0.2.0 报告它的 peer，显示为 `requires @deepseek-ai/dsh ^0.3.0`。
 - **插件页。** DSH 0.2.0 会把 Starter 的分组行列为已关闭的组件，见 [DSH 0.2.0 上的 bundle 组件列表](#dsh-020-上的-bundle-组件列表)。DSH 0.2.1 只列出各组件。
 
+这些路径在代码中的位置，以及 DSH 0.2.0 一侧何时可以移除，与其他兼容代码一起列在[兼容登记表](../development/compatibility-register.md)中。
+
 ## 桌面版窗口
 
 DSH 桌面版窗口从应用自己的 `dsh-app://app/` 地址加载，而不是回环地址。应用自己提供的页面（非 `http:` / `https:` 地址）使用 Mnemon 的本地通道；只有 DSH 为页面声明了不持有 Host 的传输方式时，才按远程页面处理。DSH 桌面版声明 `ownsHost: true`。从其他设备打开的页面继续经 API Gateway、默认只读，并在记忆系统与插件设置中写明需要 `remoteAccess: trusted-host` 与重启 DSH。本地通道与 `/api` 使用 DSH 相同的 Host/Origin 校验与浏览器会话认证。0.5.18 及更早版本在桌面窗口中显示的只读状态见 [DSH 0.1.7 上的桌面版窗口](#dsh-017-上的桌面版窗口)。
