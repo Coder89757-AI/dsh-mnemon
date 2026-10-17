@@ -46,6 +46,41 @@ describe('Mnemon storage-domain inventory', () => {
     ]))
   })
 
+  it('reads loose and damaged areas through each Source\'s own counting rules', () => {
+    const root = temporaryDirectory()
+    mkdirSync(join(root, 'runtime'), { recursive: true })
+    writeFileSync(join(root, 'runtime', 'memories.json'), JSON.stringify({ version: 1, entries: [{ target: 'user' }, { target: 'memory' }, 'loose', null, { target: 'other' }] }))
+    writeFileSync(join(root, 'runtime', 'USER.md'), 'profile\n')
+    mkdirSync(join(root, 'data', 'space-a'), { recursive: true })
+    writeFileSync(join(root, 'data', 'space-a', 'mnemon.db'), 'db')
+    mkdirSync(join(root, 'data', 'empty-dir'))
+    // A legacy version 2 registry: counted, and reported as not the current registry.
+    writeFileSync(join(root, 'data', '.dsh-memory-bodies.json'), JSON.stringify({ version: 2, bodies: [{ id: 'space-a', active: true }, { id: 'space-b' }, 'x'] }))
+    mkdirSync(join(root, 'documents'), { recursive: true })
+    writeFileSync(join(root, 'documents', 'index.json'), JSON.stringify({ documents: [{ status: 'active' }, 'x', { status: 'archived' }, { status: 'other' }] }))
+    mkdirSync(join(root, 'state'), { recursive: true })
+    writeFileSync(join(root, 'state', 'memory-providers.json'), JSON.stringify({ version: 4, services: { mem0: {}, honcho: {} }, bodies: [{}, {}, {}] }))
+    writeFileSync(join(root, 'state', 'review-ledger.json'), '[]')
+
+    const areas = new StorageScopeInspector({ effectiveDataDir: () => root }, { storageScope: 'custom', dataDir: root }).catalog().scopes.find(scope => scope.active)!.areas
+    expect(areas.map(({ bytes: _bytes, path: _path, ...area }) => area)).toEqual([
+      { kind: 'runtime', status: 'invalid', itemCount: 3, details: { userEntries: 1, memoryEntries: 1, projectionsHealthy: false, source: 'memories.json' }, issue: 'USER.md or MEMORY.md projection is missing' },
+      { kind: 'memory-bodies', status: 'invalid', itemCount: 2, details: { registeredBodies: 2, activeBodies: 1, databases: 1, registry: true }, issue: 'memory-space registry is invalid' },
+      { kind: 'documents', status: 'ready', itemCount: 3, details: { activeDocuments: 1, archivedDocuments: 1, index: 'index.json' } },
+      { kind: 'state', status: 'ready', itemCount: 2, details: { reviewLedger: true, providerServices: 2, providerConnections: 3, files: 2 } },
+    ])
+
+    writeFileSync(join(root, 'runtime', 'memories.json'), JSON.stringify({ version: 1 }))
+    writeFileSync(join(root, 'documents', 'index.json'), '{ broken')
+    writeFileSync(join(root, 'data', '.dsh-memory-bodies.json'), JSON.stringify([]))
+    writeFileSync(join(root, 'state', 'memory-providers.json'), '{ broken')
+    const damaged = new StorageScopeInspector({ effectiveDataDir: () => root }, { storageScope: 'custom', dataDir: root }).catalog().scopes.find(scope => scope.active)!.areas
+    expect(damaged[0]).toMatchObject({ status: 'invalid', itemCount: 0, details: {}, issue: 'memories.json is not a valid runtime-memory source' })
+    expect(damaged[1]).toMatchObject({ status: 'invalid', itemCount: 1, details: { registeredBodies: 0, activeBodies: 0, databases: 1, registry: true } })
+    expect(damaged[2]).toMatchObject({ status: 'invalid', itemCount: 0, details: {}, issue: expect.stringContaining('JSON') })
+    expect(damaged[3]).toMatchObject({ status: 'ready', details: { providerServices: 0, providerConnections: 0 } })
+  })
+
   it('shows all four storage modes as distinct scopes while marking only the configured one active', () => {
     const workspace = temporaryDirectory()
     const root = temporaryDirectory()

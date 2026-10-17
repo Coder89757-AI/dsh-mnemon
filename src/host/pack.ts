@@ -19,9 +19,20 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { strFromU8, strToU8, unzipSync, zipSync, type Unzipped, type Zippable } from 'fflate'
 import type { ResolvedConfig } from './config.ts'
-import { DOCUMENTS_ACTIVE_LIMIT_BYTES, DOCUMENTS_VERSION, type DocumentRecord } from 'dsh-mnemon-source-documents/contracts'
+import {
+  DOCUMENTS_ACTIVE_LIMIT_BYTES, DOCUMENTS_DIRECTORY, DOCUMENTS_INDEX_FILE, DOCUMENTS_LOCK_FILE, DOCUMENTS_LOCK_STALE_MS, DOCUMENT_FILENAME_PATTERN,
+  parseDocumentIndex, type DocumentIndex, type DocumentRecord,
+} from 'dsh-mnemon-source-documents/contracts'
+import {
+  MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY, MNEMON_ACTIVE_STORE_FILE,
+  parseMemorySpaceRegistry, type MemorySpaceRegistryEntry, type MemorySpaceRegistryFile,
+} from 'dsh-mnemon-source-memory-spaces/contracts'
 import { MemorySpaceIdentity } from 'dsh-mnemon-source-memory-spaces/space-identity'
-import { RUNTIME_ENTRY_DELIMITER, RUNTIME_MEMORY_LIMITS, RUNTIME_MEMORY_VERSION, parseRuntimeBranches, type RuntimeMemoryEntry, type RuntimeMemoryLimits, type RuntimeMemoryTarget } from 'dsh-mnemon-source-runtime/contracts'
+import {
+  RUNTIME_ARCHIVE_DIRECTORY, RUNTIME_DIRECTORY, RUNTIME_ENTRY_MAX_BYTES, RUNTIME_LOCK_FILE, RUNTIME_LOCK_STALE_MS, RUNTIME_MEMORIES_FILE,
+  RUNTIME_MEMORY_LIMITS, RUNTIME_MEMORY_VERSION, RUNTIME_PROJECTION_FILES,
+  parseRuntimeBranches, runtimeBytes, runtimeProjection, type RuntimeMemoryEntry, type RuntimeMemoryLimits, type RuntimeMemoryTarget,
+} from 'dsh-mnemon-source-runtime/contracts'
 import { createStorageRoot, type StorageRoot } from './storage-root.ts'
 import { MNEMON_PACK_COMPONENTS, type MnemonEntryOrigin, type MnemonMachineIdentity, type MnemonPackComponent, type MnemonPackComponentSummary, type MnemonPackExport, type MnemonPackImportMode, type MnemonPackImportResult, type MnemonPackManifest, type MnemonPackPreview, type MnemonPackScope, type MnemonPackTarget, type MnemonRuntimeMergeReport, type MnemonTombstone, type MnemonTombstoneFile } from "./protocol.ts"
 import { MnemonMachineStore } from './machine-identity.ts'
@@ -49,12 +60,24 @@ const MAX_FILES = 4096
 const LOCK_TIMEOUT_MS = 5_000
 const LOCK_STALE_MS = 30_000
 const LOCK_RETRY_MS = 20
-const COMPONENT_DIRECTORIES = { runtime: 'runtime', documents: 'documents', 'memory-spaces': 'data' } as const
-export const RUNTIME_MEMORIES_PATH = 'payload/runtime/memories.json'
+/**
+ * Each component's directory under the data directory, as its Source names it. A Pack carries a
+ * component's data files (memories and projections, the index and documents, the registry and
+ * stores, never a lock, the local archive or a write-ahead log) under `payload/` at the paths they
+ * have there, so these names and the Sources' file names spell the Pack's entries too;
+ * tests/pack-compat-0.5.24.spec.ts pins them to the entries 0.5.24 accepts.
+ */
+const COMPONENT_DIRECTORIES = { runtime: RUNTIME_DIRECTORY, documents: DOCUMENTS_DIRECTORY, 'memory-spaces': MEMORY_SPACES_DIRECTORY } as const
+export const RUNTIME_MEMORIES_PATH = `payload/${RUNTIME_DIRECTORY}/${RUNTIME_MEMORIES_FILE}`
+const RUNTIME_PROJECTION_PATHS = {
+  user: `payload/${RUNTIME_DIRECTORY}/${RUNTIME_PROJECTION_FILES.user}`,
+  memory: `payload/${RUNTIME_DIRECTORY}/${RUNTIME_PROJECTION_FILES.memory}`,
+} as const satisfies Record<RuntimeMemoryTarget, string>
+export const DOCUMENTS_INDEX_PATH = `payload/${DOCUMENTS_DIRECTORY}/${DOCUMENTS_INDEX_FILE}`
+const MEMORY_SPACE_REGISTRY_PATH = `payload/${MEMORY_SPACES_DIRECTORY}/${MEMORY_SPACE_REGISTRY_FILE}`
 const STATE_TOMBSTONE_FILE = 'tombstones.json'
 const STATE_RUNTIME_INDEX_FILE = 'runtime-index.json'
 const COMPONENT_ORDER = MNEMON_PACK_COMPONENTS
-const BODY_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
 /**
  * Every content hash this format writes is `sha256(...)` in hex, so one rule decides the shape.
  * The digest of a Runtime entry's text and the digest of a Document's body are the same kind of
@@ -84,25 +107,6 @@ type StoredRuntimeEntry = RuntimeMemoryEntry & { origin?: MnemonEntryOrigin }
 interface RuntimeFile {
   version: 1
   entries: StoredRuntimeEntry[]
-}
-
-interface DocumentIndex {
-  version: 1
-  documents: DocumentRecord[]
-}
-
-interface StoredBody {
-  id: string
-  name: string
-  description: string
-  active: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-interface BodyRegistry {
-  version: 1
-  bodies: StoredBody[]
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -138,11 +142,23 @@ function safeArchivePath(path: string): void {
   if (parts.some(part => part === '' || part === '.' || part === '..')) throw new Error(`unsafe Pack entry path: ${JSON.stringify(path)}`)
 }
 
+/** Where one component's files sit in a Pack; the sync channel compares a component's files by it. */
+export function payloadPrefix(component: MnemonPackComponent): string {
+  return `payload/${COMPONENT_DIRECTORIES[component]}/`
+}
+
+/** The path segments below a component's payload directory, or nothing for a path outside it. */
+function payloadSegments(path: string, component: MnemonPackComponent): string[] | undefined {
+  const prefix = payloadPrefix(component)
+  return path.startsWith(prefix) ? path.slice(prefix.length).split('/') : undefined
+}
+
+function databasePayloadPath(id: string): string {
+  return `${payloadPrefix('memory-spaces')}${id}/${MEMORY_SPACE_DATABASE_FILE}`
+}
+
 function payloadComponent(path: string): MnemonPackComponent | undefined {
-  if (path.startsWith('payload/runtime/')) return 'runtime'
-  if (path.startsWith('payload/documents/')) return 'documents'
-  if (path.startsWith('payload/data/')) return 'memory-spaces'
-  return undefined
+  return COMPONENT_ORDER.find(component => path.startsWith(payloadPrefix(component)))
 }
 
 /**
@@ -153,11 +169,13 @@ function payloadComponent(path: string): MnemonPackComponent | undefined {
  * machine identity) travels over the sync channel instead of inside an archive.
  */
 function allowedPayloadPath(path: string): boolean {
-  if (path === 'payload/runtime/memories.json' || path === 'payload/runtime/USER.md' || path === 'payload/runtime/MEMORY.md') return true
-  if (path === 'payload/documents/index.json') return true
-  if (/^payload\/documents\/(active|archived)\/[a-zA-Z0-9._-]+\.md$/u.test(path)) return true
-  if (path === 'payload/data/.dsh-memory-bodies.json') return true
-  return /^payload\/data\/[a-zA-Z0-9][a-zA-Z0-9_-]*\/mnemon\.db$/u.test(path)
+  if (path === RUNTIME_MEMORIES_PATH || path === RUNTIME_PROJECTION_PATHS.user || path === RUNTIME_PROJECTION_PATHS.memory) return true
+  if (path === DOCUMENTS_INDEX_PATH) return true
+  const document = payloadSegments(path, 'documents')
+  if (document?.length === 2 && (document[0] === 'active' || document[0] === 'archived') && DOCUMENT_FILENAME_PATTERN.test(document[1]!)) return true
+  if (path === MEMORY_SPACE_REGISTRY_PATH) return true
+  const space = payloadSegments(path, 'memory-spaces')
+  return space?.length === 2 && MEMORY_SPACE_ID_PATTERN.test(space[0]!) && space[1] === MEMORY_SPACE_DATABASE_FILE
 }
 
 function componentsForScope(scope: MnemonPackScope): MnemonPackComponent[] {
@@ -289,7 +307,7 @@ export function parseRuntime(value: unknown, limits: RuntimeMemoryLimits = RUNTI
     }
     if (typeof entry.created_at !== 'string' || typeof entry.updated_at !== 'string') throw new Error('runtime memories.json contains invalid timestamps')
     const content = entry.content.trim().replace(/\s+/gu, ' ')
-    if (content === '' || content.includes('§') || Buffer.byteLength(content, 'utf8') > 8 * 1024) throw new Error('runtime memories.json contains invalid content')
+    if (content === '' || content.includes('§') || Buffer.byteLength(content, 'utf8') > RUNTIME_ENTRY_MAX_BYTES) throw new Error('runtime memories.json contains invalid content')
     // A Pack carries provenance, not only text: the branch scope of a working-memory entry
     // and the machine that wrote it travel along. Each is read through its own rule, so a
     // malformed value from a damaged archive or another installation is dropped here instead
@@ -333,59 +351,8 @@ export function parseTombstones(value: unknown): MnemonTombstoneFile {
   return { version: 1, tombstones }
 }
 
-function runtimeBytes(entries: StoredRuntimeEntry[], target: RuntimeMemoryTarget): number {
-  return Buffer.byteLength(entries.filter(entry => entry.target === target).map(entry => entry.content).join(RUNTIME_ENTRY_DELIMITER), 'utf8')
-}
-
-function runtimeProjection(entries: StoredRuntimeEntry[], target: RuntimeMemoryTarget): string {
-  const content = entries.filter(entry => entry.target === target).map(entry => entry.content).join(RUNTIME_ENTRY_DELIMITER)
-  return content === '' ? '' : `${content}\n`
-}
-
-function parseDocumentIndex(value: unknown): DocumentIndex {
-  const index = record(value)
-  if (index?.version !== DOCUMENTS_VERSION || !Array.isArray(index.documents)) throw new Error('Documents index.json is invalid')
-  const ids = new Set<string>()
-  const documents = index.documents.map((raw): DocumentRecord => {
-    const item = record(raw)
-    if (typeof item?.id !== 'string' || item.id.trim() === '' || ids.has(item.id)) throw new Error('Documents index contains an invalid or duplicate id')
-    if (typeof item.title !== 'string' || typeof item.description !== 'string' || (item.status !== 'active' && item.status !== 'archived')) throw new Error('Documents index contains an invalid record')
-    if (typeof item.filename !== 'string' || basename(item.filename) !== item.filename || !/^[a-zA-Z0-9._-]+\.md$/u.test(item.filename)) throw new Error('Documents index contains an unsafe filename')
-    if (typeof item.createdAt !== 'string' || typeof item.updatedAt !== 'string' || typeof item.lastAccessedAt !== 'string' || !Number.isSafeInteger(item.revision) || typeof item.contentHash !== 'string' || !Number.isSafeInteger(item.sizeBytes)) throw new Error('Documents index contains invalid metadata')
-    if (!Array.isArray(item.sourcePaths) || !Array.isArray(item.sessionIds) || !Array.isArray(item.memoryBodyIds)) throw new Error('Documents index contains invalid lists')
-    ids.add(item.id)
-    return {
-      id: item.id, title: item.title, description: item.description, status: item.status, filename: item.filename,
-      relativePath: `documents/${item.status}/${item.filename}`,
-      sourcePaths: item.sourcePaths.filter((entry): entry is string => typeof entry === 'string'),
-      sessionIds: item.sessionIds.filter((entry): entry is string => typeof entry === 'string'),
-      createdAt: item.createdAt, updatedAt: item.updatedAt, lastAccessedAt: item.lastAccessedAt,
-      revision: Number(item.revision), contentHash: item.contentHash, sizeBytes: Number(item.sizeBytes),
-      ...(typeof item.archivedAt === 'string' ? { archivedAt: item.archivedAt } : {}),
-      ...(typeof item.archiveSummary === 'string' ? { archiveSummary: item.archiveSummary } : {}),
-      memoryBodyIds: item.memoryBodyIds.filter((entry): entry is string => typeof entry === 'string'),
-    }
-  })
-  return { version: 1, documents }
-}
-
-function parseRegistry(value: unknown): BodyRegistry {
-  const registry = record(value)
-  if (registry?.version !== 1 || !Array.isArray(registry.bodies)) throw new Error('Memory Space registry is invalid')
-  const ids = new Set<string>()
-  const bodies = registry.bodies.map((raw): StoredBody => {
-    const body = record(raw)
-    if (typeof body?.id !== 'string' || !BODY_ID.test(body.id) || ids.has(body.id)) throw new Error('Memory Space registry contains an invalid or duplicate id')
-    if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 100 || typeof body.description !== 'string' || body.description.length > 1000) throw new Error('Memory Space registry contains invalid metadata')
-    if (typeof body.createdAt !== 'string' || typeof body.updatedAt !== 'string') throw new Error('Memory Space registry contains invalid timestamps')
-    ids.add(body.id)
-    return { id: body.id, name: body.name, description: body.description, active: body.active === true, createdAt: body.createdAt, updatedAt: body.updatedAt }
-  })
-  return { version: 1, bodies }
-}
-
 function validDatabase(bytes: Uint8Array, path: string): void {
-  if (bytes.length < 100 || !Buffer.from(bytes.subarray(0, SQLITE_HEADER.length)).equals(SQLITE_HEADER)) throw new Error(`${path} is not a SQLite mnemon.db`)
+  if (bytes.length < 100 || !Buffer.from(bytes.subarray(0, SQLITE_HEADER.length)).equals(SQLITE_HEADER)) throw new Error(`${path} is not a SQLite ${MEMORY_SPACE_DATABASE_FILE}`)
 }
 
 /**
@@ -409,9 +376,9 @@ function assertDocumentPayload(document: DocumentRecord, bytes: Uint8Array): voi
 }
 
 function validatePackPayload(files: Record<string, Uint8Array>, components: MnemonPackComponent[], runtimeLimits: RuntimeMemoryLimits): void {
-  if (components.includes('runtime')) parseRuntime(json(files['payload/runtime/memories.json'] ?? new Uint8Array(), 'payload/runtime/memories.json'), runtimeLimits)
+  if (components.includes('runtime')) parseRuntime(json(files[RUNTIME_MEMORIES_PATH] ?? new Uint8Array(), RUNTIME_MEMORIES_PATH), runtimeLimits)
   if (components.includes('documents')) {
-    const index = parseDocumentIndex(json(files['payload/documents/index.json'] ?? new Uint8Array(), 'payload/documents/index.json'))
+    const index = parseDocumentIndex(json(files[DOCUMENTS_INDEX_PATH] ?? new Uint8Array(), DOCUMENTS_INDEX_PATH))
     for (const document of index.documents) {
       const bytes = files[`payload/${document.relativePath}`]
       if (bytes === undefined) throw new Error(`Documents payload is missing ${document.relativePath}`)
@@ -419,14 +386,17 @@ function validatePackPayload(files: Record<string, Uint8Array>, components: Mnem
     }
   }
   if (components.includes('memory-spaces')) {
-    const registry = parseRegistry(json(files['payload/data/.dsh-memory-bodies.json'] ?? new Uint8Array(), 'payload/data/.dsh-memory-bodies.json'))
+    const registry = parseMemorySpaceRegistry(json(files[MEMORY_SPACE_REGISTRY_PATH] ?? new Uint8Array(), MEMORY_SPACE_REGISTRY_PATH))
     for (const body of registry.bodies) {
-      const path = `payload/data/${body.id}/mnemon.db`
+      const path = databasePayloadPath(body.id)
       const database = files[path]
-      if (database === undefined) throw new Error(`Memory Space payload is missing ${body.id}/mnemon.db`)
+      if (database === undefined) throw new Error(`Memory Space payload is missing ${body.id}/${MEMORY_SPACE_DATABASE_FILE}`)
       validDatabase(database, path)
     }
-    const databases = Object.keys(files).filter(path => /^payload\/data\/[^/]+\/mnemon\.db$/u.test(path))
+    const databases = Object.keys(files).filter(path => {
+      const segments = payloadSegments(path, 'memory-spaces')
+      return segments?.length === 2 && segments[0] !== '' && segments[1] === MEMORY_SPACE_DATABASE_FILE
+    })
     if (databases.length !== registry.bodies.length) throw new Error('Memory Space registry does not match the database payload')
   }
 }
@@ -435,7 +405,8 @@ function sleepSync(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
 }
 
-function acquireLock(path: string): () => void {
+/** `staleMs` is the owner's rule for an abandoned lock: a Source's lock is taken over only when that Source would take it over. */
+function acquireLock(path: string, staleMs: number): () => void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   const deadline = Date.now() + LOCK_TIMEOUT_MS
   let descriptor: number | undefined
@@ -444,7 +415,7 @@ function acquireLock(path: string): () => void {
       descriptor = openSync(path, 'wx', 0o600)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      try { if (Date.now() - statSync(path).mtimeMs > LOCK_STALE_MS) rmSync(path, { force: true }) } catch {}
+      try { if (Date.now() - statSync(path).mtimeMs > staleMs) rmSync(path, { force: true }) } catch {}
       if (Date.now() >= deadline) throw new Error(`timed out waiting for Pack component lock: ${path}`)
       sleepSync(LOCK_RETRY_MS)
     }
@@ -462,13 +433,22 @@ function acquireLock(path: string): () => void {
   }
 }
 
+/**
+ * The lock each Source's controller holds while it writes, so a copy never sees a component half
+ * written, always in this order whatever order the components are listed in.
+ */
+function sourceLocks(root: string, components: readonly MnemonPackComponent[]): Array<{ path: string; staleMs: number }> {
+  const locks: Array<{ path: string; staleMs: number }> = []
+  if (components.includes('runtime')) locks.push({ path: join(root, RUNTIME_DIRECTORY, RUNTIME_LOCK_FILE), staleMs: RUNTIME_LOCK_STALE_MS })
+  if (components.includes('documents')) locks.push({ path: join(root, DOCUMENTS_DIRECTORY, DOCUMENTS_LOCK_FILE), staleMs: DOCUMENTS_LOCK_STALE_MS })
+  return locks
+}
+
 function withLocks<T>(root: string, components: MnemonPackComponent[], operation: () => T): T {
-  const paths = [join(root, '.dsh-pack.lock')]
-  if (components.includes('runtime')) paths.push(join(root, 'runtime', '.memories.lock'))
-  if (components.includes('documents')) paths.push(join(root, 'documents', '.index.lock'))
+  const locks = [{ path: join(root, '.dsh-pack.lock'), staleMs: LOCK_STALE_MS }, ...sourceLocks(root, components)]
   const releases: Array<() => void> = []
   try {
-    for (const path of paths) releases.push(acquireLock(path))
+    for (const lock of locks) releases.push(acquireLock(lock.path, lock.staleMs))
     return operation()
   } finally {
     for (const release of releases.reverse()) release()
@@ -491,7 +471,7 @@ function emptyRuntime(): RuntimeFile {
 }
 
 function readCurrentRuntime(root: string, limits: RuntimeMemoryLimits = RUNTIME_MEMORY_LIMITS): RuntimeFile {
-  const path = join(root, 'runtime', 'memories.json')
+  const path = join(root, RUNTIME_DIRECTORY, RUNTIME_MEMORIES_FILE)
   return existsSync(path) ? parseRuntime(JSON.parse(readFileSync(path, 'utf8')) as unknown, limits) : emptyRuntime()
 }
 
@@ -513,18 +493,18 @@ function keepRuntimeArchive(root: string, stagedRuntime: string): void {
       for (const name of readdirSync(from)) copy(join(from, name), join(to, name))
     }
   }
-  copy(join(root, 'runtime', 'archived'), join(stagedRuntime, 'archived'))
+  copy(join(root, RUNTIME_DIRECTORY, RUNTIME_ARCHIVE_DIRECTORY), join(stagedRuntime, RUNTIME_ARCHIVE_DIRECTORY))
 }
 
 function writeRuntime(directory: string, file: RuntimeFile): void {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
-  writeFileSync(join(directory, 'memories.json'), `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 })
-  writeFileSync(join(directory, 'USER.md'), runtimeProjection(file.entries, 'user'), { mode: 0o600 })
-  writeFileSync(join(directory, 'MEMORY.md'), runtimeProjection(file.entries, 'memory'), { mode: 0o600 })
+  writeFileSync(join(directory, RUNTIME_MEMORIES_FILE), `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 })
+  writeFileSync(join(directory, RUNTIME_PROJECTION_FILES.user), runtimeProjection(file.entries, 'user'), { mode: 0o600 })
+  writeFileSync(join(directory, RUNTIME_PROJECTION_FILES.memory), runtimeProjection(file.entries, 'memory'), { mode: 0o600 })
 }
 
 function readCurrentDocuments(root: string): { index: DocumentIndex; files: Map<string, Uint8Array> } {
-  const indexPath = join(root, 'documents', 'index.json')
+  const indexPath = join(root, DOCUMENTS_DIRECTORY, DOCUMENTS_INDEX_FILE)
   const index = existsSync(indexPath) ? parseDocumentIndex(JSON.parse(readFileSync(indexPath, 'utf8')) as unknown) : { version: 1 as const, documents: [] }
   const files = new Map<string, Uint8Array>()
   for (const document of index.documents) {
@@ -543,11 +523,11 @@ function writeDocuments(directory: string, index: DocumentIndex, files: Map<stri
     if (bytes === undefined) throw new Error(`Documents staging is missing ${document.id}`)
     writeFileSync(join(directory, document.status, document.filename), bytes, { mode: 0o600 })
   }
-  writeFileSync(join(directory, 'index.json'), `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 })
+  writeFileSync(join(directory, DOCUMENTS_INDEX_FILE), `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 })
 }
 
 function archiveDocuments(pack: ParsedPack): { index: DocumentIndex; files: Map<string, Uint8Array> } {
-  const index = parseDocumentIndex(json(pack.files['payload/documents/index.json']!, 'payload/documents/index.json'))
+  const index = parseDocumentIndex(json(pack.files[DOCUMENTS_INDEX_PATH]!, DOCUMENTS_INDEX_PATH))
   return { index, files: new Map(index.documents.map(document => [document.id, pack.files[`payload/${document.relativePath}`]!])) }
 }
 
@@ -557,25 +537,25 @@ function remapDocument(document: DocumentRecord, bytes: Uint8Array, id: string):
   const markdown = utf8(bytes, document.filename).replace(/^id:\s*.*$/mu, `id: ${JSON.stringify(id)}`)
   const output = strToU8(markdown)
   return {
-    document: { ...document, id, filename, relativePath: `documents/${document.status}/${filename}`, sizeBytes: output.length },
+    document: { ...document, id, filename, relativePath: `${DOCUMENTS_DIRECTORY}/${document.status}/${filename}`, sizeBytes: output.length },
     bytes: output,
   }
 }
 
-function readCurrentRegistry(root: string): { registry: BodyRegistry; databases: Map<string, Uint8Array> } {
-  const data = join(root, 'data')
+function readCurrentRegistry(root: string): { registry: MemorySpaceRegistryFile; databases: Map<string, Uint8Array> } {
+  const data = join(root, MEMORY_SPACES_DIRECTORY)
   if (!existsSync(data)) return { registry: { version: 1, bodies: [] }, databases: new Map() }
-  const discovered = readdirSync(data, { withFileTypes: true }).filter(entry => entry.isDirectory() && BODY_ID.test(entry.name) && existsSync(join(data, entry.name, 'mnemon.db'))).map(entry => entry.name)
-  const registryPath = join(data, '.dsh-memory-bodies.json')
-  const existing = existsSync(registryPath) ? parseRegistry(JSON.parse(readFileSync(registryPath, 'utf8')) as unknown) : { version: 1 as const, bodies: [] }
+  const discovered = readdirSync(data, { withFileTypes: true }).filter(entry => entry.isDirectory() && MEMORY_SPACE_ID_PATTERN.test(entry.name) && existsSync(join(data, entry.name, MEMORY_SPACE_DATABASE_FILE))).map(entry => entry.name)
+  const registryPath = join(data, MEMORY_SPACE_REGISTRY_FILE)
+  const existing = existsSync(registryPath) ? parseMemorySpaceRegistry(JSON.parse(readFileSync(registryPath, 'utf8')) as unknown) : { version: 1 as const, bodies: [] }
   const byId = new Map(existing.bodies.map(body => [body.id, body]))
   const timestamp = new Date().toISOString()
   const bodies = discovered.map(id => byId.get(id) ?? { id, name: id, description: 'Existing Mnemon Store discovered on disk.', active: false, createdAt: timestamp, updatedAt: timestamp })
   const databases = new Map<string, Uint8Array>()
   for (const body of bodies) {
-    const path = join(data, body.id, 'mnemon.db')
+    const path = join(data, body.id, MEMORY_SPACE_DATABASE_FILE)
     const wal = `${path}-wal`
-    if (existsSync(wal) && statSync(wal).size > 0) throw new Error(`Memory Space ${body.id} is busy (mnemon.db-wal is not checkpointed); retry after writes settle`)
+    if (existsSync(wal) && statSync(wal).size > 0) throw new Error(`Memory Space ${body.id} is busy (${MEMORY_SPACE_DATABASE_FILE}-wal is not checkpointed); retry after writes settle`)
     const bytes = sourceBytes(path)
     validDatabase(bytes, path)
     databases.set(body.id, bytes)
@@ -583,32 +563,32 @@ function readCurrentRegistry(root: string): { registry: BodyRegistry; databases:
   return { registry: { version: 1, bodies }, databases }
 }
 
-function archiveRegistry(pack: ParsedPack): { registry: BodyRegistry; databases: Map<string, Uint8Array> } {
-  const registry = parseRegistry(json(pack.files['payload/data/.dsh-memory-bodies.json']!, 'payload/data/.dsh-memory-bodies.json'))
-  return { registry, databases: new Map(registry.bodies.map(body => [body.id, pack.files[`payload/data/${body.id}/mnemon.db`]!])) }
+function archiveRegistry(pack: ParsedPack): { registry: MemorySpaceRegistryFile; databases: Map<string, Uint8Array> } {
+  const registry = parseMemorySpaceRegistry(json(pack.files[MEMORY_SPACE_REGISTRY_PATH]!, MEMORY_SPACE_REGISTRY_PATH))
+  return { registry, databases: new Map(registry.bodies.map(body => [body.id, pack.files[databasePayloadPath(body.id)]!])) }
 }
 
-function writeRegistry(directory: string, registry: BodyRegistry, databases: Map<string, Uint8Array>): void {
+function writeRegistry(directory: string, registry: MemorySpaceRegistryFile, databases: Map<string, Uint8Array>): void {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   for (const body of registry.bodies) {
     const bytes = databases.get(body.id)
-    if (bytes === undefined) throw new Error(`Memory Space staging is missing ${body.id}/mnemon.db`)
+    if (bytes === undefined) throw new Error(`Memory Space staging is missing ${body.id}/${MEMORY_SPACE_DATABASE_FILE}`)
     const bodyDirectory = join(directory, body.id)
     mkdirSync(bodyDirectory, { recursive: true, mode: 0o700 })
-    writeFileSync(join(bodyDirectory, 'mnemon.db'), bytes, { mode: 0o600 })
+    writeFileSync(join(bodyDirectory, MEMORY_SPACE_DATABASE_FILE), bytes, { mode: 0o600 })
   }
-  writeFileSync(join(directory, '.dsh-memory-bodies.json'), `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 })
+  writeFileSync(join(directory, MEMORY_SPACE_REGISTRY_FILE), `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 })
 }
 
 function componentItems(component: MnemonPackComponent, files: Record<string, Uint8Array>, runtimeLimits: RuntimeMemoryLimits = RUNTIME_MEMORY_LIMITS): number {
-  if (component === 'runtime') return parseRuntime(json(files['payload/runtime/memories.json']!, 'payload/runtime/memories.json'), runtimeLimits).entries.length
-  if (component === 'documents') return parseDocumentIndex(json(files['payload/documents/index.json']!, 'payload/documents/index.json')).documents.length
-  return parseRegistry(json(files['payload/data/.dsh-memory-bodies.json']!, 'payload/data/.dsh-memory-bodies.json')).bodies.length
+  if (component === 'runtime') return parseRuntime(json(files[RUNTIME_MEMORIES_PATH]!, RUNTIME_MEMORIES_PATH), runtimeLimits).entries.length
+  if (component === 'documents') return parseDocumentIndex(json(files[DOCUMENTS_INDEX_PATH]!, DOCUMENTS_INDEX_PATH)).documents.length
+  return parseMemorySpaceRegistry(json(files[MEMORY_SPACE_REGISTRY_PATH]!, MEMORY_SPACE_REGISTRY_PATH)).bodies.length
 }
 
 function summaryFor(components: MnemonPackComponent[], files: Record<string, Uint8Array>, runtimeLimits: RuntimeMemoryLimits = RUNTIME_MEMORY_LIMITS): MnemonPackComponentSummary[] {
   return components.map(component => {
-    const prefix = `payload/${COMPONENT_DIRECTORIES[component]}/`
+    const prefix = payloadPrefix(component)
     const entries = Object.entries(files).filter(([path]) => path.startsWith(prefix))
     return { component, files: entries.length, bytes: entries.reduce((sum, [, value]) => sum + value.length, 0), items: componentItems(component, files, runtimeLimits) }
   })
@@ -633,18 +613,18 @@ function collectExport(root: string, components: MnemonPackComponent[], runtimeL
     const entries = stamp === undefined ? runtime.entries : stampedEntries(runtime.entries, stamp.machine)
     if (stamp !== undefined) advanceTombstones(root, runtime.entries, stamp.machine, stamp.at)
     files[RUNTIME_MEMORIES_PATH] = strToU8(`${JSON.stringify({ ...runtime, entries }, null, 2)}\n`)
-    files['payload/runtime/USER.md'] = strToU8(runtimeProjection(entries, 'user'))
-    files['payload/runtime/MEMORY.md'] = strToU8(runtimeProjection(entries, 'memory'))
+    files[RUNTIME_PROJECTION_PATHS.user] = strToU8(runtimeProjection(entries, 'user'))
+    files[RUNTIME_PROJECTION_PATHS.memory] = strToU8(runtimeProjection(entries, 'memory'))
   }
   if (components.includes('documents')) {
     const current = readCurrentDocuments(root)
-    files['payload/documents/index.json'] = strToU8(`${JSON.stringify(current.index, null, 2)}\n`)
+    files[DOCUMENTS_INDEX_PATH] = strToU8(`${JSON.stringify(current.index, null, 2)}\n`)
     for (const document of current.index.documents) files[`payload/${document.relativePath}`] = current.files.get(document.id)!
   }
   if (components.includes('memory-spaces')) {
     const current = readCurrentRegistry(root)
-    files['payload/data/.dsh-memory-bodies.json'] = strToU8(`${JSON.stringify(current.registry, null, 2)}\n`)
-    for (const body of current.registry.bodies) files[`payload/data/${body.id}/mnemon.db`] = current.databases.get(body.id)!
+    files[MEMORY_SPACE_REGISTRY_PATH] = strToU8(`${JSON.stringify(current.registry, null, 2)}\n`)
+    for (const body of current.registry.bodies) files[databasePayloadPath(body.id)] = current.databases.get(body.id)!
   }
   return files
 }
@@ -780,7 +760,7 @@ type RuntimeMergeReport = MnemonRuntimeMergeReport
  */
 function mergeRuntime(root: string, pack: ParsedPack, runtimeLimits: RuntimeMemoryLimits, options: { revive?: boolean; tombstones?: MnemonTombstoneFile } = {}): { runtime: RuntimeFile; report: RuntimeMergeReport; revived: MnemonTombstone[] } {
   const current = readCurrentRuntime(root, runtimeLimits)
-  const incoming = parseRuntime(json(pack.files['payload/runtime/memories.json']!, 'payload/runtime/memories.json'), runtimeLimits)
+  const incoming = parseRuntime(json(pack.files[RUNTIME_MEMORIES_PATH]!, RUNTIME_MEMORIES_PATH), runtimeLimits)
   const tombstones = options.tombstones === undefined ? undefined : mergeTombstoneFiles(readCurrentTombstones(root), options.tombstones).tombstones
   const entries = tombstones === undefined ? [...current.entries] : current.entries.filter(entry => !tombstones.some(tombstone => tombstoneCovers(tombstone, entry)))
   // What is present is what survives this machine's own deletions. Keying the merge off the
@@ -849,10 +829,10 @@ function sameDocument(left: DocumentRecord, right: DocumentRecord): boolean {
 
 /** Each document's version in one payload, by id, or nothing when the payload holds no valid Documents index. */
 export function documentVersions(files: Readonly<Record<string, Uint8Array>>): Record<string, string> | undefined {
-  const bytes = files['payload/documents/index.json']
+  const bytes = files[DOCUMENTS_INDEX_PATH]
   if (bytes === undefined) return undefined
   try {
-    return Object.fromEntries(parseDocumentIndex(json(bytes, 'payload/documents/index.json')).documents.map(document => [document.id, documentVersion(document)]))
+    return Object.fromEntries(parseDocumentIndex(json(bytes, DOCUMENTS_INDEX_PATH)).documents.map(document => [document.id, documentVersion(document)]))
   } catch {
     return undefined
   }
@@ -917,7 +897,7 @@ function mergeDocuments(root: string, pack: ParsedPack, base?: Readonly<Record<s
   return current
 }
 
-function mergeRegistry(root: string, pack: ParsedPack): { registry: BodyRegistry; databases: Map<string, Uint8Array> } {
+function mergeRegistry(root: string, pack: ParsedPack): { registry: MemorySpaceRegistryFile; databases: Map<string, Uint8Array> } {
   const current = readCurrentRegistry(root)
   const incoming = archiveRegistry(pack)
   const ids = new Set(current.registry.bodies.map(body => body.id))
@@ -927,9 +907,9 @@ function mergeRegistry(root: string, pack: ParsedPack): { registry: BodyRegistry
   try {
     const covers = (outer: Uint8Array, inner: Uint8Array): boolean => identity.of(outer) === identity.of(inner) || identity.contains(outer, inner)
     // Whether a space held here that `accept` admits already holds every memory of `database`.
-    const held = (database: Uint8Array, accept: (body: StoredBody) => boolean): boolean =>
+    const held = (database: Uint8Array, accept: (body: MemorySpaceRegistryEntry) => boolean): boolean =>
       current.registry.bodies.some(body => accept(body) && covers(current.databases.get(body.id)!, database))
-    const add = (body: StoredBody, database: Uint8Array): void => {
+    const add = (body: MemorySpaceRegistryEntry, database: Uint8Array): void => {
       ids.add(body.id)
       current.registry.bodies.push(body)
       current.databases.set(body.id, database)
@@ -974,8 +954,8 @@ function mergeRegistry(root: string, pack: ParsedPack): { registry: BodyRegistry
 
 function persistedStore(root: string): string {
   try {
-    const value = readFileSync(join(root, 'active'), 'utf8').trim()
-    if (BODY_ID.test(value)) return value
+    const value = readFileSync(join(root, MNEMON_ACTIVE_STORE_FILE), 'utf8').trim()
+    if (MEMORY_SPACE_ID_PATTERN.test(value)) return value
   } catch {}
   return 'default'
 }
@@ -991,7 +971,7 @@ function reconcilePersistedStore(root: string): void {
   const temporary = join(root, `.active-${process.pid}-${randomUUID()}.tmp`)
   try {
     writeFileSync(temporary, `${replacement}\n`, { mode: 0o600 })
-    renameSync(temporary, join(root, 'active'))
+    renameSync(temporary, join(root, MNEMON_ACTIVE_STORE_FILE))
   } finally {
     rmSync(temporary, { force: true })
   }
@@ -1005,8 +985,8 @@ function stageImport(root: string, pack: ParsedPack, components: MnemonPackCompo
     let revived: MnemonTombstone[] = []
     if (components.includes('runtime')) {
       const merged = mode === 'merge' ? mergeRuntime(root, pack, runtimeLimits, options) : undefined
-      const runtime = merged === undefined ? parseRuntime(json(pack.files['payload/runtime/memories.json']!, 'payload/runtime/memories.json'), runtimeLimits) : merged.runtime
-      writeRuntime(join(staging, 'runtime'), runtime)
+      const runtime = merged === undefined ? parseRuntime(json(pack.files[RUNTIME_MEMORIES_PATH]!, RUNTIME_MEMORIES_PATH), runtimeLimits) : merged.runtime
+      writeRuntime(join(staging, RUNTIME_DIRECTORY), runtime)
       // A ZIP carries no removal ledger, and a safe import must not touch the one this
       // machine keeps: without a ledger there is nothing to write and nothing to swap.
       if (options.tombstones !== undefined) {
@@ -1026,18 +1006,18 @@ function stageImport(root: string, pack: ParsedPack, components: MnemonPackCompo
         report = merged.report
         revived = merged.revived
       }
-      keepRuntimeArchive(root, join(staging, 'runtime'))
+      keepRuntimeArchive(root, join(staging, RUNTIME_DIRECTORY))
     }
     if (components.includes('documents')) {
       const documents = mode === 'merge' ? mergeDocuments(root, pack, options.documentsBase) : archiveDocuments(pack)
-      writeDocuments(join(staging, 'documents'), documents.index, documents.files)
+      writeDocuments(join(staging, DOCUMENTS_DIRECTORY), documents.index, documents.files)
     }
     if (components.includes('memory-spaces')) {
       const memory = mode === 'merge' ? mergeRegistry(root, pack) : archiveRegistry(pack)
       if (mode === 'replace' && readCurrentRegistry(root).registry.bodies.length > 0 && memory.registry.bodies.length === 0) {
         throw new Error('cannot replace the last Mnemon Store with an empty Memory Space set')
       }
-      writeRegistry(join(staging, 'data'), memory.registry, memory.databases)
+      writeRegistry(join(staging, MEMORY_SPACES_DIRECTORY), memory.registry, memory.databases)
     }
     return { staging, report, revived }
   } catch (error) {
@@ -1050,10 +1030,10 @@ function commitStaging(root: string, staging: string, components: MnemonPackComp
   const backup = join(root, `.dsh-pack-backup-${randomUUID()}`)
   mkdirSync(backup, { recursive: true, mode: 0o700 })
   const committed: Array<{ directory: string; hadPrevious: boolean }> = []
-  const replacementLocks = components.flatMap(component => component === 'runtime'
-    ? [join(staging, 'runtime', '.memories.lock')]
-    : component === 'documents' ? [join(staging, 'documents', '.index.lock')] : [])
-  const activePath = join(root, 'active')
+  // The Sources' locks are written into the staged directories, so the directories that replace
+  // the current ones arrive already locked and no Source writes between the swap and the release.
+  const replacementLocks = sourceLocks(staging, components).map(lock => lock.path)
+  const activePath = join(root, MNEMON_ACTIVE_STORE_FILE)
   const previousActive = existsSync(activePath) ? readFileSync(activePath) : undefined
   let tombstoneSwap: { hadPrevious: boolean } | undefined
   try {
@@ -1087,8 +1067,7 @@ function commitStaging(root: string, staging: string, components: MnemonPackComp
       tombstoneSwap = { hadPrevious }
     }
     if (components.includes('memory-spaces')) reconcilePersistedStore(root)
-    if (components.includes('runtime')) rmSync(join(root, 'runtime', '.memories.lock'), { force: true })
-    if (components.includes('documents')) rmSync(join(root, 'documents', '.index.lock'), { force: true })
+    for (const lock of sourceLocks(root, components)) rmSync(lock.path, { force: true })
   } catch (error) {
     for (const entry of committed.reverse()) {
       const target = join(root, entry.directory)
