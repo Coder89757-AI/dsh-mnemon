@@ -109,9 +109,9 @@ mnemon:
 | `recallQuality.maxMediumResults` | `4` | 0–50 | Maximum medium-relevance rows admitted by `strict-v1` after all high-relevance rows |
 | `recallQuality.maxUnknownResults` | `2` | 0–50 | Maximum unscored or unknown-scale rows admitted by `strict-v1` after scored evidence |
 | `routingGuidance` | `true` | boolean | Whether to register an additional tiered-routing system section |
-| `lifecycleEnabled` | `true` | boolean | Whether to enable the pre-step cue and score-based background review |
+| `lifecycleEnabled` | `true` | boolean | Whether to enable the pre-step cue and score-based idle review |
 | `recallMode` | `guided` | `guided` / `off` | Whether to inject one durable on-demand recall cue per session; does not remove explicit recall |
-| `writebackMode` | `guided` | `guided` / `off` | Whether to inject one durable hot-memory cue per session and enable scored, dirty-admitted background review; does not remove explicit writes |
+| `writebackMode` | `guided` | `guided` / `off` | Whether to inject one durable hot-memory cue per session and enable scored, dirty-admitted idle review; does not remove explicit writes |
 | `idleReviewMs` | `30000` | 5000–600000 ms | Required continuous idle time after the threshold is reached |
 | `idleReview.enabled` | `true` | boolean | Independent automatic-review switch |
 | `idleReview.runtimeMemory` | `true` | boolean | Lets review change runtime memory (USER.md and MEMORY.md); `false` limits it to creating Documents |
@@ -336,7 +336,7 @@ Regular workers prefer `spawn`. If no provider has that name, another provider t
 - on DSH 0.2.0, the provider takes both in the start request (`toolFilter` and `persona`);
 - on DSH 0.2.1, where no provider takes either, it must be one whose children DSH creates in this process, as its spawn and fork are, so that Mnemon composes the child itself; see [DSH 0.2.0 and 0.2.1](./compatibility.md#dsh-020-and-021).
 
-Background review defaults to a non-inheriting `spawn` provider and an explicit, bounded checkpoint from the parent's current public surface. It includes whole visible text messages and successful tool results; omitted or unavailable context is not reconstructed. `idleReview.provider: fork` retains full-parent-context review and requires `inheritsParentContext=true`. If fork is missing or incompatible, `idleReview.fallback` chooses `spawn` or `skip` before startup. A started run is never retried through another provider.
+Idle review defaults to a non-inheriting `spawn` provider and an explicit, bounded checkpoint from the parent's current public surface. It includes whole visible text messages and successful tool results; omitted or unavailable context is not reconstructed. `idleReview.provider: fork` retains full-parent-context review and requires `inheritsParentContext=true`. If fork is missing or incompatible, `idleReview.fallback` chooses `spawn` or `skip` before startup. A started run is never retried through another provider.
 
 Review requires local child publication, `agents.isOwnedBy`, and `agent.ctx.tools.guard`; the guard also blocks unrelated own-scope plugin tools and Code Mode subcalls. `maxContextChars` bounds the spawn checkpoint, while `maxTokens` limits each model response, not the inherited fork input or total multi-step usage.
 
@@ -346,7 +346,7 @@ Review requires local child publication, `agents.isOwnedBy`, and `agent.ctx.tool
 
 **Agent Teams compatibility:** `idleReview.agentTeams: pause` remains the default for existing profiles. It pauses before child creation when both the public `agentTeams` service and parent-scoped `spawn_teammate` tool are present. TeamService alone does not pause review.
 
-With the official Agent Teams components of either supported DSH release, select **Scoped child review** under Idle review on the Layered strategy's page (**Plugins → dsh-mnemon**), or set `idleReview.agentTeams: scoped`. That published Team policy supports both bounded spawn and explicit fork. The opt-in retains parent ownership checks, local child publication, `maxDepth: 1`, and the monotonic review-tool allowlist, including Code Mode dispatch. Team tools and further delegation stay denied to the reviewer; the parent keeps Teams. No package-version guess or other plugin policy removal is used. Missing guard/ownership support or a policy error fails the run without fallback replay. Keep `pause` to leave review off while Team tools are installed, or use `idleReview.enabled: false` to disable only review while keeping Teams, recall and explicit writes.
+With the official Agent Teams components of either supported DSH release, select **Scoped task Agent review** under Idle review on the Layered strategy's page (**Plugins → dsh-mnemon**), or set `idleReview.agentTeams: scoped`. That published Team policy supports both bounded spawn and explicit fork. The opt-in retains parent ownership checks, local child publication, `maxDepth: 1`, and the monotonic review-tool allowlist, including Code Mode dispatch. Team tools and further delegation stay denied to the reviewer; the parent keeps Teams. No package-version guess or other plugin policy removal is used. Missing guard/ownership support or a policy error fails the run without fallback replay. Keep `pause` to leave review off while Team tools are installed, or use `idleReview.enabled: false` to disable only review while keeping Teams, recall and explicit writes.
 
 Bounded spawn reads live-user evidence from the public flat `user/message` event payload. It includes only whole visible messages before the completed checkpoint; injected recall, summaries and messages without a live-user source are not promoted to user assertions. This preserves explicit decisions and no-write instructions within the configured character budget.
 

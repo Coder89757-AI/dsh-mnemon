@@ -155,9 +155,9 @@ Runtime 写入范围回归使用 `MNEMON_CLI_PATH=/absolute/path/to/mnemon pnpm 
 `pnpm e2e:serve --strict-template` 复现 [#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327)。回环模型的行为与 Ollama 0.33 运行“要求用户查询的聊天模板”时一致：
 - 保留系统提示，以及其余消息中能放进窗口的最长后缀，并总是保留最后一条消息；
 - 截断后没有用户文本消息时返回 500 `no user query found in messages`；
-- 窗口在后台审查发出第 3 次请求时确定。
+- 窗口在空闲审查发出第 3 次请求时确定。
 
-连续发送两个至少 150 字符的用户回合，再等待五秒。修复后，第 4 次审查请求被拒一次，随即带着用户消息重试，审查会创建档案“Review checkpoint storage”，状态页没有审查失败；未修复的构建则在状态页显示后台审查失败，并列出已提交的档案回执。夹具以 `Strict template:` 行输出每次审查请求。与生产默认值的差别只有后台审查的时间设置（5 秒、每会话一次）。详见[双语复现与证据](../../pr-assets/issue-327-subagent-user-turn/README.zh-CN.md)。
+连续发送两个至少 150 字符的用户回合，再等待五秒。修复后，第 4 次审查请求被拒一次，随即带着用户消息重试，审查会创建档案“Review checkpoint storage”，状态页没有审查失败；未修复的构建则在状态页显示空闲审查失败，并列出已提交的档案回执。夹具以 `Strict template:` 行输出每次审查请求。与生产默认值的差别只有空闲审查的时间设置（5 秒、每会话一次）。详见[双语复现与证据](../../pr-assets/issue-327-subagent-user-turn/README.zh-CN.md)。
 
 `pnpm e2e:serve --general-strategy` 启动时已选中通用策略，并停用分层策略。先发送 `general-strategy-check remember`，下一回合再发送 `general-strategy-check recall`。脚本模型检查系统提示中包含通用记忆协议，且 Runtime、项目档案和记忆空间三个 Source 均已接入；随后通过具名 Runtime 工具保存一条事实，并且只有当这条事实以常驻记忆投影出现时，第二回合才答出它。夹具以 `General strategy:` 行输出每项检查。只有模型决策是脚本化的；策略、其 View、Runtime 写入和浏览器均为真实运行。
 
