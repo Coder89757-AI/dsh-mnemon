@@ -112,11 +112,11 @@ Documents hold complete narratives: designs, investigations, procedures and hand
 - Archiving indexes the document in a memory space before moving the original, so the cold copy stays findable. The destination must be active and support exact writes and safe forget. With no such memory space at all, the document is archived locally without an index and stays readable under **Archived**.
 
 <details>
-<summary>Archiving and background review details</summary>
+<summary>Archiving and idle review details</summary>
 
 When a memory space can take the index, for an explicit archive or capacity maintenance, an independent task Agent without memory tools proposes a summary and one eligible memory space. A local archive needs no task Agent: the Host moves the original and notes why there is no index. The Host validates it, adds the exact cold path and content hash, writes the index and records lineage before moving the original. An invalid proposal changes nothing. If the move fails, the Host removes only the index it just created; existing verified indexes are reused and never deleted. If cleanup fails or the Provider outcome is uncertain, inspect the reported destination before retrying.
 
-Background review never edits existing documents. It searches first, skips what is covered, and creates a separate supplementary document only for substantial new knowledge; with no capacity left, it skips creation. It reuses evidence already in the finished conversation and cannot reopen files.
+Idle review never edits existing documents. It searches first, skips what is covered, and creates a separate supplementary document only for substantial new knowledge; with no capacity left, it skips creation. It reuses evidence already in the finished conversation and cannot reopen files.
 
 </details>
 

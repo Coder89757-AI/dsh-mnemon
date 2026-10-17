@@ -117,9 +117,9 @@ describe('MnemonSettingsCard', () => {
     const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: {}, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
     render(threeTier(scope))
     // A choice applies when made, writing the idle review with only what changed.
-    choose('Agent Teams 兼容模式', '受限子代理审查')
+    choose('Agent Teams 兼容模式', '受限任务 Agent 审查')
     await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['idleReview'], value: { agentTeams: 'scoped' } }]))
-    expect(selector('Agent Teams 兼容模式').textContent).toBe('受限子代理审查')
+    expect(selector('Agent Teams 兼容模式').textContent).toBe('受限任务 Agent 审查')
     // The limits are typed: Apply appears once one changes and refuses what the Host would.
     expect(screen.queryByRole('button', { name: '应用' })).toBeNull()
     expect((screen.getByRole('spinbutton', { name: '最小审查间隔（秒）' }) as HTMLInputElement).value).toBe('300')
@@ -157,7 +157,7 @@ describe('MnemonSettingsCard', () => {
     const scope = settingsScope(snapshot)
     render(threeTier(scope, undefined, { language: 'en' }, translateEn))
     const choice = selector('Agent Teams compatibility')
-    expect(choice.textContent).toBe('Scoped child review')
+    expect(choice.textContent).toBe('Scoped task Agent review')
     expect(choice.disabled).toBe(true)
     expect(scope.mutate).not.toHaveBeenCalled()
   })

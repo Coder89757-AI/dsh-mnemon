@@ -28,7 +28,7 @@ turn/start
   -> append the changed Wake as this plugin's own complete snapshot message
 
 agent/pre-step(step=1)
-  -> cancel pending/running background review for a new turn
+  -> cancel pending/running idle review for a new turn
   -> mark Prime once
   -> append at most one short recall/writeback cue per session
   -> main Agent decides whether to call a memory tool
@@ -281,7 +281,7 @@ capacityPlan using rendered UTF-8 bytes
 
 Manual archiving uses the same “index first, move second” path, and the same local archive when no Memory Space can take the index. When the Mnemon index succeeds but a revision conflict occurs, the index is not rolled back, so a safe duplicate reference may remain while the active original text is never lost.
 
-## Deterministic Activity Scoring and Background Review
+## Deterministic Activity Scoring and Idle Review
 
 Completed turns accumulate four signals:
 
@@ -351,7 +351,7 @@ The admission check is deliberately structural rather than an LLM classification
 ## How Configuration Switches Interact
 
 - `recallMode=off`: stops injecting recall cues; explicit `mnemon_recall` remains available.
-- `writebackMode=off`: disables writeback cues and scored background review; explicit writes are still governed by `writeEnabled`.
+- `writebackMode=off`: disables writeback cues and scored idle review; explicit writes are still governed by `writeEnabled`.
 - `lifecycleEnabled=false`: disables lifecycle reminders and review without removing explicit tools or Web entry points.
 - `routingGuidance=false`: removes only the additional routing section; the Runtime Memory context remains registered.
 - `writeEnabled=false`: removes semantic write tools and write RPC, and rejects write commands; it does not guarantee a read-only file-system mount.

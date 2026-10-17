@@ -592,7 +592,7 @@ describe('MnemonWorkbench', () => {
     const error = 'CONTEXT_WINDOW_EXCEEDED: request (145508 tokens) exceeds the available context size (98304 tokens)'
     const { connection } = createConnection({ reviewError: error })
     render(<MnemonWorkbench connection={connection} settingsScope={writable ? settingsScope : readOnlySettingsScope} t={translateEn} locale="en" />)
-    const warning = await screen.findByRole('alert', { name: 'Background review failed' })
+    const warning = await screen.findByRole('alert', { name: 'Idle review failed' })
     expect(within(warning).getByText(error)).toBeTruthy()
     expect(within(warning).getByText(/bounded checkpoint review/)).toBeTruthy()
     expect(screen.queryByText('System nominal')).toBeNull()
@@ -601,7 +601,7 @@ describe('MnemonWorkbench', () => {
   it('shows partial review receipts to a read-only observer without offering replay', async () => {
     const { connection } = createConnection({ reviewError: 'Model failed after confirmed commits', reviewPartial: true })
     render(<MnemonWorkbench connection={connection} settingsScope={readOnlySettingsScope} t={translateEn} locale="en" />)
-    const warning = await screen.findByRole('alert', { name: 'Background review failed' })
+    const warning = await screen.findByRole('alert', { name: 'Idle review failed' })
     expect(within(warning).getByText(/Some writes committed/)).toBeTruthy()
     expect(within(warning).getByText(/review-run-255/)).toBeTruthy()
     expect(within(warning).getByText(/committed-document-255/)).toBeTruthy()
@@ -613,8 +613,8 @@ describe('MnemonWorkbench', () => {
     const { connection } = createConnection({ reviewTeam: true })
     render(<MnemonWorkbench connection={connection} settingsScope={settingsScope} t={translateEn} locale="en" />)
     expect(await screen.findByText(/Idle review is paused by the Agent Teams compatibility setting/)).toBeTruthy()
-    expect(screen.getByText(/select “Scoped child review”/u)).toBeTruthy()
-    expect(screen.queryByRole('alert', { name: 'Background review failed' })).toBeNull()
+    expect(screen.getByText(/select “Scoped task Agent review”/u)).toBeTruthy()
+    expect(screen.queryByRole('alert', { name: 'Idle review failed' })).toBeNull()
   })
 
   it('shows the live graph, sidebar pages, and memory write dialog by default', async () => {

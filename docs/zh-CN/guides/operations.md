@@ -314,7 +314,7 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 - WebUI 依据 Host 返回的可写 settings snapshot 判断产品能力，不再根据传输位置猜测权限；设置通道不可用时会显示明确诊断，而不是空白页。
 - WebUI 不直接读取 SQLite、启动进程、调用远程 Provider 或指定任意更新命令；Provider 网络访问只发生在 Host。
 - worker 使用 persona、工具白名单与 `maxDepth: 1`。固定结果工具仅接受当前子任务的可撤销请求 ID，并按每次操作的 schema 校验结果。
-- 蒸馏和 supervised writeback worker 不能调用 `mnemon_forget`；后台审查的档案写入只开放仅创建工具，不能覆盖用户原文，也不能通过归档腾出容量。这些限制默认启用，无需增强插件。
+- 蒸馏和 supervised writeback worker 不能调用 `mnemon_forget`；空闲审查的档案写入只开放仅创建工具，不能覆盖用户原文，也不能通过归档腾出容量。这些限制默认启用，无需增强插件。
 - 空闲审查每轮只写一层：建了项目档案后，修改工作记忆会被拒绝；修改工作记忆后，新建项目档案会被拒绝。`idleReview.runtimeMemory: false` 会完全收回它的运行时记忆工具。
 - 查询、候选、档案正文与历史记忆全部按不可信数据处理。
 
@@ -344,7 +344,7 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
 | `memoryBodyId is required...` | active 数量不是恰好 1；显式选择目标 |
 | `memory space is not active for reading` | 在概览激活目标；写入 inactive 可以，读取不行 |
 | Provider 错误 | 审查需要受 guard 保护的本地子 Agent；默认有界 `spawn`，可选择 `fork`。安装了 Team 工具时如需继续审查，可选择 `idleReview.agentTeams: scoped`，默认仍为 `pause`；重试前核对部分写入回执 |
-| 本地模型（例如 Ollama 上的 Qwen3.x）下后台审查报 `no user query found in messages` | 工具结果填满模型的上下文窗口后，Ollama 截断时丢掉了子代理的任务提示。0.5.22 起，Mnemon 会给被拒的子代理步骤追加一条用户消息并重试（[#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327)），请更新 dsh-mnemon。调大 Ollama 的上下文长度（`OLLAMA_CONTEXT_LENGTH` 或模型的 `num_ctx`）也能避免截断。审查可能在失败前已创建项目档案，请核对部分写入回执 |
+| 本地模型（例如 Ollama 上的 Qwen3.x）下空闲审查报 `no user query found in messages` | 工具结果填满模型的上下文窗口后，Ollama 截断时丢掉了子代理的任务提示。0.5.22 起，Mnemon 会给被拒的子代理步骤追加一条用户消息并重试（[#327](https://github.com/omdsh-dev/dsh-mnemon/issues/327)），请更新 dsh-mnemon。调大 Ollama 的上下文长度（`OLLAMA_CONTEXT_LENGTH` 或模型的 `num_ctx`）也能避免截断。审查可能在失败前已创建项目档案，请核对部分写入回执 |
 | Runtime replace 超容量 | 缩短 replacement 或先显式整理；自动维护只处理 add 溢出 |
 | Document source path 被拒绝 | 路径必须在会话工作区内，且不能引用受管 Documents 目录 |
 | CLI timeout | 增大 `timeoutMs`；大 Store 的状态与图谱可能超过 10 秒 |

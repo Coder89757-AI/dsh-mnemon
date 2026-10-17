@@ -27,7 +27,7 @@ Starter 固定一组经过测试的官方插件组合，详见[兼容性矩阵](
 <details>
 <summary>任务 Agent 如何启动</summary>
 
-语义任务优先使用名为 `spawn` 的 DSH Provider：它限制子 Agent 的深度，并让子 Agent 使用自己的工具与指令，或者（在 DSH 0.2.1 上）在本进程中运行，由 Mnemon 为它配上这两项。Mnemon 固定注册一个 `mnemon_subagent_result` 工具，并为每个子任务签发可撤销的 `requestId`。子任务返回 `{ requestId, result }`；Host 按该操作的 schema 校验 `result`，拒绝过期或其他子任务提交的结果。可选的后台审查默认通过受保护的 `spawn` 子 Agent 读取有界检查点，完整上下文 `fork` 需要显式选择。参见[审查兼容性与限制](../reference/configuration.md#provider-要求)。
+语义任务优先使用名为 `spawn` 的 DSH Provider：它限制子 Agent 的深度，并让子 Agent 使用自己的工具与指令，或者（在 DSH 0.2.1 上）在本进程中运行，由 Mnemon 为它配上这两项。Mnemon 固定注册一个 `mnemon_subagent_result` 工具，并为每个子任务签发可撤销的 `requestId`。子任务返回 `{ requestId, result }`；Host 按该操作的 schema 校验 `result`，拒绝过期或其他子任务提交的结果。可选的空闲审查默认通过受保护的 `spawn` 子 Agent 读取有界检查点，完整上下文 `fork` 需要显式选择。参见[审查兼容性与限制](../reference/configuration.md#provider-要求)。
 
 </details>
 
@@ -69,7 +69,7 @@ dsh --profile headless "回答前先检查持久化的项目上下文。"
 
 开发检出时把包名替换为 `"link:/absolute/path/to/dsh-mnemon"`。Headless 会挂载与 Web Agent 相同的运行时上下文、档案、记忆空间工具、生命周期提示和受监督写入路径，但不会挂载工作台、对话按钮、RPC 通道或交互式斜杠命令界面。
 
-`storageScope=workspace` 时，Headless 直接解析 `<启动命令 cwd>/.mnemon`，不需要 Web 工作区目录。一次性 runner 会在 Agent 进入 idle 后退出，因此尚未开始的评分后台审查会在关闭时取消；任务内已经完成的显式或模型引导写入仍会持久化。
+`storageScope=workspace` 时，Headless 直接解析 `<启动命令 cwd>/.mnemon`，不需要 Web 工作区目录。一次性 runner 会在 Agent 进入 idle 后退出，因此尚未开始的评分空闲审查会在关闭时取消；任务内已经完成的显式或模型引导写入仍会持久化。
 
 ## 2. 打开记忆系统
 

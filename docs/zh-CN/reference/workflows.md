@@ -28,7 +28,7 @@ turn/start
   -> 将变化后的 Wake 作为本插件的完整快照消息追加
 
 agent/pre-step(step=1)
-  -> 为新回合取消待执行/执行中的后台审查
+  -> 为新回合取消待执行/执行中的空闲审查
   -> 仅标记一次 Prime
   -> 每个会话至多追加一次简短 recall/writeback cue
   -> 主 Agent 决定是否调用记忆工具
@@ -280,7 +280,7 @@ planner 没有数据面工具，不能创建 Memory Space。每次写入都由 H
 
 人工归档使用同一条“先索引、后迁移”路径；没有记忆空间能接收索引时，同样归档到本地。Mnemon 索引已经成功但 revision 冲突时不会回滚索引，因此可能出现安全的重复引用，而不会丢失 active 原文。
 
-## 确定性活动评分和后台审查
+## 确定性活动评分和空闲审查
 
 完成的 turn 累计四种信号：
 
@@ -350,7 +350,7 @@ admission 有意只使用结构信号，不调用 LLM 分类；因此达到 acti
 ## 配置开关的关系
 
 - `recallMode=off`：不再注入 recall cue，显式 `mnemon_recall` 仍可用。
-- `writebackMode=off`：关闭写回 cue 和评分后台审查，显式写入仍由 `writeEnabled` 决定。
+- `writebackMode=off`：关闭写回 cue 和评分空闲审查，显式写入仍由 `writeEnabled` 决定。
 - `lifecycleEnabled=false`：关闭生命周期提醒和审查，不移除显式工具或 Web 入口。
 - `routingGuidance=false`：只移除额外路由 section；Runtime Memory context 仍注册。
 - `writeEnabled=false`：移除语义写工具和写 RPC，拒绝写命令；它不是文件系统只读挂载保证。

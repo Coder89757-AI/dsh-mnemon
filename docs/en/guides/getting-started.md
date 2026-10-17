@@ -27,7 +27,7 @@ The Starter pins a tested combination of the official plugins; the [compatibilit
 <details>
 <summary>How task Agents are started</summary>
 
-Semantic work prefers a DSH provider named `spawn` that limits the child's depth and runs it either with its own tools and instructions or, on DSH 0.2.1, in this process, where Mnemon gives it both. Mnemon keeps one stable `mnemon_subagent_result` tool and issues a revocable `requestId` for each child. The child returns `{ requestId, result }`; the Host validates `result` against that operation's schema and rejects stale or foreign submissions. Optional background review defaults to a guarded `spawn` child with a bounded checkpoint; a full-context `fork` is opt-in. See [review compatibility and limits](../reference/configuration.md#provider-requirements).
+Semantic work prefers a DSH provider named `spawn` that limits the child's depth and runs it either with its own tools and instructions or, on DSH 0.2.1, in this process, where Mnemon gives it both. Mnemon keeps one stable `mnemon_subagent_result` tool and issues a revocable `requestId` for each child. The child returns `{ requestId, result }`; the Host validates `result` against that operation's schema and rejects stale or foreign submissions. Optional idle review defaults to a guarded `spawn` child with a bounded checkpoint; a full-context `fork` is opt-in. See [review compatibility and limits](../reference/configuration.md#provider-requirements).
 
 </details>
 
@@ -69,7 +69,7 @@ dsh --profile headless "Check durable project context before answering this task
 
 For a development checkout, replace the package name with `"link:/absolute/path/to/dsh-mnemon"`. Headless mounts the same Runtime context, Documents, Memory Space tools, lifecycle guidance, and supervised write path as a Web Agent. It does not mount the workbench, conversation buttons, RPC channels, or an interactive slash-command surface.
 
-With `storageScope=workspace`, Headless resolves `<invocation cwd>/.mnemon`; no Web workspace registry is required. The one-shot runner exits when its Agent becomes idle, so shutdown cancels any delayed score-based background review that has not started. Explicit or model-guided writes that finish during the task are durable.
+With `storageScope=workspace`, Headless resolves `<invocation cwd>/.mnemon`; no Web workspace registry is required. The one-shot runner exits when its Agent becomes idle, so shutdown cancels any delayed score-based idle review that has not started. Explicit or model-guided writes that finish during the task are durable.
 
 ## 2. Open the Memory System
 
