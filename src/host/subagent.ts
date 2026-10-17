@@ -56,6 +56,22 @@ function evidenceInsights(evidence: MemoryEvidence): RecallInsight[] {
   })
 }
 
+/**
+ * Every task dsh-mnemon delegates to a child Agent starts with one line of its own, such as
+ * `[dsh-mnemon:delegated review]` (#393). DSH records the task as the child's prompt from a
+ * person, so a plugin that reads sessions, such as one that collects a workspace's work, can
+ * rely on this line, documented as stable, to leave Mnemon's own children out.
+ */
+export const DELEGATED_TASK_PREFIX = '[dsh-mnemon:delegated '
+/** Every kind of task dsh-mnemon delegates, as its line names it. */
+export const DELEGATED_OPERATIONS = ['write', 'answer', 'review', 'placement', 'migration', 'compaction', 'document-archive', 'metadata-maintenance', 'reconcile'] as const
+export type DelegatedOperation = typeof DELEGATED_OPERATIONS[number]
+/** The line as the reference documents it for readers of DSH sessions. */
+export const DELEGATED_TASK_LINE = /^\[dsh-mnemon:delegated [a-z-]+\]$/u
+export function delegatedTaskLine(operation: DelegatedOperation): string {
+  return `${DELEGATED_TASK_PREFIX}${operation}]`
+}
+
 const READ_TOOLS = ['mnemon_memory_bodies', 'mnemon_recall', 'mnemon_related']
 const WRITE_TOOLS = [
   ...READ_TOOLS,
@@ -1895,7 +1911,7 @@ ${runtimeSnapshotContext('user', plan.entries)}`
 
   private async delegate(
     parent: HostAgent,
-    operation: 'write' | 'answer' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile',
+    operation: DelegatedOperation,
     label: string,
     prompt: string,
     tools: string[],
@@ -2012,7 +2028,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
       // Every tool continuation ends with a user turn, which strict chat templates require (#327).
       const start = () => startWithContinuationTurns(host, parent, () => startSubagent(this.subagents, host.agents, provider, {
         label,
-        prompt: [{ type: 'text', text: prompt }],
+        prompt: [{ type: 'text', text: `${delegatedTaskLine(operation)}\n${prompt}` }],
         parent,
         signal,
         ...(resolvedAgentOptions === undefined ? {} : { agentOptions: resolvedAgentOptions }),

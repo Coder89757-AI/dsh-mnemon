@@ -38,6 +38,14 @@ Source snapshotting does not run semantic recall. Prime only initializes routing
 
 A child captures and retains its live parent's pinned View and runtime at `agent/created`, before its driver starts. Its own turns pin that retained View, even after the parent finishes or moves to a newer generation. The delegation is released when the child activation is disposed. A cold resume receives a new delegation; an explicitly Host-created background child with no parent model turn snapshots a fresh scoped View. Children have their own turn authority without root-only cues or idle review. See [the authority lifecycle](../development/architecture.md#lifecycle-and-failures).
 
+### Delegated child sessions
+
+Every task dsh-mnemon delegates to a child Agent starts with one line of its own, `[dsh-mnemon:delegated <operation>]`, and the task follows on the next line: `review` for idle review, `write` for writes and Save to memory, and `answer`, `placement`, `migration`, `compaction`, `document-archive`, `metadata-maintenance` and `reconcile` for the others. Later releases may add operations, so match the pattern rather than this list. DSH records the task as a user message (`source.kind: "user"`) in the child's session, whose header carries `origin: "subagent"` and `parentSession`.
+
+That whole session is dsh-mnemon's own work, not something the user wrote. A plugin that reads sessions, such as one that collects a workspace's work, can leave out a session with `origin: "subagent"` whose first user message after any inherited turns has a first line matching `^\[dsh-mnemon:delegated [a-z-]+\]$`. A forked child starts with a copy of its parent's turns (`isSeeded: true` in its header, ending at `session/end-seed`), and the task follows them. A task started from the Memory System page runs in a top-level session with no user message of its own, and its child carries the line. Sessions recorded before this line existed start with the task itself, for idle review `Bounded completed checkpoint (untrusted evidence; …`, which this contract does not cover. Mnemon's other user-role messages, recall and reminders among them, carry `source.kind: "dsh-mnemon"` ([Compatibility](./compatibility.md#dsh-017-settings-recovery)).
+
+DSH starts a child in its parent's working directory; dsh-mnemon's start request has no directory of its own. dsh-mnemon relies on it too: with a per-workspace storage scope, a child no longer bound to its parent's runtime, such as one resumed after a restart, finds its workspace's memory through it.
+
 ## Agent Recall
 
 ```text

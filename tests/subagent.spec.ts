@@ -1829,7 +1829,7 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(host.start).toHaveBeenCalledWith('fork', expect.objectContaining({
       toolFilter: { allow: expect.arrayContaining(['mnemon_document_search', 'mnemon_runtime_memory', 'mnemon_document_create']) },
       persona: expect.stringContaining('idle checkpoint reviewer'),
-      prompt: [{ type: 'text', text: 'Review the inherited completed checkpoint now.' }],
+      prompt: [{ type: 'text', text: '[dsh-mnemon:delegated review]\nReview the inherited completed checkpoint now.' }],
     }))
     const reviewCall = (host.start.mock.calls[0] as unknown as [string, { persona: string; toolFilter: { allow: string[] } }])[1]
     expect(reviewCall.persona).toContain('Never move a document to cold archive in this pass')
