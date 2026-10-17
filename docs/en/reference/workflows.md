@@ -2,7 +2,7 @@
 
 [简体中文](../../zh-CN/reference/workflows.md) | **English** | [Documentation Center](../README.md)
 
-This page describes the **Layered strategy**, the default. The **General strategy** offers every available Source in one shared budget and leaves routing to the model: named tools serve their own Sources, and every other route is read with `mnemon_view_route` and changed with `mnemon_view_action`. It has no recall envelope beyond each route's own limits, no Runtime capacity maintenance or archival, and no idle review. See [Strategies and enhancements](../guides/capabilities.md#strategies-and-enhancements).
+This page describes the **Layered strategy**, the default. The **General strategy** offers every available Source in one shared budget and leaves routing to the model: named tools serve their own Sources, and every other route is read with `mnemon_view_route` and changed with `mnemon_view_action`. When a profile mounts another Source of one type beside the Starter's, such as a second runtime track, the named tools serve the Starter instance and the other keeps its exact routes and offers. The Layered strategy composes one Source per role, so a second Source of one role there needs **Scoped composition** switched on, which by default admits every eligible Source; without it every turn fails with "found ambiguous … Sources". It has no recall envelope beyond each route's own limits, no Runtime capacity maintenance or archival, and no idle review. See [Strategies and enhancements](../guides/capabilities.md#strategies-and-enhancements).
 
 ## Per-Turn Context
 

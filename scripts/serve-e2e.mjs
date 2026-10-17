@@ -54,6 +54,7 @@ for (const flag of flags) {
   if (flag === '--review-layers') continue
   if (flag === '--strict-template') continue
   if (flag === '--general-strategy') continue
+  if (flag === '--second-runtime') continue
   if (flag === '--exact-id') continue
   if (flag === '--archive-copies') continue
   if (flag === '--save-action') continue
@@ -92,6 +93,8 @@ for (const flag of flags) {
   }
   throw new Error('Unknown option: ' + flag)
 }
+// The Layered strategy composes one Source per role, so a second runtime track needs the General one.
+if (flags.has('--second-runtime') && !flags.has('--general-strategy')) throw new Error('--second-runtime requires --general-strategy')
 const extensionNames = ['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture']
 // Strategy packages that also register themselves as bundles; the Starter row owns them.
 const selfRegistering = new Set([...extensionNames, 'dsh-mnemon-strategy-general'])
@@ -326,6 +329,9 @@ try {
     + (flags.has('--profile-compaction') ? '- id: mnemon\n  config:\n    runtimeMemory:\n      userLimitBytes: 100\n    idleReview:\n      enabled: false\n' : '')
     + (slowEmbedder === undefined ? '' : `- id: mnemon\n  config:\n    runtimeMemory:\n      memoryLimitBytes: ${archiveCopiesLimitBytes}\n    embedding:\n      enabled: true\n      endpoint: http://127.0.0.1:${slowEmbedder.address().port}/v1\n      model: fixture-embed\n      protocol: openai\n`)
     + (flags.has('--general-strategy') ? '- id: mnemon-strategy-general\n  disabled: false\n- id: mnemon-strategy-default-three-tier\n  disabled: true\n- id: mnemon\n  config:\n    memoryView:\n      strategyTypeId: general\n' : '')
+    // A second runtime track beside the Starter's, with its own directory, as a profile can mount one (#397).
+    + (flags.has('--second-runtime') ? '- insert:\n    - id: mnemon-source-runtime-global\n      name: dsh-mnemon-source-runtime\n      config:\n        dataDir: '
+      + JSON.stringify(join(fixture, 'global-runtime')) + '\n        userDataDir: ' + JSON.stringify(join(fixture, 'global-runtime')) + '\n' : '')
     + (flags.has('--runtime-write-scope') ? '- id: mnemon\n  config:\n    persistenceStrategy:\n      mode: manual\n      providerId: mnemon-native\n    runtimeMemory:\n      memoryLimitBytes: 512\n' : '')
     + (reviewModel === undefined ? '' : '- insert:\n    - id: review-evidence-fixture\n      name: ' + JSON.stringify(reviewFixture) + '\n')
     + (extensionsEnabled ? extensionNames.map(name => `- id: ${name.slice(4)}\n  disabled: false\n`).join('') : ''))

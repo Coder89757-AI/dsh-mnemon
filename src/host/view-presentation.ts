@@ -3,7 +3,7 @@ import type { MemoryCompositionGeneration } from '../core/composition.ts'
 import type { ComposableMemoryView } from '../core/contracts/index.ts'
 import type { MemoryViewInspection } from './view-protocol.ts'
 import type { MnemonRuntimeGraph } from './runtime.ts'
-import { isDefaultSourceInstance } from './protocol.ts'
+import { namedToolInstance } from './protocol.ts'
 
 /** These are existing DSH product-tool bindings, not Core operation names. */
 const ROUTE_TOOLS: Record<string, Record<string, string>> = {
@@ -33,8 +33,7 @@ function memoryWakeBindings(generation: MemoryCompositionGeneration, view: Compo
   const instances = generation.sourceInstances()
   const routes: Record<string, string> = {}, actions: Record<string, string> = {}
   for (const typeId of Object.keys(ACTION_TOOLS)) {
-    const candidates = instances.filter(source => source.sourceTypeId === typeId)
-    const selected = candidates.find(source => isDefaultSourceInstance(source.sourceInstanceKey, typeId)) ?? (candidates.length === 1 ? candidates[0] : undefined)
+    const selected = namedToolInstance(instances.filter(source => source.sourceTypeId === typeId), typeId)
     if (selected === undefined) continue
     for (const route of view.routes.filter(route => route.sourceInstanceKey === selected.sourceInstanceKey)) {
       const grant = view.readGrants.find(grant => grant.id === route.readGrantId)

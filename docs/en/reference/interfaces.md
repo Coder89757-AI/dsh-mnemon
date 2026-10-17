@@ -272,7 +272,7 @@ Core publishes `ctx.mnemonMemory: MnemonMemoryService`; the actual service expos
 | `dsh-mnemon-source-memory-spaces/provider-sdk` | Memory Spaces' own Provider child-module contract |
 | `dsh-mnemon-source-memory-spaces/testing` | Provider driver fixture |
 
-Generic model tools `mnemon_view_route` and `mnemon_view_action` execute only routes/offers present in the current View. Existing named tools preserve the default workflow. Browser management uses `source-management-catalog`, `source-management-read`, `source-management-mutate` and optional `source-assistance`; instance identity, confirmation, revision and current authority are checked by the Host/Source. Internal RPC names are not the plugin SDK: use the scoped page client. See [Plugin development](../development/extensions.md).
+Generic model tools `mnemon_view_route` and `mnemon_view_action` execute only routes/offers present in the current View. Existing named tools preserve the default workflow. A named tool works on the Starter instance of its Source type, the Entry `mnemon-source-<type>` also when nested under an include, or on the only Source of that type. `mnemon_runtime_memory` writes to the Starter runtime Source when several runtime Sources offer `mutate`, and otherwise to the only one the View lets it write to. The View lists the offers of every other instance for `mnemon_view_action`. Browser management uses `source-management-catalog`, `source-management-read`, `source-management-mutate` and optional `source-assistance`; instance identity, confirmation, revision and current authority are checked by the Host/Source. Internal RPC names are not the plugin SDK: use the scoped page client. See [Plugin development](../development/extensions.md).
 
 ## Internationalization
 
