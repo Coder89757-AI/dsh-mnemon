@@ -8,10 +8,16 @@ export {
 } from './source-pages.tsx'
 export type { MnemonSourceManagementClient, MemorySourcePageInstance } from './source-contracts.ts'
 export {
-  installMemoryComponentUI, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT,
+  installMemoryComponentUI, MNEMON_COMPONENT_FALLBACK_PRIORITY, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT,
+  type MemoryComponentConfigurationSnapshot, type MemoryComponentHost,
   type MemoryComponentSettingsComponent, type MemoryComponentSettingsProps, type MemoryComponentStatusComponent, type MemoryComponentStatusProps,
   type MemoryComponentUIContext, type MemoryComponentUIContribution,
 } from './component-ui.tsx'
+// The controls and styles of the shipped components' settings, for a component's own.
+export { memorySettingsStyles, SelectRow, SettingRow, SettingSelect, ToggleRow, type SettingOption } from './settings-controls.tsx'
+export { PanelActions, useLive, useStaged, WriteFailure } from './settings-panel.tsx'
+export { Callout, Reveal, type MnemonTone } from './feedback.tsx'
+export { GlobalLocationSetting } from './GlobalLocationSetting.tsx'
 export * from './page-kit.tsx'
 export * from './page-controls.tsx'
 export * from './page-client.tsx'

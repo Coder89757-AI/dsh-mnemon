@@ -9,6 +9,7 @@ import {
 } from "../host/protocol.ts"
 import { MnemonComponentRowHost, MnemonSettingsHost } from './MnemonSettingsHost.tsx'
 import { createComponentSettingsDirectory, type MemoryComponentSettingsProps, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT, renderComponentRegion } from './component-ui.tsx'
+import { createComponentHosts } from './component-host.ts'
 import { installShippedComponentSettings } from './component-settings.tsx'
 import { installShippedComponentStatus } from './component-status.tsx'
 import { STARTER_COMPONENT_ROWS } from './starter-rows.ts'
@@ -358,8 +359,11 @@ export function apply(rawContext: unknown): void {
   // and its components.
   // Components contribute their own settings to their pages there, keyed by package name.
   const componentSettingsDirectory = createComponentSettingsDirectory(ctx)
+  // A shipped component whose settings dsh-mnemon used to draw reads its configuration and Host operations through these.
+  const componentHost = createComponentHosts({ scope: settings, connection: ctx.connection, componentChanges: seats.components })
   const configurationServices = () => ({
     componentSettingsDirectory,
+    componentHost,
     scope: settings,
     interactionScope: interactionSettings,
     connection: ctx.connection,
@@ -397,7 +401,7 @@ export function apply(rawContext: unknown): void {
     }, MnemonComponentRowHost))
   }
   // The shipped components' own settings and Status cards arrive the way an installed component's do.
-  ctx.effect(() => installShippedComponentSettings(ctx, { scope: settings, connection: ctx.connection, t: translate, componentChanges: seats.components }), 'dsh-mnemon: shipped component settings')
+  ctx.effect(() => installShippedComponentSettings(ctx, { scope: settings, connection: ctx.connection, t: translate }), 'dsh-mnemon: shipped component settings')
   ctx.effect(() => installShippedComponentStatus(ctx), 'dsh-mnemon: shipped component status')
   ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
     name: 'plugins.detail.actions',

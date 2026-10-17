@@ -3,6 +3,12 @@ import { IconChevronDownOutlineRegular, Menu, Switch } from '@deepseek-ai/dsh-cl
 import css from './MnemonSettingsCard.module.css'
 import { Reveal, TARGET } from './feedback.tsx'
 
+/**
+ * The configuration's class map, so a component's own settings use the
+ * page's rows, cards, editor blocks and field grids as the shipped ones do.
+ */
+export const memorySettingsStyles: Readonly<Record<string, string>> = css
+
 /** Marks a row as the place a component's state shows, so the page can point at it. */
 const targetOf = (target: string | undefined) => target === undefined ? {} : { [TARGET]: target }
 

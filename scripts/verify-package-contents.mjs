@@ -47,7 +47,9 @@ const relativeReadmeImages = readmeFiles.flatMap((path) => {
 // The Starter ships Core/Host, the client bundle and the shared page kit.
 // Component implementations ship in their own packages: the Host build never
 // bundles dependencies, and tests/plugin-repository-boundary.spec.ts limits
-// the client bundle to presentation assets and types from component packages.
+// the client bundle to presentation assets and types from component packages,
+// besides the Memory Spaces settings fallback and Provider marks it takes
+// through one module.
 // This ceiling only catches an accident, such as a dependency bundled into
 // lib/client.js. Pull requests leave it alone; a release raises it once the
 // measured package comes within about 10% of it. The release branch measured

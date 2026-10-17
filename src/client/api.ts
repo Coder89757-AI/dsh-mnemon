@@ -12,8 +12,6 @@ import {
   type AssistantMessageText,
   type ClientConnectionHandle,
   type JsonValue,
-  type MemoryProviderServiceCatalog,
-  type MemoryProviderServiceView,
   type MemoryCompositionStatus,
   type MemorySourceManagementCatalog,
   type MemorySourceManagementResult,
@@ -37,14 +35,11 @@ import {
   type MnemonSyncPullResult,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
-  type MnemonEmbeddingFill,
-  type MnemonEmbeddingStatus,
   type StatusView,
   type SupervisedWritebackResult,
   type TaskAgentModelCatalog,
   type TurnMemoryActivity,
   type TurnMemoryActivitySnapshot,
-  type UpdateMemoryProviderServiceRequest,
   type VersionComponentId,
   type VersionStatus,
   type VersionUpdateResult,
@@ -119,10 +114,6 @@ export class MnemonClient {
     return this.call(MNEMON_READ_CHANNEL, 'status-summary', this.scoped())
   }
 
-  embeddingStatus(): Promise<MnemonEmbeddingStatus> {
-    return this.call(MNEMON_READ_CHANNEL, 'embedding-status', this.scoped())
-  }
-
   memorySystem(): Promise<MemoryCompositionStatus> {
     return this.call(MNEMON_READ_CHANNEL, 'memory-system', this.scoped())
   }
@@ -161,17 +152,13 @@ export class MnemonClient {
     return this.call(MNEMON_WRITE_CHANNEL, 'version-update', { component })
   }
 
-  providerServices(): Promise<MemoryProviderServiceCatalog> {
-    return this.call(MNEMON_READ_CHANNEL, 'provider-services', this.scoped())
-  }
-
-  updateProviderService(request: UpdateMemoryProviderServiceRequest): Promise<MemoryProviderServiceView> {
-    return this.call(MNEMON_WRITE_CHANNEL, 'provider-service-update', this.scoped(request))
-  }
-
-  /** Fill in the vectors a Mnemon Native space lacks (#392). */
-  fillEmbeddings(memoryBodyId: string): Promise<MnemonEmbeddingFill> {
-    return this.call(MNEMON_WRITE_CHANNEL, 'embedding-fill', this.scoped({ memoryBodyId }))
+  /**
+   * One of the Host operations a page lends a component's settings, by its
+   * endpoint name (component-host.ts): Memory Spaces reads its Providers and
+   * embedding through these.
+   */
+  componentOperation<T>(mode: 'read' | 'write', endpoint: string, payload: object): Promise<T> {
+    return this.call(mode === 'read' ? MNEMON_READ_CHANNEL : MNEMON_WRITE_CHANNEL, endpoint, this.scoped(payload))
   }
 
   /** Settled memory-tool activity of one turn, shared across all mounted tails. */

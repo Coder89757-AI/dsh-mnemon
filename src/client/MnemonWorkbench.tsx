@@ -13,7 +13,7 @@ import { VersionDialog } from "./VersionDialog.tsx"
 import { clearStarterUpdate, pendingStarterUpdate } from './starter-update.ts'
 import { translateZh, type MnemonKey, type MnemonTranslate } from "./locales.ts"
 
-import { ProviderIcon } from "./ProviderIcon.tsx"
+import { ProviderIcon } from "./memory-spaces-client.ts"
 
 import { MNEMON_SOURCE_CONFIGURATION_MUTATE, MNEMON_SOURCE_CONFIGURATION_READ, MNEMON_SOURCE_PAGE_SLOT, type MemorySourcePageDirectory, type MemorySourcePageEntry } from "./source-pages.tsx"
 import type { MnemonSourceManagementClient } from "./dsh-context.ts"

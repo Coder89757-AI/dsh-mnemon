@@ -29,7 +29,7 @@ The public package entry exports `resolveEmbedding`, `resolvePersistenceStrategy
 
 ## Source-owned Client
 
-The optional `./client` entry owns the Source's pages and `presentation/` resources. It uses `dsh-mnemon/client` for the shared frame and scoped management, without receiving raw RPC transport, credentials, a Host Context or an LLM grant. DSH mounts the same pages in the default Starter; cross-Source Agent workflows remain optional Host assistance.
+The optional `./client` entry owns the Source's pages, its settings on its page under Plugins (the Providers and the embedding Mnemon Native reads) and `presentation/` resources. It uses `dsh-mnemon/client` for the shared frame, scoped management and the configuration and Host operations dsh-mnemon lends its settings, without receiving raw RPC transport, credentials, a Host Context or an LLM grant. DSH mounts the same pages in the default Starter; cross-Source Agent workflows remain optional Host assistance. dsh-mnemon 0.5.31 and earlier draw these settings themselves, so with them the client registers none.
 
 `pnpm verify` checks Host behavior, real Source-backed page interactions, and Host/browser artifacts. Client tests consume the installed Core's public testing entry.
 

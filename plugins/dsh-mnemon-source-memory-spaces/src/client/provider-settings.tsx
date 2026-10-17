@@ -1,38 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type JSX, type ReactNode } from 'react'
+import { useT, type SourceKey } from './presentation.ts'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type JSX, type ReactNode } from 'react'
 import { Button, IconChevronDownOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
-import type {
-  ClientConnectionHandle,
-  MemoryProviderConfigField,
-  MemoryProviderConnection,
-  MemoryProviderDescriptor,
-  MemoryProviderServiceCatalog,
-  MemoryProviderServiceView,
-} from "../host/protocol.ts"
-import { MnemonClient } from './api.ts'
-import { GlobalLocationSetting } from './GlobalLocationSetting.tsx'
-import css from './MnemonSettingsCard.module.css'
-import { useRequestVersion } from './use-request-version.ts'
-import type { MnemonKey, MnemonTranslate } from './locales.ts'
-import { message } from './page-kit.tsx'
-import { Reveal } from './feedback.tsx'
+import { GlobalLocationSetting, memorySettingsStyles, message, Reveal, useRequestVersion } from 'dsh-mnemon/client'
+import type { MemoryProviderConfigField, MemoryProviderConnection, MemoryProviderDescriptor, MemoryProviderServiceCatalog, MemoryProviderServiceView } from '../contracts.ts'
+import { ProviderField } from './provider-field.tsx'
 import { ProviderIcon } from './ProviderIcon.tsx'
-import { SelectField } from './page-controls.tsx'
-import {
-  providerFieldLabel,
-  providerOptionLabel,
-  providerSummary,
-} from './provider-presentation.ts'
+import { providerSummary } from './provider-presentation.ts'
+import type { MemorySpacesSettingsClient } from './settings-client.ts'
 
 interface ProviderSettingsSectionProps {
-  connection?: ClientConnectionHandle
-  sessionId?: string
-  workspaceId?: string
+  /** Absent while the page has no Host connection: nothing is read or written then. */
+  client?: MemorySpacesSettingsClient | undefined
   workspaceLabel?: string
   activeScope: 'global' | 'workspace'
   refreshKey: number
   disabled: boolean
   scopeChanging: boolean
-  t: MnemonTranslate
   /** Rendered first in the list; Settings puts Mnemon Native here as a peer of the others. */
   leading?: ReactNode
   /** Why the other Providers cannot be listed now; they are not read while it is set. */
@@ -49,33 +32,14 @@ interface ServiceDraft {
   settings: MemoryProviderConnection
 }
 
-const SAVED_SECRET_MASK = '••••••••••••'
-
 const EMPTY_PROVIDER_CATALOG: MemoryProviderServiceCatalog = {
   providers: [],
   items: [],
   generatedAt: '',
 }
 
-const providerCatalogCache = new WeakMap<ClientConnectionHandle, Map<string, MemoryProviderServiceCatalog>>()
-
-function catalogRouteKey(sessionId?: string, workspaceId?: string): string {
-  return `${sessionId ?? ''}\u0000${workspaceId ?? ''}`
-}
-
-function cachedCatalog(connection: ClientConnectionHandle | undefined, key: string): MemoryProviderServiceCatalog | undefined {
-  return connection === undefined ? undefined : providerCatalogCache.get(connection)?.get(key)
-}
-
-function cacheCatalog(connection: ClientConnectionHandle | undefined, key: string, catalog: MemoryProviderServiceCatalog): void {
-  if (connection === undefined) return
-  let routes = providerCatalogCache.get(connection)
-  if (routes === undefined) {
-    routes = new Map()
-    providerCatalogCache.set(connection, routes)
-  }
-  routes.set(key, catalog)
-}
+// The last catalog each client read, so a list opened again shows it while it is read anew.
+const providerCatalogCache = new WeakMap<MemorySpacesSettingsClient, MemoryProviderServiceCatalog>()
 
 function stabilizeProviderCard(element: HTMLElement): void {
   const view = element.ownerDocument.defaultView
@@ -123,57 +87,15 @@ function configurationComplete(provider: MemoryProviderDescriptor, draft: Servic
   })
 }
 
-function SecretVisibilityIcon({ visible }: { visible: boolean }): JSX.Element {
-  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-    <path d="M2.3 10s2.8-4.5 7.7-4.5 7.7 4.5 7.7 4.5-2.8 4.5-7.7 4.5S2.3 10 2.3 10Z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    <circle cx="10" cy="10" r="2.1" stroke="currentColor" strokeWidth="1.4" />
-    {visible && <path d="m3.5 3.5 13 13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />}
-  </svg>
-}
-
-function ServiceField(props: {
-  field: MemoryProviderConfigField
-  value: string | number | boolean | undefined
-  configuredSecrets: string[]
-  disabled: boolean
-  t: MnemonTranslate
-  onChange: (value: string | number | boolean) => void
-}): JSX.Element {
-  const [secretVisible, setSecretVisible] = useState(false)
-  const label = providerFieldLabel(props.t, props.field)
-  const savedSecret = props.configuredSecrets.includes(props.field.key)
-  const required = props.field.required && !savedSecret
-  const secret = props.field.input === 'secret'
-  const fieldValue = String(props.value ?? '')
-  const showingSavedMask = secret && savedSecret && fieldValue === ''
-  const displayValue = showingSavedMask
-    ? secretVisible ? props.t('config.providerSecretStoredValue') : SAVED_SECRET_MASK
-    : fieldValue
-  const input = props.field.input === 'boolean'
-    ? <label className={css.providerBoolean}><input aria-label={label} type="checkbox" checked={Boolean(props.value)} disabled={props.disabled} onChange={event => props.onChange(event.target.checked)} /><span>{label}</span></label>
-    : props.field.input === 'select'
-      ? <SelectField label={label} value={String(props.value ?? '')} disabled={props.disabled} options={(props.field.options ?? []).map(option => ({ value: option.value, label: providerOptionLabel(props.t, option) }))} onChange={next => props.onChange(next)} />
-      : <label>{label}<div className={secret ? css.providerSecretInput : undefined}><input aria-label={label} type={secret ? secretVisible ? 'text' : 'password' : props.field.input === 'number' ? 'number' : props.field.input === 'url' ? 'url' : 'text'} value={displayValue} required={required} disabled={props.disabled} autoComplete={secret ? 'new-password' : undefined} placeholder={props.field.placeholder ?? (secret ? props.t('overview.providerApiKeyOptional') : undefined)} maxLength={props.field.maxLength ?? (secret ? 8000 : 2000)} min={props.field.min} max={props.field.max} pattern={props.field.pattern} step={props.field.input === 'number' ? 'any' : undefined} onFocus={event => {
-        if (showingSavedMask) event.currentTarget.select()
-      }} onClick={event => {
-        if (showingSavedMask) event.currentTarget.select()
-      }} onChange={event => {
-        const value = showingSavedMask ? event.target.value.replace(SAVED_SECRET_MASK, '').replace(props.t('config.providerSecretStoredValue'), '') : event.target.value
-        props.onChange(value)
-      }} />{secret && <button type="button" className={css.providerSecretVisibility} aria-label={props.t(secretVisible ? 'config.providerSecretHide' : 'config.providerSecretShow')} title={props.t(secretVisible ? 'config.providerSecretHide' : 'config.providerSecretShow')} aria-pressed={secretVisible} disabled={props.disabled} onClick={() => setSecretVisible(value => !value)}><SecretVisibilityIcon visible={secretVisible} /></button>}</div></label>
-  return <div className={css.providerFieldControl} data-input={props.field.input}>
-    {input}
-  </div>
-}
-
 function ProviderServiceForm(props: {
   provider: MemoryProviderDescriptor
   service: MemoryProviderServiceView
   activeScope: 'global' | 'workspace'
   disabled: boolean
-  t: MnemonTranslate
   onSave: (provider: MemoryProviderDescriptor, draft: ServiceDraft) => Promise<void>
 }): JSX.Element {
+  const t = useT()
+  const css = memorySettingsStyles
   const [draft, setDraft] = useState<ServiceDraft>(() => draftFor(props.provider, props.service))
   const [customLocations, setCustomLocations] = useState<Set<string>>(() => new Set(globalLocationFields(props.provider).filter(field => String(props.service.settings[field.key] ?? '').trim() !== '').map(field => field.key)))
   const [saving, setSaving] = useState(false)
@@ -230,32 +152,34 @@ function ProviderServiceForm(props: {
   const regularFields = serviceFields(props.provider).filter(field => field.role !== 'global-location')
   const locationsComplete = props.activeScope === 'workspace' || locations.every(field => !customLocations.has(field.key) || String(draft.settings[field.key] ?? '').trim() !== '')
   const formComplete = configurationComplete(props.provider, draft, props.service) && locationsComplete
+  const field = (descriptor: MemoryProviderConfigField): JSX.Element => <ProviderField key={descriptor.key} field={descriptor} value={draft.settings[descriptor.key]} layout="settings"
+    saved={props.service.configuredSecrets.includes(descriptor.key)} disabled={props.disabled || saving} onChange={value => update(descriptor.key, value)} />
 
   return <form ref={formRef} className={css.providerServiceForm} onSubmit={event => void submit(event)} data-provider={props.provider.id}>
-    <p className={css.providerServicePrompt}>{props.t(props.service.configured ? 'config.providerServiceHint' : 'config.providerEnableHint')}</p>
-    {locations.map(field => <GlobalLocationSetting
-      key={field.key}
+    <p className={css.providerServicePrompt}>{t(props.service.configured ? 'config.providerServiceHint' : 'config.providerEnableHint')}</p>
+    {locations.map(location => <GlobalLocationSetting
+      key={location.key}
       className={css.providerServiceLocation}
-      name={`${props.provider.id}-${field.key}-location`}
-      ariaLabel={`${props.provider.label} ${props.t('config.providerGlobalLocation')}`}
-      label={props.t('config.providerGlobalLocation')}
-      hint={props.t(props.activeScope === 'workspace' ? 'config.providerGlobalLocationWorkspaceHint' : 'config.providerGlobalLocationHint', { provider: props.provider.label })}
-      defaultLabel={props.t('config.providerDefaultLocation')}
-      customLabel={props.t('config.custom')}
-      custom={customLocations.has(field.key)}
+      name={`${props.provider.id}-${location.key}-location`}
+      ariaLabel={`${props.provider.label} ${t('config.providerGlobalLocation')}`}
+      label={t('config.providerGlobalLocation')}
+      hint={t(props.activeScope === 'workspace' ? 'config.providerGlobalLocationWorkspaceHint' : 'config.providerGlobalLocationHint', { provider: props.provider.label })}
+      defaultLabel={t('config.providerDefaultLocation')}
+      customLabel={t('config.custom')}
+      custom={customLocations.has(location.key)}
       workspace={props.activeScope === 'workspace'}
       disabled={props.disabled || saving}
       onInteract={stabilizeLocationCard}
-      onChange={custom => useCustomLocation(field, custom)}
+      onChange={custom => useCustomLocation(location, custom)}
     >
-      <div className={css.providerLocationField}><ServiceField field={field} value={draft.settings[field.key]} configuredSecrets={props.service.configuredSecrets} disabled={props.disabled || saving} t={props.t} onChange={value => update(field.key, value)} /></div>
+      <div className={css.providerLocationField}>{field(location)}</div>
     </GlobalLocationSetting>)}
     <div className={css.providerSettingsGrid}>
-      {regularFields.map(field => <ServiceField key={field.key} field={field} value={draft.settings[field.key]} configuredSecrets={props.service.configuredSecrets} disabled={props.disabled || saving} t={props.t} onChange={value => update(field.key, value)} />)}
+      {regularFields.map(field)}
     </div>
     <div className={`${css.memoryConfigFooter} ${css.providerServiceFooter}`}>
-      <div className={css.configFeedback} aria-live="polite">{failed !== null && <span className={css.error}>{props.t('config.providerSaveFailed', { error: failed })}</span>}{saved && <span className={css.packSuccess}>{props.t('config.providerServiceSaved')}</span>}</div>
-      <Button type="submit" variant="primary" size="sm" disabled={props.disabled || saving || !formComplete}>{saving ? props.t('config.saving') : props.t(props.service.configured ? 'config.saveProviderService' : 'config.enableProvider')}</Button>
+      <div className={css.configFeedback} aria-live="polite">{failed !== null && <span className={css.error}>{t('config.providerSaveFailed', { error: failed })}</span>}{saved && <span className={css.packSuccess}>{t('config.providerServiceSaved')}</span>}</div>
+      <Button type="submit" variant="primary" size="sm" disabled={props.disabled || saving || !formComplete}>{saving ? t('config.saving') : t(props.service.configured ? 'config.saveProviderService' : 'config.enableProvider')}</Button>
     </div>
   </form>
 }
@@ -264,11 +188,12 @@ function ProviderPanel(props: {
   provider: MemoryProviderDescriptor
   service: MemoryProviderServiceView
   disabled: boolean
-  t: MnemonTranslate
   onSave: (provider: MemoryProviderDescriptor, draft: ServiceDraft) => Promise<void>
   onToggle: (provider: MemoryProviderDescriptor, enabled: boolean) => Promise<MemoryProviderServiceView>
   activeScope: 'global' | 'workspace'
 }): JSX.Element {
+  const t = useT()
+  const css = memorySettingsStyles
   const [enabled, setEnabled] = useState(props.service.enabled)
   const [expanded, setExpanded] = useState(props.service.enabled && !props.service.configured)
   const [toggling, setToggling] = useState(false)
@@ -319,7 +244,7 @@ function ProviderPanel(props: {
     }
   }
 
-  const stateKey: MnemonKey = enabled
+  const stateKey: SourceKey = enabled
     ? props.service.configured ? 'config.providerEnabled' : 'config.providerNeedsConfiguration'
     : props.service.configured ? 'config.providerDisabledConfigured' : 'config.providerDisabled'
   const providerScope = props.provider.workspaceBinding === 'provider-global' ? 'global' : props.activeScope
@@ -335,42 +260,44 @@ function ProviderPanel(props: {
     data-enabled={enabled || undefined}
     data-expanded={expanded || undefined}
     role="group"
-    aria-label={`${props.provider.label} ${props.t('config.providerServiceTitle')}`}
+    aria-label={`${props.provider.label} ${t('config.providerServiceTitle')}`}
   >
     <div className={css.providerRowHeader}>
       <button type="button" className={css.providerDisclosure} aria-expanded={expanded} disabled={!enabled || controlDisabled} onClick={toggleExpanded}>
-        <span className={css.providerIdentity}><ProviderIcon providerId={props.provider.id} icon={props.provider.icon} className={css.providerMark} /><span><strong>{props.provider.label}</strong><small>{providerSummary(props.t, props.provider)}</small></span></span>
+        <span className={css.providerIdentity}><ProviderIcon providerId={props.provider.id} icon={props.provider.icon} className={css.providerMark} /><span><strong>{props.provider.label}</strong><small>{providerSummary(t, props.provider)}</small></span></span>
         {enabled && <IconChevronDownOutlineRegular className={css.providerChevron} size={14} />}
       </button>
       <div className={css.providerEnableControl}>
-        <span className={css.providerScopeTag} data-scope={providerScope}>{props.t(`config.${providerScope}`)}</span>
-        <span className={css.providerState} data-enabled={enabled || undefined}>{props.t(stateKey)}</span>
-        <Switch className={css.providerToggle} checked={enabled} label={props.t('config.providerToggleAria', { provider: props.provider.label })} disabled={controlDisabled} onChange={next => void toggle(next)} />
+        <span className={css.providerScopeTag} data-scope={providerScope}>{t(`config.${providerScope}`)}</span>
+        <span className={css.providerState} data-enabled={enabled || undefined}>{t(stateKey)}</span>
+        <Switch className={css.providerToggle} checked={enabled} label={t('config.providerToggleAria', { provider: props.provider.label })} disabled={controlDisabled} onChange={next => void toggle(next)} />
       </div>
     </div>
-    {failed !== null && <p className={css.providerToggleError} role="alert">{props.t('config.providerToggleFailed', { error: failed })}</p>}
-    {enabled && expanded && <div className={css.providerInlineBody}><ProviderServiceForm provider={props.provider} service={props.service} activeScope={props.activeScope} disabled={controlDisabled} t={props.t} onSave={props.onSave} /></div>}
+    {failed !== null && <p className={css.providerToggleError} role="alert">{t('config.providerToggleFailed', { error: failed })}</p>}
+    {enabled && expanded && <div className={css.providerInlineBody}><ProviderServiceForm provider={props.provider} service={props.service} activeScope={props.activeScope} disabled={controlDisabled} onSave={props.onSave} /></div>}
   </div>
 }
 
+/** The Providers that store Memory Spaces, one card each, with what their services need. */
 export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JSX.Element {
-  const client = useMemo(() => props.connection === undefined ? null : new MnemonClient(props.connection, props.sessionId, props.workspaceId), [props.connection, props.sessionId, props.workspaceId])
-  const routeKey = catalogRouteKey(props.sessionId, props.workspaceId)
-  const initialCatalog = cachedCatalog(props.connection, routeKey)
+  const t = useT()
+  const css = memorySettingsStyles
+  const client = props.client
+  const initialCatalog = client === undefined ? undefined : providerCatalogCache.get(client)
   const [catalog, setCatalog] = useState<MemoryProviderServiceCatalog>(() => initialCatalog ?? EMPTY_PROVIDER_CATALOG)
-  const [loading, setLoading] = useState(client !== null && initialCatalog === undefined)
+  const [loading, setLoading] = useState(client !== undefined && initialCatalog === undefined)
   const [failed, setFailed] = useState<string | null>(null)
   const loadRequests = useRequestVersion()
 
   const load = useCallback(async (quiet = false) => {
-    if (client === null) return
+    if (client === undefined) return
     const request = loadRequests.begin()
     if (!quiet) setLoading(true)
     setFailed(null)
     try {
       const next = await client.providerServices()
       if (!loadRequests.isCurrent(request)) return
-      cacheCatalog(props.connection, routeKey, next)
+      providerCatalogCache.set(client, next)
       setCatalog(next)
     } catch (reason) {
       if (!loadRequests.isCurrent(request)) return
@@ -378,7 +305,7 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
     } finally {
       if (!quiet && loadRequests.isCurrent(request)) setLoading(false)
     }
-  }, [client, loadRequests, props.connection, routeKey])
+  }, [client, loadRequests])
 
   const blocked = props.blocked !== undefined
   const pending = props.pending === true
@@ -389,11 +316,11 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
       setFailed(null)
       return
     }
-    const cached = cachedCatalog(props.connection, routeKey)
+    const cached = client === undefined ? undefined : providerCatalogCache.get(client)
     setCatalog(cached ?? EMPTY_PROVIDER_CATALOG)
-    setLoading(client !== null && cached === undefined)
+    setLoading(client !== undefined && cached === undefined)
     void load(cached !== undefined)
-  }, [blocked, client, load, loadRequests, pending, props.connection, props.refreshKey, routeKey])
+  }, [blocked, client, load, loadRequests, pending, props.refreshKey])
 
   const acceptService = useCallback((service: MemoryProviderServiceView): void => {
     setCatalog(current => {
@@ -401,38 +328,38 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
         ? current.items.map(item => item.providerId === service.providerId ? service : item)
         : [...current.items, service]
       const next = { ...current, items, generatedAt: new Date().toISOString() }
-      cacheCatalog(props.connection, routeKey, next)
+      if (client !== undefined) providerCatalogCache.set(client, next)
       return next
     })
-  }, [props.connection, routeKey])
+  }, [client])
 
   const save = async (provider: MemoryProviderDescriptor, draft: ServiceDraft): Promise<void> => {
-    if (client === null) throw new Error(props.t('config.providerUnavailable'))
+    if (client === undefined) throw new Error(t('config.providerUnavailable'))
     const settings = Object.fromEntries(Object.entries(draft.settings).filter(([key, value]) => serviceFields(provider).find(field => field.key === key)?.input !== 'secret' || String(value).trim() !== ''))
     acceptService(await client.updateProviderService({ providerId: provider.id, settings, enabled: true }))
     props.onChanged?.()
   }
 
   const toggle = async (provider: MemoryProviderDescriptor, enabled: boolean): Promise<MemoryProviderServiceView> => {
-    if (client === null) throw new Error(props.t('config.providerUnavailable'))
+    if (client === undefined) throw new Error(t('config.providerUnavailable'))
     const updated = await client.updateProviderService({ providerId: provider.id, settings: {}, enabled })
     acceptService(updated)
     props.onChanged?.()
     return updated
   }
 
-  const disabled = props.disabled || props.scopeChanging || client === null || loading || catalog.generatedAt === ''
+  const disabled = props.disabled || props.scopeChanging || client === undefined || loading || catalog.generatedAt === ''
   // Explanations slide in and out, so the list does not jump when a dependency changes.
   if (blocked) return <><Reveal>{props.blocked}</Reveal><div className={css.providerList}>{props.leading}</div></>
   return <>
     <Reveal>{props.notice ?? null}</Reveal>
-    {props.scopeChanging && <p className={css.scopeChanging} role="status">{props.t('config.saveScopeBeforeProviders')}</p>}
-    {props.workspaceLabel !== undefined && <p className={css.providerTarget}>{props.t('config.providerTargetWorkspace', { workspace: props.workspaceLabel })}</p>}
-    {loading && <span className={css.visuallyHidden} role="status">{props.t('config.loadingProviders')}</span>}
-    {failed !== null && <div className={css.providerLoadError}><span className={css.error}>{props.t('config.providerLoadFailed', { error: failed })}</span><Button variant="ghost" size="sm" onClick={() => void load()}>{props.t('config.retryProviders')}</Button></div>}
+    {props.scopeChanging && <p className={css.scopeChanging} role="status">{t('config.saveScopeBeforeProviders')}</p>}
+    {props.workspaceLabel !== undefined && <p className={css.providerTarget}>{t('config.providerTargetWorkspace', { workspace: props.workspaceLabel })}</p>}
+    {loading && <span className={css.visuallyHidden} role="status">{t('config.loadingProviders')}</span>}
+    {failed !== null && <div className={css.providerLoadError}><span className={css.error}>{t('config.providerLoadFailed', { error: failed })}</span><Button variant="ghost" size="sm" onClick={() => void load()}>{t('config.retryProviders')}</Button></div>}
     <div className={css.providerList} aria-busy={loading}>{props.leading}{catalog.providers.map(provider => {
       const service = catalog.items.find(item => item.providerId === provider.id) ?? { providerId: provider.id, enabled: false, configured: false, settings: {}, configuredSecrets: [] }
-      return <ProviderPanel key={provider.id} provider={provider} service={service} disabled={disabled} activeScope={props.activeScope} t={props.t} onSave={save} onToggle={toggle} />
+      return <ProviderPanel key={provider.id} provider={provider} service={service} disabled={disabled} activeScope={props.activeScope} onSave={save} onToggle={toggle} />
     })}</div>
   </>
 }

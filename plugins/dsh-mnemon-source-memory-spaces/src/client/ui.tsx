@@ -1,13 +1,15 @@
 import { css, sidebarCss, useT } from './presentation.ts'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
+import * as mnemonClient from 'dsh-mnemon/client'
 import {
   createMemorySourcePageClient, installMemorySourceUI, MemorySourcePageFrame, translateEn, message, PageHeader,
-  appearanceClass, type MemorySourcePageProps, type MnemonSourceManagementClient, type MnemonTranslate,
+  appearanceClass, type MemoryComponentUIContext, type MemorySourcePageProps, type MnemonSourceManagementClient, type MnemonTranslate,
 } from 'dsh-mnemon/client'
 import type { Insight, MemorySpacesStatus } from '../contracts.ts'
 import { OverviewPage, ExplorePage, EntitiesPage, RememberPage, ListPage, PersistenceStrategyDialog, type MemoryPlacementPageConfig } from './pages.tsx'
 import type { MemorySpacesPageClient } from './api.ts'
+import { installMemorySpacesSettings, yieldsComponentSettings } from './settings.tsx'
 
 /** The adapter never gets a transport or chooses another Source instance. */
 export function memorySpacesPageClient(management: MnemonSourceManagementClient): MemorySpacesPageClient & { status(): Promise<MemorySpacesStatus>; canAssist(operation: string): boolean } {
@@ -132,4 +134,7 @@ export function installMemorySpacesUI(ctx: Parameters<typeof installMemorySource
 }
 
 export const inject = ['slots', 'locale']
-export function apply(ctx: Parameters<typeof installMemorySourceUI>[0]): void { installMemorySpacesUI(ctx, ctx.locale!.bind('mnemon')) }
+export function apply(ctx: Parameters<typeof installMemorySourceUI>[0] & MemoryComponentUIContext): void {
+  installMemorySpacesUI(ctx, ctx.locale!.bind('mnemon'))
+  if (yieldsComponentSettings(mnemonClient)) installMemorySpacesSettings(ctx)
+}

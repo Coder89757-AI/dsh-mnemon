@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { localeExport, readPackageLocales } from './package-locales.mjs'
@@ -38,8 +38,24 @@ function verifyDeclarations(filename) {
   }
 }
 
+// The client's declarations stay on the browser side. Through the Host protocol
+// they would reach the SDK's cordis Context augmentation, which splits Context
+// in the standalone typecheck of a plugin that imports the client.
+function verifyClientDeclarations(filename, seen = new Set()) {
+  if (seen.has(filename)) return seen
+  seen.add(filename)
+  const path = relative(root, filename)
+  if (/^lib\/types\/src\/(?:host|sdk)\//u.test(path.split('\\').join('/'))) throw new Error(`dsh-mnemon/client declarations reach ${path}`)
+  const dependencies = ts.preProcessFile(readFileSync(filename, 'utf8'), true, true)
+  for (const { fileName } of [...dependencies.importedFiles, ...dependencies.referencedFiles]) {
+    if (fileName.startsWith('.')) verifyClientDeclarations(resolve(dirname(filename), fileName.replace(/(?<!\.d)\.[cm]?[jt]sx?$/u, '.d.ts')), seen)
+  }
+  return seen
+}
+
 let imported = 0
 let executables = 0
+const clientDeclarations = verifyClientDeclarations(resolve(root, JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).exports['./client'].types))
 for (const directory of [root, resolve(root, 'plugins/dsh-mnemon-source-memory-spaces'), resolve(root, 'plugins/dsh-mnemon-strategy-default-three-tier')]) {
   const manifest = JSON.parse(readFileSync(resolve(directory, 'package.json'), 'utf8'))
   for (const executable of Object.values(manifest.bin ?? {})) {
@@ -76,4 +92,4 @@ for (const directory of [root, resolve(root, 'plugins/dsh-mnemon-source-memory-s
   }
 }
 
-console.log(`Imported ${imported} Node-compatible entries; verified ${publicTypes.size} public type dependencies and ${executables} executable help entry on ${process.version}.`)
+console.log(`Imported ${imported} Node-compatible entries; verified ${publicTypes.size} public type dependencies, ${clientDeclarations.size} browser-side client declarations and ${executables} executable help entry on ${process.version}.`)

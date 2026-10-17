@@ -1,10 +1,19 @@
 import { Component, createElement, type ComponentType, type ErrorInfo, type ReactNode } from 'react'
+import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
 
 /**
  * A component's own settings, on its page: keyed by the component's package
  * name, rendered after the page's generated state, relations and options.
  */
 export const MNEMON_COMPONENT_SETTINGS_SLOT = 'mnemon.component.settings' as const
+/**
+ * The priority a fallback registration takes in a component region. DSH
+ * renders, for each key, the registration with the lowest priority, so a
+ * component's own registration, at the default 0, replaces a fallback for its
+ * package while it lasts. A component that finds this export knows that
+ * dsh-mnemon yields the settings it keeps for that component.
+ */
+export const MNEMON_COMPONENT_FALLBACK_PRIORITY = 100
 /**
  * What a component's card on the Memory System's Status page says while it
  * runs, keyed by the component's package name. A card that is not running
@@ -31,6 +40,44 @@ export interface MemoryComponentSettingsProps {
   /** The conversation and workspace the page was opened for, when there is one. */
   sessionId?: string
   workspace?: { id: string; label?: string }
+  /**
+   * What the page lends a shipped component whose settings dsh-mnemon used to
+   * draw: the configuration keys and Host operations dsh-mnemon serves it.
+   * Other components receive none.
+   */
+  host?: MemoryComponentHost
+}
+
+/** dsh-mnemon's configuration as a component's settings read it. */
+export interface MemoryComponentConfigurationSnapshot {
+  status: 'loading' | 'ready' | 'unavailable'
+  /** The configuration keys the page shares with this component. */
+  value?: Readonly<Record<string, unknown>>
+  /** Moves with every saved change, made on this page or anywhere else. */
+  revision?: number
+  /** Whether the Host takes a write now. */
+  writable: boolean
+}
+
+/**
+ * dsh-mnemon's configuration and Host operations, bound to one component and
+ * to the page's conversation and workspace, as Source pages get a scoped
+ * management client: never the settings service or the transport itself.
+ */
+export interface MemoryComponentHost {
+  configuration: {
+    getSnapshot(): MemoryComponentConfigurationSnapshot
+    subscribe(listener: () => void): () => void
+    /** Save one key the component owns, fenced by the revision the page read like every settings write. */
+    set(key: string, value: MemoryJsonValue): Promise<void>
+  }
+  /** The Host operations dsh-mnemon serves this component; absent while the page has no Host connection. */
+  operations?: {
+    read(operation: string, input?: MemoryJsonValue): Promise<unknown>
+    write(operation: string, input: MemoryJsonValue): Promise<unknown>
+  }
+  /** The component changed its data here, so the Memory System reads its pages again. */
+  changed(): void
 }
 
 export type MemoryComponentSettingsComponent = (props: MemoryComponentSettingsProps) => ReactNode
@@ -59,14 +106,20 @@ export interface MemoryComponentUIContribution {
   settings?: MemoryComponentSettingsComponent
   /** What its card on the Status page says while it runs: a headline and one line. */
   status?: MemoryComponentStatusComponent
+  /**
+   * Show these only while the component registers none of its own: dsh-mnemon
+   * keeps a shipped component's settings this way for versions that predate
+   * their own.
+   */
+  fallback?: boolean
 }
 
 /** The DSH Slot capability narrowed to the component regions. */
 export interface MemoryComponentUIContext {
   slots: {
     inject(name: ComponentRegion, setup: () => () => void): () => void
-    register(options: { name: typeof MNEMON_COMPONENT_SETTINGS_SLOT; key: string }, component: MemoryComponentSettingsComponent): () => void
-    register(options: { name: typeof MNEMON_COMPONENT_STATUS_SLOT; key: string }, component: MemoryComponentStatusComponent): () => void
+    register(options: { name: typeof MNEMON_COMPONENT_SETTINGS_SLOT; key: string; priority?: number }, component: MemoryComponentSettingsComponent): () => void
+    register(options: { name: typeof MNEMON_COMPONENT_STATUS_SLOT; key: string; priority?: number }, component: MemoryComponentStatusComponent): () => void
   }
 }
 
@@ -80,8 +133,9 @@ export function installMemoryComponentUI(ctx: MemoryComponentUIContext, contribu
   if (!PACKAGE_NAME.test(key)) throw new Error('memory component UI requires the package name of the component')
   const { settings, status } = contribution
   const disposers: Array<() => void> = []
-  if (settings !== undefined) disposers.push(ctx.slots.inject(MNEMON_COMPONENT_SETTINGS_SLOT, () => ctx.slots.register({ name: MNEMON_COMPONENT_SETTINGS_SLOT, key }, props => createElement(settings, props))))
-  if (status !== undefined) disposers.push(ctx.slots.inject(MNEMON_COMPONENT_STATUS_SLOT, () => ctx.slots.register({ name: MNEMON_COMPONENT_STATUS_SLOT, key }, props => createElement(status, props))))
+  const order = contribution.fallback === true ? { priority: MNEMON_COMPONENT_FALLBACK_PRIORITY } : {}
+  if (settings !== undefined) disposers.push(ctx.slots.inject(MNEMON_COMPONENT_SETTINGS_SLOT, () => ctx.slots.register({ name: MNEMON_COMPONENT_SETTINGS_SLOT, key, ...order }, props => createElement(settings, props))))
+  if (status !== undefined) disposers.push(ctx.slots.inject(MNEMON_COMPONENT_STATUS_SLOT, () => ctx.slots.register({ name: MNEMON_COMPONENT_STATUS_SLOT, key, ...order }, props => createElement(status, props))))
   if (disposers.length === 0) throw new Error('memory component UI contributes nothing: ' + key)
   return () => { for (const dispose of disposers.reverse()) dispose() }
 }
