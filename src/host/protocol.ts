@@ -202,6 +202,7 @@ export interface ResolvedRuntimeMemoryConfig {
   maintenanceMaxTokens: number
 }
 
+export { STARTER_COMPONENT_ROWS } from './starter-components.ts'
 export { normalizeDisplayMode } from './display-mode.ts'
 export type MnemonDisplayMode = 'sidebar' | 'builtin'
 

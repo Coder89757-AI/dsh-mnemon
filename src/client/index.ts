@@ -2,6 +2,7 @@ import {
   MNEMON_SETTINGS_NAMESPACE,
   MNEMON_UI_SETTINGS_NAMESPACE,
   normalizeDisplayMode,
+  STARTER_COMPONENT_ROWS,
   type ClientConnectionHandle,
   type Config,
   type InteractionConfig,
@@ -11,7 +12,6 @@ import { MnemonComponentRowHost, MnemonSettingsHost } from './MnemonSettingsHost
 import { createComponentSettingsDirectory, type MemoryComponentSettingsProps, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT, renderComponentRegion } from './component-ui.tsx'
 import { installShippedComponentSettings } from './component-settings.tsx'
 import { installShippedComponentStatus } from './component-status.tsx'
-import { STARTER_COMPONENT_ROWS } from './starter-rows.ts'
 import { MnemonTurnTail } from './MnemonTurnTail.tsx'
 import { MnemonPluginActions, MNEMON_PACKAGE_NAME } from './MnemonPluginActions.tsx'
 import { MnemonSaveAction } from './MnemonSaveAction.tsx'

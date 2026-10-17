@@ -18,7 +18,7 @@ import { MnemonComponentRowHost, MnemonSettingsHost } from '../src/client/Mnemon
 import { MnemonSettingsScope } from '../src/client/settings.ts'
 import { MnemonBuiltinWorkspaceHost } from '../src/client/workspace-mount.tsx'
 import type { Config } from '../src/host/protocol.ts'
-import { STARTER_COMPONENT_ROWS } from '../src/client/starter-rows.ts'
+import { STARTER_COMPONENT_ROWS } from '../src/host/starter-components.ts'
 
 const disposers: Array<() => void> = []
 afterEach(() => {

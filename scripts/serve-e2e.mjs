@@ -11,6 +11,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { STARTER_ENHANCEMENT_PACKAGES, STARTER_SELF_REGISTERING_PACKAGES } from '../src/host/starter-components.ts'
 import { documentProtectionModel } from './fixtures/document-protection-model.mjs'
 import { documentArchiveModel } from './fixtures/document-archive-model.mjs'
 import { runtimeRoutingModel } from './fixtures/runtime-routing-model.mjs'
@@ -99,9 +100,9 @@ for (const flag of flags) {
 }
 // The Layered strategy composes one Source per role, so a second runtime track needs the General one.
 if (flags.has('--second-runtime') && !flags.has('--general-strategy')) throw new Error('--second-runtime requires --general-strategy')
-const extensionNames = ['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture']
+const extensionNames = STARTER_ENHANCEMENT_PACKAGES
 // Strategy packages that also register themselves as bundles; the Starter row owns them.
-const selfRegistering = new Set([...extensionNames, 'dsh-mnemon-strategy-general'])
+const selfRegistering = new Set(STARTER_SELF_REGISTERING_PACKAGES)
 const extensionsEnabled = flags.has('--strategy-extensions')
 const liveModel = flags.has('--live-model')
 if (liveModel && !process.env.DEEPSEEK_API_KEY?.trim()) throw new Error('--live-model reads the model key from DEEPSEEK_API_KEY')

@@ -2,7 +2,7 @@
 
 The repository's own tooling: the checks `pnpm run verify` chains, the release steps, the real-WebUI fixtures and the Provider Lab helpers. [Development and verification](../docs/en/development/README.md) describes how they fit together.
 
-Most scripts run through a `package.json` script; run the rest with `node` from the repository root, after `pnpm build` and `pnpm --workspace-concurrency=1 -r build` when they load built packages. When `MNEMON_E2E_DSH` points at another DSH installation, run the script with `node`, not through pnpm, so that DSH inherits no `NODE_PATH`. None of these files ships in an npm package. Reusable tooling for an evidence record belongs here or in `tests/`, and the record links to it.
+Most scripts run through a `package.json` script; run the rest with `node` from the repository root, after `pnpm build` and `pnpm --workspace-concurrency=1 -r build` when they load built packages. When `MNEMON_E2E_DSH` points at another DSH installation, run the script with `node`, not through pnpm, so that DSH inherits no `NODE_PATH`. None of these files ships in an npm package. `verify-headless-profile.mjs`, `verify-sync-git.mjs` and `serve-e2e.mjs` take the Starter's component lists from `src/host/starter-components.ts`, which Node loads as TypeScript without a build step. Reusable tooling for an evidence record belongs here or in `tests/`, and the record links to it.
 
 ## Checks
 

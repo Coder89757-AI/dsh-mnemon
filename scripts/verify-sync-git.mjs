@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { STARTER_SELF_REGISTERING_PACKAGES } from '../src/host/starter-components.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Set MNEMON_E2E_DSH to another DSH installation's lib/bin.js to check that release.
@@ -172,7 +173,7 @@ function reconcileReply(instructions) {
 
 async function install(home, workspace, env) {
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-  const selfRegistering = new Set(['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture', 'dsh-mnemon-strategy-general'])
+  const selfRegistering = new Set(STARTER_SELF_REGISTERING_PACKAGES)
   const plugins = Object.keys(manifest.dependencies).filter(name => name.startsWith('dsh-mnemon-') && !selfRegistering.has(name))
   const result = await run(process.execPath, [dshBin, 'plugin', '--profile', 'web', 'add',
     'link:' + root, ...plugins.map(name => 'link:' + join(root, 'plugins', name)),
