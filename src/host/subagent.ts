@@ -91,6 +91,10 @@ const AUTONOMOUS_WRITE_TOOLS = WRITE_TOOLS.filter(tool => tool !== 'mnemon_forge
 const EXPLICIT_WRITE_TOOLS = WRITE_TOOLS
 const DOCUMENT_READ_TOOLS: MemoryToolName[] = ['mnemon_document_search']
 const REVIEW_TOOLS: MemoryToolName[] = [...DOCUMENT_READ_TOOLS, 'mnemon_runtime_memory', 'mnemon_document_create']
+/** Whether a call or a receipt names one of these memory tools, each a row of the tool table. */
+function isTool(name: string | undefined, ...tools: readonly MemoryToolName[]): boolean {
+  return tools.some(tool => tool === name)
+}
 const RESULT_TOOL_NAME = 'mnemon_subagent_result'
 /** How many finished delegated children stay refused memory tools if DSH resumes one. */
 const FINISHED_CHILDREN = 1_000
@@ -402,7 +406,7 @@ const UNEMBEDDED_HINT = 'Saved without a vector, because embedding did not succe
 
 /** The memories a write saved without a vector: Mnemon Native says so with `embedded: false` (#388). */
 function withoutVector(receipts: readonly CapturedToolReceipt[]): Array<{ memoryBodyId?: string; id?: string }> {
-  return receipts.filter(receipt => receipt.name === 'mnemon_remember').flatMap(receipt => {
+  return receipts.filter(receipt => isTool(receipt.name, 'mnemon_remember')).flatMap(receipt => {
     const value = optionalObject(receipt.value)
     if (value?.embedded !== false) return []
     return [{ ...(typeof value.memoryBodyId === 'string' ? { memoryBodyId: value.memoryBodyId } : {}), ...(typeof value.id === 'string' ? { id: value.id } : {}) }]
@@ -515,7 +519,7 @@ const SPACE_WRITE_TOOLS: ReadonlySet<string> = new Set<MemoryToolName>(['mnemon_
  */
 export function spaceWriteGuard(target: string | undefined, inactive: ReadonlySet<string>): (execution: ToolExecution) => string | undefined {
   return execution => {
-    if (execution.name === 'mnemon_memory_body_merge') {
+    if (isTool(execution.name, 'mnemon_memory_body_merge')) {
       return 'Saving a memory never merges Memory Spaces; a merge is a request of its own. Write the memory, or finish without writing.'
     }
     const input = optionalObject(execution.arguments) ?? {}
@@ -524,7 +528,7 @@ export function spaceWriteGuard(target: string | undefined, inactive: ReadonlySe
       if (execution.name !== undefined && SPACE_WRITE_TOOLS.has(execution.name) && space !== target) {
         return `This write was requested for Memory Space ${JSON.stringify(target)}. Call ${execution.name} with memoryBodyId ${JSON.stringify(target)}, or finish without writing and say why it does not fit.`
       }
-      if (execution.name === 'mnemon_memory_body_create' || execution.name === 'mnemon_memory_body_update') {
+      if (isTool(execution.name, 'mnemon_memory_body_create', 'mnemon_memory_body_update')) {
         return `This write was requested for Memory Space ${JSON.stringify(target)}, so it creates or changes no space. Write there, or finish without writing and say why it does not fit.`
       }
       return undefined
@@ -533,7 +537,7 @@ export function spaceWriteGuard(target: string | undefined, inactive: ReadonlySe
     if (execution.name !== undefined && SPACE_WRITE_TOOLS.has(execution.name)) {
       return `Memory Space ${JSON.stringify(space)} is switched off, and a write would switch it on. Write to an active space, or finish without writing and say which space would fit.`
     }
-    if (execution.name === 'mnemon_memory_body_update' && input.active === true) return `Memory Space ${JSON.stringify(space)} is switched off; only the user switches it on.`
+    if (isTool(execution.name, 'mnemon_memory_body_update') && input.active === true) return `Memory Space ${JSON.stringify(space)} is switched off; only the user switches it on.`
     return undefined
   }
 }
@@ -821,7 +825,7 @@ function receiptMemoryBodyIds(receipt: CapturedToolReceipt): string[] {
     addStrings(ids, record?.memoryBodyIds)
     addStrings(ids, record?.sourceMemoryBodyIds)
   }
-  if (receipt.name === 'mnemon_memory_body_create' || receipt.name === 'mnemon_memory_body_update') addString(ids, value?.id)
+  if (isTool(receipt.name, 'mnemon_memory_body_create', 'mnemon_memory_body_update')) addString(ids, value?.id)
   return [...ids]
 }
 
@@ -1484,7 +1488,7 @@ ${naturalRequest(request, target === undefined ? REQUEST_LABELS : TARGETED_WRITE
       const entry = optionalObject(receipt.value)
       return typeof entry?.memoryBodyId === 'string' ? entry.memoryBodyId : undefined
     }
-    const landed = [...new Set(writes.filter(receipt => receipt.name === 'mnemon_remember' && writeLanded(optionalObject(receipt.value) ?? {}))
+    const landed = [...new Set(writes.filter(receipt => isTool(receipt.name, 'mnemon_remember') && writeLanded(optionalObject(receipt.value) ?? {}))
       .flatMap(receipt => spaceOf(receipt) ?? []))]
     const activated = [...new Set(writes.filter(receipt => mutationResultCommitted(receipt.value)).flatMap(receipt => spaceOf(receipt) ?? [])
       .filter(id => inactive!.has(id)))]

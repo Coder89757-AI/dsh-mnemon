@@ -105,8 +105,11 @@ export function memoryWritePresentation(sourceTypeId: string | undefined, operat
   }) as unknown as JsonValue
 }
 
+/** A named tool whose result records activity: one that reads or writes a Source operation, not an inspection. */
+type RecordedToolName = { [Name in MemoryToolName]: (typeof MEMORY_TOOLS)[Name] extends { readonly sourceTypeId: string; readonly kind: 'read' | 'write' } ? Name : never }[MemoryToolName]
+
 /** The activity a named tool's result records: the Source and operation its row in the tool table names. */
-export function namedToolPresentation(name: Exclude<MemoryToolName, 'mnemon_view_route' | 'mnemon_view_action'>): (args: unknown, value: unknown) => JsonValue {
+export function namedToolPresentation(name: RecordedToolName): (args: unknown, value: unknown) => JsonValue {
   const tool = MEMORY_TOOLS[name]
   return tool.kind === 'write' ? memoryWritePresentation(tool.sourceTypeId, tool.operation) : memoryReadPresentation(tool.sourceTypeId, tool.operation)
 }

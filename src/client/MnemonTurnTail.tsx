@@ -29,7 +29,7 @@ function isClosedTurn(turn: unknown): boolean {
   return (turn as { status?: unknown } | null)?.status === 'closed'
 }
 
-/** Route a settled tool name to the workbench page its row in the tool table names; any other tool opens Memory Spaces. */
+/** Route a settled tool name to the workbench page its row in the tool table names; a tool without a row, or whose row names no page, opens Memory Spaces. */
 export function memoryPageForTool(name: string): MnemonAnchorPage {
   return memoryTool(name)?.page ?? 'memory-spaces/spaces'
 }

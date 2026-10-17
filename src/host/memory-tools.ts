@@ -1,7 +1,8 @@
 /**
- * The memory tools the Host registers, one row each: the Source Route or Action a named tool runs,
- * whether it reads, inspects or writes, and how the turn memory bar shows it. Host modules and the
- * browser client read this table; each tool's model-visible description and schema stay with its
+ * One row for each memory tool the Host registers: the Source Route or Action a named tool runs,
+ * whether it reads, inspects or writes, and how the turn memory bar shows it. The result tool that
+ * delegated children finish with runs no Source operation and has no row. Host modules and the
+ * browser client read this table; each tool's model-visible description and schemas stay with its
  * registration in tools.ts. The two generic View tools run whichever Route or Action of the turn's
  * View a call names, so their rows name no Source and no page.
  */
