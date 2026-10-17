@@ -1,9 +1,10 @@
 // A stand-in embedding service on loopback, not a model: it speaks Ollama's API at its root and
 // the OpenAI-compatible API under /v1, the two protocols the Mnemon CLI uses, and answers each
 // text with a deterministic vector. `--archive-copies` uses it as its slow service; run it with
-// `node` for Mnemon CLI probes or as the embedding endpoint on the Memory Spaces page:
+// `node` for Mnemon CLI probes or as the endpoint in the Mnemon Native embedding settings:
 //   node scripts/fixtures/fake-embeddings.mjs [--port <n>] [--port-file <file>] [--delay-ms <ms>] [--missing-model] [--model <name>]
 import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -85,7 +86,8 @@ export function fakeEmbeddingServer({ model = FAKE_EMBEDDING_MODEL, dimensions =
   })
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Node runs a script it reaches through a link, such as /tmp on macOS, from its real path.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const { values } = parseArgs({ options: {
     port: { type: 'string', default: '0' },
     'port-file': { type: 'string' },

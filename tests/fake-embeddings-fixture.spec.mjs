@@ -1,14 +1,17 @@
-import { execFile } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FAKE_EMBEDDING_MODEL, fakeEmbedding, fakeEmbeddingServer } from '../scripts/fixtures/fake-embeddings.mjs'
 
 const servers = []
 const directories = []
+const commands = []
 afterEach(async () => {
+  for (const command of commands.splice(0)) if (command.exitCode === null && command.signalCode === null) command.kill('SIGKILL')
   for (const server of servers.splice(0)) {
     server.closeAllConnections()
     await new Promise(resolve => server.close(resolve))
@@ -85,26 +88,38 @@ describe('fake embedding service', () => {
     expect((await slow.post('/api/embed', { input: 'text' })).status).toBe(200)
     expect(Date.now() - started).toBeGreaterThanOrEqual(145)
     expect(slow.events).toEqual([request(1, 'ollama', FAKE_EMBEDDING_MODEL, 1, 150)])
-    // While an answer is held for a minute, the listing still answers; closing the service ends the wait.
+    // While an embedding answer is held for a minute, the listing still answers.
     const held = await serve({ delayMs: 60_000 })
     void held.post('/v1/embeddings', { input: 'text' }).catch(() => {})
     await expect.poll(() => held.events.length).toBe(1)
     expect((await held.get('/v1/models')).status).toBe(200)
   })
 
-  it('stops waiting for a client that hung up, so closing the service never waits out a delay', async () => {
-    const f = await serve({ delayMs: 60_000 })
+  it('runs as a command, also through a linked path, and leaves no answer waiting once its client hung up', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mnemon-fake-embeddings-'))
+    directories.push(directory)
+    // Node runs a script it reaches through a link from its real path; the command must start all the same.
+    const fixtures = join(directory, 'fixtures')
+    symlinkSync(fileURLToPath(new URL('../scripts/fixtures', import.meta.url)), fixtures, 'junction')
+    const portFile = join(directory, 'port')
+    const command = spawn(process.execPath, [join(fixtures, 'fake-embeddings.mjs'), '--port-file', portFile, '--delay-ms', '60000'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    commands.push(command)
+    let output = ''
+    command.stdout.on('data', chunk => { output += chunk })
+    const exited = new Promise(resolve => command.once('exit', (code, signal) => resolve({ code, signal })))
+    const port = () => { try { return readFileSync(portFile, 'utf8') } catch { return '' } }
+    await expect.poll(port, { timeout: 10_000 }).not.toBe('')
     const abort = new AbortController()
-    const pending = f.post('/api/embed', { input: 'text' }, { signal: abort.signal }).then(() => 'answered', () => 'aborted')
-    await expect.poll(() => f.events.length).toBe(1)
+    const pending = fetch(`http://127.0.0.1:${port()}/api/embed`, { method: 'POST', body: JSON.stringify({ input: 'text' }), signal: abort.signal })
+      .then(() => 'answered', () => 'aborted')
+    await expect.poll(() => output, { timeout: 10_000 }).toContain('Fake embeddings: {"event":"embedding-request","request":1,"delayMs":60000')
     abort.abort()
     expect(await pending).toBe('aborted')
-    const started = Date.now()
-    f.server.closeAllConnections()
-    await new Promise(resolve => f.server.close(resolve))
-    servers.splice(servers.indexOf(f.server), 1)
-    expect(Date.now() - started).toBeLessThan(10_000)
-  })
+    command.kill('SIGTERM')
+    // An answer still held for the hung-up client would keep the process alive for the rest of the minute.
+    const late = new Promise(resolve => setTimeout(resolve, 10_000, 'still running 10 s after SIGTERM').unref())
+    expect(await Promise.race([exited, late])).toEqual({ code: 0, signal: null })
+  }, 30_000)
 
   it('refuses a route it does not serve and a body that is not a JSON object', async () => {
     const f = await serve()
