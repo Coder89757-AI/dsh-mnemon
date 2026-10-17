@@ -23,10 +23,14 @@ Host renders them for the selected turn; a different Strategy does not inherit
 this plugin's instructions. DSH-assisted write/archival workflows remain Host
 adapters over Source operations; Core does not schedule autonomous maintenance.
 
-The public `threeTierActionWorkflow` policy in `./extension-sdk` identifies Runtime
-capacity maintenance only while this Strategy is selected. The DSH Host applies
-it to named tools, generic View Actions, child writes and browser management.
-The operation retains its exact Source instance, scope, revision and authority;
+Its manifest declares `workflows: ['idle-review', 'runtime-capacity']`, the
+background work the dsh-mnemon Host runs for the turns it composes: idle review,
+and Runtime capacity maintenance, which the Host applies to named tools, generic
+View Actions, child writes and browser management. A Strategy built by spreading
+this manifest copies the declaration; `workflows: []` keeps it out of both.
+`threeTierActionWorkflow` in `./extension-sdk` is kept for existing callers and
+deprecated; the Host reads the declaration instead. A maintenance operation
+retains its exact Source instance, scope, revision and authority;
 archive destinations stay within the selected writable Source and pinned
 namespaces. A browser write needs no conversation. One eligible destination
 requires no model; routing and local profile compaction use a clean workspace

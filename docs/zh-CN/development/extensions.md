@@ -163,7 +163,7 @@ export function apply(ctx: Context): void {
 
 分层策略插件用此钩子实现旧版 Documents 单次查询、Recall 两次查询的共享证据预算、去重与 Related 准入。命名工具和通用 View Route 共用这套策略。Source 保留原始检索、存储和维护能力；显式的 DSH 辅助写入/归档仍由 Host 工作流执行，不成为 Core 的通用后台任务。
 
-默认插件的公开 `threeTierActionWorkflow` 纯策略识别 Runtime `mutate` 的容量维护，Host 将具名工具、通用 View Action、子 Agent 与浏览器管理统一接入该流程。它只在选择分层策略时生效，不改变 Source 的独立管理协议，也不向 Core 添加三层存储逻辑。模型写入保留发起回合的 View、实例与权限，归档目标限定在该 View 的可写 Memory Spaces Source 及其定义的写入范围内；多个可写归档 Source 无法唯一确定目标时拒绝归档。浏览器使用已登记工作区对应的 scope、实例与确认修订，无需绑定用户会话。只有需要模型判断时才创建独立维护任务。
+策略在 manifest 的 `workflows` 中声明 Host 要为它组合的回合运行哪些后台工作。`idle-review` 让 Host 在对话空闲时审查由该策略组合的回合（[工作流](../reference/workflows.md)）。`runtime-capacity` 让 Host 接管 Runtime Source 的 `mutate` Action：写入会超出运行时记忆容量时，先归档较早的条目；具名工具、通用 View Action、子 Agent 与浏览器管理都走这一流程。分层策略声明了这两项，其他随附的策略都不声明。以展开分层策略 manifest 的方式构造的策略会连同 `workflows` 一起复制；写 `workflows: []` 可让它两项都不参与。策略选用的空闲审查就是分层策略的空闲审查：设置项是分层策略的 `idleReview`，任务 Agent 通过运行时记忆与项目档案工具写入。Host 会忽略自己不认识的工作流 id；0.5.10 之前的分层策略没有声明，按声明了这两项处理。分层策略插件仍导出 `threeTierActionWorkflow` 供已有调用方使用，Host 不再使用它。这些都不改变 Source 的独立管理协议，也不向 Core 添加三层存储逻辑。模型写入保留发起回合的 View、实例与权限，归档目标限定在该 View 的可写 Memory Spaces Source 及其定义的写入范围内；多个可写归档 Source 无法唯一确定目标时拒绝归档。浏览器使用已登记工作区对应的 scope、实例与确认修订，无需绑定用户会话。只有需要模型判断时才创建独立维护任务。
 
 归档预检时，Host 可向所选 Memory Spaces Source 的 `body-directory` 读取传入 `{ writeScope: { viewId, grant } }`。可选响应 `writeScope: { viewId, sourceInstanceKey, memoryBodyIds }` 与 `remember` 使用相同权限：grant 中已知的命名空间，加上该 View 创建的命名空间。Source 校验 grant 所属实例；Host 校验返回的 View 与 Source 身份，将空范围视为无授权，并在写入前复查权限与当前能力。未返回此字段的 Source 仍使用较窄的已激活命名空间固定范围。响应格式损坏时拒绝操作。Host 不会用其他 Source 或当前目录替代缺失的授权；召回保留原有命名空间固定范围。
 
