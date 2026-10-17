@@ -4,7 +4,7 @@
 
 The Starter drew Memory Spaces' settings for it: the Provider list, the embedding settings only Mnemon Native reads and the Mnemon Native row lived in `src/client`, together with 122 entries of Memory Spaces' copy, so Memory Spaces could not change its own settings without a dsh-mnemon release. `ProviderIcon` and the Provider label helpers existed twice, and two field forms were built from the same Provider descriptor. This change gives Memory Spaces its settings and its copy, draws every Provider field with one component and keeps one settings interface whichever versions of the two packages a profile runs. Nothing a user sees or does changes: the settings, Memory Spaces' dialogs and its source lists render as on `main`, pixel for pixel and element for element, in every language DSH offers, and turning Memory Spaces on shows the same frames as on `main`. Three differences the audit found stay as they are and are planned on the roadmap ([Left for later](#left-for-later)).
 
-Tested revision: the branch `claude/spaces-owns-settings`, merged with `main` up to #419, on 2026-10-17 with Node 24.19.0 and pnpm 10.13.1, against the pinned DSH 0.2.1-rc.1 and the installed 0.2.1-rc.2 and 0.2.0-rc.2.
+Tested revision: the branch `claude/spaces-owns-settings`, merged with `main` up to #420, which moved development to DSH 0.2.1-rc.2, on 2026-10-17 with Node 24.19.0 and pnpm 10.13.1, against the pinned DSH 0.2.1-rc.2 and the installed 0.2.0-rc.2. The WebUI runs below came before that merge, on the DSH each one names.
 
 ## What changes
 
@@ -98,11 +98,11 @@ Behavior changes are out of scope here, so these stay as on `main`; they are pla
 | Command | Result |
 |---|---|
 | `pnpm run typecheck`; `pnpm --filter dsh-mnemon-source-memory-spaces run typecheck` | passed |
-| `pnpm run test:root` | 2,083 passed, 7 skipped (145 files) |
-| `DSH_HOST_ROOT=<installed 0.2.0-rc.2> pnpm run test:installed-dsh` | 2,080 passed, 10 skipped (143 files) |
+| `pnpm run test:root` | 2,086 passed, 7 skipped (146 files) |
+| `DSH_HOST_ROOT=<installed 0.2.0-rc.2> pnpm run test:installed-dsh` | 2,083 passed, 10 skipped (144 files) |
 | `pnpm --filter dsh-mnemon-source-memory-spaces run test` | 287 passed, 2 skipped (26 files) |
-| `pnpm run verify` | passed in 113 s: 4,624 links and 338 anchors, a deterministic build of 54 files, 17 plugin suites with 587 passed and 3 skipped, the root suite as above, Headless, a package of 64 files and 21 browser-side client declarations |
-| `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` | passed in 206 s: 17 independent plugin repositories and 18 packed artifacts |
+| `pnpm run verify` | passed in 126 s: 4,640 links and 342 anchors, a deterministic build of 54 files, 17 plugin suites with 587 passed and 3 skipped, the root suite as above, Headless, a package of 64 files and 21 browser-side client declarations |
+| `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` | passed in 196 s: 17 independent plugin repositories and 18 packed artifacts |
 | `pnpm run release:intent` (base: `main` as merged) | passed: changeset coverage for `dsh-mnemon` and `dsh-mnemon-source-memory-spaces` |
 
 New tests: `tests/client-component-fallback.spec.tsx` (the four rows, the swap after and during the first reads, and the built Memory Spaces client beside 0.5.31's exports), `tests/client-component-host.spec.ts` (what `host` lends and refuses, the page-bound scope, which reads are joined and the retained store, and the RPC names and payloads, moved from `tests/client-api.spec.ts` with the client methods), `tests/client-component-reads.spec.tsx` (an embedding test after the endpoint changed, and a Provider list after the storage scope changed, each asking the Host again while the earlier read is still under way), a class-name check in `tests/client-sidebar-css.spec.ts`, and Memory Spaces' `tests/settings.spec.tsx` (the field as each place draws it, including both credential rules; the language chain; its own settings over a lent `host`; registration by dsh-mnemon version). The existing settings tests in `tests/client-settings.spec.tsx` render Memory Spaces' settings over the host the Starter lends and pass with their assertions unchanged.

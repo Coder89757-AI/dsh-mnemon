@@ -4,7 +4,7 @@
 
 记忆空间的设置原本由 Starter 代为绘制：Provider 列表、只有 Mnemon Native 读取的嵌入设置和 Mnemon Native 这一行都在 `src/client` 中，记忆空间的 122 条文案也在那里，因此记忆空间要改自己的设置，必须等 dsh-mnemon 发布。`ProviderIcon` 与 Provider 标签辅助函数各有两份，同一个 Provider 描述还生成了两套字段表单。本改动把设置与文案交还记忆空间，所有 Provider 字段改由同一个组件绘制，并且无论 profile 运行的是这两个包的哪个版本，都只有一套设置。用户看到和能做的都没有变化：在 DSH 提供的每种语言下，设置、记忆空间的对话框和它的来源列表与 `main` 的渲染结果逐像素、逐元素一致，打开记忆空间时显示的画面也与 `main` 相同。审计发现的三处差异保持原样，已列入路线图（见[留待以后](#留待以后)）。
 
-测试版本：分支 `claude/spaces-owns-settings`，已合并 `main`（到 #419 为止），2026-10-17，Node 24.19.0、pnpm 10.13.1，针对锁定的 DSH 0.2.1-rc.1 与已安装的 0.2.1-rc.2、0.2.0-rc.2。
+测试版本：分支 `claude/spaces-owns-settings`，已合并 `main`（到 #420 为止，该 PR 把开发基线移到 DSH 0.2.1-rc.2），2026-10-17，Node 24.19.0、pnpm 10.13.1，针对锁定的 DSH 0.2.1-rc.2 与已安装的 0.2.0-rc.2。下文的 WebUI 运行都在这次合并之前进行，所用 DSH 版本见各自说明。
 
 ## 改了什么
 
@@ -98,11 +98,11 @@ WebUI 一列来自 e2e fixture：用已发布的 `dsh-mnemon@0.5.31` 与 `dsh-mn
 | 命令 | 结果 |
 |---|---|
 | `pnpm run typecheck`；`pnpm --filter dsh-mnemon-source-memory-spaces run typecheck` | 通过 |
-| `pnpm run test:root` | 2,083 通过，7 跳过（145 个文件） |
-| `DSH_HOST_ROOT=<已安装的 0.2.0-rc.2> pnpm run test:installed-dsh` | 2,080 通过，10 跳过（143 个文件） |
+| `pnpm run test:root` | 2,086 通过，7 跳过（146 个文件） |
+| `DSH_HOST_ROOT=<已安装的 0.2.0-rc.2> pnpm run test:installed-dsh` | 2,083 通过，10 跳过（144 个文件） |
 | `pnpm --filter dsh-mnemon-source-memory-spaces run test` | 287 通过，2 跳过（26 个文件） |
-| `pnpm run verify` | 通过，用时 113 秒：4,624 个链接与 338 个锚点，54 个文件的确定性构建，17 个插件测试套件 587 通过、3 跳过，根测试同上，Headless，64 个文件的包与 21 个浏览器一侧的客户端类型声明 |
-| `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` | 通过，用时 206 秒：17 个独立插件仓库与 18 个打包产物 |
+| `pnpm run verify` | 通过，用时 126 秒：4,640 个链接与 342 个锚点，54 个文件的确定性构建，17 个插件测试套件 587 通过、3 跳过，根测试同上，Headless，64 个文件的包与 21 个浏览器一侧的客户端类型声明 |
+| `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` | 通过，用时 196 秒：17 个独立插件仓库与 18 个打包产物 |
 | `pnpm run release:intent`（基准：合并后的 `main`） | 通过：`dsh-mnemon` 与 `dsh-mnemon-source-memory-spaces` 的 changeset 覆盖 |
 
 新增测试：`tests/client-component-fallback.spec.tsx`（上表四行、在首次读取之后与之中的替换，以及构建好的记忆空间客户端搭配 0.5.31 的导出）；`tests/client-component-host.spec.ts`（`host` 借出和拒绝的内容、限定在页面的范围、哪些读取会被合并与保留的内容，以及 RPC 名称与载荷，随客户端方法一起从 `tests/client-api.spec.ts` 移来）；`tests/client-component-reads.spec.tsx`（更改 Endpoint 后的嵌入测试，以及更改存储范围后的 Provider 列表，在较早的读取仍在进行时都会重新询问 Host）；`tests/client-sidebar-css.spec.ts` 中的类名检查；记忆空间的 `tests/settings.spec.tsx`（字段在各处的绘制方式，包括两条凭据规则；语言链；它自己的设置基于借来的 `host` 工作；按 dsh-mnemon 版本决定是否注册）。`tests/client-settings.spec.tsx` 中原有的设置测试改为在 Starter 借出的 host 上渲染记忆空间的设置，断言不变，全部通过。
