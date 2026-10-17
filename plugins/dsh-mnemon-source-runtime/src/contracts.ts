@@ -93,7 +93,7 @@ export interface RuntimeMemoryMaintenancePlan {
   localArchive?: true
 }
 
-import { DEFAULT_RUNTIME_MEMORY_LIMIT_BYTES, DEFAULT_RUNTIME_USER_LIMIT_BYTES } from './defaults.ts'
+import { DEFAULT_RUNTIME_MEMORY_LIMIT_BYTES, DEFAULT_RUNTIME_USER_LIMIT_BYTES, MAX_RUNTIME_MEMORY_LIMIT_BYTES } from './defaults.ts'
 export const RUNTIME_MEMORY_VERSION = 1
 export const RUNTIME_ENTRY_DELIMITER = '\n§\n'
 export interface RuntimeMemoryLimits {
@@ -104,6 +104,8 @@ export const RUNTIME_MEMORY_LIMITS: RuntimeMemoryLimits = {
   memory: DEFAULT_RUNTIME_MEMORY_LIMIT_BYTES,
   user: DEFAULT_RUNTIME_USER_LIMIT_BYTES,
 }
+/** The largest limit, in UTF-8 bytes, either target's file may be given. */
+export const RUNTIME_MEMORY_LIMIT_MAX_BYTES = MAX_RUNTIME_MEMORY_LIMIT_BYTES
 
 /** The longest git branch name a scope may hold. */
 export const RUNTIME_BRANCH_NAME_MAX = 128

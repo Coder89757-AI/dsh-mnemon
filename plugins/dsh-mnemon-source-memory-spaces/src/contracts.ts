@@ -62,7 +62,9 @@ export interface MemoryProviderConfigField {
   options?: MemoryProviderConfigOption[]
 }
 
-export type MemoryPlacementCapability = 'graph' | 'entities' | 'related' | 'exact-write' | 'link' | 'forget'
+/** What a persistence strategy's rules can require of a Provider; the Starter's settings schema takes the same list. */
+export const MEMORY_PLACEMENT_CAPABILITIES = ['graph', 'entities', 'related', 'exact-write', 'link', 'forget'] as const
+export type MemoryPlacementCapability = (typeof MEMORY_PLACEMENT_CAPABILITIES)[number]
 export type MemoryPlacementPreference = 'balanced' | 'local-first' | 'shared-first'
 
 export interface MemoryPlacementRules {

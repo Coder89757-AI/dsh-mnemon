@@ -10,14 +10,12 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join, resolve } from 'node:path'
-import { MNEMON_MACHINE_LABEL_MAX, type MnemonMachineIdentity, type MnemonMachineLabelSource } from './protocol.ts'
+import { machineLabelValid, MNEMON_MACHINE_LABEL_MAX, type MnemonMachineIdentity, type MnemonMachineLabelSource } from './protocol.ts'
 import type { StorageRoot } from './storage-root.ts'
 
 export const MNEMON_MACHINE_DIRECTORY = 'state'
 export const MNEMON_MACHINE_FILE = 'machine.json'
 const MNEMON_MACHINE_VERSION = 1
-// A name is shown on one line of a history row, so it carries no control characters.
-const CONTROL = /[\p{Cc}\u2028\u2029]/u
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
@@ -33,9 +31,7 @@ export function defaultMachineLabel(): string {
 /** A name a person gives this machine, as it is stored and shown. */
 export function machineLabel(value: unknown): string {
   const label = typeof value === 'string' ? value.trim() : ''
-  if (label === '' || label.length > MNEMON_MACHINE_LABEL_MAX || CONTROL.test(label)) {
-    throw new Error('machine name must be 1 to ' + String(MNEMON_MACHINE_LABEL_MAX) + ' characters on one line')
-  }
+  if (!machineLabelValid(label)) throw new Error('machine name must be 1 to ' + String(MNEMON_MACHINE_LABEL_MAX) + ' characters on one line')
   return label
 }
 

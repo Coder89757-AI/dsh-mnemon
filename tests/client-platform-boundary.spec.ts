@@ -37,8 +37,24 @@ describe('browser bundle platform boundary', () => {
   })
 
   it('keeps the shared browser contract free of Node runtime imports', () => {
-    const contract = readFileSync(new URL('../src/host/protocol.ts', import.meta.url), 'utf8')
-    expect(contract).not.toMatch(/from\s*['"]node:/u)
+    // protocol.ts and every module it takes values from or re-exports, as the browser bundle loads them.
+    const pending = [join(root, 'src/host/protocol.ts')]
+    const visited = new Set<string>()
+    while (pending.length > 0) {
+      const file = pending.pop()!
+      if (visited.has(file)) continue
+      visited.add(file)
+      const source = readFileSync(file, 'utf8')
+      expect(source, file).not.toMatch(/from\s*['"]node:/u)
+      for (const node of ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true).statements) {
+        if ((!ts.isImportDeclaration(node) && !ts.isExportDeclaration(node)) || node.moduleSpecifier === undefined || !ts.isStringLiteral(node.moduleSpecifier)) continue
+        const typeOnly = ts.isImportDeclaration(node) ? node.importClause?.isTypeOnly === true : node.isTypeOnly
+        if (!typeOnly && node.moduleSpecifier.text.startsWith('.')) pending.push(resolve(dirname(file), node.moduleSpecifier.text))
+      }
+    }
+    expect([...visited].map(file => file.slice(root.length).split(sep).join('/')).sort()).toEqual([
+      'src/host/display-mode.ts', 'src/host/memory-tools.ts', 'src/host/protocol.ts', 'src/host/starter-components.ts', 'src/host/sync-rules.ts', 'src/host/view-protocol.ts',
+    ])
   })
 
   it('delegates deployment URLs and transport to the host connection', () => {

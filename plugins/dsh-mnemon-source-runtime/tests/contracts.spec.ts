@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RUNTIME_ARCHIVE_DIRECTORY, RUNTIME_DIRECTORY, RUNTIME_ENTRY_DELIMITER, RUNTIME_ENTRY_MAX_BYTES, RUNTIME_LOCK_FILE, RUNTIME_MEMORIES_FILE,
-  RUNTIME_PROJECTION_FILES, runtimeBytes, runtimeProjection, summarizeRuntimeMemories, type RuntimeMemoryEntry,
+  RUNTIME_MEMORY_LIMIT_MAX_BYTES, RUNTIME_MEMORY_LIMITS, RUNTIME_PROJECTION_FILES, runtimeBytes, runtimeProjection, summarizeRuntimeMemories,
+  type RuntimeMemoryEntry,
 } from '../src/contracts.ts'
+import { runtimeSourceConfig } from '../src/config.ts'
 import { RuntimeMemoryController } from '../src/controller.ts'
 
 const directories: string[] = []
@@ -81,6 +83,25 @@ describe('Runtime storage contracts', () => {
     const { controller } = fixture()
     await expect(controller.mutate({ action: 'add', target: 'memory', content: 'x'.repeat(RUNTIME_ENTRY_MAX_BYTES) })).resolves.toMatchObject({ success: true })
     await expect(controller.mutate({ action: 'add', target: 'memory', content: 'y'.repeat(RUNTIME_ENTRY_MAX_BYTES + 1) })).rejects.toThrow(`max ${RUNTIME_ENTRY_MAX_BYTES}`)
+  })
+
+  it('state the limits the configuration and the controller apply', () => {
+    // The Starter's settings default and bound both files with these.
+    expect(RUNTIME_MEMORY_LIMITS).toEqual({ memory: 10 * 1024, user: 4 * 1024 })
+    expect(RUNTIME_MEMORY_LIMIT_MAX_BYTES).toBe(1024 * 1024)
+    const { root, controller } = fixture()
+    expect(controller.limits).toEqual(RUNTIME_MEMORY_LIMITS)
+    expect(runtimeSourceConfig({ dataDir: root }, 'contracts')).toMatchObject({ memoryLimitBytes: RUNTIME_MEMORY_LIMITS.memory, userLimitBytes: RUNTIME_MEMORY_LIMITS.user })
+    for (const key of ['memoryLimitBytes', 'userLimitBytes'] as const) {
+      expect(runtimeSourceConfig({ dataDir: root, [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES }, 'contracts')[key]).toBe(RUNTIME_MEMORY_LIMIT_MAX_BYTES)
+      expect(() => runtimeSourceConfig({ dataDir: root, [key]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 }, 'contracts')).toThrow()
+    }
+    for (const target of ['memory', 'user'] as const) {
+      const storage = { effectiveDataDir: () => root }
+      expect(new RuntimeMemoryController(storage, undefined, { ...RUNTIME_MEMORY_LIMITS, [target]: RUNTIME_MEMORY_LIMIT_MAX_BYTES }).limits[target]).toBe(RUNTIME_MEMORY_LIMIT_MAX_BYTES)
+      expect(() => new RuntimeMemoryController(storage, undefined, { ...RUNTIME_MEMORY_LIMITS, [target]: RUNTIME_MEMORY_LIMIT_MAX_BYTES + 1 }))
+        .toThrow(`runtime ${target} memory limit must be an integer within 1..${RUNTIME_MEMORY_LIMIT_MAX_BYTES} bytes`)
+    }
   })
 
   it('summarize a stored file for an inventory without judging its entries, and never throw', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveMemorySpacesConfig as resolveConfig } from '../src/config.ts'
+import { MEMORY_PLACEMENT_CAPABILITIES } from '../src/contracts.ts'
 
 describe('Memory Spaces configuration rules', () => {
   it('validates configurable recall quality policy thresholds and expansion', () => {
@@ -68,6 +69,17 @@ describe('Memory Spaces configuration rules', () => {
       },
       providerConnections: { openviking: { targetUri: 'viking://resources/team' } },
     })
+  })
+
+  it('takes exactly the placement capabilities its contracts list', () => {
+    // The Starter's settings schema offers the same list.
+    expect(MEMORY_PLACEMENT_CAPABILITIES).toEqual(['graph', 'entities', 'related', 'exact-write', 'link', 'forget'])
+    expect(resolveConfig({ persistenceStrategy: { mode: 'automatic', rules: { requiredCapabilities: [...MEMORY_PLACEMENT_CAPABILITIES] } } })
+      .persistenceStrategy.rules.requiredCapabilities).toEqual([...MEMORY_PLACEMENT_CAPABILITIES])
+    for (const capability of ['telepathy', 'search', 'Graph']) {
+      expect(() => resolveConfig({ persistenceStrategy: { rules: { requiredCapabilities: [capability as never] } } }), capability)
+        .toThrow(`dsh-mnemon: unsupported persistence capability: ${capability}`)
+    }
   })
 
   it('marks only an unchosen persistence provider as the default', () => {

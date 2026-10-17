@@ -17,7 +17,7 @@
  * response body.
  */
 import { createGitHubTransport, describeTransportError, type MnemonGitHubFetch } from './github-transport.ts'
-import type { MnemonSyncGitHubPoll, MnemonSyncGitHubRepository, MnemonSyncGitHubRepositoryList, MnemonSyncGitHubStatus } from './protocol.ts'
+import { githubRepositoryNameValid, type MnemonSyncGitHubPoll, type MnemonSyncGitHubRepository, type MnemonSyncGitHubRepositoryList, type MnemonSyncGitHubStatus } from './protocol.ts'
 import { MnemonSyncError } from './sync-error.ts'
 
 export const MNEMON_GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code'
@@ -43,7 +43,6 @@ export const MNEMON_GITHUB_REPOSITORY_PAGE = 100
 export const MNEMON_GITHUB_REPOSITORY_PAGES = 5
 export const MNEMON_GITHUB_USER_AGENT = 'dsh-mnemon-sync'
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
-const REPOSITORY_NAME = /^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u
 
 /** What one stored grant holds. The token is the only field the channel needs. */
 export interface MnemonGitHubGrant {
@@ -403,7 +402,7 @@ export class MnemonGitHubAuth {
   async create(name: unknown, isPrivate: unknown, signal?: AbortSignal): Promise<MnemonSyncGitHubRepository> {
     const token = await this.requireToken()
     const value = typeof name === 'string' ? name.trim() : ''
-    if (!REPOSITORY_NAME.test(value)) throw new Error('a GitHub repository name holds letters, digits, dots, dashes and underscores')
+    if (!githubRepositoryNameValid(value)) throw new Error('a GitHub repository name holds letters, digits, dots, dashes and underscores')
     const { status, body } = await this.ask(MNEMON_GITHUB_API_BASE + '/user/repos', {
       method: 'POST',
       headers: { ...this.authorization(token), 'content-type': 'application/json' },

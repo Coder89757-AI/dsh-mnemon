@@ -167,7 +167,7 @@ RPC 是 DSH Host 与插件客户端之间的内部桥，不是稳定外部 HTTP 
 | `/dsh-mnemon-write` | 其余所有 mutation | 需要 `remoteAccess: trusted-host` |
 | `/dsh-mnemon-pack` | 备份导出与导入 | 需要 `remoteAccess: trusted-host` |
 | `/dsh-mnemon-sync` | Git 仓库同步：配置、推送、预览与拉取 | 需要 `remoteAccess: trusted-host` |
-| `/dsh-mnemon-review` | 合并记忆的整理建议、审查意见，以及执行已接受的方案 | 读取允许；`reconcile` 与 `apply` 需要 `remoteAccess: trusted-host` |
+| `/dsh-mnemon-review` | 合并记忆的整理建议、审查意见，以及执行已接受的方案 | 需要 `remoteAccess: trusted-host` |
 | `/dsh-mnemon-settings` | Host 与界面设置 | `get` 允许；`mutate` 需要 `remoteAccess: trusted-host` |
 | `/dsh-mnemon-view` | 记忆组合读取 | 允许 |
 | `/dsh-mnemon-view-settings` | 保存记忆组合、安装组件 | 需要 `remoteAccess: trusted-host` |
