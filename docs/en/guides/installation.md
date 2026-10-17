@@ -58,7 +58,7 @@ The first time you open it:
 ## 3. Install and enable dsh-mnemon
 
 1. Click **Plugins** in the sidebar, then **Add plugin** in the top right corner.
-2. Type `dsh-mnemon` and click **Install**. Until you choose one yourself, DSH picks the **Registry** on the right of the dialog that answers faster: usually the **Official npm registry**, or the **Mainland China mirror** in mainland China. You rarely need to change it.
+2. Type `dsh-mnemon` and click **Install**. DSH chooses the **Registry** on the right of the dialog for you: until you pick one, it uses whichever answers faster, usually the **Official npm registry**, or the **Mainland China mirror** in mainland China. You rarely need to change it.
 3. After a few seconds the dialog says **Installed** with the version. Click **Enable now**; DSH does not need a restart.
 4. **Memory System** appears in the sidebar. That is it.
 
@@ -104,7 +104,7 @@ The **Plugins** page of the DeepSeek Harness desktop app works like the web page
 
 - The desktop app uses its own `desktop` profile. From DSH 0.2 the command line no longer manages that profile, so install and manage plugins on the app's Plugins page.
 - Desktop windows load from the app's own `dsh-app://app/` address. dsh-mnemon 0.5.18 and earlier treated them as remote pages, which made the Memory System and the plugin settings read only ([#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)). 0.5.19 fixes this; update dsh-mnemon, with no configuration change.
-- DSH's Plugins page cannot update an installed plugin. Update dsh-mnemon from **Memory System → Status → Check versions → Update**; [Version checks and updates](./operations.md#version-checks-and-updates) explains how it installs, and what to do once when updating from 0.5.21 or earlier in the desktop app.
+- DSH's Plugins page cannot update an installed plugin. Update dsh-mnemon from **Memory System → Status → Check versions → Update**; [Version checks and updates](./operations.md#version-checks-and-updates) explains how it installs. dsh-mnemon 0.5.21 and earlier cannot do this in the desktop app: update from them once by removing dsh-mnemon on the Plugins page and adding it again. Your memory data stays.
 - After updating dsh-mnemon in the desktop app, quit the app completely and open it again (`Cmd+Q` on macOS) so the new version loads. If an error appears after an update, see [Common problems](#common-problems).
 
 ## 7. Command line and Headless
@@ -156,7 +156,7 @@ dsh plugin --profile web remove dsh-mnemon
 
 - Restart DSH after an update so the new version loads.
 - For 24 hours after a release, pnpm 11 keeps `update` on the installed version; add the new version by name instead, as [Common problems](#common-problems) describes.
-- In the WebUI and the desktop app, **Memory System → Status → Check versions → Update** does the same; see [Version checks and updates](./operations.md#version-checks-and-updates).
+- In the WebUI and the desktop app, **Memory System → Status → Check versions → Update** installs the exact new version, as `dsh plugin add dsh-mnemon@<version>` would, so the 24-hour rule does not hold it back. On DSH 0.2.1, dsh-mnemon 0.5.30 and earlier stop there with `already-installed` instead; see [Version checks and updates](./operations.md#version-checks-and-updates).
 - Before you move to another DSH release, follow the [upgrade order](../reference/compatibility.md#upgrade-order).
 - Uninstalling removes the plugin registration, never your memory data in global, workspace or custom roots.
 
@@ -288,4 +288,4 @@ The sidebar has no **Memory System**, and every dsh-mnemon component on the Plug
 
 ### Upgrading DSH
 
-Update dsh-mnemon on your current DSH first, then upgrade DSH, and update dsh-mnemon again. Otherwise the new DSH turns an older release it does not support off when it starts; your memory is untouched and comes back once the plugin is updated. The [upgrade order](../reference/compatibility.md#upgrade-order) names the release to update to first on each older DSH, and the command to run once where **Check versions → Update** stops with `already-installed`.
+Update dsh-mnemon on your current DSH first, then upgrade DSH, and update dsh-mnemon again. Otherwise the new DSH turns an older release it does not support off when it starts; your memory is untouched and comes back once the plugin is updated. [Older DSH releases](../reference/compatibility.md#older-dsh-releases) lists the release each older DSH keeps, and the [upgrade order](../reference/compatibility.md#upgrade-order) gives the steps, including the command to run once where **Check versions → Update** stops with `already-installed`.

@@ -8,7 +8,7 @@
 
 <a id="1-命令行安装与升级"></a>
 
-还没有安装？[安装与启动](./installation.md)从安装 Node.js 讲到第一条记忆，每一步都有截图，命令行、开发检出、Headless 与更新也都在那里。准备升级已有安装？请按[兼容性与升级](../reference/compatibility.md)操作。
+还没有安装？[安装与启动](./installation.md)从安装 Node.js 讲到第一条记忆，每一步都有截图，[命令行](./installation.md#7-命令行与-headless)、开发检出、Headless 与更新也都在那里。准备升级已有安装？请按[兼容性与升级](../reference/compatibility.md)操作。
 
 <a id="2-打开记忆系统"></a>
 

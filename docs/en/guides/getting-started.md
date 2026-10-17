@@ -6,7 +6,7 @@ This guide starts where dsh-mnemon is installed and ends with memory that a conv
 
 <a id="1-install-and-upgrade-from-the-command-line"></a>
 
-Not installed yet? [Install and start](./installation.md) takes you from installing Node.js to your first memory, with a screenshot for every step, and covers the command line, development checkouts, Headless and updates. Upgrading an existing installation? Follow [Compatibility and upgrades](../reference/compatibility.md).
+Not installed yet? [Install and start](./installation.md) takes you from installing Node.js to your first memory, with a screenshot for every step, and covers [the command line](./installation.md#7-command-line-and-headless), development checkouts, Headless and updates. Upgrading an existing installation? Follow [Compatibility and upgrades](../reference/compatibility.md).
 
 <a id="2-open-the-memory-system"></a>
 

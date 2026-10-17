@@ -93,4 +93,4 @@ Out of scope:
 - 当前没有确定性的凭据/秘密检测，请勿向运行时记忆、项目档案或记忆空间写入密钥、token、私钥。
 - Cordis isolate 提供生命周期所有权和作用域组合，不是安全沙箱。Source、其内部 Provider 与 Strategy 都是在 DSH Host 进程执行的普通 JavaScript，只能安装受信任来源的扩展。
 - 模型生成的 Strategy 源码不会自动执行。manifest、限定范围的 grant、replay 与 Core/Host 校验可以降低意外越权，但无法让恶意同进程代码变安全。
-- Runtime Memory 与 Documents 为本地存储，Mnemon Native 默认本地；显式启用的三方 Provider 可能按配置 endpoint 与凭据发起网络调用或本地进程调用，并向对应服务暴露数据。
+- 运行时记忆与项目档案为本地存储，Mnemon Native 默认本地；显式启用的三方 Provider 可能按配置 endpoint 与凭据发起网络调用或本地进程调用，并向对应服务暴露数据。

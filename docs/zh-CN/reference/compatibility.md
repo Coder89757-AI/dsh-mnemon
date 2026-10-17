@@ -14,6 +14,12 @@ Starter 固定经过测试的官方插件组合。下表记录验证范围，不
 
 dsh-mnemon 支持 `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`：DSH 0.2.0 从 0.2.0-rc.2 起，DSH 0.2.1 及之后的 0.2 版本从 0.2.1-rc.1 起，正式版也在其中。DSH 0.2.1 从 Starter 的 `engines.dsh` 读取这个范围；DSH 0.2.0 从 Starter 的 DSH peer（可选的 `dsh-app-boot` 与 `dsh-typert-protocol`）读取，两者写的是同一个范围。DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查这个范围，预发布版本也参与比较；不包含当前 DSH 的版本会被拒绝安装或停用。`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的检查，既覆盖受支持的版本，也覆盖已不再支持的版本。五个 Strategy 包使用新的扩展 SDK，要求 `dsh-mnemon ^0.5.17`；各 Source 保持 `^0.5.1`，Provider 则依赖记忆空间 Source。
 
+<a id="首次安装时的宿主行为"></a>
+
+第一次安装？DSH 如何选择安装源、安装结果卡片为什么显示软件包的英文简介，见[安装与启动](../guides/installation.md#3-安装并启用-dsh-mnemon)；发布不足 24 小时的版本为什么会装成较早的版本，见[常见问题](../guides/installation.md#常见问题)。
+
+<a id="更早的-dsh"></a>
+
 **更早的 DSH。** 升级宿主之前，请继续使用支持你的 DSH 的 dsh-mnemon 版本：
 
 | DSH | dsh-mnemon |
@@ -37,9 +43,11 @@ dsh-mnemon 支持 `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`：DSH 0.2.0 �
 
 在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`。请退出 DSH，运行 `dsh plugin --profile web add dsh-mnemon@<版本>`（`desktop` profile 改在桌面版的插件页中管理），再启动 DSH。之后的更新照常通过**检查版本**完成。
 
-### 从 v0.4 升级，以及插件作者
+### 从 v0.4 升级
 
 v0.5 保留默认 v0.4 的存储、配置与侧栏工作流。可选的会话标签页入口（`builtin`）使用同一组 Source 页面，旧 `buildin` 拼写会规范化。通用策略与三个记忆增强默认关闭。插件页中的记忆组合负责列出、开关和配置已安装的组件；没有单独的 View 页。
+
+### 独立插件
 
 独立插件作者使用声明的 peer 范围与公开出口；旧的私有控制器导入不属于受支持的升级表面。自定义组合需要独立于 Starter 验证，参见[插件开发](../development/extensions.md)与[v0.5.0 发布边界](../releases/v0.5.0.md)。
 
@@ -63,10 +71,6 @@ dsh-mnemon 在两个版本上运行方式相同，使用同一份记忆数据。
 - **检查版本 → 更新。** DSH 0.2.0 用自己的安装器安装新版本。开启热重载时，DSH 0.2.1 不再覆盖安装 profile 中已有的插件：要换成另一个版本，只能先移除再安装，这会让 dsh-mnemon 在更新自己时中途停止，安装失败还会让 profile 失去它。因此在 DSH 0.2.1 上，dsh-mnemon 对新版本运行 DSH 自己的 `dsh plugin add`（[更新如何进行](../guides/operations.md#版本检查与更新)）：它持有 profile 的锁，使用 DSH 启动时的包管理器，并在安装任何东西之前拒绝与当前 DSH 不兼容的版本。DSH 没有提供这个命令时，错误信息会给出应在 DSH 停止时运行的 `dsh plugin` 命令。两个版本上更新都在重启后生效。dsh-mnemon 0.5.30 及更早版本在 DSH 0.2.1 上会停在 `DSH could not install dsh-mnemon@<版本>: already-installed`；请按[升级顺序](#升级顺序)在命令行中更新一次。
 - **不兼容的版本。** DSH 以不兼容为由拒绝更新时，错误信息会写明该版本的要求：DSH 0.2.1 报告版本的 requirements，显示为 `requires DSH ^0.3.0`；DSH 0.2.0 报告它的 peer，显示为 `requires @deepseek-ai/dsh ^0.3.0`。
 - **插件页。** DSH 0.2.0 会把 Starter 的分组行列为已关闭的组件，见 [DSH 0.2.0 上的 bundle 组件列表](#dsh-020-上的-bundle-组件列表)。DSH 0.2.1 只列出各组件。
-
-<a id="首次安装时的宿主行为"></a>
-
-首次安装时 DSH 如何选择安装源、安装结果卡片为什么显示软件包的英文简介，见[安装与启动](../guides/installation.md#3-安装并启用-dsh-mnemon)；发布不足 24 小时的版本为什么会装成较早的版本，见[常见问题](../guides/installation.md#常见问题)。
 
 ## 桌面版窗口
 
@@ -112,11 +116,11 @@ Mnemon 消息使用 Session V3、V4 均接受的生产者专属来源 `dsh-mnemo
 
 若 Mnemon 启动时原 `settings.yaml` 仍存在，由 DSH 执行导入；完成后再重启一次该 profile，恢复 Mnemon 专属偏好。DSH 未公开导入完成信号，因此 Mnemon 等待新宿主进程，避免并发写入。只读或归属不明确的根条目不会被修改；相关旧设置节损坏时，不做部分导入，也不标记完成。请保留备份，参考启动诊断后再修复；不会猜测自定义根 ID 或其他 profile 的 hash。
 
-回滚到这样的旧宿主时，保留 profile patch 和旧设置备份，并重新安装支持该宿主的 dsh-mnemon 版本（见[更早的 DSH](#兼容性与升级)）。此后修改的设置不会自动反向导出到旧设置文件，需要恢复对应备份或在旧宿主重新设置；Runtime、档案、记忆空间与 Provider 数据不受影响。参见 [DSH 0.1.7 设置验证](../../pr-assets/issue-267-settings-migration/README.zh-CN.md)。
+回滚到这样的旧宿主时，保留 profile patch 和旧设置备份，并重新安装支持该宿主的 dsh-mnemon 版本（见[更早的 DSH](#更早的-dsh)）。此后修改的设置不会自动反向导出到旧设置文件，需要恢复对应备份或在旧宿主重新设置；Runtime、档案、记忆空间与 Provider 数据不受影响。参见 [DSH 0.1.7 设置验证](../../pr-assets/issue-267-settings-migration/README.zh-CN.md)。
 
 ## 旧版 DSH 宿主
 
-以下内容只适用于[上表](#兼容性与升级)中由较早 dsh-mnemon 版本支持的宿主。
+以下内容只适用于[上表](#更早的-dsh)中由较早 dsh-mnemon 版本支持的宿主。
 
 ### DSH 0.1.7 上的桌面版窗口
 
@@ -130,8 +134,6 @@ Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用
 
 受影响的 `0.5.13` 安装中，Desktop 的回退分支会将缺少 `createVolatile` 导出的真实错误隐藏为 `Cannot find package 'dsh-mnemon'`。平铺 `mnemon-bundle` 不能修复该导入失败。Starter 保留 group、根停用总开关、独立 Source/Strategy 选择、私有 Provider 子项和已有设置命名空间。在所属 profile 更新 Mnemon 后重启即可；本修复不需要迁移记忆或配置。参见[原版 Desktop 复现与验收记录](../../pr-assets/issue-274-profile-generation/README.zh-CN.md)。
 
-<a id="其他记录"></a>
-
 ## 验证与证据
 
 ### 受支持的宿主
@@ -143,6 +145,8 @@ Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用
 ### 产品素材
 
 [v0.5.19 浅色图集](../../assets/webui-v0.5.19/README.md)在 DSH 0.1.7-rc.2 上截取，覆盖双语桌面页面、插件页，以及 390 × 844 下的对话、记忆空间与记忆组合面板，该宽度下较长的名称会截断。此后改动过的页面（例如分层策略页面上的任务 Agent 模型选择）现在看起来已有不同。它没有复测所有 Host 设置页或真实手机，因此不宣称完整支持手机；历史 v0.5.2 在 390px 下的布局问题保留[原版本证据](../../pr-assets/documentation-refresh/README.md)。
+
+<a id="其他记录"></a>
 
 ### 旧版宿主
 

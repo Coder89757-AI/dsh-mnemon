@@ -131,7 +131,7 @@ Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blo
 
 - Runtime memory and Project Documents are local files; Mnemon Native is local. Third-party Providers use their own services and scopes.
 - Turning a component off does not erase its memory, and changing the storage location does not move data. Use ZIP backup to carry it.
-- Git sync publishes the same Mnemon Pack payload as readable files to a repository you own, so another machine can pull it, with **Sync now**, **Check remote** before anything is written, or **Automatic sync**. When two machines wrote one subject differently, both wordings stay until you accept a **Memory reconciliation** plan; see [Git repository sync](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md#git-repository-sync).
+- Git sync publishes the same Mnemon Pack payload as readable files to a repository you own, so another machine can pull it, with **Sync now**, **Check remote** before anything is written, or **Automatic sync**. When two machines wrote one subject differently, both wordings stay until you accept and apply a **Memory reconciliation** plan; see [Git repository sync](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md#git-repository-sync).
 - Saved Provider credentials stay on the Host and are never exported. Backups still contain private memory; protect them.
 - Sources and Strategies are trusted in-process JavaScript, not sandboxed code. Remembered history never outranks current instructions.
 

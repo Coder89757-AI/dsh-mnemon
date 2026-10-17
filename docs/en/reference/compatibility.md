@@ -14,6 +14,12 @@ The Starter pins a tested combination of official plugins. The table records ver
 
 dsh-mnemon supports `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`: DSH 0.2.0 from 0.2.0-rc.2, and DSH 0.2.1 and the later 0.2 releases from 0.2.1-rc.1, final releases included. DSH 0.2.1 reads the range from the Starter's `engines.dsh`; DSH 0.2.0 reads it from the Starter's DSH peers (`dsh-app-boot`, which is optional, and `dsh-typert-protocol`), which state the same range. Before DSH installs a plugin, and each time a profile starts, it checks the range against its own version, prereleases included, and refuses a release that excludes it or turns it off. `tests/dsh-host-compatibility.spec.ts` runs DSH's own check over all 18 package manifests, for the supported releases and for those no longer supported. The five Strategy packages require `dsh-mnemon ^0.5.17`, whose extension SDK they use; the Sources keep `^0.5.1`, and the Providers depend on the Memory Spaces Source instead.
 
+<a id="host-behavior-on-a-first-install"></a>
+
+Installing for the first time? How DSH chooses the registry, and why its result card shows the package's English description, is in [Install and start](../guides/installation.md#3-install-and-enable-dsh-mnemon); why a release younger than 24 hours can install an earlier one is under [Common problems](../guides/installation.md#common-problems).
+
+<a id="older-dsh-releases"></a>
+
 **Older DSH releases.** Keep the dsh-mnemon release that supports your DSH until you upgrade the host:
 
 | DSH | dsh-mnemon |
@@ -37,9 +43,11 @@ Update dsh-mnemon on your current DSH first, then upgrade DSH. On DSH 0.1.7-rc.2
 
 On DSH 0.2.1, **Check versions → Update** in dsh-mnemon 0.5.30 and earlier stops with `already-installed`. Quit DSH, run `dsh plugin --profile web add dsh-mnemon@<version>` (the `desktop` profile is managed on the desktop app's Plugins page instead), then start DSH again. Later updates go through **Check versions** as usual.
 
-### From v0.4, and for plugin authors
+### Upgrading from v0.4
 
 v0.5 preserves the default v0.4 storage, configuration and sidebar workflow. The optional conversation-tab placement (`builtin`) uses the same Source pages, and the retained `buildin` spelling is normalized. The General strategy and the three memory enhancements ship disabled. Memory composition on the Plugins page lists, switches and configures the installed components; there is no separate View tab.
+
+### Independent plugins
 
 Independent plugin authors use declared peer ranges and public exports. Old private controller imports are not a supported upgrade surface. Custom compositions must be verified separately from the Starter. See [Extensions](../development/extensions.md) and the [v0.5.0 release boundary](../releases/v0.5.0.md).
 
@@ -63,10 +71,6 @@ Where the two differ, dsh-mnemon takes the path each one offers:
 - **Check versions → Update.** DSH 0.2.0 installs the new version through its own installer. With hot reload, DSH 0.2.1 no longer installs over a plugin the profile has: another version replaces it only after it is removed, which would stop dsh-mnemon halfway through its own update, and a failed install would leave the profile without it. There dsh-mnemon runs DSH's own `dsh plugin add` for the new version ([how updates work](../guides/operations.md#version-checks-and-updates)). It holds the profile's lock, uses the package manager DSH was started with, and refuses a release incompatible with the running DSH before it installs anything. Where DSH offers no such command, the error names the `dsh plugin` command to run with DSH stopped. On both releases a restart applies the update. dsh-mnemon 0.5.30 and earlier stop on DSH 0.2.1 with `DSH could not install dsh-mnemon@<version>: already-installed`; update those once from the command line, as in [Upgrade order](#upgrade-order).
 - **Incompatible releases.** When DSH refuses an update as incompatible, the error names what the release needs: `requires DSH ^0.3.0` where DSH 0.2.1 reports the release's requirements, `requires @deepseek-ai/dsh ^0.3.0` where DSH 0.2.0 reports its peers.
 - **Plugins page.** DSH 0.2.0 lists the Starter's grouping row as an off component; see [the bundle component list on DSH 0.2.0](#the-bundle-component-list-on-dsh-020). DSH 0.2.1 lists only the components.
-
-<a id="host-behavior-on-a-first-install"></a>
-
-How DSH chooses the registry on a first installation, and why its result card shows the package's English description, is in [Install and start](../guides/installation.md#3-install-and-enable-dsh-mnemon); why a release younger than 24 hours can install an earlier one is under [Common problems](../guides/installation.md#common-problems).
 
 ## Desktop windows
 
@@ -112,11 +116,11 @@ DSH imports a `settings.yaml` left by an older host into the profile once and ke
 
 If the original `settings.yaml` still exists when Mnemon starts, DSH owns that import. Restart the profile once more after it finishes to recover Mnemon-specific preferences. DSH exposes no completion signal for its importer, so Mnemon deliberately waits for a new host process instead of racing it. A read-only or ambiguous root cannot be edited; malformed relevant sections are not partially imported or marked complete. Retain the backup and review the startup diagnostic before repairing it. Custom root IDs and another profile's hashed namespaces are not guessed.
 
-When rolling back to such an older host, keep a copy of the profile patch and retained settings backup, and reinstall the dsh-mnemon release that supports it (see [Older DSH releases](#compatibility-and-upgrades)). Settings edited since are not automatically exported back to the older settings file; restore the matching backup or reapply those preferences in the older host. Runtime, Documents, Memory Spaces, and Provider data are unaffected. See the [DSH 0.1.7 settings verification](../../pr-assets/issue-267-settings-migration/README.md).
+When rolling back to such an older host, keep a copy of the profile patch and retained settings backup, and reinstall the dsh-mnemon release that supports it (see [Older DSH releases](#older-dsh-releases)). Settings edited since are not automatically exported back to the older settings file; restore the matching backup or reapply those preferences in the older host. Runtime, Documents, Memory Spaces, and Provider data are unaffected. See the [DSH 0.1.7 settings verification](../../pr-assets/issue-267-settings-migration/README.md).
 
 ## Older DSH hosts
 
-These notes describe hosts that only the older dsh-mnemon releases in the [table above](#compatibility-and-upgrades) support.
+These notes describe hosts that only the older dsh-mnemon releases in the [table above](#older-dsh-releases) support.
 
 ### Desktop windows on DSH 0.1.7
 
@@ -130,8 +134,6 @@ Desktop may remove private `@deepseek-ai/*` packages from a plugin generation an
 
 In the affected `0.5.13` install, Desktop's fallback hides a missing `createVolatile` export behind `Cannot find package 'dsh-mnemon'`. Flattening `mnemon-bundle` does not fix that import failure. The Starter retains its group, root disable gate, independent Source/Strategy choices, private Provider children and existing settings namespaces. Update Mnemon in the owning profile and restart; no memory or configuration migration is required for this fix. See the [original Desktop reproduction and verification](../../pr-assets/issue-274-profile-generation/README.md).
 
-<a id="other-records"></a>
-
 ## Verification and evidence
 
 ### The supported hosts
@@ -143,6 +145,8 @@ See also the [upgrade evidence](../../pr-assets/main-rebase-20260904/README.md) 
 ### Product media
 
 The [v0.5.19 Light gallery](../../assets/webui-v0.5.19/README.md), captured on DSH 0.1.7-rc.2, covers the bilingual desktop pages, the Plugins page, and a conversation, Memory Spaces and the composition board at 390 × 844, where long names truncate. Pages changed since then, such as the Task Agent model choice on the Layered strategy's page, look different now. It does not retest every Host settings surface or physical phones, so phone support is not declared complete; the historical v0.5.2 layout failure at 390 px keeps its [versioned evidence](../../pr-assets/documentation-refresh/README.md).
+
+<a id="other-records"></a>
 
 ### Older hosts
 

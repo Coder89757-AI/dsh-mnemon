@@ -58,7 +58,7 @@ The Host fixes update commands and arguments. The browser cannot supply either; 
 **Storage → Backup and migration** on the `dsh-mnemon` page under **Plugins** operates on the **currently effective root**:
 
 - **Export ZIP** includes Runtime, Documents, and every Mnemon Native Memory Space. Third-party connections, local external stores, and remote data are excluded.
-- Only the Sources dsh-mnemon ships are in it: runtime memory, Project Documents and Memory Spaces. A Source installed from another plugin package is neither exported nor imported; it keeps its own data.
+- Only the memory sources dsh-mnemon ships are in it: runtime memory, Project Documents and Memory Spaces. A memory source installed from another plugin package is neither exported nor imported; it keeps its own data.
 - **Import ZIP** previews, validates, then merges into the effective root.
 - Packs include `manifest.json`, SHA-256 inventory, and component summaries.
 - Export/import hold component locks; a Memory Space with an uncheckpointed WAL is rejected.
@@ -79,7 +79,7 @@ Import is governed by `writeEnabled` and is rejected in read-only deployments. A
 
 **Storage → Git sync** publishes the same payload as ZIP backup to a Git repository, so another machine can pull it. The switch is off by default, and while it is off the row shows only its title and the switch: no status is read and no Git command runs. Switched on, the row opens one card that reads in the order it is set up: **Repository**, **Sync**, **Automatic sync**, **Backup history** and **Advanced**. The remote holds readable files; the storage root is never made a Git work tree.
 
-Like the ZIP, a sync carries only runtime memory, Project Documents and Memory Spaces. A Source installed from another plugin package is not synced; it keeps its own data.
+Like the ZIP, a sync carries only runtime memory, Project Documents and the Mnemon Native Memory Spaces. A memory source installed from another plugin package is not synced; it keeps its own data.
 
 On the configured branch and remote directory (defaults `mnemon-sync` and `mnemon/`):
 
@@ -128,11 +128,11 @@ Once connected, the row shows the repository, whether it answers and how it auth
 
 **Advanced** keeps this computer's name, the branch, the directory in the repository and the commit author, each showing the value in use; saving a new branch or directory says that the next sync writes there. **This computer's name** is what backup history and **Check remote** show as "from …" and what every sync publishes with its version: **Host name** uses the computer's current host name and follows it when it changes, and **Custom** takes a name of up to 120 characters on one line. A new name is used from the next sync on, which records it in a version of its own; earlier versions keep the name they were published with. The author is an explicit choice. **Default** commits as `dsh-mnemon sync <mnemon@localhost>`. **This computer's Git** uses the `user.name` and `user.email` Git has on the machine, and the default identity where none is configured, rather than failing or publishing a name Git guessed from the account and host names. **Custom** takes a name and an email.
 
-**Credentials.** They stay out of the payload, the configuration file, the browser, responses, error messages and the logs; the [sync channel](../reference/interfaces.md#sync-channel) gives the order in which they are resolved and the fields that describe them.
+**Credentials.** They stay out of the payload, the DSH profile configuration, the browser, responses, error messages and the logs; the [sync channel](../reference/interfaces.md#sync-channel) gives the order in which they are resolved and the fields that describe them.
 
 - A GitHub sign-in is kept in DSH's credentials store and is used only for repositories on `https://github.com`. Its scope is `repo`, so it reaches private repositories; a repository on another host needs its own token. A grant GitHub no longer honours is reported as such, with **Sign in again**. Signing out deletes the stored grant. A Host that mounts no credentials provider offers the address form alone.
 - A saved token lives in `state/sync-git.json` (mode `0600`) and belongs to the host it was saved for: moving the repository to another host forgets it unless a new token comes with the move. The `MNEMON_SYNC_GIT_TOKEN` environment variable, when set, comes before both.
-- When GitHub cannot be reached at all, the Host retries once through a proxy discovered from `HTTPS_PROXY`, `http_proxy`, `all_proxy` or, on Windows, the system proxy settings, so a machine whose launcher carries no proxy policy can still sign in. If no proxy is found, the page says so and names `HTTPS_PROXY` instead of showing `fetch failed`.
+- Sign-in works even when the launcher passes no proxy policy on: the Host retries once through a proxy it discovers, and names `HTTPS_PROXY` when it finds none. The [sync channel](../reference/interfaces.md#sync-channel) describes the fallback.
 - A remote that cannot be read fails the sync before anything is committed. A push the remote refuses after the commit, for example without write access, keeps the commit in the mirror and says why. Nothing is lost either way; sync again once the remote answers.
 
 ### Seeing every machine's backups and differences
@@ -278,7 +278,7 @@ For authenticated remote clients, `remoteAccess: trusted-host` grants management
 <a id="files"></a>
 <a id="web-and-model"></a>
 
-The Host runs the Mnemon CLI without a shell and bounds every call's time and output, serializes writes behind locks and revisions, keeps credentials and processes out of the browser, and gives each task Agent only the memory tools its task needs. [Architecture](../development/architecture.md#security-boundaries) lists each boundary.
+The Host runs the Mnemon CLI without a shell, bounds every call's time and output, and serializes writes behind locks and revisions. The browser never receives credentials and cannot start processes, and each task Agent gets only the memory tools its task needs. [Architecture](../development/architecture.md#security-boundaries) lists each boundary.
 
 These boundaries are not a secret scanner. There is no deterministic credential detection; never submit keys, tokens, private keys, or raw sensitive logs.
 
