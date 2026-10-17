@@ -1,5 +1,5 @@
 import type { HostSessionEvent } from "./dsh.ts"
-import type { TurnMemoryActivity, TurnMemoryActivitySnapshot } from "./protocol.ts"
+import { memoryTool, type TurnMemoryActivity, type TurnMemoryActivitySnapshot } from "./protocol.ts"
 import { parseMnemonActivityMeta } from './activity-presentation.ts'
 
 export type { TurnMemoryActivity, TurnMemoryActivitySnapshot } from "./protocol.ts"
@@ -9,19 +9,17 @@ interface PendingCall {
   name: string
 }
 
-const RECALL_TOOLS = new Set(['mnemon_recall', 'mnemon_related'])
-const INSPECTION_TOOLS = new Set(['mnemon_status', 'mnemon_memory_bodies'])
-const WRITE_TOOLS = new Set([
-  'mnemon_remember',
-  'mnemon_forget',
-  'mnemon_link',
-  'mnemon_document_manage',
-  'mnemon_document_create',
-  'mnemon_runtime_memory',
-  'mnemon_memory_body_create',
-  'mnemon_memory_body_update',
-  'mnemon_memory_body_merge',
-])
+/**
+ * The counter a settled call adds to: a named tool's write, inspection, or read, a read of
+ * Documents being a document search. The generic View tools and other tools count only by name.
+ */
+function counter(name: string): 'recalls' | 'writes' | 'documentSearches' | 'inspections' | undefined {
+  const tool = memoryTool(name)
+  if (tool?.sourceTypeId === undefined) return undefined
+  if (tool.kind === 'write') return 'writes'
+  if (tool.kind === 'inspect') return 'inspections'
+  return tool.sourceTypeId === 'documents' ? 'documentSearches' : 'recalls'
+}
 
 function eventTurn(event: HostSessionEvent): number | undefined {
   return typeof event.data.turn === 'number' ? event.data.turn : undefined
@@ -104,9 +102,7 @@ export class TurnActivityProjection {
     const semantic = parseMnemonActivityMeta(event.data.meta, callId, call.name)
     if (semantic.read !== undefined) activity.retrieved.push(semantic.read)
     if (semantic.writeback !== undefined) activity.writebacks.push(semantic.writeback)
-    if (call.name === 'mnemon_document_search') activity.documentSearches += 1
-    else if (RECALL_TOOLS.has(call.name)) activity.recalls += 1
-    else if (WRITE_TOOLS.has(call.name)) activity.writes += 1
-    else if (INSPECTION_TOOLS.has(call.name)) activity.inspections += 1
+    const counted = counter(call.name)
+    if (counted !== undefined) activity[counted] += 1
   }
 }
