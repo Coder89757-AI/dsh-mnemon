@@ -58,7 +58,7 @@ These are findings only; this change leaves every schema as it is. DSH checks a 
 
 ## Not in this change
 
-The turn memory bar still opens Memory Spaces for every chip and item of `mnemon_view_route` and `mnemon_view_action`, whichever Source served the call, because the activity those calls record names no Source. Recording the Source and routing by it would change where those items open, so it is left for a later change; for the same reason the generic rows of the table name no page. The named tools' execute paths also still name their Source and operation literally, so nothing ties a row's operation to what its tool runs, as on main. None of the findings above changes here either.
+The turn memory bar still opens Memory Spaces for every chip and item of `mnemon_view_route` and `mnemon_view_action`, whichever Source served the call, because the activity those calls record names no Source. Recording the Source and routing by it would change where those items open, so it is left for a later change; for the same reason the generic rows of the table name no page. The named tools' execute paths also still name their Source and operation literally, so nothing ties a row's operation to what its tool runs, as on main. None of the findings above changes here either. Both changes are planned on the [roadmap](../../en/roadmap.md#next-gaps-from-the-october-2026-review), with details in items 5 and 6 of the [plan](../../plans/review-gaps-2026-10.md).
 
 ## Compatibility
 
