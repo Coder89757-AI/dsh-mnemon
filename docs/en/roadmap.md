@@ -23,15 +23,15 @@ See [Architecture](./development/architecture.md), [Development](./development/R
 
 ## Next: gaps from the October 2026 review
 
-A review of the code after v0.5.31 found these concrete gaps. Each one changes what users, plugin authors or the model see, so each gets a pull request of its own. [The plan](../plans/review-gaps-2026-10.md) records what happens today and the proposed change for each.
+A review of the code after v0.5.31 found these concrete gaps. Each one changes what users, plugin authors or the model see, so each gets a pull request of its own. [The plan](../plans/review-gaps-2026-10.md) records what happens today and the proposed change for each, in the same order.
 
-- **Backups and Git sync keep every field of a Memory Space.** An import, and the sync that uses one, keeps six fields of each Memory Space entry, so a Native space loses its recorded placement decision and where its name came from.
-- **One atomic write and one lock rule for every store.** Eleven hand-written writes differ in what they leave behind after a failure and in how they name their temporary files, and two Sources remove a lock without checking that they still own it.
-- **One rule for a saved secret in Provider settings.** In Memory Spaces' **Memory providers** settings, deleting part of a saved secret's mask saves the rest of the mask as the secret. The dialogs' rule, where an empty field keeps the saved secret and clearing it is explicit, should apply there too.
-- **One timeout range for Mnemon calls.** The Host accepts 100–120,000 ms and the Memory Spaces Source 1–600,000 ms for the same value; aligning them must keep every stored value loading.
-- **The turn memory bar opens the page of the Source that served a tool.** Today a tool the bar does not know, including the generic View tools, and an item from an installed Source both open Memory Spaces.
-- **The named memory tools pass only what the Source accepts.** A property the model adds, a recall `limit` above 20 or a fractional `importance` can make the Source refuse a call the tool's schema allows.
-- **Providers bring their own translated text,** and a Provider without copy shows its label instead of an empty line.
+- **Backups and Git sync keep a Native space's placement decision.** An import that includes Memory Spaces, and the sync that uses one, keeps six fields of each Memory Space entry, so a Native space loses its recorded automatic placement decision.
+- **One atomic write and one lock rule for every store.** Eleven hand-written writes differ in what they leave behind after a failure and in how they name their temporary files, and only one of the four lock implementations checks that it still owns a lock before removing it.
+- **One rule for a saved secret in Provider settings.** In Memory Spaces' **Memory providers** settings, deleting part of a saved secret's mask and applying saves the rest of the mask as the secret. The dialogs' rule, where an empty field keeps the saved secret and clearing it is explicit, should apply there too.
+- **One timeout range for Mnemon calls.** The Host accepts 100–120,000 ms and the Memory Spaces Source 1–600,000 ms for the same value; once they agree, a stored value outside the range should be clamped, never refused.
+- **The turn memory bar opens the page of the Source that served a tool.** Today a tool the bar does not know, including the generic View tools, and an item from any other Source both open Memory Spaces.
+- **The named memory tools pass only what the Source accepts.** A property the model adds, a recall `limit` above 20, or a fractional `importance` sent through `mnemon_view_action` can make the Source refuse a call the tool's schema allows.
+- **Providers bring their own translated text,** and a Provider without copy shows its summary instead of an empty line.
 - **Memory Spaces reaches Mnemon Native through its Provider adapter** for embedding status and fill, the version check and space merges, so that other Providers can offer the same operations.
 - **SDK helpers for the code every Source and Provider repeats:** page presentation, refreshing on a new revision, navigation seeds, and a packaged Provider's entry with a default status check.
 

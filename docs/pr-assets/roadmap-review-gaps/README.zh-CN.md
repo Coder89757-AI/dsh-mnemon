@@ -6,12 +6,12 @@ v0.5.31 之后的审查产生了两类后续项。不改变行为的那些已分
 
 | 问题 | 发现于 | 在 `f41a121f` 上核对的位置 |
 |---|---|---|
-| 备份与 Git 同步只保留记忆空间条目的六个字段 | [#416](https://github.com/omdsh-dev/dsh-mnemon/pull/416)（各 Source 拥有自己的存储格式）的审查 | 记忆空间 `src/contracts.ts` 中的 `parseMemorySpaceRegistry`；`src/host/pack.ts` 中的 `readCurrentRegistry`、`mergeRegistry` 与 `writeRegistry` |
-| 统一的原子写入与锁规则 | 技术债审查 | `src/host` 与各 Source 中 11 处 `writeFileSync` + `renameSync`，以及 Holographic 驱动 |
-| 已保存密钥的统一规则 | 把 Provider 设置移入记忆空间时 | `src/client/ProviderSettingsSection.tsx` 中的 `SAVED_SECRET_MASK` 及其 `onChange`；记忆空间 `src/memory-spaces.ts` 中的 `includeSecrets` |
+| 备份与 Git 同步丢失 Native 空间的放置决定 | [#416](https://github.com/omdsh-dev/dsh-mnemon/pull/416)（各 Source 拥有自己的存储格式）的审查 | 记忆空间 `src/contracts.ts` 中的 `parseMemorySpaceRegistry` 与 `src/memory-spaces.ts` 中的 Native 加载代码；`src/host/pack.ts` 中的 `readCurrentRegistry`、`mergeRegistry` 与 `writeRegistry` |
+| 统一的原子写入与锁规则 | 技术债审查 | `src/host`、各 Source 与 Holographic 驱动中 11 处 `writeFileSync` + `renameSync`，以及四种锁实现 |
+| 已保存凭证的统一规则 | 把 Provider 设置移入记忆空间时 | `src/client/ProviderSettingsSection.tsx` 中的 `SAVED_SECRET_MASK` 及其 `onChange`；记忆空间 `src/memory-spaces.ts` 中的 `includeSecrets` |
 | 统一的超时范围 | 合并 Host 与各 Source 的常量时 | `src/host/config.ts` 与记忆空间 `src/config.ts` 中的 `timeoutMs` |
-| 回合记忆栏打开提供工具的 Source 的页面 | 整理记忆工具表时 | `src/client/MnemonTurnTail.tsx` 中的 `memoryPageForTool` 与 `itemTarget` |
-| 命名记忆工具只传递 Source 接受的参数 | 整理记忆工具表时 | `src/host/tools.ts` 中开放的 schema、`src/core/composition.ts` 中封闭 schema 的检查、记忆空间 `src/source.ts` 中召回 Route 的 `limit` |
+| 回合记忆栏打开处理该工具调用的 Source 的页面 | 整理记忆工具表时 | `src/client/MnemonTurnTail.tsx` 中的 `memoryPageForTool` 与 `itemTarget` |
+| 具名记忆工具只传递 Source 接受的参数 | 整理记忆工具表时 | `src/host/tools.ts` 中开放的 schema 与 `mnemon_document_create` 的参数透传、`src/core/composition.ts` 中封闭 schema 的检查、记忆空间 `src/source.ts` 中召回 Route 的 `limit` 与 remember Action 的 `importance` |
 | Provider 自带翻译文案 | 把 Provider 设置移入记忆空间时 | `src/client/locales.ts` 与记忆空间 `src/client/pages.tsx` 中的 `readSources.model.<id>` |
 | 记忆空间通过适配器访问 Mnemon Native | 技术债审查 | 记忆空间 `src/service.ts` 中的 `embed --status`、`embed --all`、`--version` 与 `import` |
 | 重复插件代码的 SDK 辅助函数 | 技术债审查 | 9 个 Provider 的 `src/index.ts` 与各 Source 的页面辅助代码 |
