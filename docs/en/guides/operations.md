@@ -58,6 +58,7 @@ The Host fixes update commands and arguments. The browser cannot supply either; 
 **Storage → Backup and migration** on the `dsh-mnemon` page under **Plugins** operates on the **currently effective root**:
 
 - **Export ZIP** includes Runtime, Documents, and every Mnemon Native Memory Space. Third-party connections, local external stores, and remote data are excluded.
+- Only the Sources dsh-mnemon ships are in it: runtime memory, Project Documents and Memory Spaces. A Source installed from another plugin package is neither exported nor imported; it keeps its own data.
 - **Import ZIP** previews, validates, then merges into the effective root.
 - Packs include `manifest.json`, SHA-256 inventory, and component summaries.
 - Export/import hold component locks; a Memory Space with an uncheckpointed WAL is rejected.
@@ -77,6 +78,8 @@ Import is governed by `writeEnabled` and is rejected in read-only deployments. A
 ### Git repository sync
 
 **Storage → Git sync** publishes the same payload as ZIP backup to a Git repository, so another machine can pull it. The switch is off by default, and while it is off the row shows only its title and the switch: no status is read and no Git command runs. Switched on, the row opens one card that reads in the order it is set up: **Repository**, **Sync**, **Automatic sync**, **Backup history** and **Advanced**. The remote holds readable files; the storage root is never made a Git work tree.
+
+Like the ZIP, a sync carries only runtime memory, Project Documents and Memory Spaces. A Source installed from another plugin package is not synced; it keeps its own data.
 
 On the configured branch and remote directory (defaults `mnemon-sync` and `mnemon/`):
 
