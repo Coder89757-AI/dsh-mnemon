@@ -36,7 +36,7 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 | 让皮肤适配 Mnemon 背景与透明度 | [皮肤开发](./development/skin-integration.md) |
 | 构建、测试与真实 WebUI 截图 | [开发与验证](./development/README.md) |
 | 为独立包管理版本和发布 | [发布流程](./development/releasing.md) |
-| 参与贡献：规则、脚本与设计计划 | [贡献指南](../../CONTRIBUTING.zh-CN.md) · [脚本](../../scripts/README.md) · [设计计划](../plans/README.md) |
+| 参与贡献：规则、脚本与设计计划 | [贡献指南](../../CONTRIBUTING.zh-CN.md) · [脚本](../../scripts/README.md)（英文） · [设计计划](../plans/README.md)（英文） |
 
 ## 最新变化
 
