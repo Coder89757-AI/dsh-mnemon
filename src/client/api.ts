@@ -37,6 +37,7 @@ import {
   type MnemonSyncPullResult,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
+  type MnemonEmbeddingFill,
   type MnemonEmbeddingStatus,
   type StatusView,
   type TaskAgentModelCatalog,
@@ -164,6 +165,11 @@ export class MnemonClient {
 
   updateProviderService(request: UpdateMemoryProviderServiceRequest): Promise<MemoryProviderServiceView> {
     return this.call(MNEMON_WRITE_CHANNEL, 'provider-service-update', this.scoped(request))
+  }
+
+  /** Fill in the vectors a Mnemon Native space lacks (#392). */
+  fillEmbeddings(memoryBodyId: string): Promise<MnemonEmbeddingFill> {
+    return this.call(MNEMON_WRITE_CHANNEL, 'embedding-fill', this.scoped({ memoryBodyId }))
   }
 
   /** Settled memory-tool activity of one turn, shared across all mounted tails. */

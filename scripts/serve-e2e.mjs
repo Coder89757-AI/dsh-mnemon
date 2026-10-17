@@ -24,9 +24,11 @@ import { reviewLayersModel } from './fixtures/review-layers-model.mjs'
 import { strictTemplateModel } from './fixtures/strict-template-model.mjs'
 import { generalStrategyModel } from './fixtures/general-strategy-model.mjs'
 import { exactIdModel } from './fixtures/exact-id-model.mjs'
+import { rememberTargetModel } from './fixtures/remember-target-model.mjs'
 import { saveActionModel } from './fixtures/save-action-model.mjs'
 import { profileCompactionModel } from './fixtures/profile-compaction-model.mjs'
 import { DOCS_DEMO_LANGUAGES, docsDemoAssistant, docsDemoModel, seedDocsDemo } from './fixtures/docs-demo.mjs'
+import { recallBudgetModel } from './fixtures/recall-budget-model.mjs'
 import { archiveCopiesLimitBytes, archiveCopiesPending, seedArchiveCopies, slowEmbeddingServer } from './fixtures/archive-copies.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -54,13 +56,16 @@ for (const flag of flags) {
   if (flag === '--review-layers') continue
   if (flag === '--strict-template') continue
   if (flag === '--general-strategy') continue
+  if (flag === '--second-runtime') continue
   if (flag === '--exact-id') continue
   if (flag === '--archive-copies') continue
   if (flag === '--save-action') continue
+  if (flag === '--remember-target') continue
   if (flag === '--profile-compaction') continue
   if (flag === '--without-mnemon-cli') continue
   if (flag === '--remote-management') continue
   if (flag === '--live-model') continue
+  if (flag === '--recall-budget') continue
   if (flag === '--docs-demo' || flag.startsWith('--docs-demo=')) {
     docsDemo = flag === '--docs-demo' ? 'zh-CN' : flag.slice('--docs-demo='.length)
     if (!DOCS_DEMO_LANGUAGES.includes(docsDemo)) throw new Error('--docs-demo accepts ' + DOCS_DEMO_LANGUAGES.join(' or '))
@@ -92,6 +97,8 @@ for (const flag of flags) {
   }
   throw new Error('Unknown option: ' + flag)
 }
+// The Layered strategy composes one Source per role, so a second runtime track needs the General one.
+if (flags.has('--second-runtime') && !flags.has('--general-strategy')) throw new Error('--second-runtime requires --general-strategy')
 const extensionNames = ['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture']
 // Strategy packages that also register themselves as bundles; the Starter row owns them.
 const selfRegistering = new Set([...extensionNames, 'dsh-mnemon-strategy-general'])
@@ -140,11 +147,13 @@ const scriptedModel = liveModel ? undefined : flags.has('--runtime-routing') ? r
   : flags.has('--general-strategy') ? generalStrategyModel(event => console.log('General strategy: ' + JSON.stringify(event)))
   : flags.has('--exact-id') ? exactIdModel(event => console.log('Exact id: ' + JSON.stringify(event)))
   : flags.has('--save-action') ? saveActionModel(event => console.log('Save action: ' + JSON.stringify(event)))
+  : flags.has('--remember-target') ? rememberTargetModel(event => console.log('Remember target: ' + JSON.stringify(event)))
   : flags.has('--profile-compaction') ? profileCompactionModel(event => console.log('Profile compaction: ' + JSON.stringify(event)))
   : flags.has('--runtime-write-scope') ? runtimeWriteScopeModel(event => console.log('Runtime write scope: ' + JSON.stringify(event)))
   : flags.has('--result-tool-cache') ? resultToolCacheModel(event => console.log('Result tool cache: ' + JSON.stringify(event)))
   : flags.has('--legacy-session-replay') ? legacySessionReplayModel(event => console.log('Legacy replay: ' + JSON.stringify(event)))
   : flags.has('--document-archive') ? documentArchiveModel(event => console.log('Document archive: ' + JSON.stringify(event)))
+  : flags.has('--recall-budget') ? recallBudgetModel(event => console.log('Recall budget: ' + JSON.stringify(event)))
   : docsDemo !== undefined ? docsDemoModel(docsDemo, event => console.log('Docs demo: ' + JSON.stringify(event))) : reviewModel ?? protectionModel
 const reviewFailure = flags.has('--review-failure')
 /**
@@ -326,6 +335,9 @@ try {
     + (flags.has('--profile-compaction') ? '- id: mnemon\n  config:\n    runtimeMemory:\n      userLimitBytes: 100\n    idleReview:\n      enabled: false\n' : '')
     + (slowEmbedder === undefined ? '' : `- id: mnemon\n  config:\n    runtimeMemory:\n      memoryLimitBytes: ${archiveCopiesLimitBytes}\n    embedding:\n      enabled: true\n      endpoint: http://127.0.0.1:${slowEmbedder.address().port}/v1\n      model: fixture-embed\n      protocol: openai\n`)
     + (flags.has('--general-strategy') ? '- id: mnemon-strategy-general\n  disabled: false\n- id: mnemon-strategy-default-three-tier\n  disabled: true\n- id: mnemon\n  config:\n    memoryView:\n      strategyTypeId: general\n' : '')
+    // A second runtime track beside the Starter's, with its own directory, as a profile can mount one (#397).
+    + (flags.has('--second-runtime') ? '- insert:\n    - id: mnemon-source-runtime-global\n      name: dsh-mnemon-source-runtime\n      config:\n        dataDir: '
+      + JSON.stringify(join(fixture, 'global-runtime')) + '\n        userDataDir: ' + JSON.stringify(join(fixture, 'global-runtime')) + '\n' : '')
     + (flags.has('--runtime-write-scope') ? '- id: mnemon\n  config:\n    persistenceStrategy:\n      mode: manual\n      providerId: mnemon-native\n    runtimeMemory:\n      memoryLimitBytes: 512\n' : '')
     + (reviewModel === undefined ? '' : '- insert:\n    - id: review-evidence-fixture\n      name: ' + JSON.stringify(reviewFixture) + '\n')
     + (extensionsEnabled ? extensionNames.map(name => `- id: ${name.slice(4)}\n  disabled: false\n`).join('') : ''))
@@ -335,9 +347,19 @@ try {
     console.log(`Archive copies seeded: working memory is full and Memory Space ${memoryBodyId} holds an exact copy of each entry; embeddings answer after ${embeddingDelayMs} ms.`)
     console.log('Add this working-memory entry on the Runtime Memory page: ' + archiveCopiesPending)
   }
+  // The docs demo's spaces, one of them switched off, for a memory saved into a named space (#387).
+  if (flags.has('--remember-target') && docsDemo === undefined) {
+    await seedDocsDemo({ dataDir, workspace, language: 'zh-CN' })
+    console.log('Remember target seeded; send remember-target-check.')
+  }
   if (docsDemo !== undefined) {
     await seedDocsDemo({ dataDir, workspace, language: docsDemo })
     console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target.'))
+  }
+  // The docs demo's memory, read by a model that asks three different Recall questions in one turn (#389).
+  if (flags.has('--recall-budget') && docsDemo === undefined) {
+    await seedDocsDemo({ dataDir, workspace, language: 'zh-CN' })
+    console.log('Recall budget seeded; send recall-budget-check.')
   }
   console.log('Fixture: ' + fixture)
   console.log('Workspace: ' + workspace)

@@ -2,6 +2,14 @@
 export function isDefaultSourceInstance(instanceKey: string, sourceTypeId: string): boolean {
   return instanceKey.startsWith('source:') && instanceKey.endsWith(':mnemon-source-' + sourceTypeId)
 }
+/**
+ * The Source of one type a named tool works on: the Starter instance, the Entry
+ * `mnemon-source-<type>` also when nested under an include, or the only instance there
+ * is. Among several others there is none, and each keeps its exact offers.
+ */
+export function namedToolInstance<T extends { sourceInstanceKey: string }>(instances: readonly T[], sourceTypeId: string): T | undefined {
+  return instances.find(source => isDefaultSourceInstance(source.sourceInstanceKey, sourceTypeId)) ?? (instances.length === 1 ? instances[0] : undefined)
+}
 export type MemoryParticipationMode = 'off' | 'manual' | 'automatic'
 export type MemoryParticipationChannel = 'recall' | 'write' | 'projection' | 'maintenance'
 export type MemoryLayerParticipation = Record<MemoryParticipationChannel, MemoryParticipationMode>

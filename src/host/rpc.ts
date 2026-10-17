@@ -100,7 +100,7 @@ const SPACE_READ_CAPABILITIES: Record<string, MemoryCapability> = {
 }
 const SPACE_WRITE_CAPABILITIES: Record<string, MemoryCapability> = {
   remember: 'write', link: 'link', forget: 'forget', 'body-create': 'write', 'body-update': 'write',
-  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain',
+  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain', 'embedding-fill': 'maintain',
 }
 
 // Optional product workflows. They are not Source or Core operations and are

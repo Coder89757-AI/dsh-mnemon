@@ -2,7 +2,7 @@
 
 **简体中文** | [English](../../en/reference/workflows.md) | [文档中心](../README.md)
 
-本页描述默认的**分层策略**。**通用策略**在同一份预算内提供全部可用 Source，由模型决定如何路由：具名工具服务各自的 Source，其余路由通过 `mnemon_view_route` 读取、`mnemon_view_action` 修改。它除各路由自身的上限外没有召回准入信封，不做 Runtime 容量维护与归档，也不做空闲审查。见[策略与增强](../guides/capabilities.md#策略与增强)。
+本页描述默认的**分层策略**。**通用策略**在同一份预算内提供全部可用 Source，由模型决定如何路由：具名工具服务各自的 Source，其余路由通过 `mnemon_view_route` 读取、`mnemon_view_action` 修改。profile 在 Starter 实例旁再挂载同类型的 Source（例如第二条运行时记忆轨）时，具名工具服务 Starter 实例，另一个实例保留各自确切的 route 与 offer。分层策略每个角色只组合一个 Source，因此在分层策略下挂第二个同角色的 Source 需要打开**范围组合**（默认接入全部适用的 Source），否则每个回合都会因 "found ambiguous … Sources" 失败。它除各路由自身的上限外没有召回准入信封，不做 Runtime 容量维护与归档，也不做空闲审查。见[策略与增强](../guides/capabilities.md#策略与增强)。
 
 ## 每轮上下文
 
@@ -37,6 +37,14 @@ agent/pre-step(step=1)
 Source snapshot 不执行语义召回。Prime 只初始化路由状态，不执行异步 CLI 状态查询。
 
 子 Agent 在 `agent/created`、driver 启动前捕获并保留存活父 Agent 的固定 View 与运行图。自己的各个回合固定这一被保留的 View，即使父回合已结束或已进入更新的 generation。子 Agent activation 销毁时释放委托；冷恢复重新获取委托；Host 显式创建且没有父模型回合的后台子任务生成新的 scoped View。子 Agent 拥有自己的回合权限，但不安装 root 专属的 cue 或空闲审查。详见[权限生命周期](../development/architecture.md#生命周期与失败)。
+
+### 委派的子会话
+
+dsh-mnemon 委派给子 Agent 的每个任务都以单独的一行开头：`[dsh-mnemon:delegated <operation>]`，任务从下一行开始。空闲审查是 `review`，写入和「存入记忆」是 `write`，其余为 `answer`、`placement`、`migration`、`compaction`、`document-archive`、`metadata-maintenance` 和 `reconcile`。以后的版本可能增加操作，所以请匹配模式而不是这份清单。DSH 把任务记录为子会话中的一条用户消息（`source.kind: "user"`），子会话的头部带有 `origin: "subagent"` 与 `parentSession`。
+
+整个子会话都是 dsh-mnemon 自己的工作，而不是用户写下的内容。读取会话的插件（例如汇总工作区工作记录的插件）可以略过这样的会话：`origin: "subagent"`，且越过继承的回合之后第一条用户消息的首行匹配 `^\[dsh-mnemon:delegated [a-z-]+\]$`。fork 出的子 Agent 以父 Agent 回合的副本开头（头部有 `isSeeded: true`，止于 `session/end-seed`），任务跟在后面。从记忆系统页面发起的任务在一个没有自己用户消息的顶层会话中运行，它的子 Agent 带有这一行。在这一行出现之前记录的会话直接以任务开头（空闲审查是 `Bounded completed checkpoint (untrusted evidence; …`），不在这一约定之内。Mnemon 的其他 user 角色消息（包括召回与提醒）带有 `source.kind: "dsh-mnemon"`（见[兼容性](./compatibility.md#dsh-017-设置恢复)）。
+
+DSH 让子 Agent 沿用父 Agent 的工作目录；dsh-mnemon 的启动请求没有自己的目录字段。dsh-mnemon 也依赖这一点：在按工作区存储时，已不再绑定父 Agent 运行时的子 Agent（例如重启后恢复的那个）要靠这个目录找到所在工作区的记忆。
 
 ## Agent 召回
 
@@ -77,9 +85,9 @@ LLM 判断 evidence 是否足够
 
 这一准入信封是分层策略的每回合策略；通用策略只应用各路由自身的上限与调用预算。
 
-模型工具不暴露 `category`、`source` 或 `intent` 过滤器：模型猜错过滤条件不能遮住精确证据。Recall 并非强制执行，普通 root 回合是 0 次 Provider 查询。LLM 主动调用后，Host 允许一个首次查询；只有 LLM 查看 evidence 后仍认为不足，才允许再提交一个实质不同的精炼查询。同查询和并发重复请求会 join 或重放；第三个不同查询只重放最新 evidence，不再到达 Provider。随后至多执行一次 Related，而且只能使用两次 Recall 任一已准入的 `memoryBodyId + id`；重复 Related 同样重放结果。
+模型工具不暴露 `category`、`source` 或 `intent` 过滤器：模型猜错过滤条件不能遮住精确证据。Recall 并非强制执行，普通 root 回合是 0 次 Provider 查询。LLM 主动调用后，Host 允许一个首次查询；只有 LLM 查看 evidence 后仍认为不足，才允许再提交一个实质不同的精炼查询。同查询和并发重复请求会 join 或重放；第三个不同查询不会执行，并如实说明，不会到达 Provider。随后至多执行一次 Related，而且只能使用两次 Recall 任一已准入的 `memoryBodyId + id`；同一次遍历再调用会重放结果，不同的遍历则不会执行。
 
-Recall、Related 和单次 Documents 搜索槽位按执行中的 Agent 回合计预算。同一回合内并发调用共享状态，兄弟任务、后续回合和冷恢复的 activation 不会共享缓存 evidence 或占用彼此的预算。重放结果限于本次请求的 Memory Space 子集。Document search 另有独立边界：最多 4 条记录、每条最多 2,600 个查询附近字符、总正文最多 6,000 字符。模型侧 Memory Space 目录最多 16 项，`mnemon_status` 只返回紧凑健康汇总。完整记录、Provider 设置、路径和逐 Space 统计仍由 Web/RPC 控制面读取，不进入对话历史。
+Recall、Related 和单次 Documents 搜索槽位按执行中的 Agent 回合计预算。同一回合内并发调用共享状态，兄弟任务、后续回合和冷恢复的 activation 不会共享缓存 evidence 或占用彼此的预算。子 Agent 从收到任务到最后一步算作一个回合、共用一份预算；之后继续这个子 Agent 的消息会开始另一个回合，预算重新计算。重复回合内已运行过的 Recall 或 Related 读取会重放它自己的 evidence，并限于本次请求的 Memory Space 子集。超出预算的另一次读取（包括第二次 Documents 搜索）不会执行查询，而是以它自己的查询返回 `notRun: true`、`budgetExhausted: true` 和空的 `results`，绝不返回另一次读取的 evidence；并发调用会先等正在进行的读取结束，因为失败的读取会把名额还回来。从本回合召回未准入的条目出发的 Related 遍历同样返回 `notRun: true`。Document search 另有独立边界：最多 4 条记录、每条最多 2,600 个查询附近字符、总正文最多 6,000 字符。模型侧 Memory Space 目录最多 16 项，`mnemon_status` 只返回紧凑健康汇总。完整记录、Provider 设置、路径和逐 Space 统计仍由 Web/RPC 控制面读取，不进入对话历史。
 
 如果用户已经提供当前事实，或仓库可以直接回答，Agent 不应为了“展示记忆”而召回。
 
@@ -113,7 +121,7 @@ Agent 查询
 派发写入任务 Agent
        |
        +-- 列出记忆空间
-       +-- 选择最小的适用范围
+       +-- 指定的空间，或最小的适用已激活范围
        +-- 需要查重或检查冲突时召回
        +-- 只有反复出现的独立领域才创建新范围
        +-- 按请求执行 remember / link / forget / merge
@@ -122,6 +130,10 @@ Agent 查询
 ```
 
 空存储根首次创建 Memory Space 时使用 Mnemon 原生 `default` ID，后续 ID 由 Host 生成。向 inactive 目标写入成功后会激活它。这里的激活只影响 DSH 路由；来源数据库的合并是非破坏性的。
+
+`mnemon_remember` 指定了记忆空间时，写入任务 Agent 只写到那里，否则不写。Host 在任务 Agent 启动前检查指定的空间：不存在的空间、Provider 已关闭或不接受写入的空间，以及已停用的空间，都会立即失败并说明原因。模型想重新启用某个停用的空间时，要先用 `mnemon_memory_body_update` 打开它；用户在记忆空间页上选中的停用空间会随写入重新打开。DSH 在任务 Agent 运行前挂上的守卫会拒绝写入其他空间的 `mnemon_remember` 或 `mnemon_link`，以及任何创建或修改空间的操作。
+
+没有指定空间时，任务 Agent 在已激活的空间和它自己新建的空间中选择；守卫会拒绝写入或关联运行开始时就处于停用状态的空间，也拒绝把它打开。存入记忆从不合并空间。「存入记忆」遵循同样的规则，所以所有空间都停用时，除非任务 Agent 新建一个空间，否则不会保存任何内容。结果中的 `memoryBodyIds` 取自 Source 回执实际写入的空间，包括 Code Mode 程序中写入成功、之后程序才失败的那次写入；任务 Agent 报告了写入、却没有任何回执能证明时，结果为 `unknown`。写入打开了停用的空间时，`activatedMemoryBodyIds` 会列出它。不支持 Agent 归属或工具守卫的 DSH 上，任务 Agent 像以前一样不受守卫地运行；DSH 在守卫看不到的地方发布任务 Agent 时，写入会失败。运行结束后，委派的任务 Agent 不能再使用记忆工具：在 DSH 0.2.1 上，其他 Agent 给已结束的任务 Agent 发消息会让它从保存的状态恢复运行，这时它也无法再写入。
 
 嵌入没有成功时（服务不可用或缺少模型），Mnemon Native 会在没有向量的情况下保存记忆，并在回执中说明（`embedded: false`）。经由任务 Agent 的写入会在 `unembedded` 中列出这些记忆，并附上 `hint`：补齐向量之前，它们不参与语义匹配，关键词、关联与时间召回仍能找到它们；嵌入服务可用后，可在 Mnemon Native 嵌入设置的 **测试状态** 中补齐。补齐使用 DSH 的存储根目录和嵌入设置，在终端运行的 `mnemon` 命令未必一致。`/mnemon remember` 会加一行说明；对话中和记忆空间页上的 **存入记忆** 回执也一样，无论记忆由任务 Agent 写入，还是直接写入某个空间；只有写入确实存入了记忆时才显示这一行。
 

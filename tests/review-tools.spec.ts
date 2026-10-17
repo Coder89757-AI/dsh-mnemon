@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { HostAgent, HostSubagentRun, ToolExecution } from '../src/host/dsh.ts'
-import { idleReviewBlockReason, reviewLayerPolicy, startGuardedReview, type ReviewToolHost } from '../src/host/review-tools.ts'
+import { idleReviewBlockReason, reviewLayerPolicy, startGuardedChild, startGuardedReview, type ReviewToolHost } from '../src/host/review-tools.ts'
 
 function fixture() {
   const listeners = new Set<(event: { agent: HostAgent }) => void>()
@@ -183,6 +183,47 @@ describe('review publication and execution boundary', () => {
     expect(start).not.toHaveBeenCalled()
     await expect(startGuardedReview(f.host, f.parent, [], start)).rejects.toThrow('scoped tool guard')
     expect(child.runDispose).toHaveBeenCalledOnce()
+    expect(f.listeners.size).toBe(0)
+  })
+})
+
+describe('an optional guard on a delegated write (#387)', () => {
+  const refuse = () => 'refused'
+  const optional = { purpose: 'write', optional: true }
+
+  it('guards a published child as a review does', async () => {
+    const f = fixture(), child = f.child('child')
+    const run = await startGuardedChild(f.host, f.parent, async () => { f.publish(child.agent); return child.run }, refuse, optional)
+    expect(child.denial('mnemon_remember')).toBe('refused')
+    await run.dispose()
+    expect(child.guards.size).toBe(0)
+  })
+
+  it('runs a child unguarded only where it cannot be guarded', async () => {
+    const f = fixture(), child = f.child('child')
+    // A DSH without Agent ownership.
+    await expect(startGuardedChild({ on: f.host.on }, f.parent, async () => child.run, refuse, optional)).resolves.toBe(child.run)
+    // An owned child without scoped tool guards.
+    const plain = { id: 'plain' } as HostAgent
+    const plainRun = { id: 'plain', localAgent: plain, result: child.run.result, dispose: async () => {} } as HostSubagentRun
+    await expect(startGuardedChild(f.host, f.parent, async () => { f.publish(plain); return plainRun }, refuse, optional)).resolves.toBe(plainRun)
+    // A provider that runs no local child.
+    const remote = { id: 'remote', result: child.run.result, dispose: async () => {} } as HostSubagentRun
+    await expect(startGuardedChild(f.host, f.parent, async () => remote, refuse, optional)).resolves.toBe(remote)
+    expect(f.listeners.size).toBe(0)
+  })
+
+  it('fails closed for a local child it could guard but did not see published', async () => {
+    const f = fixture(), child = f.child('child')
+    // DSH published the child where the start could not attribute it.
+    await expect(startGuardedChild(f.host, f.parent, async () => child.run, refuse, optional)).rejects.toThrow('scoped tool guard')
+    expect(child.runDispose).toHaveBeenCalledOnce()
+    // A DSH 0.2.1 activation names its child only by id; the Agent registry still finds it.
+    const other = f.child('other')
+    const byId = { id: 'other', result: other.run.result, dispose: () => other.run.dispose() }
+    const registry: ReviewToolHost = { ...f.host, agents: { ...f.host.agents, get: id => id === 'other' ? other.agent : undefined } }
+    await expect(startGuardedChild(registry, f.parent, async () => byId, refuse, optional)).rejects.toThrow('scoped tool guard')
+    expect(other.runDispose).toHaveBeenCalledOnce()
     expect(f.listeners.size).toBe(0)
   })
 })

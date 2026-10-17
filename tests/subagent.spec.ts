@@ -17,7 +17,7 @@ import { SourceSession } from '../src/host/source-session.ts'
 import type { ComposableMemoryTurn } from '../src/core/turns.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { compositionFixture } from './fixtures/composition.ts'
-import { assertDshOutputSchema, MnemonSubagentCoordinator } from "../src/host/subagent.ts"
+import { assertDshOutputSchema, MnemonSubagentCoordinator, spaceWriteGuard } from "../src/host/subagent.ts"
 import { CONTINUATION_TEXT } from '../src/host/continuation-turn.ts'
 import { DEFAULT_THREE_TIER_VIEW_STRATEGY } from 'dsh-mnemon-strategy-default-three-tier'
 import { registerTools } from "../src/host/tools.ts"
@@ -855,7 +855,8 @@ describe('Mnemon memory subagent coordinator', () => {
       ],
       hint: expect.stringContaining('Recall refinement is complete'),
     })
-    expect(exhausted).toMatchObject({ results: refinement.results, hint: expect.stringContaining('budget is exhausted') })
+    // Past the budget a new query runs nothing; the refinement's evidence never reads as its answer (#389).
+    expect(exhausted).toMatchObject({ query: 'tenant recovery', results: [], notRun: true, budgetExhausted: true, hint: expect.stringContaining('budget is exhausted') })
     expect(nextTurn.results.map(result => result.id)).toEqual(['duplicate-first', 'rollback-1', 'medium-refinement', 'unknown-refinement'])
     expect(memoryService.search).toHaveBeenCalledTimes(3)
     expect(coordinator.snapshot()).toMatchObject({ recalls: 3, failures: 0 })
@@ -1396,6 +1397,8 @@ describe('Mnemon memory subagent coordinator', () => {
       }) as never, { ...execution, token: Symbol('duplicate') })).rejects.toThrow('already recorded')
       resultTools.emit('tools/result', execution, { isError: false })
       resultTools.emit('tools/result', { name: 'run_code', token: outerToken, signal: execution.signal, agent: child }, { isError: false })
+      // Where the memory went comes from the Source receipt (#387).
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Use SQLite.', memoryBodyId: 'project' }, { action: 'added', memoryBodyId: 'project' })
       return { id: child.id, result: Promise.resolve({ output: [], stopReason: 'completed' }), dispose }
     })
     const host = {
@@ -1405,9 +1408,10 @@ describe('Mnemon memory subagent coordinator', () => {
     } as unknown as HostSubagentsService
     const coordinator = new MnemonSubagentCoordinator(host, runtimeSource(), resultTools.value)
 
+    // The Source receipt's action is what happened.
     await expect(coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)).resolves.toMatchObject({
       delegated: true,
-      action: 'stored',
+      action: 'added',
       memoryBodyIds: ['project'],
     })
     expect(concludeTurn).toHaveBeenCalledOnce()
@@ -1581,6 +1585,91 @@ describe('Mnemon memory subagent coordinator', () => {
     await expect(coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)).rejects.toThrow('completed without recording its result')
   })
 
+  it('names the space a write inside a failed Code Mode program went to, not the one the writer claims (#387)', async () => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      const outerToken = Symbol('run-code')
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Use SQLite.', memoryBodyId: 'project' }, {
+        action: 'added', id: 'memory-1', memoryBodyId: 'project', memoryBodyName: 'Project',
+      }, outerToken)
+      resultTools.emit('tools/result', {
+        name: 'run_code', arguments: {}, token: outerToken, agent: child, signal: new AbortController().signal,
+      }, { isError: true })
+    }, 'completed', { action: 'stored', summary: 'Saved in Elsewhere.', memoryBodyIds: ['elsewhere'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)
+    expect(result).toMatchObject({ action: 'stored', memoryBodyIds: ['project'] })
+  })
+
+  it.each([
+    ['stored', 'unknown'],
+    ['skipped', 'skipped'],
+  ])('lands nowhere when no receipt shows a write, and reports a claimed %s as %s (#387)', async (claimed, reported) => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, () => {}, 'completed', { action: claimed, summary: 'Saved in Trials.', memoryBodyIds: ['trials'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)
+    expect(result).toMatchObject({ action: reported, memoryBodyIds: [] })
+    expect(result).not.toHaveProperty('activatedMemoryBodyIds')
+  })
+
+  it('checks a named space before any writer runs, and switches one on only for the user (#387)', async () => {
+    const spaces = service()
+    const catalog = spaces.bodyDirectory()
+    const archive = { ...catalog.items[0]!, id: 'archive', name: 'Archive', active: false }
+    const remote = { ...catalog.items[0]!, id: 'remote', name: 'Remote', providerEnabled: false, provider: { id: 'mem0', label: 'Mem0', capabilities: { remember: true } } }
+    const readOnly = { ...catalog.items[0]!, id: 'readonly', name: 'Read only', provider: { id: 'openviking', label: 'OpenViking', capabilities: { remember: false } } }
+    vi.mocked(spaces.bodyDirectory).mockReturnValue({ ...catalog, items: [...catalog.items, archive, remote, readOnly] } as never)
+    const host = subagents({ action: 'stored', summary: 'Saved.', memoryBodyIds: ['archive'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(undefined, spaces), toolRegistry().value)
+    const signal = new AbortController().signal
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'missing' }, signal)).rejects.toThrow(
+      'Memory Space "missing" does not exist. Name one by its id: "project" (项目记忆空间), "archive" (Archive, switched off), "remote" (Remote), "readonly" (Read only).')
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'remote' }, signal)).rejects.toThrow('Memory Space "remote" uses Mem0, which is turned off on the dsh-mnemon page under Plugins.')
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'readonly' }, signal)).rejects.toThrow('Memory Space "readonly" (OpenViking) does not take writes.')
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'archive' }, signal)).rejects.toThrow(
+      'Memory Space "archive" (Archive) is switched off, and a write would switch it back on. If the user wants it back, switch it on first with mnemon_memory_body_update (active: true); otherwise name an active space.')
+    expect(host.start).not.toHaveBeenCalled()
+    await coordinator.remember(parent(), { content: 'x', memoryBodyId: 'archive' }, signal, { activateTarget: true })
+    expect(host.start).toHaveBeenCalledOnce()
+  })
+
+  it('writes nothing when it cannot read the Memory Space directory (#387)', async () => {
+    const spaces = service()
+    vi.mocked(spaces.bodyDirectory).mockImplementation(() => { throw new Error('registry unreadable') })
+    const host = subagents({ action: 'stored', summary: 'Saved.', memoryBodyIds: ['project'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(undefined, spaces), toolRegistry().value)
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('The Memory Space directory could not be read, so nothing was saved: registry unreadable')
+    expect(host.start).not.toHaveBeenCalled()
+  })
+
+  it('holds a write to its named space, and keeps a write without one off switched-off spaces (#387)', () => {
+    const call = (name: string, args: Record<string, unknown>) => ({ name, arguments: args }) as unknown as ToolExecution
+    const named = spaceWriteGuard('project', new Set(['archive']))
+    expect(named(call('mnemon_remember', { memoryBodyId: 'project' }))).toBeUndefined()
+    expect(named(call('mnemon_remember', { memoryBodyId: 'archive' }))).toBe(
+      'This write was requested for Memory Space "project". Call mnemon_remember with memoryBodyId "project", or finish without writing and say why it does not fit.')
+    expect(named(call('mnemon_link', { sourceId: 'a', targetId: 'b' }))).toContain('Call mnemon_link with memoryBodyId "project"')
+    expect(named(call('mnemon_link', { sourceId: 'a', targetId: 'b', memoryBodyId: 'project' }))).toBeUndefined()
+    expect(named(call('mnemon_memory_body_create', { name: 'New' }))).toContain('so it creates or changes no space')
+    expect(named(call('mnemon_memory_body_update', { memoryBodyId: 'project', description: 'x' }))).toContain('so it creates or changes no space')
+    expect(named(call('mnemon_recall', { query: 'x' }))).toBeUndefined()
+    const open = spaceWriteGuard(undefined, new Set(['archive']))
+    expect(open(call('mnemon_remember', { memoryBodyId: 'project' }))).toBeUndefined()
+    // Without an id the Source writes only to the one active space.
+    expect(open(call('mnemon_remember', {}))).toBeUndefined()
+    expect(open(call('mnemon_remember', { memoryBodyId: 'archive' }))).toBe(
+      'Memory Space "archive" is switched off, and a write would switch it on. Write to an active space, or finish without writing and say which space would fit.')
+    expect(open(call('mnemon_link', { sourceId: 'a', targetId: 'b', memoryBodyId: 'archive' }))).toContain('Memory Space "archive" is switched off')
+    expect(open(call('mnemon_memory_body_update', { memoryBodyId: 'archive', active: true }))).toBe('Memory Space "archive" is switched off; only the user switches it on.')
+    expect(open(call('mnemon_memory_body_update', { memoryBodyId: 'archive', description: 'Older trials.' }))).toBeUndefined()
+    // Saving a memory never merges spaces: a merge switches spaces on and off.
+    for (const guard of [named, open]) {
+      expect(guard(call('mnemon_memory_body_merge', { targetMemoryBodyId: 'project', sourceMemoryBodyIds: ['other'] }))).toBe(
+        'Saving a memory never merges Memory Spaces; a merge is a request of its own. Write the memory, or finish without writing.')
+    }
+  })
+
   it('does not recover partial or failed child runs from unrelated successful tools', async () => {
     const resultTools = toolRegistry()
     const partial = observedSubagents(resultTools, child => {
@@ -1609,11 +1698,14 @@ describe('Mnemon memory subagent coordinator', () => {
   })
 
   it('delegates writes with mutation tools and returns a compact receipt', async () => {
-    const host = subagents({ summary: 'Stored in project.', action: 'stored', memoryBodyIds: ['project'] })
-    const coordinator = createCoordinator(host.value)
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Durable choice', memoryBodyId: 'project' }, { action: 'added', memoryBodyId: 'project' })
+    }, 'completed', { summary: 'Stored in project.', action: 'stored', memoryBodyIds: ['project'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
     await expect(coordinator.remember(parent(), { content: 'Durable choice' }, new AbortController().signal)).resolves.toMatchObject({
       delegated: true,
-      action: 'stored',
+      action: 'added',
       memoryBodyIds: ['project'],
     })
     expect(host.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
@@ -1870,7 +1962,7 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(host.start).toHaveBeenCalledWith('fork', expect.objectContaining({
       toolFilter: { allow: expect.arrayContaining(['mnemon_document_search', 'mnemon_runtime_memory', 'mnemon_document_create']) },
       persona: expect.stringContaining('idle checkpoint reviewer'),
-      prompt: [{ type: 'text', text: 'Review the inherited completed checkpoint now.' }],
+      prompt: [{ type: 'text', text: '[dsh-mnemon:delegated review]\nReview the inherited completed checkpoint now.' }],
     }))
     const reviewCall = (host.start.mock.calls[0] as unknown as [string, { persona: string; toolFilter: { allow: string[] } }])[1]
     expect(reviewCall.persona).toContain('Never move a document to cold archive in this pass')

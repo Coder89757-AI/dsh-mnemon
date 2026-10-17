@@ -92,6 +92,75 @@ describe.skipIf(sqlite === undefined)('Memory Space identity', () => {
     identity.dispose()
   })
 
+  it('holds an edge by the memories it links and its type, whatever its weight, note or time (#391)', () => {
+    const root = temporary()
+    const identity = new MemorySpaceIdentity(root)
+    const published = space(root, 'published', { insights: INSIGHTS, edges: [['i-1', 'i-2', { weight: 0.86, metadata: '{"sub_type":"similar_topic"}' }]] })
+    // A merge into this machine's space wrote every edge again, as mnemon import does.
+    const rewritten = space(root, 'rewritten', { insights: INSIGHTS, edges: [['i-1', 'i-2', { weight: 0.5, metadata: '{"reason":"semantic"}', createdAt: '2026-10-16T10:35:00Z' }]] })
+    expect(identity.of(rewritten)).toBe(identity.of(published))
+    expect([identity.contains(rewritten, published), identity.contains(published, rewritten)]).toEqual([true, true])
+    // Another type between the same memories is another edge.
+    const causal = space(root, 'causal', { insights: INSIGHTS, edges: [['i-1', 'i-2', { type: 'causal' }]] })
+    expect([identity.contains(rewritten, causal), identity.contains(causal, rewritten)]).toEqual([false, false])
+    identity.dispose()
+  })
+
+  it('merges a version whose shared edges carry other values, keeping this machine\'s (#391)', () => {
+    const root = temporary()
+    const identity = new MemorySpaceIdentity(root)
+    const local = space(root, 'local', { insights: INSIGHTS, edges: [['i-1', 'i-2', { weight: 0.5, metadata: '{"reason":"semantic"}', createdAt: '2026-10-16T10:35:00Z' }]] })
+    const incoming = space(root, 'incoming', { insights: [...INSIGHTS, THIRD], edges: [
+      ['i-1', 'i-2', { weight: 0.86, metadata: '{"sub_type":"similar_topic"}' }],
+      ['i-2', 'i-3', { weight: 0.7, metadata: '{"sub_type":"follow_up"}' }],
+    ] })
+    const merged = identity.merge(local, incoming)!
+    expect(merged).toBeInstanceOf(Uint8Array)
+    expect(inspect(root, merged, database => ({
+      insights: database.prepare('SELECT id FROM insights ORDER BY id').all(),
+      edges: database.prepare('SELECT source_id, target_id, edge_type, weight, metadata, created_at FROM edges ORDER BY source_id, target_id').all(),
+      broken: database.prepare('PRAGMA foreign_key_check').all(),
+    }))).toEqual({
+      insights: [{ id: 'i-1' }, { id: 'i-2' }, { id: 'i-3' }],
+      edges: [
+        { source_id: 'i-1', target_id: 'i-2', edge_type: 'semantic', weight: 0.5, metadata: '{"reason":"semantic"}', created_at: '2026-10-16T10:35:00Z' },
+        { source_id: 'i-2', target_id: 'i-3', edge_type: 'semantic', weight: 0.7, metadata: '{"sub_type":"follow_up"}', created_at: '2026-10-05T08:37:12Z' },
+      ],
+      broken: [],
+    })
+    // A memory edited on one side still refuses the merge.
+    const edited = space(root, 'edited', { insights: [INSIGHTS[0]!, { ...INSIGHTS[1]!, content: 'Accounts warm up for two weeks', updatedAt: '2026-10-13T01:00:00Z' }],
+      edges: [['i-1', 'i-2', { weight: 0.86 }]] })
+    expect(identity.merge(local, edited)).toBeUndefined()
+    identity.dispose()
+  })
+
+  it('holds a memory whose vector was filled in later as the same memory (#391)', () => {
+    const root = temporary()
+    const identity = new MemorySpaceIdentity(root)
+    const published = space(root, 'published', { insights: INSIGHTS, edges: [['i-1', 'i-2']] })
+    // mnemon embed --all stamps the update time with every vector it fills in; gc --keep does as well.
+    const filled = space(root, 'filled', { insights: INSIGHTS.map(insight => ({ ...insight, embedding: new Uint8Array([1, 2, 3, 4]), updatedAt: '2026-10-15T17:00:00Z' })), edges: [['i-1', 'i-2']] })
+    expect(identity.of(filled)).toBe(identity.of(published))
+    expect([identity.contains(filled, published), identity.contains(published, filled)]).toEqual([true, true])
+    expect(identity.merge(filled, published)).toBe(filled)
+    // A forget still differs: it sets the time a memory was forgotten.
+    const forgotten = space(root, 'forgotten', { insights: [INSIGHTS[0]!, { ...INSIGHTS[1]!, deletedAt: '2026-10-15T17:00:00Z', updatedAt: '2026-10-15T17:00:00Z' }], edges: [['i-1', 'i-2']] })
+    expect(identity.merge(filled, forgotten)).toBeUndefined()
+    identity.dispose()
+  })
+
+  it('reads a table whatever it is called, constructor included', () => {
+    const root = temporary()
+    const identity = new MemorySpaceIdentity(root)
+    const one = built(root, 'one', 'CREATE TABLE "constructor" (id TEXT PRIMARY KEY, value TEXT); INSERT INTO "constructor" VALUES (\'a\', \'1\');')
+    const other = built(root, 'other', 'CREATE TABLE "constructor" (value TEXT, id TEXT PRIMARY KEY); INSERT INTO "constructor" VALUES (\'1\', \'a\');')
+    // Compared by content, so the column order and the bytes do not matter.
+    expect(identity.of(one)).toMatch(/^content:/u)
+    expect(identity.of(one)).toBe(identity.of(other))
+    identity.dispose()
+  })
+
   it('compares rows by column name, not by the order a table declares them in', () => {
     const root = temporary()
     const identity = new MemorySpaceIdentity(root)
