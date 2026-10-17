@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { HostAgent, HostSubagentRun, ToolExecution } from './dsh.ts'
+import type { MemoryToolName } from './protocol.ts'
 
 export interface ReviewToolHost {
   agents?: { isOwnedBy?(id: string, parent: HostAgent): boolean; get?(id: string): HostAgent | undefined }
@@ -24,9 +25,13 @@ export type ReviewToolPolicy = (execution: Readonly<ToolExecution>) => string | 
 
 type ReviewLayer = 'working-memory' | 'documents'
 
+/** The two writes an idle review can make, one per layer; both are rows of the tool table. */
+const DOCUMENT_WRITE = 'mnemon_document_create' satisfies MemoryToolName
+const WORKING_MEMORY_WRITE = 'mnemon_runtime_memory' satisfies MemoryToolName
+
 function reviewLayer(execution: Readonly<ToolExecution>): ReviewLayer | undefined {
-  if (execution.name === 'mnemon_document_create') return 'documents'
-  if (execution.name !== 'mnemon_runtime_memory') return undefined
+  if (execution.name === DOCUMENT_WRITE) return 'documents'
+  if (execution.name !== WORKING_MEMORY_WRITE) return undefined
   const input = execution.arguments
   // Profile changes (target=user) never belong in a Document, so they stay independent.
   return typeof input === 'object' && input !== null && (input as { target?: unknown }).target === 'memory' ? 'working-memory' : undefined

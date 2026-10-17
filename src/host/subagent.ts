@@ -18,7 +18,7 @@ import { idleReviewBlockReason, reviewLayerPolicy, startGuardedChild, startGuard
 import { reviewCheckpoint } from './review-checkpoint.ts'
 import { startWithContinuationTurns } from './continuation-turn.ts'
 import { childComposition, startSubagent, type SubagentStartAgents } from './subagent-start.ts'
-import type { IdleReviewFailure } from './protocol.ts'
+import type { IdleReviewFailure, MemoryToolName } from './protocol.ts'
 
 export type { DelegatedWriteResult, SubagentCounters } from "./protocol.ts"
 
@@ -72,8 +72,9 @@ export function delegatedTaskLine(operation: DelegatedOperation): string {
   return `${DELEGATED_TASK_PREFIX}${operation}]`
 }
 
-const READ_TOOLS = ['mnemon_memory_bodies', 'mnemon_recall', 'mnemon_related']
-const WRITE_TOOLS = [
+// Which memory tools each delegated child may call; every name is a row of the tool table.
+const READ_TOOLS: MemoryToolName[] = ['mnemon_memory_bodies', 'mnemon_recall', 'mnemon_related']
+const WRITE_TOOLS: MemoryToolName[] = [
   ...READ_TOOLS,
   'mnemon_remember',
   'mnemon_link',
@@ -88,8 +89,8 @@ const WRITE_TOOLS = [
 // the forget tool.
 const AUTONOMOUS_WRITE_TOOLS = WRITE_TOOLS.filter(tool => tool !== 'mnemon_forget')
 const EXPLICIT_WRITE_TOOLS = WRITE_TOOLS
-const DOCUMENT_READ_TOOLS = ['mnemon_document_search']
-const REVIEW_TOOLS = [...DOCUMENT_READ_TOOLS, 'mnemon_runtime_memory', 'mnemon_document_create']
+const DOCUMENT_READ_TOOLS: MemoryToolName[] = ['mnemon_document_search']
+const REVIEW_TOOLS: MemoryToolName[] = [...DOCUMENT_READ_TOOLS, 'mnemon_runtime_memory', 'mnemon_document_create']
 const RESULT_TOOL_NAME = 'mnemon_subagent_result'
 /** How many finished delegated children stay refused memory tools if DSH resumes one. */
 const FINISHED_CHILDREN = 1_000
@@ -113,7 +114,7 @@ const RESULT_TOOL_OUTPUT_SCHEMA = {
 } as const
 const WRITE_ACTIONS = ['stored', 'updated', 'added', 'replaced', 'removed', 'skipped', 'forgotten', 'linked', 'created', 'merged', 'accepted', 'candidate', 'partial', 'unknown', 'failed'] as const
 const WRITE_ACTION_SET = new Set<string>(WRITE_ACTIONS)
-const WRITE_OPERATION_RESULT_TOOL: Record<string, string> = {
+const WRITE_OPERATION_RESULT_TOOL: Readonly<Record<string, MemoryToolName>> = {
   remember: 'mnemon_remember',
   'supervised-writeback': 'mnemon_remember',
   link: 'mnemon_link',
@@ -122,14 +123,14 @@ const WRITE_OPERATION_RESULT_TOOL: Record<string, string> = {
   'update-memory-body': 'mnemon_memory_body_update',
   'merge-memory-bodies': 'mnemon_memory_body_merge',
 }
-const WRITE_TOOL_FALLBACK_ACTION: Record<string, string> = {
+const WRITE_TOOL_FALLBACK_ACTION: Readonly<Record<string, string>> = {
   mnemon_remember: 'stored',
   mnemon_link: 'linked',
   mnemon_forget: 'forgotten',
   mnemon_memory_body_create: 'created',
   mnemon_memory_body_update: 'updated',
   mnemon_memory_body_merge: 'merged',
-}
+} satisfies Partial<Record<MemoryToolName, string>>
 
 interface HostToolRegistry {
   register(definition: ToolDefinition): unknown
@@ -502,7 +503,7 @@ const REQUEST_LABELS: Record<string, string> = {
 const TARGETED_WRITE_LABELS: Readonly<Record<string, string>> = { ...REQUEST_LABELS, memoryBodyId: 'Target Memory Space ID (write only here)' }
 
 /** A Memory Space write tool: each switches on the space it goes to. */
-const SPACE_WRITE_TOOLS: ReadonlySet<string> = new Set(['mnemon_remember', 'mnemon_link'])
+const SPACE_WRITE_TOOLS: ReadonlySet<string> = new Set<MemoryToolName>(['mnemon_remember', 'mnemon_link'])
 
 /**
  * Holds a delegated write to the Memory Space its caller named, and keeps a writer

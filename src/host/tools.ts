@@ -8,7 +8,7 @@ import type { MemoryCapability, MemoryJsonValue, MemoryMutationReceipt } from '.
 import { unofferedViewId } from './view-presentation.ts'
 import { agentScope, type MnemonAgentRuntimeSource, type MnemonRuntimeGraph } from './runtime.ts'
 import { isSubagent, MnemonSubagentCoordinator } from './subagent.ts'
-import { memoryReadPresentation, memoryWritePresentation } from './activity-presentation.ts'
+import { memoryReadPresentation, memoryWritePresentation, namedToolPresentation } from './activity-presentation.ts'
 
 const text = (value: unknown): Array<{ type: 'text'; text: string }> => [{
   type: 'text',
@@ -179,7 +179,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     output: {
       schema: JSON_OBJECT_OUTPUT,
       render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryReadPresentation('memory-spaces', 'recall'),
+      presentationMeta: namedToolPresentation('mnemon_recall'),
     },
     async execute(args: { query: string; mode?: 'smart' | 'keyword' | 'basic'; limit?: number; memoryBodyIds?: string[] }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'recall')
@@ -204,7 +204,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['id'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryReadPresentation('memory-spaces', 'related') },
+      presentationMeta: namedToolPresentation('mnemon_related') },
     async execute(args: { id: string; depth?: number; edge?: EdgeType; memoryBodyId?: string }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'related')
       const agent = requireAgent(exec)
@@ -245,7 +245,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['query'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryReadPresentation('documents', 'search') },
+      presentationMeta: namedToolPresentation('mnemon_document_search') },
     async execute(args: { query: string; includeArchived?: boolean; limit?: number }, exec: ToolExecution) {
       const agent = requireAgent(exec)
       requireSource(exec, 'documents', 'search')
@@ -269,7 +269,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['title', 'content'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('documents', 'create') },
+      presentationMeta: namedToolPresentation('mnemon_document_create') },
     execute: (args: { title: string; description?: string; content: string; sourcePaths?: string[] }, exec: ToolExecution) => {
       requireSource(exec, 'documents', 'write')
       return sourceAction(exec, 'documents', 'create', { ...args, sessionIds: [requireAgent(exec).id] }).then(documentReceipt)
@@ -294,7 +294,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['action'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('documents', 'manage') },
+      presentationMeta: namedToolPresentation('mnemon_document_manage') },
     execute: (args: { action: 'create' | 'update' | 'archive'; id?: string; title?: string; description?: string; content?: string; sourcePaths?: string[] }, exec: ToolExecution) => {
       if (!config.writeEnabled) throw new Error('dsh-mnemon is configured read-only (writeEnabled: false)')
       const agent = requireAgent(exec)
@@ -331,7 +331,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['action', 'target'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('runtime', 'mutate') },
+      presentationMeta: namedToolPresentation('mnemon_runtime_memory') },
     execute: (args: { action: 'add' | 'replace' | 'remove'; target: RuntimeMemoryTarget; content?: string; old_text?: string; importance?: RuntimeMemoryImportance; branches?: string[] }, exec: ToolExecution) => {
       if (!config.writeEnabled) throw new Error('dsh-mnemon is configured read-only (writeEnabled: false)')
       requireSource(exec, 'runtime', 'write')
@@ -367,7 +367,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['content'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'remember') },
+      presentationMeta: namedToolPresentation('mnemon_remember') },
     async execute(args: { content: string; category?: Category; importance?: number; tags?: string[]; entities?: string[]; source?: Source; memoryBodyId?: string }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'write')
       const request = { ...args, source: args.source ?? 'agent' }
@@ -395,7 +395,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['sourceId', 'targetId'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'link') },
+      presentationMeta: namedToolPresentation('mnemon_link') },
     async execute(args: { sourceId: string; targetId: string; type?: EdgeType; weight?: number; reason?: string; memoryBodyId?: string }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'link')
       return isSubagent(exec.agent)
@@ -415,7 +415,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['id'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'forget') },
+      presentationMeta: namedToolPresentation('mnemon_forget') },
     execute: (args: { id: string; memoryBodyId?: string }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'forget')
       return isSubagent(exec.agent)
@@ -441,7 +441,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['name', 'description'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'manage-spaces') },
+      presentationMeta: namedToolPresentation('mnemon_memory_body_create') },
     execute: (args: { name: string; description: string; providerId?: string; reason?: string; confidence?: string }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'write')
       return isSubagent(exec.agent)
@@ -466,7 +466,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['memoryBodyId'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'manage-spaces') },
+      presentationMeta: namedToolPresentation('mnemon_memory_body_update') },
     execute: (args: { memoryBodyId: string; name?: string; description?: string; active?: boolean }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'write')
       return isSubagent(exec.agent)
@@ -490,7 +490,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['targetMemoryBodyId', 'sourceMemoryBodyIds'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'manage-spaces') },
+      presentationMeta: namedToolPresentation('mnemon_memory_body_merge') },
     execute: (args: { targetMemoryBodyId: string; sourceMemoryBodyIds: string[]; deactivateSources?: boolean }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'write')
       return isSubagent(exec.agent)

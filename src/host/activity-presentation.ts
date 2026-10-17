@@ -1,4 +1,4 @@
-import type { JsonValue, MemoryActivityItem, MemoryActivityRead, MemoryActivityWriteback } from './protocol.ts'
+import { MEMORY_TOOLS, type JsonValue, type MemoryActivityItem, type MemoryActivityRead, type MemoryActivityWriteback, type MemoryToolName } from './protocol.ts'
 import { mutationResultCommitted } from './receipts.ts'
 
 export const MNEMON_ACTIVITY_SCHEMA = 'dsh-mnemon.activity/v1' as const
@@ -103,6 +103,12 @@ export function memoryWritePresentation(sourceTypeId: string | undefined, operat
     committed: mutationResultCommitted(value) || operationId === 'mutate' && object(value)?.success === true,
     item: writeItem(args, operationId),
   }) as unknown as JsonValue
+}
+
+/** The activity a named tool's result records: the Source and operation its row in the tool table names. */
+export function namedToolPresentation(name: Exclude<MemoryToolName, 'mnemon_view_route' | 'mnemon_view_action'>): (args: unknown, value: unknown) => JsonValue {
+  const tool = MEMORY_TOOLS[name]
+  return tool.kind === 'write' ? memoryWritePresentation(tool.sourceTypeId, tool.operation) : memoryReadPresentation(tool.sourceTypeId, tool.operation)
 }
 
 function validItem(value: unknown): value is MemoryActivityItem {
