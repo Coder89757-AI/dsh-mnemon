@@ -6,8 +6,8 @@ Recorded on 2026-10-17 (Asia/Shanghai). The documentation's gallery, [webui-v0.5
 
 ## What the gallery holds
 
-- For each language, five recordings (recall, save, correct, memory, plugins) as MP4, four of them also as GIF, and 27 screens: 24 desktop and 3 phone. In all, 72 files and 21.8 MB, against v0.5.19's 68 files and 17.7 MB.
-- The flows and screen names are v0.5.19's, so links only change their directory. Two screens are new: `chat-save-target`, the Save to menu, and `plugins-list`, DSH's Plugins page, taken at 1280 × 858 so the page title and the dsh-mnemon row are both whole. The save recording has a fourth segment, for the Save to menu.
+- For each language, five recordings (recall, save, correct, memory, plugins) as MP4, four of them also as GIF, and 28 screens: 25 desktop and 3 phone. In all, 74 files and 22.2 MB, against v0.5.19's 68 files and 17.7 MB.
+- The flows and screen names are v0.5.19's, so links only change their directory. Three screens are new: `chat-save-target`, the Save to menu; `plugins-list`, DSH's Plugins page, taken at 1280 × 858 so the page title and the dsh-mnemon row are both whole; and `memory-runtime-limits`, the top of the Runtime memory page with its size-against-limit cards, which the configuration reference now shows. That one was taken on a fresh fixture of the same build before any conversation, as the manifest marks it; the guides keep `memory-runtime`, opened from a turn. The save recording has a fourth segment, for the Save to menu.
 - The [gallery README](../../assets/webui-v0.5.32/README.md#what-changed-since-v0519--与-v0519-相比的变化) lists what changed since v0.5.19, and its manifest records every file's viewport, size, duration and SHA-256 and what each turn read and wrote.
 
 ## How it was captured
@@ -18,7 +18,7 @@ Recorded on 2026-10-17 (Asia/Shanghai). The documentation's gallery, [webui-v0.5
 
 ## Takes
 
-Every reply, Save to memory candidate and receipt, and Agent answer was read, and frames from every recording were checked. The English take is the first pass. Chinese took four passes, and all four gave Ask Agent the same evidence: four of the five memories that mention ClickHouse, all at relevance 0.58, without the September 12 incident, so the answer says its evidence records no incident. On the third pass's fixture, a direct search with that question afterwards returned a different four, and a second Ask Agent cited the incident: which four a recall returns changes between calls. The first Chinese pass is kept for its other turns; the gallery README and the manifest say what its answer is based on.
+Every reply, Save to memory candidate and receipt, and Agent answer was read, and frames from every recording were checked. The English take is the first pass. Chinese took seven passes on the same build with the same question. In the first five, Ask Agent got four of the five memories that mention ClickHouse, all at relevance 0.58, without the September 12 incident, so its answer said the evidence records no incident; on one of those fixtures, a direct search with that question afterwards returned a different four, and a second Ask Agent cited the incident, so which four a recall returns changes between calls. The sixth pass is kept, as the first whose Agent answer cites the incident (among four memories) with other turns as good as the first pass's. Its first answer read the two Project Documents without a Memory Spaces recall, so the Chinese recall recording and turn bar show documents only, and the Chinese alt text says so. The seventh pass also cited the incident and also read documents only in its first turn.
 
 Trial passes before this revision found two faults in the recorder, both fixed in the tooling before these passes: a segment's still tail, such as the save receipt, was cut where segments join, and every MP4 ran 1.6 s past its last frame.
 
@@ -30,19 +30,19 @@ Three behaviors that change what users see join the [plan](../../plans/review-ga
 - a replaced runtime memory entry shows its creation time, never its update time (`plugins/dsh-mnemon-source-runtime/src/client/pages.tsx:114` and `:131`);
 - at 390 px the active Memory System tab can sit off-screen in English, and the turn memory bar's summary and a space card's counts are cut off.
 
-Also seen, not filed: the Ask Agent evidence above; Mnemon CLI's automatic entities such as "2.4", "2.9", "SDK" and "Next" (from Next.js) in Entities and the graph; the task Agent keeping a superseded memory and linking the new one to it, by design (#148); and the model's reasoning line streaming in English for a moment during a Chinese reply.
+Also seen, not filed: Ask Agent's changing evidence above; Mnemon CLI's automatic entities such as "2.4", "2.9", "SDK" and "Next" (from Next.js) in Entities and the graph; the task Agent keeping a superseded memory and linking the new one to it, by design (#148); and the model's reasoning line streaming in English for a moment during a Chinese reply.
 
 ## Documentation changed
 
-- `README.md` and `README.zh-CN.md`: the recordings and the gallery link, and the alt text of the save and plugins recordings.
+- `README.md` and `README.zh-CN.md`: the recordings and the gallery link, and the alt text of the save and plugins recordings, and of the Chinese recall recording.
 - `docs/assets/README.md`: the v0.5.32 row, with v0.5.19 as a dated record.
-- `docs/{en,zh-CN}`: `README.md`, `development/README.md`, the getting-started, memory-providers, operations and UI guides, and the compatibility and configuration references. The UI guide adds the two new screens, the correction's two writes, the receipt's vector line and the Plugins page by DSH version; the component list no longer carries v0.5.19's note on the group row. Checked on the hosts: DSH 0.2.1-rc.2 lists nine components and no group row, DSH 0.2.0-rc.2 also lists `dsh-mnemon/bundle`, Off.
+- `docs/{en,zh-CN}`: `README.md`, `development/README.md`, the getting-started, memory-providers, operations and UI guides, and the compatibility and configuration references; the configuration reference shows `memory-runtime-limits`. The UI guide adds the two new screens, the correction's two writes, the receipt's vector line and the Plugins page by DSH version; the component list no longer carries v0.5.19's note on the group row. Checked on the hosts: DSH 0.2.1-rc.2 lists nine components and no group row, DSH 0.2.0-rc.2 also lists `dsh-mnemon/bundle`, Off.
 - `docs/plans/review-gaps-2026-10.md` and `docs/{en,zh-CN}/roadmap.md`: items 12 to 14.
 
 ## Checks
 
-- `node scripts/verify-docs.mjs`: 4,756 local links and 352 Markdown anchors, the bilingual paths and the official plugin coverage verified.
+- `node scripts/verify-docs.mjs`: 4,758 local links and 352 Markdown anchors, the bilingual paths and the official plugin coverage verified.
 - `pnpm exec vitest run tests/docs.spec.mjs tests/package-locales.spec.mjs tests/changesets.spec.mjs`: 3 files, 39 tests passed.
-- `node scripts/verify-package-contents.mjs`: 64 files, 474,968 packed and 2,016,037 unpacked bytes.
+- `node scripts/verify-package-contents.mjs`: 64 files, 474,974 packed and 2,016,016 unpacked bytes.
 - `pnpm run release:intent` against `origin/main`: the changeset covers `dsh-mnemon`.
 - No DeepSeek key, WebUI token or home-directory path in any new file, including a `strings` scan of every image and recording.
