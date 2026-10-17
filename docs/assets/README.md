@@ -1,8 +1,8 @@
 # Product media / 产品素材
 
-The current product gallery is [v0.5.32 in Light appearance](./webui-v0.5.32/README.md): 54 bilingual screenshots and ten recordings of a seeded, fictional project, captured from a real DSH 0.2.1 WebUI with the live DeepSeek model answering. Use it for the README, guides and configuration illustrations. Regenerate it with `node scripts/serve-e2e.mjs --docs-demo --live-model` (or `--docs-demo=en --live-model`) and the steps in its record. The [v0.5.19 gallery](./webui-v0.5.19/README.md), captured on DSH 0.1.7-rc.2, stays as a dated record.
+The current product gallery is [v0.5.32 in Light appearance](./webui-v0.5.32/README.md): 56 bilingual screenshots and ten recordings of a seeded, fictional project, captured from a real DSH 0.2.1 WebUI with the live DeepSeek model answering. Use it for the README, guides and configuration illustrations. Regenerate it with `node scripts/serve-e2e.mjs --docs-demo --live-model` (or `--docs-demo=en --live-model`) and the steps in its record. The [v0.5.19 gallery](./webui-v0.5.19/README.md), captured on DSH 0.1.7-rc.2, stays as a dated record.
 
-当前产品图集为 [v0.5.32 浅色界面](./webui-v0.5.32/README.md)：基于预置的虚构项目，由真实的 DeepSeek 模型作答，从真实的 DSH 0.2.1 WebUI 采集 54 张双语截图与十段录制，用于 README、指南与配置说明。可用 `node scripts/serve-e2e.mjs --docs-demo --live-model`（或 `--docs-demo=en --live-model`）按记录中的步骤重新生成。在 DSH 0.1.7-rc.2 上采集的 [v0.5.19 图集](./webui-v0.5.19/README.md)作为带日期的记录保留。
+当前产品图集为 [v0.5.32 浅色界面](./webui-v0.5.32/README.md)：基于预置的虚构项目，由真实的 DeepSeek 模型作答，从真实的 DSH 0.2.1 WebUI 采集 56 张双语截图与十段录制，用于 README、指南与配置说明。可用 `node scripts/serve-e2e.mjs --docs-demo --live-model`（或 `--docs-demo=en --live-model`）按记录中的步骤重新生成。在 DSH 0.1.7-rc.2 上采集的 [v0.5.19 图集](./webui-v0.5.19/README.md)作为带日期的记录保留。
 
 | Directory / 目录 | Purpose / 用途 |
 |---|---|

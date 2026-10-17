@@ -41,7 +41,7 @@ An Agent that starts every session from scratch keeps asking what it was already
 
 ## See it in action
 
-These recordings come from a real WebUI with the live DeepSeek model answering, on a seeded, fictional project, Lumen. Waits for the model play faster, marked in the lower right corner.
+These recordings come from a real WebUI with the live DeepSeek model answering, on a seeded, fictional project, Lumen. Waits for the model play faster, marked in the lower right corner. No embedding service ran during the capture, so the save receipt below says the memory has no vector yet; semantic matching needs one, set up in the [Mnemon Native embedding settings](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/ui-guide.md#memory-spaces-page).
 
 **Save a new fact to memory.** A reply reports a new measurement. Select the brain mark under it, cut the candidate down to the sentence worth keeping and send it to the task Agent; the receipt names the Memory Space it went to and opens it in one click.
 
