@@ -20,7 +20,7 @@
 |---|---|---|
 | 入门指南第 1 节：前提、安装 DSH、Web profile、开发检出、Headless、更新与卸载、云端访问 | 安装与启动的[第 7 节 命令行与 Headless](../../zh-CN/guides/installation.md#7-命令行与-headless)，含“Headless”“更新与卸载”“云端访问”三个小节 | 入门指南开头的一句话；其余步骤重新编号为 1 到 5 |
 | 入门指南第 1 节的“任务 Agent 如何启动” | [Provider 要求](../../zh-CN/reference/configuration.md#provider-要求)，并补上它唯一缺少的事实：固定的 `mnemon_subagent_result` 工具与为每个子 Agent 签发的 `requestId` | 第 7 节前提中的链接 |
-| 兼容性页面的“首次安装时的宿主行为” | 安装与启动第 3 步（安装源的选择、英文的卡片简介）与常见问题（24 小时规则） | 一句指引 |
+| 兼容性页面的“首次安装时的宿主行为” | 安装与启动第 3 步（安装源的选择、英文的卡片简介）与常见问题（24 小时规则） | 页面开头的一句指引 |
 | 兼容性页面的“升级默认安装”与“升级顺序” | 页面顶部，紧接受支持的版本之后 | — |
 | 兼容性页面的证据段落与“其他记录” | 页末新的[验证与证据](../../zh-CN/reference/compatibility.md#验证与证据)一节 | — |
 | 运维指南的“进程”“文件”“Web 与模型” | [架构设计的安全边界](../../zh-CN/development/architecture.md#安全边界) | 简短概述、“不是秘密扫描器”的提醒与“安全问题报告” |
@@ -28,9 +28,9 @@
 | 运维指南的“停用完整 Starter”（原在云端 WebUI 之下） | 独立一节，位于云端 WebUI 之前 | — |
 | 运维指南的“旧会话恢复”（原为第二节） | 故障排查之后 | — |
 | 运维指南中关于整理的段落，以及界面指南中关于整理的三条 | 新的[记忆整理](../../zh-CN/guides/operations.md#记忆整理)小节，改为列表 | 界面指南中的一条 |
-| 开发指南中每个 `serve-e2e` 选项一段文字 | [夹具选项表格](../../zh-CN/development/README.md#夹具选项)：选项、准备了什么、Issue、记录 | — |
+| 开发指南中每个 `serve-e2e` 选项一段文字 | [夹具选项表格](../../zh-CN/development/README.md#夹具选项)：选项、准备了什么与要发送的消息、Issue、记录 | 完整步骤与修复前后的结果，见各自的记录 |
 
-此前只在记录中说明的七个选项现在都在表格里：`--better-sidebar`、`--document-protection`、`--result-tool-cache`、`--review-failure`、`--review-layers`、`--runtime-archive` 与 `--runtime-routing`，每一个都对照了 `scripts/serve-e2e.mjs` 及其夹具。新增的 [scripts/README.md](../../../scripts/README.md) 列出每个脚本与夹具的用途、运行方式、选项与环境变量。开发指南链接了它、[Provider Lab](../../../provider-lab/README.md) 与[升级夹具](../../../tests/fixtures/upgrade/README.md)；两个文档中心各新增一行，链接贡献指南、scripts/README.md 与设计计划。
+此前只在记录中说明的七个选项现在都在表格里：`--better-sidebar`、`--document-protection`、`--result-tool-cache`、`--review-failure`、`--review-layers`、`--runtime-archive` 与 `--runtime-routing`，每一个都对照了 `scripts/serve-e2e.mjs` 及其夹具。表格前的说明写明同一时间只运行一个脚本化模型：同时给出多个时以 `serve-e2e.mjs` 中排在最前的为准，`--live-model` 会关闭它们；也写明哪些选项会在回环地址上启动后端替身。新增的 [scripts/README.md](../../../scripts/README.md) 与其他工具 README 一样只有英文，列出每个脚本与夹具的用途、运行方式、选项与环境变量。开发指南链接了它、[Provider Lab](../../../provider-lab/README.md) 与[升级夹具](../../../tests/fixtures/upgrade/README.md)；两个文档中心各新增一行，链接贡献指南、scripts/README.md 与设计计划。
 
 ## 每个主题的唯一归处
 
@@ -39,7 +39,7 @@
 | 安装、更新与卸载命令 | [安装与启动第 7 节](../../zh-CN/guides/installation.md#7-命令行与-headless) | 兼容性页面的升级步骤、入门指南 |
 | pnpm 的 24 小时规则 | [安装与启动的常见问题](../../zh-CN/guides/installation.md#常见问题) | 第 7 节“更新与卸载”、兼容性页面 |
 | 检查版本 → 更新 | [运维指南的版本检查与更新](../../zh-CN/guides/operations.md#版本检查与更新) | 安装与启动第 6、7 节，界面指南，兼容性页面（DSH 0.2.1 上的路径） |
-| 换用另一个 DSH 版本 | [兼容性页面的升级顺序](../../zh-CN/reference/compatibility.md#升级顺序) | 安装与启动的“升级 DSH” |
+| 换用另一个 DSH 版本 | 步骤见[兼容性页面的升级顺序](../../zh-CN/reference/compatibility.md#升级顺序)，各较早宿主应保留的版本见[更早的 DSH](../../zh-CN/reference/compatibility.md#更早的-dsh) | 安装与启动的“升级 DSH” |
 | Git 同步 | 使用方法在[运维指南](../../zh-CN/guides/operations.md#git-仓库同步)；凭据顺序、字段与网络回退在[同步通道](../../zh-CN/reference/interfaces.md#同步通道) | README（两句话）、界面指南（卡片的组成部分） |
 | 任务 Agent 模型 | [配置参考](../../zh-CN/reference/configuration.md#后台任务-agent-的模型路由)；选项表只保留一行，完整示例写出了 `followConversation` | 界面指南、能力地图 |
 | 存储范围 | [配置参考](../../zh-CN/reference/configuration.md#存储范围) | 存储模型、能力地图、入门指南、界面指南 |
@@ -52,14 +52,15 @@ ZIP 备份与 Git 同步有意只携带 dsh-mnemon 随附的 Source：运行时�
 ## 术语与一致性
 
 - 凡是指运行时记忆 Source 的“热记忆”（hot memory），都改为“运行时记忆”（runtime memory）：配置参考、接口参考、存储模型、生命周期与流程、运维指南与 SECURITY.md 的中文部分；README 中的“本地热存储”改为“本地存储”。模型可见的工具描述与界面文案保持原样，它们不属于文档。
-- 分层策略的包 README 写明它就是分层策略（Layered strategy），以及它的 type id `default-three-tier`。
+- 分层策略的包 README 写明它就是分层策略（Layered strategy），以及它的 type id `default-three-tier`；轻量上下文的 README 把 hot context 改为 runtime memory。
+- 备份与 Git 同步两节在指已安装的 Source 时，使用界面上的名称“记忆来源”（memory sources）。
 - 每个页面都以“文档中心”/“Documentation”链接文档中心，语言切换统一为简体中文在前，与中文页面和贡献指南原有的顺序一致。插件开发页面是例外：另一个分支会在 `extensions.md` 中加入写给 Source 作者的说明，因此本次不改动它，它仍保留旧的文档中心名称和一处“热记忆”（英文为 hot context）。
 - 中文的入门页面改名为“入门指南”，不再与 README 自己的“快速开始”一节同名。
 - README 列出全部四种存储范围：全局、按工作区、集中存储以及你指定的目录。
 - 中文开发指南统一称“空闲审查”，两种语言对激活测试的 18 个包的计数也一致了。
 - `docs/README.md` 只给出一条入门路径：先看安装与启动，再看入门指南。
 - 兼容性表格中 Node.js 版本范围里的竖线已转义，GitHub 不再把那一格截断在 `^22.19.0` 处。
-- 贡献指南的文档检查清单加入安装与启动和兼容性页面。`.changeset/README.md` 改为指向发布流程的简短说明；发布流程补上空 changeset 的规则，并新增“发布 PR”一节，说明 `.github/release-notes/vX.Y.Z.md`、两份 `docs/*/releases/vX.Y.Z.md` 发布说明以及 `docs/pr-assets/release-vX.Y.Z` 验收记录。
+- 贡献指南的文档检查清单加入安装与启动和兼容性页面。`.changeset/README.md` 改为指向发布流程的简短说明；发布流程补上空 changeset 的规则，并新增“发布 PR”一节，说明 `.github/release-notes/vX.Y.Z.md`、两份 `docs/*/releases/vX.Y.Z.md` 发布说明、安装与启动中发布当天的示例，以及 `docs/pr-assets/release-vX.Y.Z` 验收记录。
 - 验收证据索引要求把可复用工具放进 `scripts/` 或 `tests/`，由记录链接过去。当前的说明已经不再指向记录中的 `installed-dsh*.vitest.config.mjs` 或 `adapt-host-specs.mjs`，对应的工具是 `pnpm run test:installed-dsh`。
 
 ## 保留的锚点
@@ -72,11 +73,11 @@ ZIP 备份与 Git 同步有意只携带 dsh-mnemon 随附的 Source：运行时�
 | 运维指南 | `process`、`files`、`web-and-model`、`document-archive-recovery`、`runtime-archive-recovery`；中文：`进程`、`文件`、`web-与模型`、`文档归档恢复`、`运行时归档恢复` |
 | 兼容性与升级 | `host-behavior-on-a-first-install`、`other-records`；中文：`首次安装时的宿主行为`、`其他记录` |
 
-移动过的标题保持原文，因此 `升级顺序`、`升级默认安装`、`停用完整-starter` 与旧会话恢复的锚点随各自的章节移动。`installation#常见问题` 不变。
+移动过的标题保持原文，因此 `升级顺序`、`升级默认安装`、`停用完整-starter` 与旧会话恢复的锚点随各自的章节移动。`installation#常见问题` 不变。更早 DSH 版本的表格有了自己的锚点 `更早的-dsh`（英文为 `older-dsh-releases`），原来指向页面标题的链接现在改用它。
 
 ## 兼容性
 
-- **发布的文件。** README.md、README.zh-CN.md 与 SECURITY.md 随 `dsh-mnemon` 发布，分层策略的 README 随 `dsh-mnemon-strategy-default-three-tier` 发布，因此 `.changeset/docs-restructure.md` 为两者各记一个 patch 版本。它们的链接仍是绝对地址，图片不变。
+- **发布的文件。** README.md、README.zh-CN.md 与 SECURITY.md 随 `dsh-mnemon` 发布，两份插件 README 分别随 `dsh-mnemon-strategy-default-three-tier` 与 `dsh-mnemon-strategy-light-context` 发布，因此 `.changeset/docs-restructure.md` 为三者各记一个 patch 版本。它们的链接仍是绝对地址，图片不变。
 - **脚本。** 13 个脚本各加一行头部注释，它们都不进入 npm 包。作为发布输入的 `scripts/link-bundle-declarations.mjs` 本来就有说明，没有改动。
 - **其余都不变**：代码、设置键、持久化格式、RPC 名称、工具名称、模型可见的描述与界面文案都没有改动，不存在版本错位需要处理。
 - **记录与发布说明**的内容和路径不变；只有验收证据索引加了一行，并改了关于工具的那一句。
@@ -87,7 +88,7 @@ ZIP 备份与 Git 同步有意只携带 dsh-mnemon 随附的 Source：运行时�
 
 | 命令 | 结果 |
 |---|---|
-| `pnpm run verify:docs` | 通过：4,508 个本地链接、313 个 Markdown 锚点、双语路径与官方插件覆盖 |
+| `pnpm run verify:docs` | 通过：4,511 个本地链接、320 个 Markdown 锚点、双语路径与官方插件覆盖 |
 | 把每个改动页面的锚点与 `3b33e07e` 比较 | 没有丢失任何锚点 |
 | `git diff --check` | 无问题 |
 | `pnpm run typecheck` | 通过 |
