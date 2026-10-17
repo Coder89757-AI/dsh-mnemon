@@ -646,9 +646,16 @@ export class MnemonLifecycle {
     }
   }
 
-  /** Provider/model directory used by Settings without requiring a live session. */
-  async taskAgentModels(includeCatalog = true): Promise<TaskAgentModelCatalog> {
-    const route = this.taskAgentModelRoute('', undefined)
+  /**
+   * Provider/model directory used by Settings. A session id is the conversation
+   * the page was opened from: the catalog reports the route its own delegated
+   * work takes, the route an inherited setting takes without following it, and
+   * the effective route a task asked from it takes now.
+   */
+  async taskAgentModels(includeCatalog = true, sessionId?: string): Promise<TaskAgentModelCatalog> {
+    const route = this.taskAgentModelRoute(sessionId ?? '', undefined)
+    const conversation = this.conversationRoute(sessionId ?? '')
+    const inherited = this.inheritedRoute(this.routeFallback(sessionId ?? '', undefined))
     let defaultSelection: { provider: string; model: string } | undefined
     try {
       const selected = modelService(this.ctx.get('agentDefaultModel'))?.currentSelection()
@@ -660,6 +667,8 @@ export class MnemonLifecycle {
     const base = {
       ...(route === undefined ? {} : { effective: { provider: route.options.provider!, model: route.options.model!, source: route.source } }),
       ...(defaultSelection === undefined ? {} : { defaultSelection }),
+      ...(conversation === undefined ? {} : { session: { provider: conversation.provider, model: conversation.model } }),
+      ...(inherited === undefined ? {} : { inherited: { provider: inherited.provider, model: inherited.model, source: inherited.source } }),
     }
     if (!includeCatalog) return { ...base, groups: [], failures: [] }
     const llm = llmService(this.ctx.get('llm'))
@@ -772,7 +781,7 @@ export class MnemonLifecycle {
   }
 
   runRuntimeMaintenanceTask<T>(scope: import('../core/contracts/index.ts').MemoryOperationScope, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>): Promise<T> {
-    return this.runTaskAgent('', scope.workspaceId, signal, operation)
+    return this.runTaskAgent(scope.sessionId ?? '', scope.workspaceId, signal, operation)
   }
 
   /**
@@ -1010,17 +1019,36 @@ export class MnemonLifecycle {
   }
 
   /** Resolve a complete task route for both status admission and actual creation. */
-  private taskAgentModelRoute(fallbackSessionId: string, workspaceRoot: string | undefined): { options: NonNullable<CreateHostAgentOptions['agentOptions']>; source: 'fixed' | 'dsh-default' | 'active-agent' } | undefined {
-    const fallback = this.ctx.agents.get(fallbackSessionId.trim()) ?? this.availableAgent(workspaceRoot) ?? this.availableAgent()
+  private taskAgentModelRoute(fallbackSessionId: string, workspaceRoot: string | undefined): { options: NonNullable<CreateHostAgentOptions['agentOptions']>; source: 'fixed' | 'session' | 'dsh-default' | 'active-agent' } | undefined {
+    const fallback = this.routeFallback(fallbackSessionId, workspaceRoot)
+    const maxTokens = fallback?.options?.maxTokens === undefined ? {} : { maxTokens: fallback.options.maxTokens }
     if (this.config.taskAgentModel.mode === 'fixed') {
       const provider = this.config.taskAgentModel.provider?.trim()
       const model = this.config.taskAgentModel.model?.trim()
       if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
-      return {
-        source: 'fixed',
-        options: { provider, model, ...(fallback?.options?.maxTokens === undefined ? {} : { maxTokens: fallback.options.maxTokens }) },
-      }
+      return { source: 'fixed', options: { provider, model, ...maxTokens } }
     }
+    // With the switch on, an inherited route takes the route of the conversation
+    // the work belongs to, as that conversation's own delegated work does. Without
+    // it, or while that conversation is closed, the route is the DSH new-session
+    // default as before.
+    const conversation = this.config.taskAgentModel.followConversation === true ? this.conversationRoute(fallbackSessionId) : undefined
+    if (conversation !== undefined) return { source: 'session', options: { ...conversation, ...maxTokens } }
+    const inherited = this.inheritedRoute(fallback)
+    return inherited === undefined ? undefined : { source: inherited.source, options: { provider: inherited.provider, model: inherited.model, ...maxTokens } }
+  }
+
+  /** The asking conversation's Agent, else an open one to borrow creation options from. */
+  private routeFallback(sessionId: string, workspaceRoot: string | undefined): HostAgent | undefined {
+    return this.ctx.agents.get(sessionId.trim()) ?? this.availableAgent(workspaceRoot) ?? this.availableAgent()
+  }
+
+  /**
+   * The route an inherited setting takes without following a conversation: the
+   * DSH new-session default, which DSH sets to the model last picked in any
+   * conversation, else an open Agent's creation route when DSH keeps none.
+   */
+  private inheritedRoute(fallback: HostAgent | undefined): { provider: string; model: string; source: 'dsh-default' | 'active-agent' } | undefined {
     let selected: { provider: string; model: string } | undefined
     try { selected = modelService(this.ctx.get('agentDefaultModel'))?.currentSelection() } catch {}
     const selectedProvider = selected?.provider.trim()
@@ -1028,7 +1056,28 @@ export class MnemonLifecycle {
     const provider = selectedProvider || fallback?.options?.provider?.trim()
     const model = selectedModel || fallback?.options?.model?.trim()
     if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
-    return { source: selectedProvider !== undefined && selectedProvider !== '' && selectedModel !== undefined && selectedModel !== '' ? 'dsh-default' : 'active-agent', options: { provider, model, ...(fallback?.options?.maxTokens === undefined ? {} : { maxTokens: fallback.options.maxTokens }) } }
+    return { provider, model, source: selectedProvider !== undefined && selectedProvider !== '' && selectedModel !== undefined && selectedModel !== '' ? 'dsh-default' : 'active-agent' }
+  }
+
+  /**
+   * The route DSH gives a conversation's own delegated work, idle review
+   * included: the provider, model and reasoning effort of its last request,
+   * or the route it was created with before its first one. It exists only
+   * while the conversation's Agent is loaded; another open conversation never
+   * stands in for it.
+   */
+  private conversationRoute(sessionId: string): { provider: string; model: string; reasoningEffort?: string } | undefined {
+    const normalized = sessionId.trim()
+    if (normalized === '') return undefined
+    const agent = this.ctx.agents.get(normalized)
+    if (agent === undefined) return undefined
+    const config = agent.session.requestHeader?.()?.config ?? agent.options
+    const provider = config?.provider?.trim()
+    const model = config?.model?.trim()
+    // A half-filled route is no route at all, so both halves travel together.
+    if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
+    const effort = config?.reasoningEffort
+    return { provider, model, ...(typeof effort === 'string' && effort !== '' ? { reasoningEffort: effort } : {}) }
   }
 
   private taskAgentModelOptions(fallbackSessionId: string, workspaceRoot: string | undefined): NonNullable<CreateHostAgentOptions['agentOptions']> | undefined {

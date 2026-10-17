@@ -74,7 +74,7 @@ Memory Spaces' page under **Plugins → dsh-mnemon** holds each Provider's reusa
 - **Document archive** indexes a cold reference before the Host moves the original, or archives locally without one when no Memory Space can take it;
 - **Provider for new spaces**, with smart selection, calls a model only when rules leave several candidates.
 
-Task Agents follow DSH's default route for new sessions. **Task Agent model**, under Background tasks on the Layered strategy's page, can choose a separate Provider and model. Tasks are isolated: a failure shows on its own space or operation and never blocks the page.
+Task Agents follow the model DSH keeps for new sessions, the one picked last in any conversation. **Task Agent model**, under Background tasks on the Layered strategy's page, can instead follow the conversation that asked for the work, as review does, or use a Provider and model of its own. Tasks are isolated: a failure shows on its own space or operation and never blocks the page.
 
 ## Where it shows up
 

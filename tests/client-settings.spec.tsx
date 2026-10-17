@@ -48,6 +48,18 @@ type PageOptions = Parameters<typeof page>[1]
 const spaces = (scope: ClientSettingsScope<Config>, connection?: ClientConnectionHandle, options: PageOptions = {}, t: MnemonTranslate = translateZh, componentChanges?: { bump: () => void }) =>
   <MemorySpacesSettings scope={scope} {...(connection === undefined ? {} : { connection })} t={t} page={page(MEMORY_SPACES_PACKAGE, options)} {...(componentChanges === undefined ? {} : { componentChanges })} />
 /** The Layered strategy's own settings: the background tasks it drives. */
+/** What the Host reports for a page opened from a conversation on a model other than DSH's new-session one. */
+const conversationDirectory = {
+  effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' as const },
+  defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+  session: { provider: 'ai', model: 'space-bunny' },
+  inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' as const },
+  groups: [
+    { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] },
+    { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-5', name: 'GPT-5' }] },
+  ],
+  failures: [],
+}
 const threeTier = (scope: ClientSettingsScope<Config>, connection?: ClientConnectionHandle, options: PageOptions = {}, t: MnemonTranslate = translateZh) =>
   <ThreeTierSettings scope={scope} {...(connection === undefined ? {} : { connection })} t={t} page={page(THREE_TIER_PACKAGE, options)} />
 /** Runtime Memory's own setting: where its user profile lives. */
@@ -603,7 +615,7 @@ describe('MnemonSettingsCard', () => {
     expect(screen.getByRole('alert').textContent).toContain('无法加载记忆系统设置')
   })
 
-  it('inherits the new-session route by default and applies a chosen Provider and model at once', async () => {
+  it('follows global by default and applies a custom Provider and model at once', async () => {
     const mutate = vi.fn(async () => {})
     const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
     const call = vi.fn(async (channel: string, endpoint: string, _payload: unknown) => {
@@ -633,11 +645,11 @@ describe('MnemonSettingsCard', () => {
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
 
-    expect(selector('任务 Agent 模型').textContent).toBe('跟随主链路')
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随全局')
     expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
     expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: false })
-    // Choosing a fixed model applies at once, starting from DSH's default route.
-    choose('任务 Agent 模型', '指定模型')
+    // Choosing a custom model applies at once, starting from DSH's new-session model.
+    choose('任务 Agent 模型', '自定义')
     await waitFor(() => expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: true }))
     await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'fixed', provider: 'deepseek', model: 'deepseek-chat' } }]))
     // Providers sharing a name are told apart by their ids; a Provider starts from its first model.
@@ -650,6 +662,92 @@ describe('MnemonSettingsCard', () => {
     await waitFor(() => expect(mutate).toHaveBeenLastCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'fixed', provider: 'openai', model: 'gpt-5' } }]))
     expect(rowSelector('mnemon-task-agent-model').textContent).toBe('GPT-5')
     expect(screen.getByText('openai / gpt-5')).toBeTruthy()
+  })
+
+  it('follows the conversation the page was opened from only once that is chosen, and reads a choice stored elsewhere', async () => {
+    const mutate = vi.fn(async () => {})
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
+    const call = vi.fn(async (channel: string, endpoint: string, _payload: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: conversationDirectory }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle, { sessionId: 'session-7', workspaceId: 'workspace-3' }))
+
+    // Following global keeps DSH's new-session model whatever the conversation runs on.
+    expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
+    expect(screen.getByText('新会话模型')).toBeTruthy()
+    expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: false, sessionId: 'session-7', workspaceId: 'workspace-3' })
+    choose('任务 Agent 模型', '跟随会话')
+    await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'inherit', followConversation: true } }]))
+    // The conversation's model reads before the Host is asked again.
+    expect(await screen.findByText('ai / space-bunny')).toBeTruthy()
+    expect(screen.getByText('当前会话')).toBeTruthy()
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随会话')
+
+    // A choice stored elsewhere reads here at once.
+    await act(async () => { await scope.mutate([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'inherit' } }]) })
+    expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随全局')
+  })
+
+  it('keeps following the conversation when a custom model is given up before it was written', async () => {
+    const mutate = vi.fn(async () => {})
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const, taskAgentModel: { mode: 'inherit', followConversation: true } }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
+    // The whole directory never arrives, so choosing a custom model waits.
+    const call = vi.fn(async (channel: string, endpoint: string, payload: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') {
+        return (payload as { includeCatalog: boolean }).includeCatalog ? new Promise(() => {}) : { ok: true as const, value: conversationDirectory }
+      }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle, { sessionId: 'session-7' }))
+    expect(await screen.findByText('ai / space-bunny')).toBeTruthy()
+    choose('任务 Agent 模型', '自定义')
+    choose('任务 Agent 模型', '跟随会话')
+
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随会话')
+    expect(screen.getByText('ai / space-bunny')).toBeTruthy()
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('reads the whole directory again for a custom route after a failed read', async () => {
+    let full = 0
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const, taskAgentModel: { mode: 'fixed', provider: 'openai', model: 'gpt-5' } }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, vi.fn(async () => {}))
+    const call = vi.fn(async (channel: string, endpoint: string, payload: unknown) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') {
+        if ((payload as { includeCatalog: boolean }).includeCatalog && ++full === 1) return { ok: false as const, error: { code: 'unavailable', message: 'the model directory is down' } }
+        return { ok: true as const, value: conversationDirectory }
+      }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+
+    render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    expect(await screen.findByText(/模型目录读取失败/u)).toBeTruthy()
+    // A failed read is a statement with its retry, not an alert to dismiss.
+    fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
+    await waitFor(() => expect(full).toBe(2))
+    // With the directory read, the custom route can be changed in place.
+    await waitFor(() => expect(rowSelector('mnemon-task-agent-model').disabled).toBe(false))
+    expect(rowSelector('mnemon-task-agent-model').textContent).toBe('GPT-5')
+  })
+
+  it('states the route the Host takes without a DSH default, and the Host\'s route before the settings are read', async () => {
+    const without = { ...conversationDirectory, defaultSelection: undefined, inherited: { provider: 'ai', model: 'starter', source: 'active-agent' as const }, effective: { provider: 'ai', model: 'starter', source: 'active-agent' as const } }
+    const call = vi.fn(async (_channel: string, _endpoint: string, _payload: unknown) => ({ ok: true as const, value: without }))
+    const ready = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, vi.fn(async () => {}))
+    const { unmount } = render(threeTier(ready, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
+    expect(await screen.findByText('ai / starter')).toBeTruthy()
+    expect(screen.getByText('已打开的会话')).toBeTruthy()
+    unmount()
+
+    // Until the page has the settings, only the Host knows the stored choice.
+    const stored = { ...conversationDirectory, effective: { provider: 'openai', model: 'gpt-5', source: 'fixed' as const } }
+    const loading = settingsScope<Config>({ status: 'loading' as const, writable: false, mode: 'host' as const } as never)
+    render(threeTier(loading, { rpc: { call: vi.fn(async () => ({ ok: true as const, value: stored })) }, isLoopback: true } as ClientConnectionHandle))
+    expect(await screen.findByText('openai / gpt-5')).toBeTruthy()
+    expect(screen.getByText('自定义')).toBeTruthy()
   })
 
   it('keeps rapid route-mode switches stable while model requests finish out of order', async () => {
@@ -673,9 +771,9 @@ describe('MnemonSettingsCard', () => {
     })
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
-    // A fixed model chosen before the catalog arrives waits for it; choosing to inherit again cancels it.
-    choose('任务 Agent 模型', '指定模型')
-    choose('任务 Agent 模型', '跟随主链路')
+    // A custom model chosen before the catalog arrives waits for it; following global again cancels it.
+    choose('任务 Agent 模型', '自定义')
+    choose('任务 Agent 模型', '跟随全局')
 
     await act(async () => {
       resolveCatalog({ ok: true, value: catalog })
@@ -684,10 +782,10 @@ describe('MnemonSettingsCard', () => {
       await route
     })
 
-    expect(selector('任务 Agent 模型').textContent).toBe('跟随主链路')
+    expect(selector('任务 Agent 模型').textContent).toBe('跟随全局')
     const writes = mutate.mock.calls as unknown as Array<[Array<{ value: { mode: string } }>]>
     expect(writes.every(([operations]) => operations[0]!.value.mode === 'inherit')).toBe(true)
-    choose('任务 Agent 模型', '指定模型')
+    choose('任务 Agent 模型', '自定义')
     await waitFor(() => expect(rowSelector('mnemon-task-agent-provider').disabled).toBe(false))
     expect(rowSelector('mnemon-task-agent-provider').textContent).toBe('DeepSeek')
     // The catalog read once in full is not read again.
@@ -722,7 +820,7 @@ describe('MnemonSettingsCard', () => {
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle))
 
-    expect(selector('任务 Agent 模型').textContent).toBe('指定模型')
+    expect(selector('任务 Agent 模型').textContent).toBe('自定义')
     await waitFor(() => expect(rowSelector('mnemon-task-agent-provider').disabled).toBe(false))
     expect(rowSelector('mnemon-task-agent-provider').textContent).toBe('OpenAI')
     expect(rowSelector('mnemon-task-agent-model').textContent).toBe('GPT-5')

@@ -41,7 +41,7 @@ function durableCandidate(filler = 97): HostUserMessage {
   return userMessage(`Please remember this durable architecture rationale: ${'x'.repeat(filler)}`)
 }
 
-function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> } } = {}) {
+function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> } } = {}) {
   const agentListeners = new Map<string, Listener>()
   const rootListeners = new Map<string, Listener>()
   const agentSections: Array<{ name: string; order: number; text: () => string }> = []
@@ -53,6 +53,7 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
   const taskAgents: HostAgent[] = []
   const disposedTaskAgents: string[] = []
   const taskModelRoute = options.taskModelRoute !== false
+  const sessionModel = options.sessionModel
   const defaultModel = { currentSelection: vi.fn(() => ({ provider: 'deepseek', model: 'deepseek-chat' })) }
   const llm = {
     listProviders: vi.fn(() => [
@@ -100,8 +101,11 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
   const agent = {
     id: 'session-1',
     status: 'idle',
-    ...(taskModelRoute ? { options: { provider: 'deepseek', model: 'deepseek-chat' } } : {}),
-    session: { ...sessionLog(events) },
+    ...(options.conversationOptions !== undefined ? { options: options.conversationOptions } : taskModelRoute ? { options: { provider: 'deepseek', model: 'deepseek-chat' } } : {}),
+    session: {
+      ...sessionLog(events),
+      ...(sessionModel === undefined ? {} : { requestHeader: () => ({ config: sessionModel }) }),
+    },
     ctx: agentCtx,
     followup,
     steer,
@@ -443,7 +447,7 @@ describe('Mnemon DSH lifecycle integration', () => {
       if (failed) throw new Error('model unavailable')
       return 'maintained'
     })
-    const result = value.lifecycle.runRuntimeMaintenanceTask({ storage: 'workspace', workspaceId: workspaceTwo, sessionId: 'unrelated-session' }, new AbortController().signal, operation)
+    const result = value.lifecycle.runRuntimeMaintenanceTask({ storage: 'workspace', workspaceId: workspaceTwo, sessionId: 'session-1' }, new AbortController().signal, operation)
     if (failed) await expect(result).rejects.toThrow('model unavailable')
     else await expect(result).resolves.toBe('maintained')
     expect(value.createTaskAgent).toHaveBeenCalledOnce()
@@ -533,6 +537,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     await expect(value.lifecycle.taskAgentModels()).resolves.toEqual({
       effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
       defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+      inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
       groups: [
         { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] },
         { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-5', name: 'GPT-5', description: 'General reasoning' }] },
@@ -568,11 +573,86 @@ describe('Mnemon DSH lifecycle integration', () => {
     await expect(value.lifecycle.taskAgentModels(false)).resolves.toEqual({
       effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
       defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+      inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
       groups: [],
       failures: [],
     })
     expect(value.llm.listProviders).not.toHaveBeenCalled()
     expect(value.llm.listModels).not.toHaveBeenCalled()
+  })
+
+  it('keeps the DSH new-session default for an inherited route that does not follow its conversation', async () => {
+    const value = fixture(undefined, { sessionModel: { provider: 'ai', model: 'space-bunny' } })
+
+    // The catalog still names the conversation's route, so a page can say what the switch would change.
+    await expect(value.lifecycle.taskAgentModels(false, 'session-1')).resolves.toEqual({
+      effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
+      defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+      session: { provider: 'ai', model: 'space-bunny' },
+      inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
+      groups: [],
+      failures: [],
+    })
+    await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global', sessionId: 'session-1' }, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: undefined },
+    }))
+  })
+
+  it('follows the conversation that asked for the work once its inherited route is switched to follow it', async () => {
+    const value = fixture(resolveConfig({ cliPath: '/fake/mnemon', taskAgentModel: { mode: 'inherit', followConversation: true } }), { sessionModel: { provider: 'ai', model: 'space-bunny', reasoningEffort: 'high' } })
+
+    await expect(value.lifecycle.taskAgentModels(false, 'session-1')).resolves.toEqual({
+      effective: { provider: 'ai', model: 'space-bunny', source: 'session' },
+      defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+      session: { provider: 'ai', model: 'space-bunny' },
+      inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
+      groups: [],
+      failures: [],
+    })
+    // The maintenance a write of that conversation needs, and a task its page asks for, both take its
+    // route as DSH gives it to the conversation's own delegated work, reasoning effort included.
+    await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global', sessionId: 'session-1' }, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'ai', model: 'space-bunny', reasoningEffort: 'high', maxTokens: undefined },
+    }))
+    await value.lifecycle.maintainMetadata('session-1', ['project'], workspaceTwo)
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'ai', model: 'space-bunny', reasoningEffort: 'high', maxTokens: undefined },
+    }))
+  })
+
+  it('never borrows another open conversation\'s model, and takes a conversation\'s creation route before its first request', async () => {
+    const follow = resolveConfig({ cliPath: '/fake/mnemon', taskAgentModel: { mode: 'inherit', followConversation: true } })
+    const value = fixture(follow, { sessionModel: { provider: 'ai', model: 'space-bunny' } })
+    const dshDefault = {
+      effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
+      defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+      inherited: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' },
+      groups: [],
+      failures: [],
+    }
+
+    // session-1 is open with a route of its own; a conversation that is not, and a caller without one, keep the default.
+    await expect(value.lifecycle.taskAgentModels(false, 'session-2')).resolves.toEqual(dshDefault)
+    await expect(value.lifecycle.taskAgentModels(false)).resolves.toEqual(dshDefault)
+    await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global', sessionId: 'session-2' }, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: undefined },
+    }))
+    await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global' }, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: undefined },
+    }))
+
+    // Before its first request, DSH gives a conversation's delegated work the route it was created with; so does the switch.
+    const fresh = fixture(follow, { conversationOptions: { provider: 'ai', model: 'starter' } })
+    await expect(fresh.lifecycle.taskAgentModels(false, 'session-1')).resolves.toMatchObject({
+      effective: { provider: 'ai', model: 'starter', source: 'session' },
+      session: { provider: 'ai', model: 'starter' },
+    })
+    // Half a request header is no route at all.
+    await expect(fixture(follow, { sessionModel: { provider: '  ', model: 'space-bunny' } }).lifecycle.taskAgentModels(false, 'session-1')).resolves.toEqual(dshDefault)
   })
 
   it('isolates a stalled Provider while keeping the rest of the model catalog usable', async () => {

@@ -286,12 +286,21 @@ export interface TaskAgentModelConfig {
   mode?: 'inherit' | 'fixed'
   provider?: string
   model?: string
+  /**
+   * With `inherit`, run on the model the conversation that asked for the work
+   * last used, while that conversation is open. Off by default; a switch
+   * rather than a third mode, so a release that does not know it keeps
+   * reading `inherit` as before.
+   */
+  followConversation?: boolean
 }
 
 export interface ResolvedTaskAgentModelConfig {
   mode: 'inherit' | 'fixed'
   provider?: string
   model?: string
+  /** Present, and true, only on an inherited route that follows its conversation. */
+  followConversation?: true
 }
 
 export interface TaskAgentModelCatalogModel {
@@ -315,8 +324,20 @@ export interface TaskAgentModelCatalogFailure {
 }
 
 export interface TaskAgentModelCatalog {
-  effective?: { provider: string; model: string; source: 'fixed' | 'dsh-default' | 'active-agent' }
+  effective?: { provider: string; model: string; source: 'fixed' | 'session' | 'dsh-default' | 'active-agent' }
   defaultSelection?: { provider: string; model: string }
+  /**
+   * The route the asking conversation's own delegated work takes while it is
+   * open: the model of its last request, or the one it was created with before
+   * its first. An inherited setting that follows its conversation takes it too;
+   * it is reported whether or not that switch is on.
+   */
+  session?: { provider: string; model: string }
+  /**
+   * The route an inherited setting takes without following a conversation: the
+   * DSH new-session default, else an open Agent's creation route.
+   */
+  inherited?: { provider: string; model: string; source: 'dsh-default' | 'active-agent' }
   groups: TaskAgentModelCatalogGroup[]
   failures: TaskAgentModelCatalogFailure[]
 }
