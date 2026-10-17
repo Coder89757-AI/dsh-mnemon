@@ -13,7 +13,6 @@ export function namedToolInstance<T extends { sourceInstanceKey: string }>(insta
 export type MemoryParticipationMode = 'off' | 'manual' | 'automatic'
 export type MemoryParticipationChannel = 'recall' | 'write' | 'projection' | 'maintenance'
 export type MemoryLayerParticipation = Record<MemoryParticipationChannel, MemoryParticipationMode>
-export interface MemoryTopologyDefinition { id: string; strategyId: string; layers: Array<ResolvedMemoryLayerConfig & { id: string }> }
 export interface MemoryCompositionStatus {
   /** Whether a composition serves new turns. A rejected change can leave the previous one serving. */
   serving: boolean
@@ -508,6 +507,26 @@ export interface SubagentCounters {
   lastAt?: string
 }
 
+/** What a delegated memory write did, as the write task Agent's receipts show it. */
+export interface DelegatedWriteResult {
+  delegated: true
+  runId: string
+  provider: string
+  summary: string
+  action: string
+  /** Where the memory went: the spaces its receipts name, else what the writer reported. */
+  memoryBodyIds: string[]
+  /** Spaces that were inactive and that this write switched on. */
+  activatedMemoryBodyIds?: string[]
+  documentIds?: string[]
+  /** Memories saved without a vector, as the Provider's receipt says (#388). */
+  unembedded?: Array<{ memoryBodyId?: string; id?: string }>
+  hint?: string
+}
+
+/** The `supervise` RPC result: a delegated write for the conversation that asked for it. */
+export interface SupervisedWritebackResult extends DelegatedWriteResult { sessionId: string }
+
 export type LifecyclePhase = 'idle' | 'prime' | 'recall' | 'writeback' | 'review' | 'supervised' | 'error'
 
 export interface LifecycleCounters {
@@ -830,9 +849,6 @@ export interface MnemonSyncConfigView {
  * when neither is set: the order here is the order of resolution.
  */
 export type MnemonSyncCredentialSource = 'environment' | 'token' | 'github' | 'none'
-
-/** How far the browser step of a GitHub sign-in has come. */
-export type MnemonSyncGitHubFlowStatus = 'pending' | 'expired' | 'denied' | 'error'
 
 export interface MnemonSyncGitHubFlow {
   userCode: string

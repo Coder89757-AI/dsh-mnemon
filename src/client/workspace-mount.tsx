@@ -11,7 +11,6 @@ import type { MnemonBetterSidebarSeat } from './better-sidebar-seat.ts'
 import type { MnemonNativeSidebarSeat } from './native-sidebar-seat.ts'
 import type { MnemonActionSeat } from './action-seat.ts'
 import type { MnemonChangeSignal } from './change-signal.ts'
-import { mountMnemonSidebarEntry } from './sidebar-entry.ts'
 import { MnemonWorkspaceController } from './workspace-controller.ts'
 import { useMnemonSessionId, type MnemonSessionBinding } from './session-binding.ts'
 import css from './MnemonWorkspace.module.css'
@@ -227,18 +226,6 @@ export function MnemonSidebarWorkspaceHost(props: MnemonWorkspaceHostProps & { c
       <MnemonWorkspaceHost {...props} active={state.open} />
     </section>}
   </>
-}
-
-/** Core-owned sidebar row; presentation state is shared with its DSH seat. */
-export function mountMnemonSidebarLauncher(
-  ctx: MnemonClientContext,
-  t: MnemonTranslate,
-  controller: MnemonWorkspaceController,
-): () => void {
-  if (typeof document === 'undefined' || typeof window === 'undefined') return () => {}
-  const stopEntry = mountMnemonSidebarEntry(controller, t, listener => ctx.locale.subscribe(listener))
-  const stopPanels = coordinateSidebarPanels(controller)
-  return () => { stopPanels(); stopEntry() }
 }
 
 /** Coordinate released peer panels; their DOM flags also cover lost events. */

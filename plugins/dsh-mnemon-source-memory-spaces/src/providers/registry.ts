@@ -1,4 +1,4 @@
-import type { MemoryProviderAdapter, MemoryProviderAdapterFactoryContext, MemoryProviderScoreSemantics } from './adapter.ts'
+import type { MemoryProviderAdapter, MemoryProviderAdapterFactoryContext } from './adapter.ts'
 
 export interface MemoryAdapterFactory<Id extends string, Context, Adapter extends { readonly id: Id }> {
   readonly id: Id
@@ -40,9 +40,5 @@ export class MemoryAdapterFactoryRegistry<Id extends string, Context, Adapter ex
   }
 }
 
-
-export interface MemoryProviderAdapterFactory extends MemoryAdapterFactory<string, MemoryProviderAdapterFactoryContext, MemoryProviderAdapter> {
-  scoreSemantics: MemoryProviderScoreSemantics
-}
 
 export class MemoryProviderAdapterRegistry extends MemoryAdapterFactoryRegistry<string, MemoryProviderAdapterFactoryContext, MemoryProviderAdapter> {}

@@ -202,7 +202,6 @@
 .placeholderRow span:last-child { width: 36px; height: 20px; border-radius: 10px; }
 @keyframes placeholder-pulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) {
-  .boardRowCopy { transition: none; }
   .boardOthersToggle > svg { transition: none; }
   .placeholderRow span { animation: none; }
 }

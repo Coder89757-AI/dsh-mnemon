@@ -21,8 +21,6 @@ interface WriteActivityMeta extends ActivityMetaBase {
   item: MemoryActivityItem
 }
 
-export type MnemonActivityMeta = ReadActivityMeta | WriteActivityMeta
-
 const MAX_ITEMS = 8
 const MAX_TITLE = 160
 const MAX_EXCERPT = 500
