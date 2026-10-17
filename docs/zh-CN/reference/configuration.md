@@ -128,7 +128,7 @@ mnemon:
 | `tabEnabled` | `true` | boolean | 是否挂载所选入口和工作台；关闭后 Host RPC、命令和 Agent 工具保持注册 |
 | `writeEnabled` | `true` | boolean | 是否暴露语义写工具、写 RPC 和写命令 |
 | `syncEnabled` | `false` | boolean | 本机是否同步到 Git 仓库。默认关闭，关闭时保持沉默：存储页那一行只有标题与开关，不读取状态，也不执行 Git 命令。仓库、分支、目录、提交身份、令牌与自动同步间隔（`autoBackupMinutes`）保存在 `state/sync-git.json`，不在这里 |
-| `taskAgentModel` | `{ mode: inherit }` | `inherit` / `fixed` | 整理名称与说明、Agent 查询、存入记忆和档案归档使用的独立任务 Agent，以及空闲复盘 worker 的模型路由；`inherit` 跟随该工作所属会话的模型，没有会话时回落到 DSH 新会话默认模型；`fixed` 必须同时保存 `provider` 与 `model`，并会钉住对应的写入、证据问答、Provider 选择、迁移、压缩、归档和元信息维护 worker。对话中的 Recall 与 Related 是 Host 直接读取，不使用该路由 |
+| `taskAgentModel` | `{ mode: inherit }` | `inherit` / `fixed`；`followConversation`：boolean | 整理名称与说明、Agent 查询、存入记忆和档案归档使用的独立任务 Agent，以及空闲复盘 worker 的模型路由；`inherit` 让任务 Agent 使用 DSH 新会话默认模型，DSH 会把它设为最近一次在任意会话中选择的模型，而空闲复盘 worker 等委派 worker 使用其会话的路由；设置 `followConversation: true`（默认关闭）后，任务 Agent 也使用发起该工作的会话的路由，前提是该会话处于打开状态；`fixed` 必须同时保存 `provider` 与 `model`，并会钉住对应的写入、证据问答、Provider 选择、迁移、压缩、归档和元信息维护 worker。对话中的 Recall 与 Related 是 Host 直接读取，不使用该路由 |
 | `remoteAccess` | `read-only` | `read-only` / `trusted-host` | 非 loopback Mnemon 管理授权，仅启动时读取，由 API Gateway 映射执行 |
 | `conversationInteraction.turnBar` | `true` | boolean | 回复下方的回合记忆栏，立即生效 |
 | `conversationInteraction.saveAction` | `true` | boolean | 已完成回复上的**存入记忆**操作及其确认框，立即生效 |

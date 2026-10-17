@@ -652,14 +652,16 @@ describe('MnemonSettingsCard', () => {
     expect(screen.getByText('openai / gpt-5')).toBeTruthy()
   })
 
-  it('asks for the route of the conversation the page was opened from', async () => {
-    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, vi.fn(async () => {}))
+  it('asks for the route of the conversation the page was opened from, and follows it only with the switch on', async () => {
+    const mutate = vi.fn(async () => {})
+    const scope = liveSettingsScope<Config>({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const }, mutate)
     const call = vi.fn(async (channel: string, endpoint: string, _payload: unknown) => {
       if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return {
         ok: true as const,
         value: {
-          effective: { provider: 'ai', model: 'space-bunny', source: 'session' as const },
+          effective: { provider: 'deepseek', model: 'deepseek-chat', source: 'dsh-default' as const },
           defaultSelection: { provider: 'deepseek', model: 'deepseek-chat' },
+          session: { provider: 'ai', model: 'space-bunny' },
           groups: [{ id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] }],
           failures: [],
         },
@@ -669,9 +671,19 @@ describe('MnemonSettingsCard', () => {
 
     render(threeTier(scope, { rpc: { call }, isLoopback: true } as ClientConnectionHandle, { sessionId: 'session-7', workspaceId: 'workspace-3' }))
 
-    // The conversation's own model wins over the DSH-wide default the profile saved.
-    expect(await screen.findByText('ai / space-bunny')).toBeTruthy()
+    // Until the switch is on, an inherited route stays on DSH's new-session default.
+    expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
+    expect(screen.getByText('DSH 默认模型')).toBeTruthy()
     expect(call).toHaveBeenCalledWith('/dsh-mnemon-read', 'task-agent-models', { includeCatalog: false, sessionId: 'session-7', workspaceId: 'workspace-3' })
+    fireEvent.click(screen.getByRole('switch', { name: '优先使用会话的模型' }))
+    await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'inherit', followConversation: true } }]))
+    expect(await screen.findByText('ai / space-bunny')).toBeTruthy()
+    expect(screen.getByText('会话的模型')).toBeTruthy()
+
+    // A route stored elsewhere, such as from the status page, reads here at once.
+    await act(async () => { await scope.mutate([{ op: 'set', path: ['taskAgentModel'], value: { mode: 'inherit' } }]) })
+    expect(await screen.findByText('deepseek / deepseek-chat')).toBeTruthy()
+    expect((screen.getByRole('switch', { name: '优先使用会话的模型' }) as HTMLElement).getAttribute('aria-checked')).toBe('false')
   })
 
   it('keeps rapid route-mode switches stable while model requests finish out of order', async () => {

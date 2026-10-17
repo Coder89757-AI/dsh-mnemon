@@ -387,7 +387,11 @@
 .storageFootnote { margin: 12px 0 0; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
 /* The background task route: the same card shell as the storage domains, on the page a reader opens first. */
 .backgroundTask { margin-bottom: 16px; padding: 16px; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
-.statusHint { margin: 8px 0 0; color: var(--mn-danger); font-size: 12px; line-height: 18px; }
+.backgroundRoute { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
+.backgroundRoute code { min-width: 0; overflow: hidden; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-xs); padding: 1px 6px; color: var(--mn-muted); font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundRoute small { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* A failed directory read is a statement with its retry, not an alert to dismiss. */
+.backgroundFailure { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0 0; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
 .statusSectionHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .statusSectionHeader h3 { margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
 .statusSectionHeader p { max-width: 640px; margin: 2px 0 0; color: var(--mn-faint); font-size: 12px; line-height: 18px; }

@@ -147,11 +147,12 @@ export interface HostSession {
   snapshotEvents(fromSeq?: number, toSeqExclusive?: number): readonly HostSessionEvent[]
   eventAt(seq: number): HostSessionEvent | undefined
   /**
-   * The model this Session last asked DSH for. A task Agent that follows the
-   * conversation reads it before the profile-wide default, so the model chosen
-   * for one conversation is the model its background work runs on.
+   * The request header in force: the model this Session last asked DSH for. A
+   * task Agent whose inherited route follows its conversation reads it before
+   * the profile-wide default, so background work runs on the model that
+   * conversation uses. DSH applies a model switch on the next request.
    */
-  requestHeader?(): { config?: { provider?: string; model?: string } } | undefined
+  requestHeader?(): { config?: { provider?: string; model?: string; reasoningEffort?: string } } | undefined
   /** Model-visible event sequences, in order; rewinds and compaction replace them. */
   surface: { readonly nodes: readonly number[] }
   /** DSH's append, as its own request-error recoveries use it before retrying a step. */
@@ -181,7 +182,7 @@ export interface HostAgentContext {
 export interface HostAgent {
   id: string
   status: 'idle' | 'running'
-  options?: { provider?: string; model?: string; maxTokens?: number }
+  options?: { provider?: string; model?: string; maxTokens?: number; reasoningEffort?: string }
   session: HostSession
   ctx: HostAgentContext
   followup(message: HostUserMessage): void
@@ -197,7 +198,7 @@ export interface HostAgentHandle {
 export interface CreateHostAgentOptions {
   sessionId: string
   meta?: { cwd?: string; agentPreset?: string }
-  agentOptions?: { provider?: string; model?: string; maxTokens?: number }
+  agentOptions?: { provider?: string; model?: string; maxTokens?: number; reasoningEffort?: string }
   signal?: AbortSignal
   /** DSH calls it with the unpublished Agent's context and the Agent itself. */
   setup?: (agentCtx: HostAgentContext, agent?: HostAgent) => unknown | Promise<unknown>

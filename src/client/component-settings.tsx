@@ -431,7 +431,7 @@ export function ThreeTierSettings(props: ShippedSettingsServices & { page: Memor
   const { scope, connection, page, t } = props
   const snapshot = useScope(scope)
   const savedReview = reviewOf(snapshot.value)
-  // The page belongs to one conversation, so its effective route is that conversation's.
+  // The page belongs to one conversation, so the route it states is the one that conversation's tasks take.
   const taskAgent = useTaskAgentModel({ scope, connection, sessionId: page.sessionId, workspaceId: page.workspace?.id })
   const configured = snapshot.value?.idleReview
   const choice = useLive(choiceOf(savedReview), async next => {
@@ -453,9 +453,9 @@ export function ThreeTierSettings(props: ShippedSettingsServices & { page: Memor
     </div>
     {!page.component.enabled && <p className={css.panelNote}>{t('threeTier.offNote')}</p>}
     <div className={css.rows}>
-      <TaskAgentModelRows mode={taskAgent.choosing ? 'fixed' : taskAgent.route.mode} route={taskAgent.route} choosing={taskAgent.choosing}
+      <TaskAgentModelRows mode={taskAgent.choosing ? 'fixed' : taskAgent.route.mode} route={taskAgent.route} settled={taskAgent.settled} choosing={taskAgent.choosing}
         catalog={taskAgent.catalog.value} state={taskAgent.catalog.state} error={taskAgent.catalog.error} retry={taskAgent.retry}
-        disabled={disabled} onMode={taskAgent.setMode} onRoute={taskAgent.setRoute} t={t} />
+        disabled={disabled} onMode={taskAgent.setMode} onFollow={taskAgent.setFollow} onRoute={taskAgent.setRoute} t={t} />
       <IdleReviewRows choice={choice.value} limits={limits} disabled={disabled} onChoice={next => choice.set({ ...choice.value, ...next })} t={t} />
     </div>
     <WriteFailure error={taskAgent.failed ?? choice.failed} t={t} />
