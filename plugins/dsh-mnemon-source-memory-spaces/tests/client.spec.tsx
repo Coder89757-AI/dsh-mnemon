@@ -172,7 +172,8 @@ describe('independent Memory Spaces Source client', () => {
     await screen.findByText(t('receipt.written'))
     expect(note()).toBeNull()
     expect(other()).toBeNull()
-  })
+    // Three saves through the page: CI's packed-plugin job has taken more than 5 s for them, as for the case above.
+  }, 15_000)
 
   it('owns five pages with one rollback/disposal boundary', () => {
     const entries = new Set<string>()
