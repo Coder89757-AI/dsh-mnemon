@@ -60,8 +60,22 @@ function documentActionReceipt(receipt: MemoryMutationReceipt): MemoryMutationRe
   return { ...receipt, details: ('result' in details ? { ...details, result: documentReceipt(details.result) } : documentReceipt(details)) as MemoryJsonValue }
 }
 
-/** Named product tools are views over the same Source Route/Action protocol. */
+/**
+ * Named product tools are views over the same Source Route/Action protocol. Each family registers its tools in the
+ * order the model has always been given them, which puts Memory Spaces' reads before the Documents tools and its
+ * writes after the runtime memory tool.
+ */
 export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentRuntimeSource, coordinator: MnemonSubagentCoordinator): void {
+  const helpers = toolHelpers(runtimeSource)
+  registerViewTools(ctx, helpers, coordinator)
+  registerMemorySpaceReadTools(ctx, helpers, coordinator)
+  registerDocumentTools(ctx, helpers, coordinator)
+  registerRuntimeTools(ctx, helpers, coordinator)
+  registerMemorySpaceWriteTools(ctx, helpers, coordinator)
+}
+
+/** What the handlers of every family share: the calling Agent's runtime graph and Sources, its checks, and a Source Action call. */
+function toolHelpers(runtimeSource: MnemonAgentRuntimeSource) {
   const runtimeFor = (exec: ToolExecution): MnemonRuntimeGraph => runtimeSource.forAgent(requireAgent(exec))
   const sourceFor = (exec: ToolExecution, typeId: string) => {
     const graph = runtimeFor(exec)
@@ -91,7 +105,13 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       memoryReceipt: { status: receipt.status, completion: receipt.completion, ...(receipt.committedAt === undefined ? {} : { committedAt: receipt.committedAt }) },
     }
   }
+  return { runtimeFor, sourceFor, requireSource, config, composableTurn, sourceAction }
+}
 
+type ToolHelpers = ReturnType<typeof toolHelpers>
+
+/** The two generic View tools, which run whichever Route or Action of the turn's View a call names. */
+function registerViewTools(ctx: HostContextShape, { runtimeFor, config, composableTurn }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_view_route',
     description: 'Execute one exact Route offered in the current MNEMON VIEW ROUTES envelope. Use only ids present in that envelope; the Host binds the request to its hidden ReadGrant, enforces call/result/character budgets, and returns Evidence.',
@@ -147,7 +167,10 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     presentCall: (args: { offerId: string }) => ({ card: 'generic', title: 'Apply composable memory action', kind: 'edit', rawInput: args.offerId }),
     presentResult: () => ({ card: 'generic', title: 'Composable memory receipt ready' }),
   } as never))
+}
 
+/** Memory Spaces' catalog, Recall, Related and health. */
+function registerMemorySpaceReadTools(ctx: HostContextShape, { sourceFor, requireSource }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_memory_bodies',
     description: 'Inspect a bounded Memory Space catalog with ids, routing, capabilities, activation, and health; paths, settings, and statistics are omitted. Use only for explicit space inspection or management, or before a capability-dependent write. Never call it to route Recall: omit memoryBodyIds and mnemon_recall searches every pinned active space.',
@@ -230,7 +253,10 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     presentCall: () => ({ card: 'generic', title: 'Check Mnemon status', kind: 'other' }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon status checked' }),
   } as never))
+}
 
+/** The project Documents tools. */
+function registerDocumentTools(ctx: HostContextShape, { requireSource, config, sourceAction }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_document_search',
     description: 'Run one focused search over project-scoped managed Documents before durable Recall. The Host admits only one Documents query per executing Agent turn; parallel calls share that slot, while child turns have independent budgets. Results contain bounded query-local evidence, not complete records. Cold archives are excluded unless a known archive reference requires them. It searches Documents only: memories in Memory Spaces are never in its results, so recall those with mnemon_recall.',
@@ -313,7 +339,10 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     presentCall: (args: { action: string; title?: string }) => ({ card: 'generic', title: `${args.action} Mnemon Document`, kind: 'edit', ...(args.title === undefined ? {} : { rawInput: args.title }) }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon Document processed' }),
   } as never))
+}
 
+/** The runtime memory tool, which writes USER.md and MEMORY.md. */
+function registerRuntimeTools(ctx: HostContextShape, { requireSource, config, composableTurn }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_runtime_memory',
     description: 'Maintain compact hot memory injected into future turns. Write only new reusable facts supplied or corrected by the user, or information the user explicitly asks to save. Never copy, promote, or summarize evidence returned by Documents, Recall, or Related unless the user explicitly asks to save that exact evidence; answering a read question must stay read-only. add creates one independent fact; replace corrects or consolidates one uniquely matched entry; remove is only for an explicitly withdrawn, obsolete, or wrong entry. target=user is only for who the user is; target=memory is for project/environment/decisions/lessons. Skip questions, guesses, assistant-authored claims, temporary progress, completed-work logs, raw dumps, secrets, rediscoverable facts, and skill-covered guidance. This tool exclusively writes runtime MEMORY.md and USER.md; capacity archival and compaction are automatic. Optional branches (git branch names, target=memory only) project an entry only in sessions on those branches: use them for branch-specific decisions and experiments, tag new branch-scoped entries with the git branch reported in the snapshot header, omit for cross-branch facts; on replace an empty list clears the scope, and an omitted list keeps the current scope.',
@@ -348,7 +377,10 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     presentCall: (args: { action: string; target: string }) => ({ card: 'generic', title: `${args.action} runtime ${args.target} memory`, kind: 'edit' }),
     presentResult: () => ({ card: 'generic', title: 'Runtime memory updated' }),
   } as never))
+}
 
+/** Memory Spaces' writes: remember, link and forget, and creating, updating and merging spaces. */
+function registerMemorySpaceWriteTools(ctx: HostContextShape, { requireSource, sourceAction }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_remember',
     description: 'Archive one durable insight in a selected provider-backed Memory Space. Ordinary new hot memory belongs in mnemon_runtime_memory; use direct archival only for explicit long-term persistence or runtime capacity migration. Choose the narrowest existing space, search it first, verify capabilities.remember=true, and wait for the provider receipt. Exact writes require confirmed persistence; providers using semantic extraction may truthfully return skipped. Do not dump transcripts, temporary progress, routine observations, or repository-obvious facts.',
