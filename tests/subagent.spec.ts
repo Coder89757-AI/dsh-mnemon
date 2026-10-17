@@ -3097,3 +3097,215 @@ describe('Mnemon root/child tool split', () => {
     expect(coordinator.runtime).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * What one delegated child reads, as SHA-256 hashes: its persona, the completion protocol after it,
+ * which names its result schema, with the run's requestId left out, and its task.
+ */
+function childText(call: unknown[]) {
+  const request = call[1] as HostSubagentStartRequest
+  const persona = request.persona ?? ''
+  const protocol = persona.indexOf('\n\nCompletion protocol: ')
+  const requestId = /requestId `([^`]+)`/u.exec(persona)?.[1] ?? ''
+  const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
+  return {
+    label: request.label,
+    persona: sha256(persona.slice(0, protocol)),
+    completion: sha256(persona.slice(protocol).replaceAll(requestId, '<requestId>')),
+    task: sha256(request.prompt[0]!.text),
+  }
+}
+
+describe('What delegated children read', () => {
+  it('gives every kind of delegated child the persona, result schema and task it has always read', async () => {
+    const signal = new AbortController().signal
+    const read: Record<string, Array<ReturnType<typeof childText>>> = {}
+
+    const writes: Array<[string, string, unknown]> = [
+      ['remember', 'remember', { content: 'The release train leaves on Thursdays.', category: 'decision', importance: 4, tags: ['release'], entities: ['DSH'], source: 'agent' }],
+      ['remember in a named space', 'remember', { content: 'The release train leaves on Thursdays.', memoryBodyId: 'project' }],
+      ['supervised writeback', 'supervised-writeback', { content: 'I prefer short status updates.\nBlockers first.' }],
+      ['link', 'link', { sourceId: 'm1', targetId: 'm2', type: 'causal', weight: 0.8, reason: 'The red gate caused the rollback.', memoryBodyId: 'project' }],
+      ['forget', 'forget', { id: 'm1', memoryBodyId: 'project' }],
+      ['create a space', 'create-memory-body', { name: 'Release', description: 'Release gates and rollbacks.', providerId: 'mnemon-native', reason: 'Local exact memory.', confidence: 'high' }],
+      ['update a space', 'update-memory-body', { memoryBodyId: 'project', description: 'Project decisions and their reasons.', active: true }],
+      ['merge spaces', 'merge-memory-bodies', { targetMemoryBodyId: 'project', sourceMemoryBodyIds: ['release'], deactivateSources: true }],
+    ]
+    for (const [name, operation, request] of writes) {
+      const host = subagents({ summary: 'Saved.', action: 'stored', memoryBodyIds: ['project'] })
+      await createCoordinator(host.value).write(parent(), operation, request, signal)
+      read[name] = host.start.mock.calls.map(childText)
+    }
+
+    const answering = subagents({ answer: 'SQLite.', citations: ['project/m1'] })
+    await createCoordinator(answering.value).answer(parent(), 'Which database do we use?', [
+      { id: 'm1', content: 'The project uses SQLite.\nMigrations run on boot.', memoryBodyId: 'project', memoryBodyName: 'Project', category: 'decision' },
+      { id: 'm2', content: 'Backups run nightly.', memoryBodyId: 'project' },
+    ], signal)
+    read.answer = answering.start.mock.calls.map(childText)
+
+    const placing = subagents({ providerId: 'mnemon-native', reason: 'Local exact memory fits.', confidence: 'high' })
+    await createCoordinator(placing.value).placeProvider(parent(), { name: 'Release', description: 'Release gates and rollbacks.' }, {
+      prompt: 'Keep team knowledge local.', appliedRules: [], selectorBrief: 'Choose an eligible local or shared store.',
+      candidates: [{
+        id: 'mnemon-native', label: 'Mnemon Native', kind: 'local', configured: true, summary: 'Local exact memory.',
+        capabilities: { search: true, browse: true, graph: true, entities: true, related: true, remember: true, link: true, forget: true, writeMode: 'exact', deletionMode: 'soft' },
+      }, {
+        id: 'work-account', label: 'Work Vector Store', kind: 'remote', configured: true, summary: 'Shared extracting memory.',
+        capabilities: { search: true, browse: true, graph: false, entities: false, related: false, remember: true, link: false, forget: false, writeMode: 'async-extracting', deletionMode: 'hard' },
+      }],
+    }, signal)
+    read.placement = placing.start.mock.calls.map(childText)
+
+    const curating = subagents({ summary: 'Updated two scopes.', updates: [
+      { memoryBodyId: 'product', title: 'Product decisions', description: 'Stable product scope and trade-offs, recalled when planning.' },
+      { memoryBodyId: 'release', title: 'Release gates', description: 'Release gates and rollback notes, recalled before shipping.' },
+    ] })
+    await createCoordinator(curating.value).maintainMetadata(parent(), ['product', 'release'], signal)
+    read['metadata maintenance'] = curating.start.mock.calls.map(childText)
+
+    for (const provider of ['spawn', 'fork'] as const) {
+      for (const runtimeMemory of [true, false]) {
+        const reviewing = subagents({ summary: 'Nothing to keep.', action: 'skipped', memoryBodyIds: [] }, 'completed', ['spawn', 'fork'])
+        const runtime = runtimeSource()
+        Object.assign(runtime.config.idleReview, { provider, runtimeMemory })
+        await createCoordinator(reviewing.value, runtime).review(parent(), signal)
+        read[`review through ${provider}${runtimeMemory ? '' : ' without runtime memory'}`] = reviewing.start.mock.calls.map(childText)
+      }
+    }
+
+    // Four entries make two routing batches; the second is longer than a routing excerpt keeps.
+    const plan = maintenancePlan('memory', [
+      { content: `Release checks require a canary. ${'Watch the canary for an hour. '.repeat(10)}`, importance: 'critical' },
+      { content: `Rollback notes: ${'roll back on a red gate. '.repeat(30)}`, importance: 'normal' },
+      { content: `The project uses pnpm. ${'Pin the lockfile. '.repeat(18)}`, importance: 'normal' },
+      { content: `Deploys go through staging. ${'Stage before production. '.repeat(12)}`, importance: 'normal' },
+    ])
+    plan.entries[3]!.branches = ['release/1.2']
+    const routing = subagents(undefined)
+    routing.start.mockImplementation(async (_provider, request) => {
+      const indexes = /Allowed source indexes for this batch: ([\d, ]+)\./u.exec(request!.prompt[0]!.text)![1]!.split(', ').map(Number)
+      const structured = { summary: 'Routed the batch.', action: 'planned', routes: [{ sourceIndexes: indexes, memoryBodyId: 'release' }] }
+      return { id: 'child-run-1', result: Promise.resolve({ output: [], structured, stopReason: 'completed' }), dispose: routing.dispose }
+    })
+    const archiveRuntime = {
+      mutate: vi.fn().mockRejectedValueOnce(capacityError('memory', plan.used, plan.projected, plan.limit)),
+      planMaintenance: vi.fn(async () => plan),
+      compactAndMutate: vi.fn(async () => ({ success: true, target: 'memory', added: plan.pending!.content, usage: { used: 30, limit: plan.limit } })),
+    } as unknown as RuntimeOperations
+    const archiveSpaces = service()
+    addSecondWritableBody(archiveSpaces)
+    await new MnemonSubagentCoordinator(routing.value, runtimeSource(archiveRuntime, archiveSpaces), toolRegistry().value)
+      .runtime(parent(), { action: 'add', target: 'memory', content: plan.pending!.content }, signal)
+    read['MEMORY.md archive routing'] = routing.start.mock.calls.map(childText)
+
+    const compacting = subagents({ summary: 'Merged two preferences.', action: 'compacted', compactedEntries: [
+      { content: 'User prefers concise Chinese release notes with blockers first.', importance: 'critical', sourceIndexes: [1, 2] },
+    ] })
+    const profile = maintenancePlan('user', [
+      { content: 'User prefers concise Chinese release notes.', importance: 'critical' },
+      { content: 'User wants blockers listed first in release notes.', importance: 'normal' },
+    ])
+    const profileRuntime = {
+      mutate: vi.fn().mockRejectedValueOnce(capacityError('user', profile.used, profile.projected, profile.limit)),
+      planMaintenance: vi.fn(async () => profile),
+      compactAndMutate: vi.fn(async () => ({ success: true, target: 'user', added: profile.pending!.content, usage: { used: 180, limit: profile.limit } })),
+    } as unknown as RuntimeOperations
+    await createCoordinator(compacting.value, profileRuntime).runtime(parent(), { action: 'add', target: 'user', content: profile.pending!.content }, signal)
+    read['USER.md compaction'] = compacting.start.mock.calls.map(childText)
+
+    const content = 'Canary before production.\nKeep the exact original.'
+    const document = {
+      id: 'release-design', title: 'Release design', description: 'Release gates and rollbacks', status: 'active', revision: 2,
+      filename: 'release-design-0a1b2c3d.md', relativePath: '.mnemon/documents/active/release-design-0a1b2c3d.md', sourcePaths: ['docs/release.md'],
+      content, contentHash: createHash('sha256').update(content).digest('hex'),
+    } as unknown as DocumentView
+    const controller = {
+      forGeneration() { return this },
+      read: vi.fn(async () => document),
+      mutate: vi.fn(async () => ({ action: 'archived', document: { ...document, status: 'archived' } })),
+    } as unknown as SourceSession
+    const archiving = subagents({ summary: 'Release design: release gates and rollbacks.', action: 'planned', memoryBodyId: 'project' })
+    const indexSpaces = service()
+    vi.mocked(indexSpaces.search).mockResolvedValue({ query: '', mode: 'keyword', results: [] })
+    await new MnemonSubagentCoordinator(archiving.value, runtimeSource(undefined, indexSpaces, controller), toolRegistry().value).archiveDocument(parent(), document.id, signal)
+    read['document archive'] = archiving.start.mock.calls.map(childText)
+
+    expect(read).toEqual({
+      remember: [
+        { label: 'Mnemon remember', persona: 'c2ef08b302b643b680f1e7d7e953981027d0e780d15ec931282a20fc4e20eeb6',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '1c94043671206c5af33b1d8e881e0441757035383476ec7a3387675796d554c5' },
+      ],
+      'remember in a named space': [
+        { label: 'Mnemon remember', persona: 'c2ef08b302b643b680f1e7d7e953981027d0e780d15ec931282a20fc4e20eeb6',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'fbe048318b4e53edd70fc79bd7a5ebc2c63e8f74d70bef18d9e731bcaec64076' },
+      ],
+      'supervised writeback': [
+        { label: 'Mnemon supervised-writeback', persona: '052eed66fc4e7743491fdba64bf4e2ed894bf9d3265070769cb8c3e1d44f2ebf',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '973f143b101ae2ad3926f6a808be6419020fed3644c5cb7e60dc681ca02fdae3' },
+      ],
+      link: [
+        { label: 'Mnemon link', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'd5938f682627e3d836a12325e815b17cfe7d3343e782bb490c188fa88b518e9f' },
+      ],
+      forget: [
+        { label: 'Mnemon forget', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '3274d890fed46556e1f6fcdc0eeba4d1b29b0e71a65113e3ee57ec8fd1ae0b57' },
+      ],
+      'create a space': [
+        { label: 'Mnemon create-memory-body', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '96a0f34ffb8273c8fceb1c1109db7650db0fe4d217895a2929eeec599e753e8f' },
+      ],
+      'update a space': [
+        { label: 'Mnemon update-memory-body', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'e076721d8b7495ae45dcb1887c804e8b9326cc94470bf4d452dce0ee7b882ee0' },
+      ],
+      'merge spaces': [
+        { label: 'Mnemon merge-memory-bodies', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '87044cdaa67c1cdda9bd633b5781f8e4eccdd5d933b7f3f2a371e331713fab54' },
+      ],
+      answer: [
+        { label: 'Memory evidence answer', persona: 'd0cfab8b646850fac2d9dc5d5ce1ca9ecd789b8d43654743910f7cbb715be475',
+          completion: '030905cf315a12196f0f3acb8cd584dba44d54542362b2ad2ff8e2b01ce93501', task: 'b0b8b50b6427d5f104ce0b615605dd415bda3fcf04a686ddef8ad7f10592b050' },
+      ],
+      placement: [
+        { label: 'Choose Memory Space provider', persona: 'd048f9a8b8de95e54b086cf3c3dc02132d35258df99145c0dd05167f967b8b24',
+          completion: '1d35cba9734203d541b877412e5eee64b3717e59449eb2a70f1c518941fe846f', task: 'aa2554b0478b6197e39dea08a97815e20f5ba07bcff9a8efeeb93eb38de1ca2c' },
+      ],
+      'metadata maintenance': [
+        { label: 'Maintain Memory Space metadata', persona: '66baf435b42607d4b31856010c359e1b977fdbe17392f448b97781b49c917116',
+          completion: '6bb6e81add90d78da8a883e03ff53094484b7111e8af57f71f87270ccb55ea07', task: 'd3bc8fd4ade16995f03ec1256db7ed61b2e5949f037517d883d27bb3218783b8' },
+      ],
+      'review through spawn': [
+        { label: 'Mnemon idle checkpoint review', persona: '0557258a9e2fe882869bcdc5165c0bdade2020d811a292f8940e9703202c2fcd',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '970af4c615d54aecdb62770ba4e1548982ff945e8c44d1a3eee301e848c99715' },
+      ],
+      'review through spawn without runtime memory': [
+        { label: 'Mnemon idle checkpoint review', persona: '39ed4aaacc757ba9650c9fed5344ddc7ddebcfc40748be75cef2e2f048d8b744',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '970af4c615d54aecdb62770ba4e1548982ff945e8c44d1a3eee301e848c99715' },
+      ],
+      'review through fork': [
+        { label: 'Mnemon idle checkpoint review', persona: 'b5b2550f1c6a2930288dbd0d495daf54ea8dfb8e433b05b1c59fb198015a4ec7',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'd9ea7e7313d5f106117fa055829b396755f497c0b2636f48eb3008eb0b0178f9' },
+      ],
+      'review through fork without runtime memory': [
+        { label: 'Mnemon idle checkpoint review', persona: '88b3f6472f3effce4156cbd94bd50aa38e1d031303eed3624689f5484998f1f2',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'd9ea7e7313d5f106117fa055829b396755f497c0b2636f48eb3008eb0b0178f9' },
+      ],
+      'MEMORY.md archive routing': [
+        { label: 'Route runtime memory archive batch 1/2', persona: '4d53843ba45153bce9650aa3b15569e55b0d07f822b171c1a122c365be9f65ed',
+          completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: 'fda9ce8daf3e1fac2f4037dc241f45f04b799ff8b94a43fc524be18de9de77ac' },
+        { label: 'Route runtime memory archive batch 2/2', persona: '4d53843ba45153bce9650aa3b15569e55b0d07f822b171c1a122c365be9f65ed',
+          completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: '1977c9c604ef4d0f836e8d44c61087eb21fc9766d3e4b0adc3f9ca93533ba70d' },
+      ],
+      'USER.md compaction': [
+        { label: 'Consolidate local user profile', persona: '101adc0217657b569b62f9b4593db4b6c05c9b99d5b50f4bce00ff7c88b03f96',
+          completion: '5b352d739e2cc4e8bc22391b5ccc3bb9b929df77a9cd2c9945f572f85eef40c9', task: '0bb7e05d90746ad863088a86330efcc5d63ab90eee2f0d4fe7b75f57e1f4a830' },
+      ],
+      'document archive': [
+        { label: 'Plan managed document archive', persona: '079d9b022c83a76432b2e30df74c2ab0645ab9ad0699d9d97ad16200dc9b3193',
+          completion: '9143f4291d02cb26cc81397c7d938749873a632e191c879609f59d6bb52cf788', task: 'e1fe6b4ad47e3f4812c36f8559044860150f8714dae2061c1e69db1b19602774' },
+      ],
+    })
+  })
+})
