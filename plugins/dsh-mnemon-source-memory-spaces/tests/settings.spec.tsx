@@ -19,7 +19,8 @@ const { artifact } = vi.hoisted(() => ({ artifact: async () => {
 vi.mock('dsh-mnemon/client', artifact)
 afterEach(cleanup)
 
-import { MemorySourcePageFrame, translateEn as t } from 'dsh-mnemon/client'
+import { MemorySourcePageFrame, translateEn as t, translateZh } from 'dsh-mnemon/client'
+import type { DshLocale } from '../src/client/presentation.ts'
 import { ProviderField } from '../src/client/provider-field.tsx'
 import { MemorySpacesSettings } from '../src/client/settings.tsx'
 
@@ -42,6 +43,7 @@ function host(value: Record<string, unknown>, operations: Partial<Record<'read' 
       write: operations.write ?? (async operation => { throw new Error('unexpected write ' + operation) }),
     },
     changed,
+    retained: new Map(),
   }
   return { lent, set, changed }
 }
@@ -152,6 +154,41 @@ describe('Memory Spaces\' own settings', () => {
     render(settings(host({}, { read }).lent, false))
     expect(screen.getByText(t('spaces.offNote'))).toBeTruthy()
     expect(read).not.toHaveBeenCalled()
+  })
+})
+
+describe('translating as dsh-mnemon drew these settings, through DSH\'s language chain', () => {
+  const locales = [{ id: 'en' }, { id: 'zh', fallback: 'en' }, { id: 'ja', fallback: 'en' }]
+  /** DSH's language service over dsh-mnemon's own zh and en copy, with a `ja` pack that may translate some keys. */
+  function dsh(active: string, pack: Record<string, string> = {}): DshLocale {
+    const own = active === 'zh' ? translateZh : t
+    return {
+      // DSH walks the chain in the namespace, then shows the key itself.
+      bind: () => (key, params) => (active === 'ja' ? pack[key] : undefined) ?? (own(key, params) as string | undefined) ?? key,
+      getSnapshot: () => ({ active, locales }),
+      subscribe: () => () => {},
+    }
+  }
+  const read = async (operation: string) => operation === 'provider-services' ? { providers: [], items: [], generatedAt: 'now' } : { commandFound: true }
+  const settings = (locale: DshLocale, language: string, enabled = true) =>
+    render(<MemorySpacesSettings component={{ packageName: 'dsh-mnemon-source-memory-spaces', label: 'Memory Spaces', enabled }} writable language={language} host={host({}, { read }).lent} locale={locale} />)
+
+  it('reads English for a language pack that falls back to English, as dsh-mnemon drew them', () => {
+    settings(dsh('ja'), 'ja')
+    expect(screen.getByRole('heading', { name: t('config.providersTitle') })).toBeTruthy()
+  })
+
+  it('takes what a language pack translates in dsh-mnemon\'s namespace', () => {
+    settings(dsh('ja', { 'config.providersTitle': 'メモリプロバイダー' }), 'ja')
+    expect(screen.getByRole('heading', { name: 'メモリプロバイダー' })).toBeTruthy()
+  })
+
+  it('answers from its own copy in Chinese and English', () => {
+    settings(dsh('zh'), 'zh')
+    expect(screen.getByRole('heading', { name: translateZh('config.providersTitle') })).toBeTruthy()
+    cleanup()
+    settings(dsh('en'), 'en', false)
+    expect(screen.getByText(t('spaces.offNote'))).toBeTruthy()
   })
 })
 

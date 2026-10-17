@@ -38,17 +38,22 @@ function verifyDeclarations(filename) {
   }
 }
 
-// The client's declarations stay on the browser side. Through the Host protocol
-// they would reach the SDK's cordis Context augmentation, which splits Context
-// in the standalone typecheck of a plugin that imports the client.
+// The client's declarations stay on the browser side: browser-safe modules of
+// this package and the packages a plugin's client already has. Through the
+// Host protocol they would reach the SDK's cordis Context augmentation, which
+// splits Context in the standalone typecheck of a plugin that imports the client.
+const CLIENT_DECLARATION_PACKAGES = new Set(['react', '@deepseek-ai/dsh-client-ui-primitives'])
 function verifyClientDeclarations(filename, seen = new Set()) {
   if (seen.has(filename)) return seen
   seen.add(filename)
-  const path = relative(root, filename)
-  if (/^lib\/types\/src\/(?:host|sdk)\//u.test(path.split('\\').join('/'))) throw new Error(`dsh-mnemon/client declarations reach ${path}`)
-  const dependencies = ts.preProcessFile(readFileSync(filename, 'utf8'), true, true)
-  for (const { fileName } of [...dependencies.importedFiles, ...dependencies.referencedFiles]) {
+  const path = relative(root, filename).split('\\').join('/')
+  if (/^lib\/types\/src\/(?:host|sdk)\//u.test(path)) throw new Error(`dsh-mnemon/client declarations reach ${path}`)
+  const source = readFileSync(filename, 'utf8')
+  if (/declare\s+module\s+['"]@deepseek-ai\/cordis['"]/u.test(source)) throw new Error(`dsh-mnemon/client declarations reach a cordis Context augmentation in ${path}`)
+  const dependencies = ts.preProcessFile(source, true, true)
+  for (const { fileName } of [...dependencies.importedFiles, ...dependencies.referencedFiles, ...dependencies.typeReferenceDirectives]) {
     if (fileName.startsWith('.')) verifyClientDeclarations(resolve(dirname(filename), fileName.replace(/(?<!\.d)\.[cm]?[jt]sx?$/u, '.d.ts')), seen)
+    else if (!CLIENT_DECLARATION_PACKAGES.has(fileName)) throw new Error(`dsh-mnemon/client declarations import ${fileName} in ${path}; only ${[...CLIENT_DECLARATION_PACKAGES].join(', ')} may be imported there`)
   }
   return seen
 }

@@ -107,4 +107,37 @@ describe('what the configuration lends a shipped component\'s settings', () => {
     await expect(host.operations!.write('embedding-fill', 'tools')).rejects.toThrow('embedding-fill takes an object')
     expect(call).not.toHaveBeenCalled()
   })
+
+  it('runs every operation in the page\'s own conversation and workspace, never in ones the component names', async () => {
+    const call = vi.fn(async () => ({ ok: true as const, value: {} }))
+    const hosts = createComponentHosts({ scope: settingsScope<Config>(ready({})), connection: { rpc: { call }, isLoopback: true } as ClientConnectionHandle })
+    // A page opened outside any conversation, as the Plugins page is: nothing scopes the payload, as before.
+    const unscoped = hosts(MEMORY_SPACES_PACKAGE)!
+    await unscoped.operations!.write('provider-service-update', { providerId: 'mem0', settings: {}, enabled: true })
+    expect(call).toHaveBeenLastCalledWith('/dsh-mnemon-write', 'provider-service-update', { providerId: 'mem0', settings: {}, enabled: true })
+    for (const host of [unscoped, hosts(MEMORY_SPACES_PACKAGE, 'session-1', 'workspace-1')!]) {
+      await expect(host.operations!.write('provider-service-update', { providerId: 'mem0', settings: {}, enabled: true, sessionId: 'other' })).rejects.toThrow('takes no sessionId')
+      await expect(host.operations!.read('provider-services', { workspaceId: 'other' })).rejects.toThrow('takes no workspaceId')
+      await expect(host.operations!.read('embedding-status', { sessionId: 'other', workspaceId: 'other' })).rejects.toThrow('takes no sessionId or workspaceId')
+    }
+    expect(call).toHaveBeenCalledTimes(1)
+  })
+
+  it('joins a read already under way, and keeps what the settings retain across their mounts', async () => {
+    let answer: (value: { ok: true; value: { commandFound: boolean } }) => void = () => {}
+    const call = vi.fn(() => new Promise(resolve => { answer = resolve }))
+    const hosts = createComponentHosts({ scope: settingsScope<Config>(ready({})), connection: { rpc: { call }, isLoopback: true } as unknown as ClientConnectionHandle })
+    const host = hosts(MEMORY_SPACES_PACKAGE, 'session-1')!
+    const first = host.operations!.read('status-summary')
+    const second = host.operations!.read('status-summary')
+    expect(call).toHaveBeenCalledTimes(1)
+    answer({ ok: true, value: { commandFound: true } })
+    await expect(Promise.all([first, second])).resolves.toEqual([{ commandFound: true }, { commandFound: true }])
+    // Once it answered, the next read asks the Host again.
+    void host.operations!.read('status-summary')
+    expect(call).toHaveBeenCalledTimes(2)
+    host.retained.set('provider-services', { providers: [] })
+    expect(hosts(MEMORY_SPACES_PACKAGE, 'session-1')!.retained.get('provider-services')).toEqual({ providers: [] })
+    expect(hosts(MEMORY_SPACES_PACKAGE, 'session-2')!.retained.size).toBe(0)
+  })
 })

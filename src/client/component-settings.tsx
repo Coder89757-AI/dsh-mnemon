@@ -1,4 +1,4 @@
-import { type JSX } from 'react'
+import { type ComponentProps, type JSX } from 'react'
 import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DEFAULT_IDLE_REVIEW,
@@ -8,7 +8,7 @@ import {
   type ResolvedIdleReviewConfig,
   type SettingsOperation,
 } from '../host/protocol.ts'
-import { installMemoryComponentUI, type MemoryComponentSettingsProps, type MemoryComponentUIContext } from './component-ui.tsx'
+import { installMemoryComponentFallbackUI, installMemoryComponentUI, type MemoryComponentSettingsProps, type MemoryComponentUIContext } from './component-ui.tsx'
 import type { MnemonTranslate } from './locales.ts'
 import { MemorySpacesSettings } from './memory-spaces-client.ts'
 import css from './MnemonSettingsCard.module.css'
@@ -32,13 +32,16 @@ export interface ShippedSettingsServices {
  * Register the settings dsh-mnemon keeps for its shipped components, the way
  * an installed component registers its own: Runtime Memory carries where its
  * user profile lives, the Layered strategy the background tasks it drives.
- * Memory Spaces brings its Providers and embedding itself; for a Memory Spaces
- * that registers none of its own, its settings show here as a fallback.
+ * Memory Spaces brings its Providers and embedding itself. Its settings show
+ * here, as a fallback, whenever its own client registers none: while it is
+ * off, while its client loads, if that client fails, and beside a Memory
+ * Spaces of 0.5.21 or earlier.
  */
-export function installShippedComponentSettings(ctx: MemoryComponentUIContext, services: ShippedSettingsServices): () => void {
+export function installShippedComponentSettings(ctx: MemoryComponentUIContext & { locale?: ComponentProps<typeof MemorySpacesSettings>['locale'] }, services: ShippedSettingsServices): () => void {
+  const { locale } = ctx
   const disposers = [
     installMemoryComponentUI(ctx, { packageName: RUNTIME_PACKAGE, settings: page => <RuntimeSettings {...services} page={page} /> }),
-    installMemoryComponentUI(ctx, { packageName: MEMORY_SPACES_PACKAGE, settings: MemorySpacesSettings, fallback: true }),
+    installMemoryComponentFallbackUI(ctx, { packageName: MEMORY_SPACES_PACKAGE, settings: page => <MemorySpacesSettings {...page} {...(locale === undefined ? {} : { locale })} /> }),
     installMemoryComponentUI(ctx, { packageName: THREE_TIER_PACKAGE, settings: page => <ThreeTierSettings {...services} page={page} /> }),
   ]
   return () => { for (const dispose of disposers.reverse()) dispose() }

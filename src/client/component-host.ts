@@ -60,9 +60,15 @@ function configurationOf(scope: ClientSettingsScope<Config>, lent: Lent): Memory
   }
 }
 
+// The page binds every operation to its own conversation and workspace; a component cannot name others.
+const SCOPE_FIELDS = ['sessionId', 'workspaceId']
+
 /**
  * The hosts a page lends shipped components, one per component, conversation
- * and workspace, so a component's effects see the same object on every render.
+ * and workspace, so a component's effects see the same object on every render
+ * and what its settings retain survives their mounting again. The client keeps
+ * them while it runs, as it keeps one settings scope: one small object for each
+ * conversation and workspace the page was opened for.
  */
 export function createComponentHosts(services: ComponentHostServices): ComponentHosts {
   const configurations = new Map<string, MemoryComponentHost['configuration']>()
@@ -83,15 +89,30 @@ export function createComponentHosts(services: ComponentHostServices): Component
     const call = (mode: 'read' | 'write', names: readonly string[], operation: string, input: MemoryJsonValue | undefined): Promise<unknown> => {
       if (!names.includes(operation)) return Promise.reject(new Error(`dsh-mnemon does not serve this component the ${mode} operation ${operation}`))
       if (input !== undefined && (typeof input !== 'object' || input === null || Array.isArray(input))) return Promise.reject(new Error(`${operation} takes an object`))
+      const named = SCOPE_FIELDS.filter(field => input !== undefined && Object.hasOwn(input, field))
+      if (named.length > 0) return Promise.reject(new Error(`${operation} runs in the page's conversation and workspace; it takes no ${named.join(' or ')}`))
       return client!.componentOperation(mode, operation, input ?? {})
+    }
+    // A read the settings start while the same read is under way joins it, as when
+    // the component's own settings replace dsh-mnemon's while those still load.
+    const reading = new Map<string, Promise<unknown>>()
+    const read = (operation: string, input: MemoryJsonValue | undefined): Promise<unknown> => {
+      const key = operation + '\u0000' + JSON.stringify(input ?? {})
+      let pending = reading.get(key)
+      if (pending === undefined) {
+        pending = call('read', lent.read, operation, input).finally(() => { reading.delete(key) })
+        reading.set(key, pending)
+      }
+      return pending
     }
     host = {
       configuration,
       ...(client === undefined ? {} : { operations: {
-        read: (operation, input) => call('read', lent.read, operation, input),
+        read,
         write: (operation, input) => call('write', lent.write, operation, input),
       } }),
       changed: () => { componentChanges?.bump() },
+      retained: new Map(),
     }
     hosts.set(key, host)
     return host

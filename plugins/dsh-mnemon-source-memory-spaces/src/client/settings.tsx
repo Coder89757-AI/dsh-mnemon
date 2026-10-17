@@ -1,5 +1,5 @@
-import { useT } from './presentation.ts'
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from 'react'
+import { languageChain, settingsTranslate, SourceTranslation, useT, type DshLocale } from './presentation.ts'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from 'react'
 import { Button, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   Callout, installMemoryComponentUI, MemorySourcePageFrame, memorySettingsStyles, message, PanelActions, SelectField, ToggleRow, useLive, useStaged, WriteFailure,
@@ -15,18 +15,20 @@ import { memorySpacesSettingsClient } from './settings-client.ts'
 const PACKAGE_NAME = 'dsh-mnemon-source-memory-spaces'
 
 /**
- * Whether dsh-mnemon yields the settings it keeps for Memory Spaces to these:
- * one that does exports the priority it keeps them at. dsh-mnemon 0.5.31 and
- * earlier draw them itself and lend these no Host access, so registering
- * them there would show a second, unworkable copy.
+ * Whether dsh-mnemon yields the settings it keeps for Memory Spaces to these.
+ * One that exports the priority it keeps them at promises both that they do
+ * not collide with these and that it lends these `host`. dsh-mnemon 0.5.31 and
+ * earlier draw them itself and lend nothing, so registering them there would
+ * show a second, unworkable copy.
  */
 export function yieldsComponentSettings(client: { readonly MNEMON_COMPONENT_FALLBACK_PRIORITY?: unknown }): boolean {
   return typeof client.MNEMON_COMPONENT_FALLBACK_PRIORITY === 'number'
 }
 
 /** Memory Spaces' own settings on its page under Plugins: its Providers and the embedding Mnemon Native reads. */
-export function installMemorySpacesSettings(ctx: MemoryComponentUIContext): () => void {
-  return installMemoryComponentUI(ctx, { packageName: PACKAGE_NAME, settings: MemorySpacesSettings })
+export function installMemorySpacesSettings(ctx: MemoryComponentUIContext & { locale?: DshLocale | undefined }): () => void {
+  const { locale } = ctx
+  return installMemoryComponentUI(ctx, { packageName: PACKAGE_NAME, settings: props => <MemorySpacesSettings {...props} {...(locale === undefined ? {} : { locale })} /> })
 }
 
 /** The configuration keys these settings read, as dsh-mnemon lends them. */
@@ -105,17 +107,41 @@ function embeddingValue(enabled: boolean, draft: EmbeddingDraft): MemoryJsonValu
 /**
  * Memory Spaces' own settings: the Providers that store its spaces, Mnemon
  * Native first with the embedding runtime only Native reads. They need what
- * dsh-mnemon lends them; without it they show nothing.
+ * dsh-mnemon lends them; without it they show nothing. With DSH's language
+ * service they translate as dsh-mnemon drew them, through its language chain.
  */
-export function MemorySpacesSettings(props: MemoryComponentSettingsProps): ReactNode {
+export function MemorySpacesSettings(props: MemoryComponentSettingsProps & { locale?: DshLocale | undefined }): ReactNode {
   if (props.host === undefined) return null
-  return <MemorySourcePageFrame locale={props.language}><SpacesSettings page={props} host={props.host} /></MemorySourcePageFrame>
+  return <MemorySourcePageFrame locale={props.language}>
+    <SettingsTranslation locale={props.locale} language={props.language}><SpacesSettings page={props} host={props.host} /></SettingsTranslation>
+  </MemorySourcePageFrame>
 }
+
+const noLocaleChanges = (): (() => void) => () => {}
+
+function SettingsTranslation(props: { locale: DshLocale | undefined; language: string; children: ReactNode }): JSX.Element {
+  const { locale, language } = props
+  const subscribe = useCallback((listener: () => void) => locale?.subscribe?.(listener) ?? noLocaleChanges(), [locale])
+  // The chain as text, so a changed snapshot that keeps the chain renders nothing again.
+  const getChain = useCallback(() => {
+    const snapshot = locale?.getSnapshot?.()
+    return snapshot === undefined ? '' : languageChain(snapshot).join('\n')
+  }, [locale])
+  const chain = useSyncExternalStore(subscribe, getChain, getChain)
+  const translate = useMemo(() => locale === undefined ? undefined : settingsTranslate(locale, chain === '' ? undefined : chain.split('\n'), language), [locale, chain, language])
+  return <SourceTranslation value={translate}>{props.children}</SourceTranslation>
+}
+
+// Whether the Host found the Mnemon CLI, in the host's retained store under a name every Memory Spaces version
+// reads alike. It is kept only while a mount lasts, for the mount that replaces it.
+const RETAINED_CLI = 'status-summary'
 
 function SpacesSettings({ page, host }: { page: MemoryComponentSettingsProps; host: MemoryComponentHost }): JSX.Element {
   const t = useT()
+  // Read where it is drawn: a dsh-mnemon without this export (0.5.31) never draws these settings, and this
+  // bundle's pages must still load beside it.
   const css = memorySettingsStyles
-  const { configuration } = host
+  const { configuration, retained } = host
   const snapshot = useSyncExternalStore(configuration.subscribe, configuration.getSnapshot, configuration.getSnapshot)
   const value = snapshot.value as SpacesConfiguration | undefined
   const client = useMemo(() => host.operations === undefined ? undefined : memorySpacesSettingsClient(host.operations), [host.operations])
@@ -125,18 +151,24 @@ function SpacesSettings({ page, host }: { page: MemoryComponentSettingsProps; ho
   const managed = useLive(managedSaved, async enabled => { await configuration.set('embedding', embeddingValue(enabled, saved)) })
   // The connection is typed, so it waits for its Apply.
   const form = useStaged(saved, async draft => { await configuration.set('embedding', embeddingValue(managedSaved, draft)) })
-  const [nativeCliFound, setNativeCliFound] = useState<boolean | undefined>(undefined)
+  const [nativeCliFound, setNativeCliFound] = useState<boolean | undefined>(() => (retained.get(RETAINED_CLI) as { commandFound?: boolean } | undefined)?.commandFound)
   const [status, setStatus] = useState<{ state: 'idle' | 'loading' | 'ready' | 'error'; value?: MnemonEmbeddingStatus; error?: string }>({ state: 'idle' })
   const [fill, setFill] = useState<EmbeddingFillState | undefined>(undefined)
   const statusRequest = useRef(0)
   const on = page.component.enabled
 
   useEffect(() => {
-    if (client === undefined || !on) { setNativeCliFound(undefined); return }
+    if (client === undefined || !on) { setNativeCliFound(undefined); retained.delete(RETAINED_CLI); return }
     let current = true
-    void client.statusSummary().then(summary => { if (current) setNativeCliFound(summary.commandFound) }, () => { if (current) setNativeCliFound(undefined) })
+    void client.statusSummary().then(summary => {
+      if (!current) return
+      setNativeCliFound(summary.commandFound)
+      retained.set(RETAINED_CLI, { commandFound: summary.commandFound })
+    }, () => { if (current) { setNativeCliFound(undefined); retained.delete(RETAINED_CLI) } })
     return () => { current = false }
-  }, [client, on, snapshot.revision])
+  }, [client, on, retained, snapshot.revision])
+  // A page opened again finds out anew, as it always has; only a mount that replaces this one starts from it.
+  useEffect(() => () => { retained.delete(RETAINED_CLI) }, [retained])
   useEffect(() => {
     statusRequest.current += 1
     setStatus({ state: 'idle' })
@@ -167,6 +199,7 @@ function SpacesSettings({ page, host }: { page: MemoryComponentSettingsProps; ho
       reason => { setFill({ ...target, state: 'failed', error: message(reason) }); test() },
     )
   }
+  // As dsh-mnemon's isWorkspaceStorageScope, which lives in its Host protocol, outside its public client.
   const activeScope = value?.storageScope === 'workspace' || value?.storageScope === 'workspaces' ? 'workspace' : 'global'
   const readOnly = value?.writeEnabled === false
   const disabled = !page.writable || snapshot.status === 'loading' || !snapshot.writable
@@ -175,6 +208,7 @@ function SpacesSettings({ page, host }: { page: MemoryComponentSettingsProps; ho
     <div className={css.panelHeading}><h3 id="mnemon-spaces-providers">{t('config.providersTitle')}</h3><p>{t('config.providersDescription')}</p></div>
     <ProviderSettingsSection
       client={client}
+      retained={retained}
       {...(activeScope !== 'workspace' || page.workspace?.label === undefined ? {} : { workspaceLabel: page.workspace.label })}
       activeScope={activeScope}
       refreshKey={snapshot.revision ?? 0}

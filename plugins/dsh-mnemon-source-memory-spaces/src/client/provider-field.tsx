@@ -46,6 +46,7 @@ export function ProviderField(props: ProviderFieldProps): JSX.Element {
 
 function SettingsField(props: ProviderFieldProps): JSX.Element {
   const t = useT()
+  // Read here, not at load: dsh-mnemon 0.5.31 lacks it, and the dialogs that share this module must load beside it.
   const settings = memorySettingsStyles
   const [secretVisible, setSecretVisible] = useState(false)
   const { field } = props

@@ -2,6 +2,8 @@ import { useT, type SourceKey } from './presentation.ts'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type JSX, type ReactNode } from 'react'
 import { Button, IconChevronDownOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { GlobalLocationSetting, memorySettingsStyles, message, Reveal, useRequestVersion } from 'dsh-mnemon/client'
+// Each function reads memorySettingsStyles where it draws, never at load: dsh-mnemon 0.5.31 lacks it and never draws
+// these settings, and this bundle's pages must still load beside it.
 import type { MemoryProviderConfigField, MemoryProviderConnection, MemoryProviderDescriptor, MemoryProviderServiceCatalog, MemoryProviderServiceView } from '../contracts.ts'
 import { ProviderField } from './provider-field.tsx'
 import { ProviderIcon } from './ProviderIcon.tsx'
@@ -11,6 +13,8 @@ import type { MemorySpacesSettingsClient } from './settings-client.ts'
 interface ProviderSettingsSectionProps {
   /** Absent while the page has no Host connection: nothing is read or written then. */
   client?: MemorySpacesSettingsClient | undefined
+  /** Where the list keeps the Providers it last read or saved: the host's store, which outlives a mount. */
+  retained: Map<string, unknown>
   workspaceLabel?: string
   activeScope: 'global' | 'workspace'
   refreshKey: number
@@ -38,8 +42,10 @@ const EMPTY_PROVIDER_CATALOG: MemoryProviderServiceCatalog = {
   generatedAt: '',
 }
 
-// The last catalog each client read, so a list opened again shows it while it is read anew.
-const providerCatalogCache = new WeakMap<MemorySpacesSettingsClient, MemoryProviderServiceCatalog>()
+// The last catalog read or saved, under a name every Memory Spaces version reads alike: a list mounted again,
+// on a page opened again or in the settings that replace dsh-mnemon's, shows it while it is read anew.
+const RETAINED_PROVIDERS = 'provider-services'
+const retainedCatalog = (retained: Map<string, unknown>): MemoryProviderServiceCatalog | undefined => retained.get(RETAINED_PROVIDERS) as MemoryProviderServiceCatalog | undefined
 
 function stabilizeProviderCard(element: HTMLElement): void {
   const view = element.ownerDocument.defaultView
@@ -282,8 +288,8 @@ function ProviderPanel(props: {
 export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JSX.Element {
   const t = useT()
   const css = memorySettingsStyles
-  const client = props.client
-  const initialCatalog = client === undefined ? undefined : providerCatalogCache.get(client)
+  const { client, retained } = props
+  const initialCatalog = client === undefined ? undefined : retainedCatalog(retained)
   const [catalog, setCatalog] = useState<MemoryProviderServiceCatalog>(() => initialCatalog ?? EMPTY_PROVIDER_CATALOG)
   const [loading, setLoading] = useState(client !== undefined && initialCatalog === undefined)
   const [failed, setFailed] = useState<string | null>(null)
@@ -297,7 +303,7 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
     try {
       const next = await client.providerServices()
       if (!loadRequests.isCurrent(request)) return
-      providerCatalogCache.set(client, next)
+      retained.set(RETAINED_PROVIDERS, next)
       setCatalog(next)
     } catch (reason) {
       if (!loadRequests.isCurrent(request)) return
@@ -305,7 +311,7 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
     } finally {
       if (!quiet && loadRequests.isCurrent(request)) setLoading(false)
     }
-  }, [client, loadRequests])
+  }, [client, loadRequests, retained])
 
   const blocked = props.blocked !== undefined
   const pending = props.pending === true
@@ -316,11 +322,11 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
       setFailed(null)
       return
     }
-    const cached = client === undefined ? undefined : providerCatalogCache.get(client)
+    const cached = client === undefined ? undefined : retainedCatalog(retained)
     setCatalog(cached ?? EMPTY_PROVIDER_CATALOG)
     setLoading(client !== undefined && cached === undefined)
     void load(cached !== undefined)
-  }, [blocked, client, load, loadRequests, pending, props.refreshKey])
+  }, [blocked, client, load, loadRequests, pending, props.refreshKey, retained])
 
   const acceptService = useCallback((service: MemoryProviderServiceView): void => {
     setCatalog(current => {
@@ -328,10 +334,10 @@ export function ProviderSettingsSection(props: ProviderSettingsSectionProps): JS
         ? current.items.map(item => item.providerId === service.providerId ? service : item)
         : [...current.items, service]
       const next = { ...current, items, generatedAt: new Date().toISOString() }
-      if (client !== undefined) providerCatalogCache.set(client, next)
+      if (client !== undefined) retained.set(RETAINED_PROVIDERS, next)
       return next
     })
-  }, [client])
+  }, [client, retained])
 
   const save = async (provider: MemoryProviderDescriptor, draft: ServiceDraft): Promise<void> => {
     if (client === undefined) throw new Error(t('config.providerUnavailable'))
