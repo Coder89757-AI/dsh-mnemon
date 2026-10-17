@@ -42,6 +42,10 @@ A review of the code after v0.5.31 found these concrete gaps. Each one changes w
 - **A turn's item opens its page without an empty moment.** Until the Memory System's Source catalog answers, a page opened from a turn shows an empty canvas and only the Status tab; it should show the page as loading. Found while reviewing the v0.5.32 gallery.
 - **The graph's entity count matches the Entities page.** The Overview graph draws at most 24 entities and its footer counts only those, so it reads 24 when the Entities page counts more. Found while reviewing the v0.5.32 gallery.
 - **Graph labels stay readable.** In a dense graph, node labels overlap one another and run past the right edge. Found while reviewing the v0.5.32 gallery.
+- **The Git sync form and the Host agree on local repository paths.** On some platforms the settings form accepts a local path the Host refuses, or the reverse, and only the Host refuses a NUL byte.
+- **Decide what to do with the Host endpoints the client no longer calls.** 28 endpoints remain for scripts and the Interfaces reference: keep them as a documented interface or deprecate them.
+- **Build maintenance:** client bundles stop carrying the build machine's paths, and ByteRover's published declarations keep their types.
+- **A recall keeps the same memories when several match equally.** Today the limit can keep a different set of tied memories on each call. Found while capturing the v0.5.32 gallery.
 
 ## Later: controlled maintenance and extension growth
 
