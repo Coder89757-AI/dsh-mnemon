@@ -167,6 +167,13 @@ export interface HostAgentContext {
     guard?(guard: (execution: ToolExecution) => string | undefined): unknown
     /** Public presentation-agnostic lookup in the exact Agent scope. */
     get?(name: string, scope?: HostAgent): unknown
+    /** Hides the tools this Agent inherits outside the filter and refuses to run them. */
+    restrict?(filter: { allow?: string[]; deny?: string[] }): unknown
+  }
+  /** DSH's prompt registry; a section registered here applies to this Agent alone and shadows a global one of the same name. */
+  systemPrompt?: {
+    section?(section: { name: string; order: number; text: string }): unknown
+    getSectionOrder?(name: string): number
   }
   /**
    * `options` is optional and forwarded verbatim to the host. `prepend`
@@ -243,7 +250,10 @@ export interface HostSubagentRun {
 
 export interface HostSubagentProvider {
   inheritsParentContext?: boolean
-  capabilities: { outputSchema: boolean; depthLimit: boolean; toolFilter: boolean; persona: boolean }
+  /** DSH 0.2.0's providers take `toolFilter` and `persona`; DSH 0.2.1's take neither, nor does its start request. */
+  capabilities: { outputSchema: boolean; depthLimit: boolean; toolFilter?: boolean; persona?: boolean }
+  /** Present on a provider whose children DSH creates in this process, such as spawn and fork. */
+  prepareContinuable?: unknown
 }
 
 export interface HostSubagentStartRequest {
@@ -254,6 +264,7 @@ export interface HostSubagentStartRequest {
   agentOptions?: { provider?: string; model?: string; maxTokens?: number }
   outputSchema?: Record<string, unknown>
   maxDepth?: number
+  /** The child's tools and its persona, which DSH 0.2.0 takes in the request (see subagent-start.ts). */
   toolFilter?: { allow?: string[]; deny?: string[] }
   persona?: string
 }
@@ -269,10 +280,10 @@ export interface HostSubagentActivation {
 export interface HostSubagentsService {
   list(): string[]
   getProvider(name: string): HostSubagentProvider | undefined
-  /** One-shot runs, up to DSH 0.2.1-alpha.1. */
+  /** One-shot runs, on DSH 0.2.0. */
   start?(name: string, request: HostSubagentStartRequest): Promise<HostSubagentRun>
   /**
-   * Managed activations, which replace `start` from DSH 0.2.1-alpha.2. The
+   * Managed activations, which replace `start` on DSH 0.2.1. The
    * signal covers startup only; `dispose` stops a running child. Caller
    * delivery returns the result without notifying the parent conversation.
    */

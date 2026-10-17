@@ -45,7 +45,7 @@ npx @deepseek-ai/dsh web
 
 DSH 在 `http://127.0.0.1:3080` 启动，并自动在浏览器中打开一个带一次性令牌的地址；终端里也会打印这个地址。使用期间保持终端开着，按 `Ctrl+C` 停止 DSH。
 
-- 这条命令使用 npm 上 `latest` 标签的 DSH（撰写本文时为 0.1.7-rc.2）。想用 DSH 0.2 预览版，改用 `npx @deepseek-ai/dsh@next web`。dsh-mnemon 0.5.19 起两者都支持。
+- 这条命令使用 npm 上 `latest` 标签的 DSH（撰写本文时为 0.2.0-rc.2）；`npx @deepseek-ai/dsh@next web` 使用 `next` 标签的版本（0.2.1-rc.1）。dsh-mnemon 两者都支持，见[兼容性与升级](../reference/compatibility.md)。
 - 经常使用时可以全局安装：`npm install --global @deepseek-ai/dsh`，之后运行 `dsh web` 即可；[命令行方式](#7-命令行与-headless)也需要全局安装的 `dsh`。
 
 第一次打开时：
@@ -199,16 +199,16 @@ mnemon:
 
 ## 常见问题
 
-### 安装时提示“dsh-mnemon@… 与 DSH 0.2.0-rc.1 不兼容”
+### 安装时提示“dsh-mnemon@… 与 DSH … 不兼容”
 
 ![插件安装失败：dsh-mnemon@0.5.18 与 DSH 0.2.0-rc.1 不兼容，下方有“编辑”与“重试”](../../assets/install-v0.5.19/zh-CN/trouble-incompatible.jpg)
 
-DSH 在安装插件前，以及每次启动时，都会检查插件声明支持的 DSH 版本。dsh-mnemon 0.5.19 之前的版本只声明支持 DSH 0.1.7，所以 DSH 0.2 拒绝安装它们。
+DSH 在安装插件前，以及每次启动时，都会检查插件声明支持的 DSH 版本，不包含自身版本的插件会被拒绝。截图中是 DSH 0.2.0-rc.1 拒绝只声明支持 DSH 0.1.7 的 dsh-mnemon 0.5.18；各 DSH 接受哪些版本，见[兼容性与升级](../reference/compatibility.md)。
 
-- 先确认 npm 上已有 0.5.19 或更新的版本：`npm view dsh-mnemon version`。
-- 新版本发布后的 24 小时内，pnpm 默认不会选用刚发布的版本，会改装一个较早的版本，于是出现这个提示；一天内连续发布时会退得更早，例如 0.5.17。DSH 0.1.7 会直接装上这个较早的版本而不提示，请在状态页核对版本号。此时点击**编辑**，输入带版本号的 `dsh-mnemon@0.5.30`（以 `npm view` 显示的版本为准），再点击**安装**；命令行为 `dsh plugin --profile web add dsh-mnemon@0.5.30`。也可以等 24 小时后重试。
+- 先确认 npm 上的版本：`npm view dsh-mnemon version`。
+- 新版本发布后的 24 小时内，pnpm 默认不会选用刚发布的版本，会改装一个较早的版本，于是出现这个提示；一天内连续发布时会退得更早。DSH 接受这个较早的版本时不会有任何提示，请在状态页核对版本号。此时点击**编辑**，输入带版本号的 `dsh-mnemon@0.5.30`（以 `npm view` 显示的版本为准），再点击**安装**；命令行为 `dsh plugin --profile web add dsh-mnemon@0.5.30`。也可以等 24 小时后重试。
 - 用带版本号的方式安装后，profile 会固定在这个版本。之后在新版本发布满一天后运行 `dsh plugin --profile web update --latest dsh-mnemon` 升级；一天之内同样带版本号安装新版本。
-- 不要为旧版本执行 `allow-version` 等“接受风险”的操作：旧版本确实没有在 DSH 0.2 上验证过。
+- 不要为旧版本执行 `allow-version` 等“接受风险”的操作：旧版本确实没有在该 DSH 上验证过。
 
 ### 插件页提示“没有找到 pnpm，无法安装”
 
@@ -255,6 +255,6 @@ mnemon-bundle (cordis:group): pending (waiting for service: mnemonStarterReady)
 - 桌面版会把它当作启动失败，显示插件恢复页。点击**卸载此插件并继续检测**（记忆数据保留），应用启动后按[第 3 步](#3-安装并启用-dsh-mnemon)重新添加 dsh-mnemon。重新安装 0.5.18 或 0.5.19 时，这个开关仍是关闭的（它保存在 profile 中），因此接着按上一条打开它。
 - 0.5.20 起没有单独的开关：组件组自己准备依赖解析，残留的设置会被忽略。提示中的名称是 `dsh-mnemon/bundle` 时，说明刚更新到 0.5.20 而没有重启，DSH 仍在运行旧的组件组，完全退出 DSH 再重新打开即可。
 
-### 准备把 DSH 升级到 0.2
+### 升级 DSH
 
-先在现有的 DSH 中运行 `dsh plugin --profile web update dsh-mnemon`，把 dsh-mnemon 升级到 0.5.19 或更新的版本，再升级 DSH。否则 DSH 0.2 启动时会停用不兼容的旧版本；记忆数据不受影响，更新插件后即可恢复。更多细节见[兼容性与升级](../reference/compatibility.md)。
+先在现有的 DSH 中更新 dsh-mnemon，再升级 DSH，然后再更新一次 dsh-mnemon。在 DSH 0.1.7-rc.2 上，先更新到 0.5.30：`dsh plugin --profile web add dsh-mnemon@0.5.30`。否则新的 DSH 启动时会停用它不支持的旧版本；记忆数据不受影响，更新插件后即可恢复。在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`；改为运行一次[升级顺序](../reference/compatibility.md#升级顺序)中给出的命令。

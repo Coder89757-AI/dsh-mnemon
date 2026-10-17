@@ -10,7 +10,7 @@ First time? Start with [Install and start](./installation.md): from installing N
 
 This section is for command-line users and also covers development checkouts, cloud access and Headless. You need:
 
-- DSH `0.2.0-rc.2` (npm `latest` and `next`) or `0.1.7-rc.2`, Node.js `^22.19.0 || >=24.0.0`, and pnpm;
+- a DSH release the [compatibility matrix](../reference/compatibility.md) lists, currently `0.2.0-rc.2` (npm `latest`) or `0.2.1-rc.1` (npm `next`); Node.js `^22.19.0 || >=24.0.0`; and pnpm;
 - a DSH model route that can create independent task Agents;
 - for Mnemon Native only, a local `mnemon` CLI; [Install and start](./installation.md#other-ways-to-install-the-mnemon-cli) covers each platform. The other Providers connect to their own services.
 
@@ -27,7 +27,7 @@ The Starter pins a tested combination of the official plugins; the [compatibilit
 <details>
 <summary>How task Agents are started</summary>
 
-Semantic work prefers a DSH provider named `spawn` with `toolFilter`, `persona` and `depthLimit`. Mnemon keeps one stable `mnemon_subagent_result` tool and issues a revocable `requestId` for each child. The child returns `{ requestId, result }`; the Host validates `result` against that operation's schema and rejects stale or foreign submissions. Optional background review defaults to a guarded `spawn` child with a bounded checkpoint; a full-context `fork` is opt-in. See [review compatibility and limits](../reference/configuration.md#provider-requirements).
+Semantic work prefers a DSH provider named `spawn` that limits the child's depth and runs it either with its own tools and instructions or, on DSH 0.2.1, in this process, where Mnemon gives it both. Mnemon keeps one stable `mnemon_subagent_result` tool and issues a revocable `requestId` for each child. The child returns `{ requestId, result }`; the Host validates `result` against that operation's schema and rejects stale or foreign submissions. Optional background review defaults to a guarded `spawn` child with a bounded checkpoint; a full-context `fork` is opt-in. See [review compatibility and limits](../reference/configuration.md#provider-requirements).
 
 </details>
 

@@ -10,11 +10,11 @@
 $DSH_HOME/profiles/<profile>/cordis.patch.yml
 ```
 
-Web profile 的 patch 通常是 `~/.dsh/profiles/web/cordis.patch.yml`。旧宿主留下的 `settings.yaml` 会被导入 profile 一次，并保留为 `settings.yaml.imported`，参见[DSH 0.1.7 设置恢复](./compatibility.md#dsh-017-设置恢复)。当前全部配置标记为 `live` 生效；改动生效时会先初始化候选运行图，再原子切换 Host 服务。
+Web profile 的 patch 通常是 `~/.dsh/profiles/web/cordis.patch.yml`。旧宿主留下的 `settings.yaml` 会被导入 profile 一次，并保留为 `settings.yaml.imported`，参见[来自旧宿主的设置](./compatibility.md#来自旧宿主的设置)。当前全部配置标记为 `live` 生效；改动生效时会先初始化候选运行图，再原子切换 Host 服务。
 
 执行中的回合保留已固定的运行图。已经派发的子 Agent 保留委托运行图直到本次 activation 销毁，即使父回合已结束；后续父回合和新委托的 activation 使用新 generation。保存设置不会静默扩大既有任务的 Recall 权限。
 
-与 DSH 0.1.7 对所有自带配置的插件一样，Web 界面在“插件”中该插件自己的页面编辑 Mnemon 的设置，而不在“设置”中。[界面指南](../guides/ui-guide.md#在插件页中)展示了每个部分。
+与 DSH 对所有自带配置的插件一样，Web 界面在“插件”中该插件自己的页面编辑 Mnemon 的设置，而不在“设置”中。[界面指南](../guides/ui-guide.md#在插件页中)展示了每个部分。
 
 | 界面位置 | 设置 | 保存为 |
 |---|---|---|
@@ -119,7 +119,7 @@ mnemon:
 | `idleReview.runtimeMemory` | `true` | boolean | 允许审查修改运行时记忆（USER.md 与 MEMORY.md）；`false` 时只创建项目档案 |
 | `idleReview.provider` | `spawn` | `spawn` / `fork` | 有界检查点或继承父上下文 |
 | `idleReview.fallback` | `spawn` | `spawn` / `skip` | 仅启动前处理 fork 缺失/不兼容 |
-| `idleReview.agentTeams` | `pause` | `pause` / `scoped` | 安装 Team 工具时暂停，或显式启用受 guard 保护的审查；已验证 DSH/Teams 0.1.7-rc.2 |
+| `idleReview.agentTeams` | `pause` | `pause` / `scoped` | 安装 Team 工具时暂停，或显式启用受 guard 保护的审查；已在每个受支持的 DSH 及其官方 Teams 上验证 |
 | `idleReview.minIntervalMs` | `300000` | 5000–86400000 ms | 两次尝试的最短间隔 |
 | `idleReview.maxPerSession` | `20` | 0–200 | 当前加载父 Agent 的尝试上限；包括失败/取消 |
 | `idleReview.maxContextChars` | `24000` | 1000–1000000 | spawn 检查点字符上限 |
@@ -333,13 +333,10 @@ DSH 的实时模型目录会报告各模型的输入模态，选择器为支持�
 
 ## Provider 要求
 
-普通 worker 会优先选择 `spawn`；如果没有该名称，可以选择另一个具备全部能力的 provider：
+普通 worker 会优先选择 `spawn`；如果没有该名称，可以选择另一个不继承父上下文的 provider，前提是它限制深度（`depthLimit`），并让子 Agent 使用自己的指令和工具：
 
-```text
-toolFilter   = true
-persona      = true
-depthLimit   = true
-```
+- 在 DSH 0.2.0 上，provider 从启动请求中接受这两项（`toolFilter` 与 `persona`）；
+- 在 DSH 0.2.1 上，没有 provider 接受这两项，它必须是由 DSH 在本进程中创建子 Agent 的 provider（例如它的 spawn 与 fork），由 Mnemon 自己为子 Agent 配上它们；见 [DSH 0.2.0 与 0.2.1](./compatibility.md#dsh-020-与-021)。
 
 后台审查默认使用不继承父上下文的 `spawn` Provider，并从父 Agent 当前公开 surface 构建有界检查点。仅收录完整可见文本消息与成功工具结果，不重建被省略或不可用的上下文。`idleReview.provider: fork` 保留完整父上下文审查，并要求 `inheritsParentContext=true`。fork 缺失或不兼容时，`idleReview.fallback` 在启动前选择 `spawn` 或 `skip`；已启动的运行绝不通过其他 Provider 重试。
 
@@ -351,7 +348,7 @@ depthLimit   = true
 
 **Agent Teams 兼容：**现有配置默认保留 `idleReview.agentTeams: pause`。同时检测到公开 `agentTeams` 服务与父 Agent 作用域的 `spawn_teammate` 工具时，在创建子代理前暂停。仅加载 TeamService 不会暂停审查。
 
-DSH 与全部官方 Agent Teams 组件均为 **0.1.7-rc.2** 时，可在分层策略页面（**插件 → 可组合记忆**）的空闲审查中选择**受限子代理审查**，或设置 `idleReview.agentTeams: scoped`。该已发布 Team 策略兼容有界 spawn 与显式 fork。此模式仍检查父子归属、本地子代理发布、`maxDepth: 1` 和单调的审查工具白名单（包括 Code Mode 子调用）。审查子代理仍不能使用 Team 工具或再次委派；父 Agent 保留 Teams。不会猜测包版本或移除其他插件的策略。缺少 guard/归属能力或策略报错时，运行失败且不通过 fallback 重放。保留 `pause` 可在安装 Team 工具时不运行审查；也可设置 `idleReview.enabled: false`，只关闭审查，保留 Teams、召回与主动写入。
+使用任一受支持 DSH 版本的官方 Agent Teams 组件时，可在分层策略页面（**插件 → 可组合记忆**）的空闲审查中选择**受限子代理审查**，或设置 `idleReview.agentTeams: scoped`。该已发布 Team 策略兼容有界 spawn 与显式 fork。此模式仍检查父子归属、本地子代理发布、`maxDepth: 1` 和单调的审查工具白名单（包括 Code Mode 子调用）。审查子代理仍不能使用 Team 工具或再次委派；父 Agent 保留 Teams。不会猜测包版本或移除其他插件的策略。缺少 guard/归属能力或策略报错时，运行失败且不通过 fallback 重放。保留 `pause` 可在安装 Team 工具时不运行审查；也可设置 `idleReview.enabled: false`，只关闭审查，保留 Teams、召回与主动写入。
 
 有界 spawn 按公开的扁平 `user/message` 事件读取真实用户证据，仅保留已完成检查点之前、当前可见的完整消息；注入的召回、摘要和没有真实用户来源的消息不会被提升为用户断言。配置的字符预算内，明确决策与禁止写入指令都以整条消息保留。
 

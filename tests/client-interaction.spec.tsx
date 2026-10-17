@@ -21,7 +21,7 @@ interface SlotOptions {
 
 function makeCtx(initialValue: unknown, coreValue: Record<string, unknown> = {}) {
   const core = new SlotCore()
-  // Exercise the published registry with the DSH 0.1.7 slot declarations.
+  // Exercise the published registry with the slot declarations DSH's own client plugins make.
   const registerSlot = (options: SlotOptions, component: unknown = () => null): (() => void) =>
     (core.register as (options: SlotOptions, component: unknown) => () => void)(options, component)
   const disposeOwner = registerSlot({

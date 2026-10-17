@@ -45,7 +45,7 @@ npx @deepseek-ai/dsh web
 
 DSH starts at `http://127.0.0.1:3080` and opens a one-time link in your browser; the terminal prints the same link. Keep the terminal open while you use DSH, and press `Ctrl+C` to stop it.
 
-- This runs the DSH release tagged `latest` on npm (0.1.7-rc.2 at the time of writing). For the DSH 0.2 preview, run `npx @deepseek-ai/dsh@next web` instead. dsh-mnemon supports both from 0.5.19.
+- This runs the DSH release tagged `latest` on npm (0.2.0-rc.2 at the time of writing); `npx @deepseek-ai/dsh@next web` runs the one tagged `next` (0.2.1-rc.1). dsh-mnemon supports both; see [Compatibility and upgrades](../reference/compatibility.md).
 - If you use DSH often, install it globally with `npm install --global @deepseek-ai/dsh` and then run `dsh web`; the [command line](#7-command-line-and-headless) needs the global `dsh` too.
 
 The first time you open it:
@@ -197,16 +197,16 @@ mnemon:
 
 ## Common problems
 
-### Installing says "dsh-mnemon@… is incompatible with DSH 0.2.0-rc.1"
+### Installing says "dsh-mnemon@… is incompatible with DSH …"
 
 ![The plugin could not be installed: dsh-mnemon@0.5.18 is incompatible with DSH 0.2.0-rc.1, with Edit and Retry](../../assets/install-v0.5.19/en/trouble-incompatible.jpg)
 
-Before DSH installs a plugin, and each time it starts, it checks which DSH versions the plugin declares support for. dsh-mnemon releases before 0.5.19 declare DSH 0.1.7 only, so DSH 0.2 refuses them.
+Before DSH installs a plugin, and each time it starts, it checks which DSH versions the plugin declares support for, and refuses a release that leaves its own version out. The screenshot shows DSH 0.2.0-rc.1 refusing dsh-mnemon 0.5.18, which declares DSH 0.1.7 only; [Compatibility and upgrades](../reference/compatibility.md) lists which releases each DSH takes.
 
-- Check that npm has 0.5.19 or later: `npm view dsh-mnemon version`.
-- For 24 hours after a release, pnpm does not pick the new version by default and installs an earlier one instead, which leads to this message. After two releases within a day it falls back further, for example to 0.5.17. DSH 0.1.7 accepts such an earlier release without a message, so check the version on Status. Click **Edit**, type the version as well, for example `dsh-mnemon@0.5.30` (use the version `npm view` shows), and click **Install**; on the command line, run `dsh plugin --profile web add dsh-mnemon@0.5.30`. Or retry after 24 hours.
+- Check which version npm has: `npm view dsh-mnemon version`.
+- For 24 hours after a release, pnpm does not pick the new version by default and installs an earlier one instead, which leads to this message. After two releases within a day it falls back further. Where DSH accepts that earlier release, there is no message, so check the version on Status. Click **Edit**, type the version as well, for example `dsh-mnemon@0.5.30` (use the version `npm view` shows), and click **Install**; on the command line, run `dsh plugin --profile web add dsh-mnemon@0.5.30`. Or retry after 24 hours.
 - A versioned install pins the profile to that version. To upgrade later, run `dsh plugin --profile web update --latest dsh-mnemon` once the next release is a day old; within that day, add the new version by name the same way.
-- Do not accept the risk for an older release with `allow-version` or similar: it really has not been verified on DSH 0.2.
+- Do not accept the risk for an older release with `allow-version` or similar: it really has not been verified on that DSH.
 
 ### The Plugins page says pnpm was not found
 
@@ -253,6 +253,6 @@ The sidebar has no **Memory System**, and every dsh-mnemon component on the Plug
 - The desktop app treats this as a failed start and shows its plugin recovery page. Click **Remove this plugin and continue** (your memory data stays), and once the app is up, add dsh-mnemon again as in [step 3](#3-install-and-enable-dsh-mnemon). Reinstalling 0.5.18 or 0.5.19 keeps the switch off, because the profile saves it, so then turn it on as above.
 - From 0.5.20 there is no separate switch: the group prepares dependency resolution itself, and a leftover setting for it is ignored. If the message names `dsh-mnemon/bundle`, DSH was updated to 0.5.20 without a restart and still runs the old group; quit DSH completely and start it again.
 
-### Moving DSH to 0.2
+### Upgrading DSH
 
-First run `dsh plugin --profile web update dsh-mnemon` on your current DSH to get dsh-mnemon 0.5.19 or later, then upgrade DSH. Otherwise DSH 0.2 turns the incompatible older release off when it starts; your memory is untouched and comes back once the plugin is updated. See [Compatibility and upgrades](../reference/compatibility.md) for details.
+Update dsh-mnemon on your current DSH first, then upgrade DSH, and update dsh-mnemon again. On DSH 0.1.7-rc.2 the release to update to first is 0.5.30: `dsh plugin --profile web add dsh-mnemon@0.5.30`. Otherwise the new DSH turns an older release it does not support off when it starts; your memory is untouched and comes back once the plugin is updated. On DSH 0.2.1, **Check versions → Update** in dsh-mnemon 0.5.30 and earlier stops with `already-installed`; the [upgrade order](../reference/compatibility.md#upgrade-order) gives the command to run once instead.

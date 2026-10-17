@@ -17,7 +17,7 @@ import type { ComposableMemoryTurn } from '../core/turns.ts'
 import { idleReviewBlockReason, reviewLayerPolicy, startGuardedChild, startGuardedReview, type ReviewToolHost } from './review-tools.ts'
 import { reviewCheckpoint } from './review-checkpoint.ts'
 import { startWithContinuationTurns } from './continuation-turn.ts'
-import { startSubagent, type SubagentStartAgents } from './subagent-start.ts'
+import { childComposition, startSubagent, type SubagentStartAgents } from './subagent-start.ts'
 import type { IdleReviewFailure } from './protocol.ts'
 
 export type { SubagentCounters } from "./protocol.ts"
@@ -2204,7 +2204,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
         maxDepth: 1,
         toolFilter: { allow: [...tools, resultToolName] },
         persona: completionPersona,
-      }))
+      }, host))
       run = operation === 'review'
         ? await startGuardedReview(this.resultRuntime, parent, [...tools, resultToolName], start, child => { reviewChildId = child.id }, reviewLayerPolicy())
         // A DSH without Agent ownership or scoped tool guards runs the child as before.
@@ -2282,8 +2282,8 @@ This is the only completion channel for this run. Do not finish with a plain-tex
   private provider(preferred: 'spawn' | 'fork'): string {
     const names = this.subagents.list()
     const compatible = (name: string): boolean => {
-      const capabilities = this.subagents.getProvider(name)?.capabilities
-      return capabilities?.toolFilter === true && capabilities.persona === true && capabilities.depthLimit === true
+      const provider = this.subagents.getProvider(name)
+      return provider?.capabilities.depthLimit === true && childComposition(this.subagents, provider) !== undefined
     }
     if (preferred === 'fork') {
       const fork = this.subagents.getProvider('fork')
@@ -2292,7 +2292,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
     }
     const isolated = (name: string): boolean => compatible(name) && this.subagents.getProvider(name)?.inheritsParentContext !== true
     const selected = names.includes('spawn') && isolated('spawn') ? 'spawn' : names.find(isolated)
-    if (selected === undefined) throw new Error('dsh-mnemon requires a non-inheriting DSH subagent provider with tool filtering, persona, and depth limiting')
+    if (selected === undefined) throw new Error('dsh-mnemon requires a non-inheriting DSH subagent provider that limits depth and gives each child its own instructions and tools')
     return selected
   }
 

@@ -19,7 +19,7 @@ import { MemoryPluginInstallation } from './plugin-installation.ts'
 import { MnemonRemoteService } from './remote-rpc.ts'
 import { plainHostConfig, type LiveHostConfig } from './live-config.ts'
 import { ProfileMnemonSettings } from './settings-service.ts'
-import { VersionUpdateManager, type DshBundleInstaller } from './version-updates.ts'
+import { dshPluginCommand, VersionUpdateManager, type DshBundleInstaller } from './version-updates.ts'
 
 export const name = 'dsh-mnemon'
 export const provide = ['mnemonMemory']
@@ -187,6 +187,7 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
         const profile = ctx.get('profileContext') as { dir?: unknown; packageManager?: unknown } | undefined
         return typeof profile?.dir === 'string' ? { dir: profile.dir, packageManager: profile.packageManager !== undefined } : undefined
       },
+      pluginCommand: () => dshPluginCommand(ctx.get('profileContext')),
     })
     const rpc = registerRpc(connection, runtime, lifecycle, versions, () => autoBackup.refresh())
     const settings = registerSettingsRpc(connection, hostSettings)
