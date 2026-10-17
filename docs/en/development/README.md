@@ -11,7 +11,7 @@ npm install --global --prefix <directory> @deepseek-ai/dsh@0.2.0-rc.2
 DSH_HOST_ROOT=<directory>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed-dsh
 ```
 
-Every `@deepseek-ai/*` import, subpaths included, then resolves from that installation (`scripts/installed-dsh.config.ts`), and the real-host specs compose it through `tests/helpers/installed-dsh.ts`. Build first, as for `pnpm run test`. [Compatibility](../reference/compatibility.md#dsh-020-and-021) lists where the two releases differ.
+Every `@deepseek-ai/*` import, subpaths included, then resolves from that installation (`scripts/installed-dsh.config.ts`), and the real-host specs compose it through `tests/helpers/installed-dsh.ts`. Build first, as for `pnpm run test`. [Compatibility](../reference/compatibility.md#dsh-020-and-021) lists where the two releases differ. A spec of behavior only DSH 0.2.1 has skips on 0.2.0 through the helper's `dsh021`, as `tests/task-agent-cwd-host.spec.ts` does for a task Agent whose workspace folder is gone and `tests/resumed-memory-task-host.spec.ts` for a finished memory task its conversation resumes.
 
 DSH's UI primitives import Markdown/highlighting dependencies that their published manifest lists as development dependencies. Root, the three Source packages and the external consumer declare that complete cohort explicitly for standalone Client tests; Host artifacts still use DSH’s provided UI module. Tests use the public async Agent factory and durable `assistant/message` events.
 
