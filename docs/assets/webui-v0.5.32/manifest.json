@@ -2,14 +2,15 @@
   "schemaVersion": 1,
   "productVersion": "0.5.32",
   "packageVersionAtCapture": "0.5.31",
-  "sourceRevision": "6493353285b87810df98db9da0dc7c6964ba8443",
-  "captureDate": "2026-10-17",
+  "sourceRevision": "bd70979ff9138a78a2a378b5c1e91f7d2525440e",
+  "captureDate": "2026-10-18",
   "captureTimezone": "Asia/Shanghai",
   "theme": "light",
   "hostVersion": "0.2.1-rc.2",
   "mnemonCliVersion": "0.2.10",
   "model": "DeepSeek API, deepseek-flash (shown as DeepSeek-V4.1-Flash)",
   "browser": "Headless Google Chrome 155 (155.0.8059.84) driven over the DevTools protocol",
+  "embedding": "Ollama 0.40.6 serving nomic-embed-text (768 dimensions) at Mnemon's default endpoint, http://localhost:11434; the Mnemon Native embedding settings at their default, so DSH supplies no override; after each pass, mnemon embed --status reported 100% coverage on every store, the saved memory included",
   "fixture": "node scripts/serve-e2e.mjs --docs-demo --live-model (zh-CN) and --docs-demo=en --live-model: a disposable Profile, a seeded fictional project, and the live DeepSeek API answering",
   "data": {
     "project": "Lumen (fictional)",
@@ -38,20 +39,20 @@
               "Document search",
               "Decision: queue event ingestion",
               "Investigation: checkout LCP",
-              "Incident review: delayed metrics on September 12"
-            ],
-            [
-              "Memory Spaces recall",
-              "Event ingestion moves to a Kafka queue; consumers write to ClickHouse in batches. Lumen project"
+              "Release checklist"
             ]
           ]
         },
         "q2": {
-          "replySeconds": 9,
+          "replySeconds": 10,
           "memoryItems": [
             [
               "Runtime memory update",
-              "Checkout p75 LCP is now 2.4 s after deferring the payment SDK until first interaction (down from 2.9 s), meeting the under-2.5-s target."
+              "Checkout performance: target p75 LCP under 2.5 s; measured 2.4 s after deferring the payment SDK to first interaction (down from 2.9 s)."
+            ],
+            [
+              "Document update",
+              "Investigation: checkout LCP"
             ]
           ]
         },
@@ -59,9 +60,12 @@
           "replySeconds": 7,
           "memoryItems": [
             [
-              "Runtime memory update ×2",
-              "This week: checkout performance, target p75 LCP under 2.2 s.",
-              "Checkout p75 LCP is 2.4 s after deferring the payment SDK until first interaction (down from 2.9 s); still 0.2 s above the 2.2-s target."
+              "Runtime memory update",
+              "Checkout performance: this week's target is p75 LCP under 2.2 s; measured 2.4 s after deferring the payment SDK to first interaction (down from 2.9 s)."
+            ],
+            [
+              "Document update",
+              "Investigation: checkout LCP"
             ]
           ]
         }
@@ -73,20 +77,24 @@
         "Lumen project Memory Space · Mnemon Native",
         "Team conventions Memory Space · Mnemon Native"
       ],
-      "receipt": "Saved Saved the decision and its measured outcome—deferring the payment SDK until first interaction cut checkout p75 LCP from 2.9 s to 2.4 s—to the Lumen project Memory Space, linked as causal to the earlier note about the synchronous SDK block. View in Memory Spaces Saved without a vector: embedding did not succeed, so this memory is left out of semantic matching for now. Once the embedding service answers, fill it in from Test status in the Mnemon Native embedding settings.",
-      "receiptSeconds": 7,
-      "agentAnswerSeconds": 2,
+      "receipt": "Saved Saved the decision that deferring the payment SDK until first interaction cut checkout p75 LCP from 2.9 s to 2.4 s in the Lumen project Memory Space, and linked it as the causal follow-up to the existing note about the synchronous SDK blocking first paint. View in Memory Spaces",
+      "receiptSeconds": 8,
+      "agentAnswerSeconds": 3,
       "notes": []
     },
     "zh-CN": {
       "turns": {
         "q1": {
-          "replySeconds": 8,
+          "replySeconds": 7,
           "memoryItems": [
             [
               "项目档案检索",
               "架构决策：事件摄取改用队列",
               "故障复盘：9 月 12 日指标延迟"
+            ],
+            [
+              "记忆空间召回",
+              "事件摄取改为 Kafka 队列，由消费者批量写入 ClickHouse。 Lumen 项目"
             ]
           ]
         },
@@ -95,17 +103,17 @@
           "memoryItems": [
             [
               "运行时记忆更新",
-              "结账页把支付 SDK 改为用户交互后再加载，p75 LCP 从 2.9s 降到 2.4s（已达标，余量仅 0.1s）。"
+              "支付 SDK 改为用户交互后再加载后，结账页 p75 LCP 从 2.9 秒降到 2.4 秒（已达 p75 < 2.5 秒目标）。"
             ]
           ]
         },
         "q3": {
-          "replySeconds": 8,
+          "replySeconds": 7,
           "memoryItems": [
             [
               "运行时记忆更新 ×2",
-              "本周重点：结账页性能，目标 p75 LCP 低于 2.2 秒。",
-              "结账页把支付 SDK 改为用户交互后再加载，p75 LCP 从 2.9s 降到 2.4s（距 2.2s 新目标还差 0.2s）。"
+              "本周重点：结账页性能，目标 p75 LCP 低于 2.2 秒（原为 2.5 秒，本周上调）。",
+              "支付 SDK 改为用户交互后再加载后，结账页 p75 LCP 从 2.9 秒降到 2.4 秒（相对 2.2 秒目标尚未达标）。"
             ]
           ]
         }
@@ -117,8 +125,8 @@
         "Lumen 项目 记忆空间 · Mnemon Native",
         "团队约定 记忆空间 · Mnemon Native"
       ],
-      "receipt": "已存入 已在「Lumen 项目」记忆空间保存：支付 SDK 改为用户交互后再加载，结账页 p75 LCP 由 2.9 秒降至 2.4 秒。并与此前「同步加载支付 SDK 阻塞首屏约 400 毫秒」的记录建立了关联。 在记忆空间中查看 未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。",
-      "receiptSeconds": 8,
+      "receipt": "已存入 已将「支付 SDK 改为用户交互后再加载，结账页 p75 LCP 从 2.9 秒降至 2.4 秒」作为技术决策写入「Lumen 项目」记忆空间，并注明此前同步加载会阻塞首屏；该条与既有的支付 SDK 同步加载记录自动建立了语义关联。 在记忆空间中查看",
+      "receiptSeconds": 7,
       "agentAnswerSeconds": 2,
       "notes": []
     }
@@ -133,8 +141,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 155744,
-      "sha256": "a931d6d74a89f959aaf86144e2161da178f8139fa9e19b5b4243df3b3c0dd956"
+      "bytes": 154317,
+      "sha256": "5fd07badc2a69aad7a2e73b0150f0a3cca4464fa4f4c0ddc731ced55be963114"
     },
     {
       "file": "en/chat-recall.jpg",
@@ -145,8 +153,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 181712,
-      "sha256": "3a129afc2b943f6c1dcbed19d8d34d0b3fa3501896619bfd12f20221d1779e4a"
+      "bytes": 165242,
+      "sha256": "d19e63725b36905083d4a036d895c4be259b7d6ef49831f7d8f01929d98edebf"
     },
     {
       "file": "en/chat-save-receipt.jpg",
@@ -157,8 +165,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 156004,
-      "sha256": "0d3ae5181336841cec2be49f5da381fbf6b72ec79049815d962b9c7f061b5581"
+      "bytes": 130722,
+      "sha256": "3297c346c80bad5b570a5b526057035b5323660e9b847c2f95f9be0b9f6f3157"
     },
     {
       "file": "en/chat-save-target.jpg",
@@ -169,8 +177,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 136182,
-      "sha256": "c7ba46fb72d8ebb81e660fd7b288c16f8e48750a942f92b3b26e214e17922fee"
+      "bytes": 130492,
+      "sha256": "261893d0df0bee69a67b6d8a5aadf5b40d7e8d34dc4083ca3fa247c5ba06abcc"
     },
     {
       "file": "en/chat-save.jpg",
@@ -181,8 +189,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 130569,
-      "sha256": "b9e6e4e187de3cb631f4cc891a73054809b507218a46ae046e6d9af4893981cd"
+      "bytes": 124999,
+      "sha256": "71532a64ab271984dd7aad5644535cdb1c1f8ca9fc669db1443181ff4ff91e3e"
     },
     {
       "file": "en/memory-agent.jpg",
@@ -193,8 +201,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 197998,
-      "sha256": "03b28f7ae97f15bd685c8fd0145f39280768d6a11b415a29f3b52d1ba6d09278"
+      "bytes": 189427,
+      "sha256": "efe5caa38705891afdf6f7f59109c957b2d1d2c3e7100b8b760b65a032ba8404"
     },
     {
       "file": "en/memory-content.jpg",
@@ -205,8 +213,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 185465,
-      "sha256": "7f25dd33c137e54bf399c10465501a5d87f4253b0a218b4108dcec8f357b8f4c"
+      "bytes": 187012,
+      "sha256": "63e3edaad49d0717da6c794f1bb730d961549df5a84da98e89b8e4f71c14861c"
     },
     {
       "file": "en/memory-documents.jpg",
@@ -217,8 +225,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 167552,
-      "sha256": "9f97bb611ab9bd60903fa2457c40297904a7e461523da72e468ea4f5b3d0ed85"
+      "bytes": 167658,
+      "sha256": "8a69747b5ae85cafd1f524d355229e1df46bdb75deaaa3897e047fde000ac8a2"
     },
     {
       "file": "en/memory-entities.jpg",
@@ -229,8 +237,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 161677,
-      "sha256": "cd3219249715ebbb1a14197de9b633f4f5352437e7c319002fba83f05931a54f"
+      "bytes": 161634,
+      "sha256": "d8b6a01b73f7cb2c5391d2482445c73a18be6fb017eb7f9508591ddba00259ab"
     },
     {
       "file": "en/memory-graph.jpg",
@@ -241,8 +249,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 164194,
-      "sha256": "0defe2e2983cfbd4a336e7e62df9895eb0ce33599abcce62d12b481c0d2806a0"
+      "bytes": 163583,
+      "sha256": "0059363e7641d584a556336c1db14870fe81db171deb352c1fd8465f627cfec9"
     },
     {
       "file": "en/memory-recall.jpg",
@@ -253,8 +261,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 153867,
-      "sha256": "9568a3fb5c3e01d51f7be0551bcaa1c5a2f812432e3ee4f0a13f594f108681fe"
+      "bytes": 154157,
+      "sha256": "371213640c3669509aafb9ecd2421beef8c8e29bfb375e5df1758cdbf3e2ad39"
     },
     {
       "file": "en/memory-remember.jpg",
@@ -265,8 +273,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 148720,
-      "sha256": "d69a42a4418027732eff1a355cbfe09e11c0ce3dbc996bb35d4ab6e5448cab60"
+      "bytes": 148694,
+      "sha256": "bec9e7f0c9c63ac93269f2f5f297813b324dff6c72c382ad4500fffc0970a746"
     },
     {
       "file": "en/memory-runtime-limits.jpg",
@@ -278,8 +286,8 @@
       "capture": "a fresh fixture of the same build, before any conversation",
       "width": 1920,
       "height": 1200,
-      "bytes": 149905,
-      "sha256": "7b6129f618ec57d796908c0b696ecff6d606a22fb902b9872c251be1da76ee17"
+      "bytes": 149814,
+      "sha256": "b70a64841c1197e8d96b517ccaf4489ce8dc29cd2b245a40f1d7bc16497f547f"
     },
     {
       "file": "en/memory-runtime.jpg",
@@ -290,8 +298,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 146835,
-      "sha256": "c9555b41cc0a376babf2274bf5f9bab423e05b32bf4ee9314772146458413fab"
+      "bytes": 164549,
+      "sha256": "f7e92cbf51ae2081ff1cbf7cd93b6b5f5456d3827ae8e984c4f5b3e4f243cfdf"
     },
     {
       "file": "en/memory-spaces.jpg",
@@ -302,8 +310,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 158982,
-      "sha256": "dc7e825d22dce91013e902da8400f300e6ee2a90901c9eb30017af3360f5f060"
+      "bytes": 159096,
+      "sha256": "eee42af5251eaa14e01ab6154b5d1fc14bbbf4da1cfa131696e4819445cd6e1b"
     },
     {
       "file": "en/memory-status.jpg",
@@ -314,8 +322,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 160153,
-      "sha256": "43e55cc4eb2a72ed4f1296604296b8997437357d1ccba14bce3dfaedc727ef5e"
+      "bytes": 160105,
+      "sha256": "ae7eb562ba75c96be46a57702c601569f7383576f33fb63d770de6a8feb9afb7"
     },
     {
       "file": "en/narrow-chat.jpg",
@@ -326,8 +334,8 @@
       "deviceScaleFactor": 2,
       "width": 780,
       "height": 1688,
-      "bytes": 132842,
-      "sha256": "c9b12aff21d2842f2aba2c6ef231d3c66fd2310245098569431fbcdc1f101940"
+      "bytes": 122164,
+      "sha256": "e6eb8f0b117fcfa3a44b8ac15372ab408103541e0af4c3684430ed6722c83f82"
     },
     {
       "file": "en/narrow-plugin.jpg",
@@ -338,8 +346,8 @@
       "deviceScaleFactor": 2,
       "width": 780,
       "height": 1688,
-      "bytes": 92526,
-      "sha256": "96079954edede816a03d27715fc1f9007c17d3b3ff5559b46af4236d64809dc4"
+      "bytes": 92538,
+      "sha256": "b64fe83215a5f2247abe398128eea49637667951cd5803b244a83a22042f51a7"
     },
     {
       "file": "en/narrow-spaces.jpg",
@@ -350,8 +358,8 @@
       "deviceScaleFactor": 2,
       "width": 780,
       "height": 1688,
-      "bytes": 111058,
-      "sha256": "e66b0f468a26be3634a798f6a9cdf9899b5862f736f5cb0d26cceaae65b2284e"
+      "bytes": 111182,
+      "sha256": "2bb2bcc311d2ed3204b7ccf9b17b4305f96b811851d08aab409ce371e43489e7"
     },
     {
       "file": "en/plugin-backup-preview.jpg",
@@ -362,8 +370,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 122044,
-      "sha256": "03c6f2f741773510f6ee84ef8d2f3529ac47e09d6a3dcd9fa771b558d2d60ee1"
+      "bytes": 122004,
+      "sha256": "2b0231e506ece0c01efa639032d0ff32be4f9dd8719a07815b68126644f5ece9"
     },
     {
       "file": "en/plugin-composition.jpg",
@@ -422,8 +430,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 155242,
-      "sha256": "56bd028eb3662a951f4ef98ac825f2e9cc3f5a520d6b4f46184ab720634238d2"
+      "bytes": 155234,
+      "sha256": "6248053e7dfe80b2e5ce924bd6158c4678fcee5052af52bc3b058d9068fb8252"
     },
     {
       "file": "en/plugin-storage.jpg",
@@ -434,8 +442,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 123882,
-      "sha256": "5e734aa5801604300bdccb2fe2696bf0751c6823ffb625632da6b643574c95da"
+      "bytes": 123861,
+      "sha256": "2b586fb132741019bffefc36df12519df6ffc680760f96ef51ea3806eac76eb5"
     },
     {
       "file": "en/plugin-strategy-menu.jpg",
@@ -458,8 +466,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1288,
-      "bytes": 130550,
-      "sha256": "6113f0638cf90491a612afbe3088502db756b442b6b048e06303536eec7d9cd2"
+      "bytes": 130526,
+      "sha256": "4ec7a42e45fef577babd184ece7476237c3b3df886dd877d36ec5ad7e3e0c482"
     },
     {
       "file": "en/recall.mp4",
@@ -469,9 +477,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 16.63,
-      "bytes": 423790,
-      "sha256": "7c46ac745adfb1f2bff991473c889d688d1b565de0352cc8f4c7654707178848"
+      "durationSeconds": 14.9,
+      "bytes": 390106,
+      "sha256": "24b35e898902ca9fad7e31c582e2ed0993261ba4e4c51d6aee60aacddd2c18e0"
     },
     {
       "file": "en/recall.gif",
@@ -481,9 +489,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 16.63,
-      "bytes": 844199,
-      "sha256": "dbf5c7e65894d7b31dbaa698bd69fccb0c2b17f4e6497dd88ec7164d5e719d6a"
+      "durationSeconds": 14.88,
+      "bytes": 731484,
+      "sha256": "7caf79af4c05b00a294330627d6bb33965fb8f0182d5463a4f080bd700842e3a"
     },
     {
       "file": "en/save.mp4",
@@ -493,9 +501,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 38.83,
-      "bytes": 1064167,
-      "sha256": "4d24eb914bcea3cac6d943190e6d6043a2f206941bc573b87c0fffd856a48c3a"
+      "durationSeconds": 40.03,
+      "bytes": 857570,
+      "sha256": "b00f6cdbc69fa7f22da34c68e11328c321310e38ef8eba0bec571d34b5699ade"
     },
     {
       "file": "en/save.gif",
@@ -505,9 +513,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 38.88,
-      "bytes": 2108291,
-      "sha256": "df08779912622ea1ab839189fa098d1a2b7d6e4184f7fd4e32ee03c46dcb7f28"
+      "durationSeconds": 40.01,
+      "bytes": 1807612,
+      "sha256": "be74f8a2d64b87574b929f28d1dc6ac1c0e5bb86940a7ae2c6ff1d09c0fadc80"
     },
     {
       "file": "en/correct.mp4",
@@ -517,9 +525,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 14.43,
-      "bytes": 603547,
-      "sha256": "61d4afe02dc669c6dad9f0a4004e71f2b91d3a87e739bc5cb42df1cdc5e7f33c"
+      "durationSeconds": 14.4,
+      "bytes": 454485,
+      "sha256": "074ce8a6565ab289829c4cf8f76c1746c360603b43ecd606c73e73ef9ac1b16e"
     },
     {
       "file": "en/memory.mp4",
@@ -529,9 +537,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 28.87,
-      "bytes": 688281,
-      "sha256": "a6caacf98a944fb8e3b1451c5d74a7d05eb118d1827153d2c0132a6ecda254ae"
+      "durationSeconds": 29.17,
+      "bytes": 703421,
+      "sha256": "1dd7fa92c6f520f5aca787c2f6cd1dae848817beaf88f8f1a015bb481dfc3d6c"
     },
     {
       "file": "en/memory.gif",
@@ -541,9 +549,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 28.88,
-      "bytes": 1374990,
-      "sha256": "9d06779abadad1049c2b337e56c32005a8b841c68d6feca6658361fba175b24a"
+      "durationSeconds": 29.13,
+      "bytes": 1434344,
+      "sha256": "18cabc0dc0d80a7997dcbe663e85682cf0ecff8f4eac4135f9c1ede0d7a9dc83"
     },
     {
       "file": "en/plugins.mp4",
@@ -553,9 +561,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 24.5,
-      "bytes": 753768,
-      "sha256": "e2993d03831928d4d88aa34d70122c6d0532aad41957617548b7592e30bb939d"
+      "durationSeconds": 24.57,
+      "bytes": 741736,
+      "sha256": "8fe79959d9a39950bf474eca2921529a15479c9d38ff9ee93c088d3637552b26"
     },
     {
       "file": "en/plugins.gif",
@@ -565,9 +573,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 24.51,
-      "bytes": 1739555,
-      "sha256": "551acf9ff40848dc0fd4682462941add9f5b11ae384d9c63d022d2e8bb0059f4"
+      "durationSeconds": 24.63,
+      "bytes": 1678930,
+      "sha256": "b45805232c411592b80c8f5ff8a85c0964faff1702ca712e751e0c3887f98d54"
     },
     {
       "file": "zh-CN/chat-correction.jpg",
@@ -578,8 +586,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 134192,
-      "sha256": "aa396845a5be92b11afe8c10dd41d48cf57bd81f6a954ae9acc0042238af93dc"
+      "bytes": 143700,
+      "sha256": "04b08ea516640215ffaee553b0cc0e3b1b6ddd9c1623d35ddf6b7e17560bbc58"
     },
     {
       "file": "zh-CN/chat-recall.jpg",
@@ -590,8 +598,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 161465,
-      "sha256": "649d2af1e7cbcf6bb2e107f1019afb484bd0f088f9d040f4f8332d4dd26a84ab"
+      "bytes": 161784,
+      "sha256": "ea93c0399e6292aefc3af16d885bd88eddf0f04721aa3c4c037a2e176e73c6ff"
     },
     {
       "file": "zh-CN/chat-save-receipt.jpg",
@@ -602,8 +610,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 132394,
-      "sha256": "fdd720e4381196b997c8d3110f9b5fbf75a46bb3f57fffed744b3954d4b65cb8"
+      "bytes": 123089,
+      "sha256": "d3b4e2451ef11c0f72844d98469fad9ef8c3e57a4f19ae8cbddb0121f69ac64e"
     },
     {
       "file": "zh-CN/chat-save-target.jpg",
@@ -614,8 +622,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 117260,
-      "sha256": "3116cbe7fec1ba29104dc64b3fc6cdf7ee72cde38f51daf3f91a4bc7ddc8191e"
+      "bytes": 119888,
+      "sha256": "b00c962c34f4ed8f007d8f13b549689be18f8f38256eebbeeed74497818549e2"
     },
     {
       "file": "zh-CN/chat-save.jpg",
@@ -626,8 +634,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 113622,
-      "sha256": "383a9d866ed55ada550e8f0b2160f8a4ee687518b1312a1f69ab52b93987de8f"
+      "bytes": 116165,
+      "sha256": "b816c82bd25b95046b07525235743ed2349692f15fe24c965d70c3a5f8bc6468"
     },
     {
       "file": "zh-CN/memory-agent.jpg",
@@ -638,8 +646,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 177987,
-      "sha256": "dcf03c82ca503a5306c849248a5e741ad08bfdd823e6e00c37393ffd439d7194"
+      "bytes": 164016,
+      "sha256": "233029b26af50e284c67092afab78c2e74ad782bcc4ec1df6189880293a59781"
     },
     {
       "file": "zh-CN/memory-content.jpg",
@@ -650,8 +658,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 174143,
-      "sha256": "65b4698c49a57fcfc8b9f88eb0165ddedd74cbe68cd66483edbe7fb77e87b4fc"
+      "bytes": 179719,
+      "sha256": "5ee3fbfbaddce5421e09c86035fa5a4440dc61a387fdcd592ef36c7042cb8431"
     },
     {
       "file": "zh-CN/memory-documents.jpg",
@@ -662,8 +670,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 155880,
-      "sha256": "0c9c75e5d9a5824c91be83e215669e789ffbdcba626c7e046d04b074393b6f92"
+      "bytes": 156316,
+      "sha256": "3271dd83b0a16316e9802d36f1010e2ab5d9395bfd9070b350a93b62beb53b42"
     },
     {
       "file": "zh-CN/memory-entities.jpg",
@@ -674,8 +682,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 146394,
-      "sha256": "62e09edf5d19f2fc261bff676cf7c8886efeb68746e4fd6fd23b0b23a6a05083"
+      "bytes": 146418,
+      "sha256": "74e3e3b3af7763feea912481f861907a79bec44b079226970c2f9b76e2951f66"
     },
     {
       "file": "zh-CN/memory-graph.jpg",
@@ -684,10 +692,11 @@
       "theme": "light",
       "viewport": "1280x800",
       "deviceScaleFactor": 2,
+      "capture": "the pass's own fixture, right after the pass, with the same data",
       "width": 1920,
       "height": 1200,
-      "bytes": 156267,
-      "sha256": "8ac10d65d5487b4c0e3b28fbd61223804309cbfcaa9b52ff0ca8b4ccb2a1eca1"
+      "bytes": 154041,
+      "sha256": "c6738d466b72da0f55c103a54ac174994da6060b5037b071e92ade69e11e2b5a"
     },
     {
       "file": "zh-CN/memory-recall.jpg",
@@ -698,8 +707,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 144782,
-      "sha256": "ae51d022c6c54bba588b69c25a8ff4d904a1fefbfb1b20ec8f07684f5997254e"
+      "bytes": 142278,
+      "sha256": "b898d9e31916f0b8d94f5bd1abe3681dcce45126abeb428ca53dc57255d97f45"
     },
     {
       "file": "zh-CN/memory-remember.jpg",
@@ -710,8 +719,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 131222,
-      "sha256": "da59f5cd60226869b9b9d1ecb8d5f507b2ecaf5bee7f7386f1044f878167ce6c"
+      "bytes": 131179,
+      "sha256": "1ec9e9e841167b50385dffd5051e1924f266134200d29f67e5eb8ba1861e7fff"
     },
     {
       "file": "zh-CN/memory-runtime-limits.jpg",
@@ -723,8 +732,8 @@
       "capture": "a fresh fixture of the same build, before any conversation",
       "width": 1920,
       "height": 1200,
-      "bytes": 136656,
-      "sha256": "e219f7e2d5da864a22b878e557d5c961f8b420ab48969dd749ed1b9ca1fe1420"
+      "bytes": 136975,
+      "sha256": "2125b8f12744ff3b4ea7aa2ce77382946927dc56ce618ec0212736ee9c0edce1"
     },
     {
       "file": "zh-CN/memory-runtime.jpg",
@@ -735,8 +744,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 153740,
-      "sha256": "be7e851cacc97c164c2cda7e26c4b77c14fb8e13674362913ecd049d5d2cd954"
+      "bytes": 150465,
+      "sha256": "af27cf24f27341c4e506ab258784a7ec70e6bbed1147566b50e6f32a726de681"
     },
     {
       "file": "zh-CN/memory-spaces.jpg",
@@ -747,8 +756,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 147552,
-      "sha256": "ab8b856f31b888efe187329d8c3e3e31e04302bfded642059f1ea569c8617338"
+      "bytes": 147638,
+      "sha256": "07dcb53930926588a18f2ff6f3941a0684543cc8a09dd3af055361812dd653da"
     },
     {
       "file": "zh-CN/memory-status.jpg",
@@ -759,8 +768,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 144681,
-      "sha256": "421779c91393425cbe97f3f27db662b43c33d39ce841e80ea5c15edba4ebdec5"
+      "bytes": 144740,
+      "sha256": "e1e3765292ff204280076190753c62d803b580ebde6452c19322de38ea26d5da"
     },
     {
       "file": "zh-CN/narrow-chat.jpg",
@@ -771,8 +780,8 @@
       "deviceScaleFactor": 2,
       "width": 780,
       "height": 1688,
-      "bytes": 132721,
-      "sha256": "4ab1ac7a12bd3a1c361b5b70e6be79ded5fbd11d41284cc578d874c6cc6d48ad"
+      "bytes": 128424,
+      "sha256": "a3f7cfaca8476f11b69728a73d44798c1ef71845662c4680a6d349ec685c6eaf"
     },
     {
       "file": "zh-CN/narrow-plugin.jpg",
@@ -795,8 +804,8 @@
       "deviceScaleFactor": 2,
       "width": 780,
       "height": 1688,
-      "bytes": 108333,
-      "sha256": "0776f43fdcc55ee18f44f62f350e50eb4aa97e7e0655dd3a1a4461701f45e31d"
+      "bytes": 108326,
+      "sha256": "c46b0ba11150934121b94521e75776ce50f97b980c13b6b02b569d586dfce70d"
     },
     {
       "file": "zh-CN/plugin-backup-preview.jpg",
@@ -807,8 +816,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 109548,
-      "sha256": "b09993bf95c3a440be92ed6d24e90f4755db72d47f2df7227f6bf55bcdd848aa"
+      "bytes": 109522,
+      "sha256": "31b56a8d8de0e529bdb34813635788f51644e784c51a8edac84425a3e48f4736"
     },
     {
       "file": "zh-CN/plugin-composition.jpg",
@@ -819,8 +828,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 110538,
-      "sha256": "0bab301223cf9239cb0a3747141b0514312853ac834fc8c591b650b1a991c691"
+      "bytes": 110581,
+      "sha256": "0ea34a019000a61a45ebe0a564d0e81870331ea15178f18a650c0db833270521"
     },
     {
       "file": "zh-CN/plugin-layered.jpg",
@@ -831,8 +840,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 133318,
-      "sha256": "01415d3e7dd0f93f15d1b4d193f8d92b2fad773ff3c7c3ddb2b496568f50ca04"
+      "bytes": 133289,
+      "sha256": "a767845d8158662bccc446e7d82ec86a23e14aa0d875f71d5b9386f2e391f385"
     },
     {
       "file": "zh-CN/plugin-row-page.jpg",
@@ -843,8 +852,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 105902,
-      "sha256": "a4f9ae0554ea14ff859299102f8a9bb9750eecb99acb13c3e00de28c2a667903"
+      "bytes": 105955,
+      "sha256": "d34f9910c367e6903b6113a678399e4ad1d6ad0e7b0f65e66e36df91c620a8f2"
     },
     {
       "file": "zh-CN/plugin-rows.jpg",
@@ -855,8 +864,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 133780,
-      "sha256": "7356bc353fb471558d3d06f622a6785af76201d7d930519f5f02d8db2ae5e17a"
+      "bytes": 133854,
+      "sha256": "8bed3f628f39b29bb0c004ef1536c8e724b40c8580d5d82f6ffa2f7731167187"
     },
     {
       "file": "zh-CN/plugin-spaces.jpg",
@@ -867,8 +876,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 145168,
-      "sha256": "eb050e896956830a74456e142833f05a35d521f9ba66d3001bc1d7a2c7f01dc1"
+      "bytes": 145167,
+      "sha256": "c2802bd7ba492cc66d769fdf8ccc956e2099b0f062901b3f21fa5521382b5830"
     },
     {
       "file": "zh-CN/plugin-storage.jpg",
@@ -879,8 +888,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1200,
-      "bytes": 109942,
-      "sha256": "a96a04c18f2d600d6c7b2af12cb0b984919d0d2f96456581e39c34cb996efd4d"
+      "bytes": 109981,
+      "sha256": "66b81ff8f08f51ab24740d060b44bf528067c166b7d7ab8f862228bafe610169"
     },
     {
       "file": "zh-CN/plugin-strategy-menu.jpg",
@@ -903,8 +912,8 @@
       "deviceScaleFactor": 2,
       "width": 1920,
       "height": 1288,
-      "bytes": 116893,
-      "sha256": "d68df210c444d09e07cacf7a08639a9df5f320905106617e7c604fdf4ac41e3a"
+      "bytes": 116931,
+      "sha256": "71e925463c4f8e0cf4ddf6e7a3f813b2fcb43ab04aeaac87ee07501c4bd8588d"
     },
     {
       "file": "zh-CN/recall.mp4",
@@ -914,9 +923,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 13.17,
-      "bytes": 283194,
-      "sha256": "f368c50886e06f521a49ef2f7a263e195a71b0dc80f01eb11694864dfd2380b5"
+      "durationSeconds": 14.8,
+      "bytes": 392095,
+      "sha256": "5d207e67fb415ace1f240b9bc7ccaaf484bb573add6bcf539e9f2987f5704dd4"
     },
     {
       "file": "zh-CN/recall.gif",
@@ -926,9 +935,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 13.13,
-      "bytes": 559497,
-      "sha256": "85dafe6af511c71d8015ce6ecee7ec5b47255619aa0b545e232e23f8b1c120e7"
+      "durationSeconds": 14.76,
+      "bytes": 808504,
+      "sha256": "105c7f8ae4c2fe792362cee9f4f36dc54deced4bc525f95c329606cb997f0d6d"
     },
     {
       "file": "zh-CN/save.mp4",
@@ -938,9 +947,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 34.37,
-      "bytes": 815455,
-      "sha256": "b5de4baf93f6615e394580a8546a0968736d9d1d52afc149424305d11f1afb45"
+      "durationSeconds": 34.33,
+      "bytes": 722936,
+      "sha256": "9c1c92e8afbbb7dd52e260f160a4913f0895a6199a1f14dc6d6c4d72301cc6ef"
     },
     {
       "file": "zh-CN/save.gif",
@@ -951,8 +960,8 @@
       "width": 880,
       "height": 550,
       "durationSeconds": 34.38,
-      "bytes": 1650977,
-      "sha256": "fed7624c004b196d472814c94ffdc450cb26556333c38b957ae4a9d83a2d09b7"
+      "bytes": 1472672,
+      "sha256": "10697cf6f04a9167cac205ef782c9e685b4b408689591a1f9f553e19da4747a9"
     },
     {
       "file": "zh-CN/correct.mp4",
@@ -962,9 +971,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 13.7,
-      "bytes": 451897,
-      "sha256": "63fa26089e7dc1e5337025c90676953c309f8d8f854c8e36981f2f2711f43f58"
+      "durationSeconds": 13.63,
+      "bytes": 377120,
+      "sha256": "d850d6dfa0d17097f38053d035036f7c9fa5c70ee945d93988ab62c63bf2dd0f"
     },
     {
       "file": "zh-CN/memory.mp4",
@@ -974,9 +983,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 27.97,
-      "bytes": 571705,
-      "sha256": "6050f69d81f598944be9530c32a3dc2c06978d1fe7e39575dbbf47ae7e9ddba9"
+      "durationSeconds": 28.2,
+      "bytes": 621054,
+      "sha256": "0a943912fab538e9149039c2ddd95b375962ce3f88d33031ff3df27251b2f8e0"
     },
     {
       "file": "zh-CN/memory.gif",
@@ -986,9 +995,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 28.01,
-      "bytes": 1184177,
-      "sha256": "b813da8baf232b6101e491d1070452a33cb22ed2838864f988cf00cc7989b9cf"
+      "durationSeconds": 28.26,
+      "bytes": 1316450,
+      "sha256": "6b024b2395a90d2c9e06f7396a5a5a6403f0403fa2227e17cb7aa02f16d0490f"
     },
     {
       "file": "zh-CN/plugins.mp4",
@@ -998,9 +1007,9 @@
       "viewport": "1280x800",
       "width": 1280,
       "height": 800,
-      "durationSeconds": 24.57,
-      "bytes": 626434,
-      "sha256": "5d14ec85026934b637f3aa17b9153cca7c622752fde293a23f721ad684f9736e"
+      "durationSeconds": 25.1,
+      "bytes": 609198,
+      "sha256": "42f2f5ccae0601bf1e1bf7d5907d441e75cdf855ea3cf2c7ceac04e4dc62b14b"
     },
     {
       "file": "zh-CN/plugins.gif",
@@ -1010,9 +1019,9 @@
       "viewport": "1280x800",
       "width": 880,
       "height": 550,
-      "durationSeconds": 24.63,
-      "bytes": 1487272,
-      "sha256": "ee9182117b66094ec04887bc52b883b7c3ddb091588f347ae1ed83757cd7f2bc"
+      "durationSeconds": 25.13,
+      "bytes": 1501758,
+      "sha256": "bee577a82ef9197fc1683eaf223496f3280db8f3ecef34f0779c0fb28eefaf61"
     }
   ]
 }
