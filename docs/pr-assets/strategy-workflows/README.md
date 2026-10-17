@@ -53,4 +53,10 @@ DSH_HOST_ROOT=<DSH 0.2.0-rc.2 installation> pnpm run test:installed-dsh
 CHANGESET_BASE_REVISION=<main> CHANGESET_REVISION=<head> pnpm run release:intent
 ```
 
-Results: VERIFY_RESULTS
+Results: all passed.
+
+- `pnpm run verify`: root tests 2,054 passed, 6 skipped (141 files), every plugin suite, the deterministic build, Headless and the package checks (59 files, 1,996,939 unpacked bytes).
+- `pnpm run verify:plugins` without a Mnemon CLI: 17 independent plugin repositories and 18 packed artifacts.
+- `pnpm run test:installed-dsh` against DSH 0.2.0-rc.2: 2,054 passed, 6 skipped.
+- `pnpm run release:intent`: changesets cover `dsh-mnemon` and `dsh-mnemon-strategy-default-three-tier`.
+- The harness against the v0.5.31 acceptance profile prints the result quoted above.

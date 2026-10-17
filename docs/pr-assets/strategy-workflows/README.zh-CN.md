@@ -53,4 +53,10 @@ DSH_HOST_ROOT=<DSH 0.2.0-rc.2 安装目录> pnpm run test:installed-dsh
 CHANGESET_BASE_REVISION=<main> CHANGESET_REVISION=<head> pnpm run release:intent
 ```
 
-结果：VERIFY_RESULTS
+结果：全部通过。
+
+- `pnpm run verify`：主包测试 2,054 项通过、6 项跳过（141 个文件），所有插件测试、确定性构建、Headless 与发布包检查（59 个文件，解包后 1,996,939 字节）均通过。
+- 不带 Mnemon CLI 的 `pnpm run verify:plugins`：17 个独立插件仓库与 18 个打包产物。
+- 在 DSH 0.2.0-rc.2 上运行 `pnpm run test:installed-dsh`：2,054 项通过、6 项跳过。
+- `pnpm run release:intent`：changeset 覆盖 `dsh-mnemon` 与 `dsh-mnemon-strategy-default-three-tier`。
+- 用 v0.5.31 验收时的 profile 运行验证脚本，输出即上文引用的结果。
