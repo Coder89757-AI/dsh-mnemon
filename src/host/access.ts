@@ -1,6 +1,6 @@
 import type { MemoryCapability } from '../core/contracts/index.ts'
 import type { ResolvedConfig } from './config.ts'
-import type { MemoryLayerParticipation, MemoryParticipationChannel } from './protocol.ts'
+import type { MemoryParticipationChannel } from './protocol.ts'
 
 export function participationChannel(capability: MemoryCapability): MemoryParticipationChannel {
   if (capability === 'project') return 'projection'
@@ -22,4 +22,3 @@ export function assertParticipation(config: ResolvedConfig, sourceTypeId: string
   }
 }
 
-export const DEFAULT_PARTICIPATION: MemoryLayerParticipation = { recall: 'automatic', write: 'automatic', projection: 'automatic', maintenance: 'automatic' }

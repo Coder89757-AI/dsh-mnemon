@@ -396,9 +396,6 @@ export interface RecallResult {
   hint?: string
 }
 
-/** Compatibility name for the v0.3 pre-release API. Recall no longer delegates. */
-export type DelegatedRecallResult = RecallResult
-
 export interface DelegatedWriteResult {
   delegated: true
   runId: string

@@ -13,7 +13,6 @@ export function namedToolInstance<T extends { sourceInstanceKey: string }>(insta
 export type MemoryParticipationMode = 'off' | 'manual' | 'automatic'
 export type MemoryParticipationChannel = 'recall' | 'write' | 'projection' | 'maintenance'
 export type MemoryLayerParticipation = Record<MemoryParticipationChannel, MemoryParticipationMode>
-export interface MemoryTopologyDefinition { id: string; strategyId: string; layers: Array<ResolvedMemoryLayerConfig & { id: string }> }
 export interface MemoryCompositionStatus {
   /** Whether a composition serves new turns. A rejected change can leave the previous one serving. */
   serving: boolean
@@ -830,9 +829,6 @@ export interface MnemonSyncConfigView {
  * when neither is set: the order here is the order of resolution.
  */
 export type MnemonSyncCredentialSource = 'environment' | 'token' | 'github' | 'none'
-
-/** How far the browser step of a GitHub sign-in has come. */
-export type MnemonSyncGitHubFlowStatus = 'pending' | 'expired' | 'denied' | 'error'
 
 export interface MnemonSyncGitHubFlow {
   userCode: string

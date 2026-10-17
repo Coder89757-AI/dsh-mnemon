@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MnemonClient } from '../src/client/api.ts'
-import { describeChange, describePending } from '../src/client/component-feedback.ts'
+import { describeChange } from '../src/client/component-feedback.ts'
 import { translateEn } from '../src/client/locales.ts'
 import { MnemonViewStore } from '../src/client/view-store.ts'
 import type { MemoryPluginEntryView, MemoryViewConfigurationRequest, MemoryViewDashboard } from '../src/host/view-protocol.ts'
@@ -83,13 +83,6 @@ describe('component change feedback', () => {
     const after = dashboard([main('default-three-tier'), { ...light, config: { maxProjectionCharacters: 2048 } }])
     expect(say(before, after)).toEqual({ text: 'Updated the options of “light”', tone: 'success', targets: ['overview', 'enhancement:light'] })
     expect(say(before, after, 'external')?.text).toBe('The options of “light” changed')
-    expect(describePending(before, after, name, translateEn)).toBe('Applying the options of “light”…')
-  })
-
-  it('describes a write while it runs', () => {
-    const before = dashboard([main('default-three-tier'), main('general', off), entry('capture', ['strategy-extension'], off)])
-    expect(describePending(before, dashboard([main('default-three-tier', off), main('general')], 'general'), name, translateEn)).toBe('Switching to “strategy-general”…')
-    expect(describePending(before, dashboard([main('default-three-tier'), main('general', off), entry('capture', ['strategy-extension'])]), name, translateEn)).toBe('Turning on “capture”…')
   })
 })
 

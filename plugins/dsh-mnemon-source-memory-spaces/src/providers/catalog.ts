@@ -6,10 +6,6 @@ export function memoryProviderDescriptor(id: MemoryProviderId, catalog: readonly
   return descriptor
 }
 
-export function isMemoryProviderId(value: unknown): value is MemoryProviderId {
-  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(value)
-}
-
 function normalizeUrl(value: string, label: string): string {
   const normalized = value.trim().replace(/\/+$/u, '')
   let url: URL

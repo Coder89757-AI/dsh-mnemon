@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { ResolvedConfig } from './config.ts'
 import type { StorageRoot } from './storage-root.ts'
 import { createStorageRoot } from './storage-root.ts'
@@ -172,13 +172,4 @@ export class StorageScopeInspector {
       generatedAt: new Date().toISOString(),
     }
   }
-}
-
-export function validateCustomStorageRoot(value: string): string {
-  const path = value.trim()
-  if (path === '') throw new Error('custom storage directory is required')
-  if (path.includes('\0')) throw new Error('custom storage directory must not contain a null byte')
-  const expanded = expandHome(path)
-  if (!isAbsolute(expanded)) throw new Error('custom storage directory must be an absolute path or start with ~/')
-  return canonical(path)
 }
