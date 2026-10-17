@@ -138,7 +138,7 @@ Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用
 
 ### 受支持的宿主
 
-根测试在锁定的 0.2.1-rc.2 上运行，CI 还会在从 npm 安装的 DSH 0.2.0-rc.2 上运行（`pnpm run test:installed-dsh`，见[开发指南](../development/README.md#环境与命令)）；真实宿主测试组合的是它所运行的那个 DSH。在两个版本上，启用与不启用可选策略的 Headless、Starter 的激活契约以及 Git 同步检查都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因分组行列表失败。[DSH 0.2.1-rc.2 记录](../../pr-assets/dsh-021-rc2/README.zh-CN.md)包含 0.2.1-rc.2 上的检查，[DSH 0.2.1-rc.1 记录](../../pr-assets/dsh-021-rc1/README.zh-CN.md)包含两个版本上的 WebUI 检查。更早的记录：[0.2.0-rc.2 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)、[activation（#356）](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)、[0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)与 [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.zh-CN.md)。
+根测试在锁定的 0.2.1-rc.2 上运行，CI 还会在从 npm 安装的 DSH 0.2.0-rc.2 上运行（`pnpm run test:installed-dsh`，见[开发指南](../development/README.md#环境与命令)）；真实宿主测试组合的是它所运行的那个 DSH。在两个版本上，启用与不启用可选策略的 Headless、Starter 的激活契约以及 Git 同步检查都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因分组行列表失败。[DSH 0.2.1-rc.2 记录](../../pr-assets/dsh-021-rc2/README.zh-CN.md)包含 0.2.1-rc.2 上的检查，[DSH 0.2.1-rc.1 记录](../../pr-assets/dsh-021-rc1/README.zh-CN.md)包含 0.2.1-rc.1 与 0.2.0-rc.2 上的 WebUI 检查。更早的记录：[0.2.0-rc.2 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)、[activation（#356）](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)、[0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)与 [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.zh-CN.md)。
 
 另见[升级证据](../../pr-assets/main-rebase-20260904/README.md)与[当前开发检查](../development/README.md)。机制测试通过不是 LLM 质量评测通过；特定 OS 与真实 CLI 检查在没有对应环境时可能跳过。
 

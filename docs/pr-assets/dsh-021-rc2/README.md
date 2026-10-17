@@ -8,13 +8,13 @@ Tested on 2026-10-17 (Asia/Shanghai): macOS 15.6 arm64, Node 24.19.0, pnpm 10.13
 
 ## What DSH 0.2.1-rc.2 changes
 
-Compared with 0.2.1-rc.1, two packages are new and eight change code; every other package changes only its version.
+Compared with 0.2.1-rc.1, two packages are new, six change code, one changes a document and two change only the build commit they record; every other package changes only its version.
 
 | DSH 0.2.1-rc.2 | For dsh-mnemon |
 |---|---|
 | `dsh-client-ui-deepseek-model-label-1017` shows a temporary `1017` badge beside DeepSeek-V4.1-Flash in the composer's model selector; the slot catalog in `dsh-cordis-client-runner` lists it as that slot's occupant | dsh-mnemon does not use that slot |
 | `dsh-web-deepseek-api` adds DeepSeek Search and Fetch API providers for web search; `dsh-web`, `dsh-web-search-deepseek` and the Web search settings card change with it | dsh-mnemon does not use web search |
-| The Web bundle (`dsh-base`, `dsh-web-app`) mounts both; `dsh-agent-preset`'s package reference lists them; `dsh-client-modules` records the new build commit | The Plugins page lists the Starter's components as on rc.1 |
+| `dsh-base`, the core layer Headless shares, mounts `dsh-web-deepseek-api`, and `dsh-web-app` mounts the model label; `dsh-agent-preset`'s package reference lists both; `dsh-client-modules` and `dsh-client-ui-sidebar` change only the build commit they record | The Plugins page lists the Starter's components as on rc.1 |
 | DSH's own sidebar, sessions, subagents, plugin manager and slots are unchanged apart from their version | No adaptation needed |
 
 ## What changes
@@ -42,6 +42,12 @@ Only development pins move, so the 0.2.0-rc.2 checks of the [0.2.1-rc.1 record](
 
 On the day rc.2 was published, a plain **Add plugin** installed dsh-mnemon 0.5.29: pnpm skips a release for its first 24 hours, and 0.5.30 and 0.5.31 were both published that day. 0.5.29 runs on DSH 0.2.1, but its memory subagents and **Check versions → Update** do not. Installing `dsh-mnemon@0.5.31` by exact version, as [Install and start](../../en/guides/installation.md) describes, avoids it; from a day after the release, a plain install picks 0.5.31.
 
-| Plugins page, DSH 0.2.1-rc.2 | Status, the published 0.5.31 on DSH 0.2.1-rc.2 |
+| Plugins page, DSH 0.2.1-rc.2, during the component scenario | Status, the published 0.5.31 on DSH 0.2.1-rc.2 |
 |---|---|
-| ![The dsh-mnemon page on DSH 0.2.1-rc.2: the Layered strategy, three memory sources running, and the enhancements](./components-021-rc2.jpg) | ![The Memory System's Status page: dsh-mnemon 0.5.31 running normally, Mnemon Native ready with Mnemon 0.2.10](./status-0531-rc2.jpg) |
+| ![The dsh-mnemon page on DSH 0.2.1-rc.2: the Layered strategy, three memory sources running, and the enhancements with Light context switched on by the component scenario](./components-021-rc2.jpg) | ![The Memory System's Status page: dsh-mnemon 0.5.31 running normally, Mnemon Native ready with Mnemon 0.2.10](./status-0531-rc2.jpg) |
+
+## Limits
+
+- pnpm 11 does not pick a version published less than 24 hours ago, which covers every DSH 0.2.1-rc.2 package until 2026-10-18 08:36 UTC: before then, `pnpm install --frozen-lockfile` with pnpm 11 refuses this lockfile. Install this repository with pnpm 10, as CI does, until then.
+- The runs used DSH's web profile. DSH Desktop 0.2.1-rc.2 was not tried.
+- The scenarios that need an embedding service (vector recall and Save to memory with embeddings, embedding coverage) were not rerun; nothing in them depends on the DSH release.
