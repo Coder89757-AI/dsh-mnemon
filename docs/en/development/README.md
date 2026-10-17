@@ -50,6 +50,8 @@ Root owns Core/SDK and the DSH Host/default Starter, not Source storage implemen
 
 No private workspace packages, forwarding controller modules, business bindings or compatibility directory remain. Compatibility means retained user configuration, data and workflows, not retention of historical internal symbols.
 
+Plans written before larger changes, with their status, are listed in [docs/plans](../../plans/README.md).
+
 Build Root before plugin clients that need its public browser artifact:
 
 ```sh

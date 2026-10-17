@@ -12,6 +12,8 @@ $DSH_HOME/profiles/<profile>/cordis.patch.yml
 
 The Web profile's patch is commonly `~/.dsh/profiles/web/cordis.patch.yml`. A `settings.yaml` left by an older host is imported into the profile once and kept as `settings.yaml.imported`; see [Settings from older hosts](./compatibility.md#settings-from-older-hosts). All current settings are marked `live`; after a change is applied, the Host initializes a candidate runtime graph and then switches to it atomically.
 
+A turn in progress keeps the runtime graph it started with. A subagent already dispatched keeps its delegated graph until its activation is disposed, even after the parent turn ends; later parent turns and newly delegated activations use the new generation. Saving settings never silently widens the Recall authority of a task already running.
+
 As DSH does for every plugin that carries its own configuration, the Web interface edits Mnemon's settings on its page under **Plugins**, not in Settings. The [UI guide](../guides/ui-guide.md#on-the-plugins-page) shows each part.
 
 | Where in the UI | Settings | Saved as |

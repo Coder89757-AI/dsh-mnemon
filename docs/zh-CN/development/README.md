@@ -50,6 +50,8 @@ cordis.patch.yml   default Starter composition
 
 不再保留私有工作区包、控制器转发文件、业务 binding 或 compatibility 目录。兼容指用户配置、数据与使用流程，不是延续历史内部符号。
 
+较大改动之前写成的设计计划及其状态见 [docs/plans](../../plans/README.md)（英文）。
+
 插件 Client 测试需要根包的公开浏览器制品时，先构建根包：
 
 ```sh
