@@ -45,10 +45,12 @@ Under `fixtures/`. Each scripted model answers for one `serve-e2e.mjs` option an
 
 | File | Used by |
 |---|---|
-| `archive-copies.mjs` | `--archive-copies`: the working memory and copies seeded before the Host starts, and the slow embedding service |
+| `archive-copies.mjs` | `--archive-copies`: the working memory and copies seeded before the Host starts |
+| `fake-embeddings.mjs` | `--archive-copies`, as its slow embedding service, and run with `node` for Mnemon CLI probes or as the endpoint in the Mnemon Native embedding settings: a deterministic embedding service that speaks Ollama's API at its root and the OpenAI-compatible one under `/v1`; `--port`, `--port-file`, `--delay-ms`, `--missing-model`, `--model`. `tests/fake-embeddings-fixture.spec.mjs` checks it, against a real Mnemon CLI too with `MNEMON_NATIVE_TEST_CLI` |
 | `docs-demo.mjs` | `--docs-demo`, `--remember-target` and `--recall-budget`: the fictional Lumen project and its scripted model |
 | `document-archive-model.mjs`, `document-protection-model.mjs`, `exact-id-model.mjs`, `general-strategy-model.mjs`, `idle-review-model.mjs`, `legacy-session-replay-model.mjs`, `openviking-write-model.mjs`, `profile-compaction-model.mjs`, `recall-budget-model.mjs`, `remember-target-model.mjs`, `result-tool-cache-model.mjs`, `review-evidence-model.mjs`, `review-layers-model.mjs`, `runtime-routing-model.mjs`, `runtime-write-scope-model.mjs`, `save-action-model.mjs`, `strict-template-model.mjs` | The `serve-e2e.mjs` option of the same name |
 | `delegated-completion.mjs` | The scripted models: reads the completion instructions a delegated child receives |
+| `model-request-log.mjs` | `--log-model-requests`: the model, sender, tool count and reasoning settings that each `Fixture model request:` line adds |
 | `openviking-protocol.mjs` | Run with `node` for `--openviking-write`: a deterministic OpenViking protocol server, not a live backend; `MNEMON_OPENVIKING_FIXTURE_PORT` (default 19335) |
 | `openviking-user-key.mjs` | `tests/openviking-user-host.spec.mjs`: the user-key protocol of issue #271 |
 | `electron-dsh-host.cjs` | `--electron`: runs the DSH CLI in an Electron main process |
