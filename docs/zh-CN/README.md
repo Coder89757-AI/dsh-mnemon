@@ -40,6 +40,6 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 
 ## 最新变化
 
-[v0.5.32](./releases/v0.5.32.md) 在没有配置嵌入服务时，把未生成向量的存入回执改为中性说明，让记忆空间自带设置，开发基线改用 DSH 0.2.1-rc.2，并带来新的图集与列出计划改动的路线图。[v0.5.31](./releases/v0.5.31.md) 支持 DSH 0.2.1-rc.1 与 0.2.0-rc.2，在 DSH 0.2.1 上恢复记忆子 Agent 与检查版本 → 更新，让任务 Agent 可以跟随发起工作的会话所用的模型，并阻止 Git 同步发布不一致的项目档案。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
+[v0.5.33](./releases/v0.5.33.md) 让 Git 同步无论 Git 怎样配置都能找到令牌，为 gitee.com 使用它接受的用户名，让记忆任务不再在 DSH 的会话列表中留下空会话，并写明在 DSH 0.2.1 的桌面版中从 0.5.30 及更早版本更新的方法。[v0.5.32](./releases/v0.5.32.md) 在没有配置嵌入服务时，把未生成向量的存入回执改为中性说明，让记忆空间自带设置，开发基线改用 DSH 0.2.1-rc.2，并带来新的图集与列出计划改动的路线图。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
 
 指南描述当前版本。截图与录屏来自 [v0.5.32 图集](../assets/webui-v0.5.32/README.md)，安装步骤来自[安装图集](../assets/install-v0.5.19/README.md)；带日期的 PR 记录只证明其标注的代码修订与环境。内部 Host RPC 不属于对外插件 SDK。

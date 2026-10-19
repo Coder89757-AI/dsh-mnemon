@@ -45,7 +45,7 @@ npx @deepseek-ai/dsh web
 
 DSH 在 `http://127.0.0.1:3080` 启动，并自动在浏览器中打开一个带一次性令牌的地址；终端里也会打印这个地址。使用期间保持终端开着，按 `Ctrl+C` 停止 DSH。
 
-- 这条命令使用 npm 上 `latest` 标签的 DSH（撰写本文时为 0.2.0-rc.2）；`npx @deepseek-ai/dsh@next web` 使用 `next` 标签的版本（0.2.1-rc.2）。dsh-mnemon 两者都支持，见[兼容性与升级](../reference/compatibility.md)。
+- 这条命令使用 npm 上 `latest` 标签的 DSH，撰写本文时为 0.2.1-rc.2，它同时也是 `next` 标签的版本；`npx @deepseek-ai/dsh@0.2.0-rc.2 web` 使用 DSH 0.2.0-rc.2。dsh-mnemon 两者都支持，见[兼容性与升级](../reference/compatibility.md)。
 - 经常使用时可以全局安装：`npm install --global @deepseek-ai/dsh`，之后运行 `dsh web` 即可；[命令行方式](#7-命令行与-headless)也需要全局安装的 `dsh`。
 
 第一次打开时：
@@ -104,7 +104,7 @@ DeepSeek Harness 桌面版的**插件**页与网页相同：**插件 → 添加�
 
 - 桌面版使用它自己的 `desktop` profile。从 DSH 0.2 起，命令行不再管理这个 profile，请在桌面版的插件页中安装和管理插件。
 - 桌面版窗口从应用自己的 `dsh-app://app/` 地址加载。dsh-mnemon 0.5.18 及更早的版本会把它当成远程页面，于是记忆系统和插件设置变为只读（[#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)）。0.5.19 已修复，更新 dsh-mnemon 即可，不需要修改配置。
-- DSH 的插件页不能更新已安装的插件。请在**记忆系统 → 状态 → 检查版本 → 更新**中更新 dsh-mnemon，它如何安装新版本见[版本检查与更新](./operations.md#版本检查与更新)。dsh-mnemon 0.5.21 及更早的版本在桌面版中做不到这一点；在 DSH 0.2.1 上，0.5.30 及更早的版本也做不到，更新会停在 `already-installed`。从这些版本更新一次即可：在插件页**卸载** dsh-mnemon，再通过**添加插件**重新安装，输入检查版本显示的最新版本，例如 `dsh-mnemon@0.5.32`。记忆数据与设置都会保留。
+- DSH 的插件页不能更新已安装的插件。请在**记忆系统 → 状态 → 检查版本 → 更新**中更新 dsh-mnemon，它如何安装新版本见[版本检查与更新](./operations.md#版本检查与更新)。dsh-mnemon 0.5.21 及更早的版本在桌面版中做不到这一点；在 DSH 0.2.1 上，0.5.30 及更早的版本也做不到，更新会停在 `already-installed`。从这些版本更新一次即可：在插件页**卸载** dsh-mnemon，再通过**添加插件**重新安装，输入检查版本显示的最新版本，例如 `dsh-mnemon@0.5.33`。记忆数据与设置都会保留。
 - 在桌面版中更新 dsh-mnemon 后，完全退出应用再重新打开（macOS 上按 `Cmd+Q`），新版本才会加载。更新后出现报错时，处理方法见[常见问题](#常见问题)。
 
 ## 7. 命令行与 Headless
@@ -237,7 +237,7 @@ mnemon:
 DSH 在安装插件前，以及每次启动时，都会检查插件声明支持的 DSH 版本，不包含自身版本的插件会被拒绝。截图中是 DSH 0.2.0-rc.1 拒绝只声明支持 DSH 0.1.7 的 dsh-mnemon 0.5.18；各 DSH 接受哪些版本，见[兼容性与升级](../reference/compatibility.md)。
 
 - 先确认 npm 上的版本：`npm view dsh-mnemon version`。
-- 新版本发布后的 24 小时内，pnpm 默认不会选用刚发布的版本，会改装一个较早的版本，于是出现这个提示；一天内连续发布时会退得更早。DSH 接受这个较早的版本时，DSH 0.2.1 的**添加插件**会说明实际安装的版本，DSH 0.2.0 则没有提示，请在状态页核对版本号。此时点击**编辑**，输入带版本号的 `dsh-mnemon@0.5.32`（以 `npm view` 显示的版本为准），再点击**安装**；命令行为 `dsh plugin --profile web add dsh-mnemon@0.5.32`。也可以等 24 小时后重试。
+- 新版本发布后的 24 小时内，pnpm 默认不会选用刚发布的版本，会改装一个较早的版本，于是出现这个提示；一天内连续发布时会退得更早。DSH 接受这个较早的版本时，DSH 0.2.1 的**添加插件**会说明实际安装的版本，DSH 0.2.0 则没有提示，请在状态页核对版本号。此时点击**编辑**，输入带版本号的 `dsh-mnemon@0.5.33`（以 `npm view` 显示的版本为准），再点击**安装**；命令行为 `dsh plugin --profile web add dsh-mnemon@0.5.33`。也可以等 24 小时后重试。
 - 用带版本号的方式安装后，profile 会固定在这个版本。之后在新版本发布满一天后运行 `dsh plugin --profile web update --latest dsh-mnemon` 升级；一天之内同样带版本号安装新版本。
 - 不要为旧版本执行 `allow-version` 等“接受风险”的操作：旧版本确实没有在该 DSH 上验证过。
 
