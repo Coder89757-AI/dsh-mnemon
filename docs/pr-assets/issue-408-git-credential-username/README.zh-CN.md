@@ -2,7 +2,7 @@
 
 **简体中文** | [English](./README.md)
 
-对应 Issue [#408](https://github.com/omdsh-dev/dsh-mnemon/issues/408) 及其补充评论。测试分支 `claude/fix-408-git-credential-username`，基于 main `2143a1ed`（v0.5.32）编写并按审查意见修订，2026-10-19 至 2026-10-20（Asia/Shanghai），Node 24.19.0、pnpm 10.13.1、Git 2.50.1（Apple Git-155），宿主为固定的 DSH 0.2.1-rc.2 与已安装的 DSH 0.2.0-rc.2。没有使用任何账号或令牌，也没有请求到达任何 Git 主机：每条 Git 命令都针对本地仓库或回环地址上的 HTTPS 远端，令牌均为虚构，不经过任何代理，Git 读取的是检查自己写入的配置（`GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM=1`），从未读取本机自己的配置。
+对应 Issue [#408](https://github.com/omdsh-dev/dsh-mnemon/issues/408) 及其补充评论。测试分支 `claude/fix-408-git-credential-username`，基于 main `2143a1ed`（v0.5.32）编写并按两轮审查意见修订，2026-10-19 至 2026-10-20（Asia/Shanghai），Node 24.19.0、pnpm 10.13.1、Git 2.50.1（Apple Git-155），宿主为固定的 DSH 0.2.1-rc.2 与已安装的 DSH 0.2.0-rc.2。没有使用任何账号或令牌，也没有请求到达任何 Git 主机：每条 Git 命令都针对本地仓库或回环地址上的 HTTPS 远端，令牌均为虚构，不经过任何代理，Git 读取的是检查自己写入的配置（`GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM=1`；唯一测试系统配置文件的用例用 `GIT_CONFIG_SYSTEM` 指定自己的文件，且只在 Git 2.32 及以后运行，这些版本读取该文件而不是本机的系统配置），从未读取本机自己的配置。
 
 审查确定的原则：现在能用的配置保持原样，只在失败的地方改变行为。
 
@@ -18,12 +18,12 @@ Git 同步通过一个只为一条命令存在的凭据存储把令牌交给 Git
 
 ## 改动内容
 
-**用户名。** 凭据存储写入地址中写明的用户名；没有写明时，`gitee.com` 用 `oauth2`，其他主机都与以前一样用 `x-access-token`（`src/host/git-sync.ts` 的 `credentialTarget`）。主机完全按地址原样写入；令牌做百分号编码，Git 读取时会解码还原；由字母、数字、`-`、`_`、`.`、`~` 组成的令牌（GitHub、GitLab、Gitee 与 Gitea 的令牌都是如此）写入的字节与之前完全相同。
+**用户名。** 凭据存储写入地址中写明的用户名；没有写明时，`gitee.com`（写作 `gitee.com.` 时也一样）用 `oauth2`，其他主机都与以前一样用 `x-access-token`（`src/host/git-sync.ts` 的 `credentialTarget`）。主机完全按地址原样写入；令牌做百分号编码，Git 读取时会解码还原；由字母、数字、`-`、`_`、`.`、`~` 组成的令牌（GitHub、GitLab、Gitee 与 Gitea 的令牌都是如此）写入的字节与之前完全相同。
 
 **查找。** 不论这台电脑配置了什么，Git 都必须按这个用户名查找令牌，而命令在其他方面保持一直以来的样子：
 
-- **Git 2.26 及以后的版本**得到 `-c credential.useHttpPath=false -c credential.username=<用户名>`，交给 Git 的地址不带用户名。从 2.26 起，Git 读到的最后一个 `credential.username` 生效，而命令行在所有配置文件之后读取（[82eb2498](https://code.googlesource.com/git/+/82eb249853868582d8ba65e3afc5a7dcaeb620ea%5E%21/)，“credential: use the last matching username in the config”）。凭据配置段不论 URL 模式如何都按读取顺序应用，因此更具体的模式也不会胜出：测试覆盖了 `credential.https://github.com/<owner>.username` 与只针对一个仓库的写法、被包含的文件、系统配置文件、`GIT_CONFIG_PARAMETERS` 与 `GIT_CONFIG_COUNT`。正常工作的配置发出的请求与以前相同；这两个键只是补上 Git 本来会从凭据存储取得的用户名。
-- **更早的 Git**（同步通道支持 2.20 及以后）保留第一个配置的用户名，命令行上的用户名会输给全局配置。这类 Git 运行的命令与 main 一直以来的相同，除非在该命令自身的环境与目录中运行 `git config --get-urlmatch credential <地址>` 发现为这个地址配置了用户名：此时把凭据存储中的用户名写进地址，即 `https://<用户名>@<主机>/...`，所有 Git 都优先采用地址中的用户名（[gitcredentials](https://git-scm.com/docs/gitcredentials)：`username` 是“a default username, if one is not provided in the URL”）。发现开启了 `credential.useHttpPath` 时，命令将其关闭。
+- **Git 2.26 及以后的版本**得到 `-c credential.useHttpPath=false -c credential.username=<用户名>`，交给 Git 的地址不带用户名。从 2.26 起，Git 读到的最后一个 `credential.username` 生效，而命令行在所有配置文件之后读取（[82eb2498](https://code.googlesource.com/git/+/82eb249853868582d8ba65e3afc5a7dcaeb620ea%5E%21/)，“credential: use the last matching username in the config”）。凭据配置段不论 URL 模式如何都按读取顺序应用，因此更具体的模式也不会胜出：测试覆盖了 `credential.https://github.com/<owner>.username` 与只针对一个仓库的写法、被包含的文件、所有 Git 都能读取的写法的 `GIT_CONFIG_PARAMETERS`、Git 2.31 起的 `GIT_CONFIG_COUNT` 与 Git 2.32 起的系统配置文件，每一处都先确认配置确实生效。正常工作的配置发出的请求与以前相同；这两个键只是补上 Git 本来会从凭据存储取得的用户名。
+- **更早的 Git**（同步通道支持 2.20 及以后）保留第一个配置的用户名，命令行上的用户名会输给全局配置。这类 Git 运行的命令与 main 一直以来的相同，除非在该命令自身的环境与目录中运行 `git config --get-urlmatch credential <地址>` 发现为这个地址配置了与凭据存储不同的用户名（包括空用户名）：此时把凭据存储中的用户名写进地址，即 `https://<用户名>@<主机>/...`，所有 Git 都优先采用地址中的用户名（[gitcredentials](https://git-scm.com/docs/gitcredentials)：`username` 是“a default username, if one is not provided in the URL”）。配置的用户名正是凭据存储中的用户名时，例如在 main 上就能用的 `credential.https://github.com.username = x-access-token`，命令仍与 main 相同。按 Git 读取布尔值的方式发现开启了 `credential.useHttpPath` 时，命令将其关闭。
 - **地址中已写明用户名时**同样处理：在 Git 2.26 及以后，用户名放在命令行上，交给 Git 的地址不带它；更早的 Git 按原样得到地址。
 
 Git 版本取自同步通道在每次操作前本来就会读取的版本（`gitStatus`）。镜像的 `mnemon.origin` 仍是配置的地址，Git 写入 `FETCH_HEAD` 时不带用户名部分。
@@ -36,7 +36,7 @@ Git 版本取自同步通道在每次操作前本来就会读取的版本（`git
 | `-c credential.username=<用户名>` 加不带用户名的地址（Git 2.26 及以后，本改动） | 无认证 → `<用户名>:<令牌>` → `<用户名>:<令牌>` |
 | `https://<用户名>@host/...`（配置了用户名的更早 Git，本改动） | 无认证 → `<用户名>:<空>` → `<用户名>:<令牌>` → `<用户名>:<令牌>` |
 
-上表各主机对空密码的请求都回答 401，随后拿到令牌；但这多出一次请求，而如果某个主机对它回答 403，就会拒绝。因此只有在没有其他办法能胜过已配置用户名的 Git 上、且确实配置了用户名时，地址才带上用户名。issue 自带的补丁 `-c credential.username=x-access-token` 正是 github.com 在 Git 2.26 及以后的写法，报告者已在真实 GitHub 上用 `ls-remote`、`fetch` 与 `push --dry-run` 验证过。
+上表各主机对空密码的请求都回答 401，随后拿到令牌；但这多出一次请求，而如果某个主机对它回答 403，就会拒绝。因此只有在没有其他办法能胜过已配置用户名的 Git 上、且确实配置了另一个用户名时，地址才带上用户名。issue 自带的补丁 `-c credential.username=x-access-token` 正是 github.com 在 Git 2.26 及以后的写法，报告者已在真实 GitHub 上用 `ls-remote`、`fetch` 与 `push --dry-run` 验证过。
 
 **地址中的用户名。** 表单与 Host 共用的 `src/host/sync-rules.ts` 接受用户名部分是用户名的 HTTPS 地址，并按 Git 读取它的方式判断：
 
@@ -52,10 +52,10 @@ Git 版本取自同步通道在每次操作前本来就会读取的版本（`git
 |---|---|---|
 | GitHub 登录 | GitHub 拒绝了登录凭据，请重新登录，或检查它能否访问这个仓库 | —（GitHub 登录只用于 github.com） |
 | 保存的令牌 | GitHub 拒绝了保存的访问令牌，请更换令牌 | 仓库主机拒绝了保存的访问令牌，请更换令牌，或在地址中写上它要求的用户名 |
-| `MNEMON_SYNC_GIT_TOKEN` | GitHub 拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它 | 仓库主机拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它，或在地址中写上它要求的用户名 |
+| `MNEMON_SYNC_GIT_TOKEN` | GitHub 拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它 | 仓库主机拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它 |
 | 无 | 不变：需要凭据，请用 GitHub 登录或填写访问令牌 | 不变：需要凭据，请填写访问令牌 |
 
-英文文案见 `src/client/locales.ts`。客户端依据 `credentialSource` 判断，状态里本来就带有它，且与每条命令使用的凭据出自同一次解析。SSH、本地路径、找不到仓库、网络与超时的文案都不变，页面不显示 Git 的原始输出。每条文案都放进实时页面的状态行中、与**设置凭据**和**重新检查**并排，在记录采用的 1280 像素宽度下测量，中英文都保持一行；第一版的英文文案（"The host rejected the credential; check the token, or put the user name it expects in the address"）做不到。
+英文文案见 `src/client/locales.ts`。客户端依据 `credentialSource` 判断，状态里本来就带有它，且与每条命令使用的凭据出自同一次解析。SSH、本地路径、找不到仓库、网络与超时的文案都不变，页面不显示 Git 的原始输出。每条文案都放进实时页面的状态行中、与**设置凭据**和**重新检查**并排，在记录采用的 1280 像素宽度下测量，中英文都保持一行。英文文案在两个按钮旁有 514 像素。带上环境变量名之后，不论怎样措辞，指向地址中用户名的提示都要 557 至 666 像素（审查给出的 "The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it, or put the user name it expects in the address" 要 666 像素），因此环境变量这一行在两种语言中都与 GitHub 的那一行说法相同（399 像素），这一提示保留在保存的令牌那一行（496 像素）与操作指南中。第一版的英文文案（"The host rejected the credential; check the token, or put the user name it expects in the address"）同样放不下。
 
 ## 各主机接受的令牌用户名
 
@@ -96,7 +96,7 @@ Git 版本取自同步通道在每次操作前本来就会读取的版本（`git
 | 要求 `x-token-auth`、在地址中写明的 HTTPS 远端 | 拒绝：`sync repository must not embed credentials` | 推送成功；只有 `x-token-auth:<令牌>`（200） |
 | 页面，凭据被拒绝（各种来源、两类主机） | 需要凭据…… | 上文表格中的文案 |
 
-代 gitee.com 应答的是回环远端：Git 通过 `http.curloptResolve` 把 `gitee.com` 解析到 127.0.0.1，远端证书写明了这个主机名，Git 不经过任何代理。
+代 gitee.com 应答的是回环远端：Git 通过 `http.curloptResolve` 把 `gitee.com` 解析到 127.0.0.1，远端证书写明了这个主机名，Git 不经过任何代理。2.37 之前的 Git 没有 `http.curloptResolve`，会去解析真实主机，因此探针与测试在这类 Git 上跳过这个远端。
 
 ### WebUI
 
@@ -159,7 +159,7 @@ gitee.com，令牌有效（由回环远端代为应答）：
 
 ## 兼容性
 
-- **正常工作的配置。** 除 gitee.com 外，所有主机都与以前一样得到 `x-access-token`，因此原本能用的主机不会收到别的用户名。在 Git 2.26 及以后，命令多出两个 `-c` 键，发出的请求相同；写明用户名的地址不再先发出空密码的请求。在更早的 Git 上，命令与 main 运行的相同，除非这台电脑为该地址配置了用户名或开启了 `credential.useHttpPath`，这正是原本失败的情况。
+- **正常工作的配置。** 除 gitee.com 外，所有主机都与以前一样得到 `x-access-token`，因此原本能用的主机不会收到别的用户名。在 Git 2.26 及以后，命令多出两个 `-c` 键，发出的请求相同；写明用户名的地址不再先发出空密码的请求。在更早的 Git 上，命令与 main 运行的相同，除非这台电脑为该地址配置了与凭据存储不同的用户名或开启了 `credential.useHttpPath`，这正是原本失败的情况。
 - **存储的数据与设置。** 没有键名变化：`state/sync-git.json` 仍是 `repoUrl` 与 `token`，以前保存的配置读取结果相同。变化在于接受哪些地址：写明用户名的地址现在有效。更早的 dsh-mnemon 读到这样的地址会拒绝整个文件（`sync repository must not embed credentials`），其页面既不能更改也不能断开这个仓库；回退到旧版本、或与旧版本共用数据目录之前，请先去掉地址中的用户名。操作指南写明了这一点。
 - **用户看到的变化。** 大小写混写或写明端口的地址现在能匹配到它的凭据。只有提供了凭据且被拒绝时，页面才显示“拒绝”，并指出是哪一个。
 - **镜像与进程参数。** 令牌只进入一次性凭据存储。用户名只按上文所述进入命令参数，Git 也不会把它写到任何地方：测试在真实的 HTTPS 同步之后扫描两个存储根目录，令牌只出现在 `sync-git.json` 中，用户名哪里都没有，`FETCH_HEAD` 与镜像的配置都包括在内。
@@ -171,7 +171,7 @@ gitee.com，令牌有效（由回环远端代为应答）：
 
 | 检查 | 结果 |
 |---|---|
-| `pnpm exec vitest run tests/git-sync-credentials.spec.mjs` | 13 个通过：8 个离线（在独立 home 中运行 Git；对 21 组主机与配置以及另外四处 Git 读取配置的位置运行 `git credential fill`；GitHub 登录的凭据；写明与转义的用户名；主机的大小写与端口；Git 2.26 与 2.25 两种写法在有无已配置用户名或路径时的表现；各主机的用户名），5 个走 HTTPS（git http-backend；越过已配置的用户名同步；经回环远端访问 gitee.com；被拒绝的令牌；写明用户名的地址不发出空密码请求） |
+| `pnpm exec vitest run tests/git-sync-credentials.spec.mjs` | 13 个通过：8 个离线（在独立 home 中运行 Git；对 21 组主机与配置以及另外四处 Git 读取配置的位置运行 `git credential fill`；GitHub 登录的凭据；写明与转义的用户名；主机的大小写与端口；Git 2.26 与 2.25 两种写法在没有配置用户名、配置了另一个、配置了凭据存储自己的或空用户名、以及配置了路径时的表现；各主机的用户名），5 个走 HTTPS（git http-backend；越过已配置的用户名同步；Git 2.37 起经回环远端访问 gitee.com；被拒绝的令牌；写明用户名的地址不发出空密码请求） |
 | 客户端、规则、配置与呈现测试（`tests/client-sync.spec.tsx`、`tests/sync-rules.spec.ts`、`tests/sync-config.spec.ts`、`tests/client-presentation.spec.ts`） | 61 个通过 |
 | 同样的新增与改动测试在 main 的模块上 | 69 个中 17 个失败，见上文 |
 | `pnpm exec vitest run tests/git-sync.spec.ts tests/sync-rpc.spec.ts tests/auto-backup.spec.ts tests/github-auth.spec.ts` | 107 个通过 |
@@ -207,7 +207,8 @@ node scripts/fixtures/git-https-remote.mjs --account oauth2:<虚构令牌> --ref
 
 ## 局限
 
-- 这里没有 2.26 之前的 Git。它的写法通过同步通道在报告 `git version 2.25.1` 与 `2.20.0` 时、有无已配置用户名或路径的情况下构造的参数检查，哪个用户名生效则依据 Git 自身的历史；`git config --get-urlmatch credential` 已在 Git 2.50 上验证：能报告已配置的 `credential.username`、`credential.<url>.username`、按所有者的模式与 `credential.useHttpPath`，对其他主机的配置则不报告。
+- 这里没有 2.26 之前的 Git。它的写法通过同步通道在报告 `git version 2.25.1` 与 `2.20.0` 时、在没有配置用户名、配置了另一个、配置了凭据存储自己的或空用户名、以及配置了路径的情况下构造的参数检查，哪个用户名生效则依据 Git 自身的历史；`git config --get-urlmatch credential` 已在 Git 2.50 上验证：能报告已配置的 `credential.username`、`credential.<url>.username`、按所有者的模式与 `credential.useHttpPath`，对其他主机的配置则不报告。
+- `--get-urlmatch` 按 Git 匹配 `http.<url>.*` 设置的方式匹配配置：地址先规范化，因此路径前缀、通配符、大小写不同的主机或写明默认端口的模式都能匹配，且不论先后顺序，最具体的模式胜出（已在 Git 2.50 上验证）。2.26 之前的 Git 取为该地址配置的第一个用户名，并按原文比较主机与路径。因此在这类 Git 上，它报告了、但该 Git 并不会采用的用户名仍会让凭据存储中的用户名写进地址，这样能用，只是先多一次空密码的请求；而该 Git 先读到另一个用户名、`--get-urlmatch` 却因后面更具体的模式报告凭据存储自己的用户名时，会与 main 上一样失败。
 - 没有访问任何真实主机。回环远端按设定的策略应答；各主机的表格依据各自的文档、Gitea 的源码与补充评论对 Gitee 的实测。如果某个主机对空密码的请求回答 403，在 2.26 之前的 Git 上，写明用户名的地址会被它拒绝。
 - 命令行上的 `credential.username` 与 `--get-urlmatch` 覆盖 Git 读取的各种配置；这台电脑配置的凭据 helper 对这些命令仍与以前一样被清空。
 - GitHub 对凭据无权访问的私有仓库仍回答“找不到”，找不到仓库的文案仍提到登录或令牌；按 issue 的要求，只有认证这一种情况改变了。

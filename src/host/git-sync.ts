@@ -168,7 +168,8 @@ export function credentialTarget(url: string): { user: string; name: string; nam
   const [, written, host = '', rest = ''] = /^https:\/\/(?:([^/@]*)@)?([^/]*)(.*)$/u.exec(url) ?? []
   let hostname = ''
   try {
-    hostname = new URL(url).hostname.toLowerCase()
+    // `gitee.com.` is the same host, written as a fully qualified name.
+    hostname = new URL(url).hostname.toLowerCase().replace(/\.$/u, '')
   } catch {
     // An address that does not parse keeps the name every host is offered.
   }
@@ -280,6 +281,15 @@ function versionAtLeast(version: string, minimum: string): boolean {
     if (difference !== 0) return difference > 0
   }
   return true
+}
+
+/**
+ * A boolean as Git reads one: `true`, `yes`, `on` or a number other than 0 is true, and
+ * `false`, `no`, `off`, 0 or an empty value is false.
+ */
+function gitBoolean(value: string): boolean {
+  const text = value.trim().toLowerCase()
+  return text === 'true' || text === 'yes' || text === 'on' || (/^[-+]?\d+$/u.test(text) && Number(text) !== 0)
 }
 
 /**
@@ -1596,9 +1606,9 @@ export class MnemonGitSync {
    * they read last and let win, and are given the address without a user name, as
    * Git offers a name it finds there once without the token. An older Git kept the
    * first name it read, and only a name in the address comes before that: the name
-   * goes there, and the path leaves the lookup, only where this machine's
-   * configuration would otherwise decide them, so every other command stays the one
-   * that has always run.
+   * goes there only where this machine's configuration names another, and the path
+   * leaves the lookup only where it puts the path in, so every other command, one
+   * that configures the store's own name included, stays the one that has always run.
    */
   private async credentials(args: string[], options: GitOptions): Promise<{ args: string[]; cleanup: () => void }> {
     const token = options.token
@@ -1615,7 +1625,7 @@ export class MnemonGitSync {
     } else {
       const configured = await this.configuredLookup(url, options)
       if (configured.path) lookup.push('-c', 'credential.useHttpPath=false')
-      if (configured.user && !target.named) command[index] = 'https://' + target.user + '@' + target.address.slice('https://'.length)
+      if (configured.user !== undefined && configured.user !== target.name && !target.named) command[index] = 'https://' + target.user + '@' + target.address.slice('https://'.length)
     }
     this.sequence += 1
     const path = join(this.store.directory(), '.credentials.' + branchSlug(String(process.pid)) + '.' + String(this.sequence) + '.tmp')
@@ -1627,12 +1637,12 @@ export class MnemonGitSync {
   }
 
   /**
-   * Whether this machine's configuration names a user for an address, or adds its
-   * path to the lookup, read in the environment and directory the command runs in.
-   * A configuration Git cannot read leaves the command as it was, which fails on it
-   * the same way.
+   * The user name this machine's configuration gives an address, if any, and whether
+   * it adds the address's path to the lookup, read in the environment and directory
+   * the command runs in. A configuration Git cannot read leaves the command as it
+   * was, which fails on it the same way.
    */
-  private async configuredLookup(url: string, options: GitOptions): Promise<{ user: boolean; path: boolean }> {
+  private async configuredLookup(url: string, options: GitOptions): Promise<{ user: string | undefined; path: boolean }> {
     let result: { stdout: string; exitCode: number | null }
     try {
       result = await this.run(GIT_LABEL, ['config', '--get-urlmatch', 'credential', url], {
@@ -1644,18 +1654,20 @@ export class MnemonGitSync {
       })
     } catch (error) {
       if (options.signal?.aborted === true) throw error
-      return { user: false, path: false }
+      return { user: undefined, path: false }
     }
     const settings = new Map<string, string>()
     if (result.exitCode === 0) {
-      for (const line of result.stdout.split('\n')) {
+      // One `key value` per line, the value as written. Git prints a key written without
+      // a value alone, and refuses it in a credential section ("bad config variable"),
+      // so the command fails on it whatever it is given.
+      for (const line of result.stdout.split(/\r?\n/u)) {
         const space = line.indexOf(' ')
-        if (line.trim() !== '') settings.set((space === -1 ? line : line.slice(0, space)).trim().toLowerCase(), space === -1 ? '' : line.slice(space + 1).trim())
+        if (space > 0) settings.set(line.slice(0, space).toLowerCase(), line.slice(space + 1))
       }
     }
     const path = settings.get('credential.usehttppath')
-    // A key written without a value is true, as Git reads a boolean.
-    return { user: (settings.get('credential.username') ?? '') !== '', path: path !== undefined && /^(?:true|yes|on|1|)$/iu.test(path) }
+    return { user: settings.get('credential.username'), path: path !== undefined && gitBoolean(path) }
   }
 }
 

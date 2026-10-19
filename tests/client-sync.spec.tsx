@@ -505,7 +505,7 @@ describe('Git sync section after review', () => {
     const refused = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', credentialSource: 'environment', push: { reason: 'remote-auth', message: 'git fetch failed: remote: Invalid user name or token' } })
     section(refused.connection, { t: translateEn })
     fireEvent.click(await screen.findByRole('button', { name: 'Sync now' }))
-    expect(await screen.findByText('Sync failed: The host rejected MNEMON_SYNC_GIT_TOKEN; replace it, or name its user in the address')).toBeTruthy()
+    expect(await screen.findByText('Sync failed: The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it')).toBeTruthy()
   })
 
   it('asks for another token, not another sign-in, when github.com refuses a token or the variable (#408)', async () => {
@@ -750,8 +750,8 @@ describe('Git sync view helpers', () => {
     expect(failureText(translateZh, 'busy', 'another Mnemon sync operation is still running', '')).toBe('另一个同步操作还在进行，请稍后再试')
     // A refusal is said to be one only where a credential was offered over HTTPS, in words for where it came from (#408).
     const refused = (url: string, credential?: 'environment' | 'token' | 'github' | 'none') => failureText(translateEn, 'remote-auth', 'Authentication failed', url, credential)
-    expect(refused('https://git.example.com/me/memory.git', 'token')).toBe('The host rejected the saved token; replace it, or name its user in the address')
-    expect(refused('https://git.example.com/me/memory.git', 'environment')).toBe('The host rejected MNEMON_SYNC_GIT_TOKEN; replace it, or name its user in the address')
+    expect(refused('https://git.example.com/me/memory.git', 'token')).toBe('The host rejected the saved token; replace it, or name the user it expects in the address')
+    expect(refused('https://git.example.com/me/memory.git', 'environment')).toBe('The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it')
     expect(refused('https://github.com/o/r.git', 'github')).toBe('GitHub rejected the sign-in; sign in again or check its access to this repository')
     expect(refused('https://github.com/o/r.git', 'token')).toBe('GitHub rejected the saved access token; replace it')
     expect(refused('https://github.com/o/r.git', 'environment')).toBe('GitHub rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it')

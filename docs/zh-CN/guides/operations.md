@@ -133,7 +133,7 @@ Go 更新还要求当前执行文件确实位于本机 Go 的安装输出位置�
 - GitHub 登录保存在 DSH 的凭据存储中，只用于 `https://github.com` 上的仓库。申请的 scope 是 `repo`，因此可以访问私有仓库；其他主机上的仓库需要自己的令牌。GitHub 不再认可的凭据会被如实提示，并提供**重新登录**。退出登录会删除已保存的凭据。未挂载凭据 provider 的 Host 只提供地址表单。
 - 保存的令牌放在 `state/sync-git.json`（权限 `0600`）中，只属于保存它时的主机：把仓库换到另一个主机时，除非同时提供新令牌，旧令牌会被丢弃。设置了环境变量 `MNEMON_SYNC_GIT_TOKEN` 时，它优先于这两者。
 - 令牌以一个用户名交给 Git：地址中写明的用户名；没有写明时，`gitee.com` 用 `oauth2`，因为它拒绝 `x-access-token`（Gitee 要求 `oauth2` 或账户名），其他主机都与以前一样用 `x-access-token`。GitHub 为 github.com、GitHub Enterprise Server 与 `*.ghe.com` 上的令牌说明的都是 `x-access-token`，GitLab、Gitea 与 Azure DevOps 也接受它。要求其他用户名的主机，在地址中写明即可：自建的 Gitee 接受 `oauth2` 或你的账户名，例如 `https://oauth2@gitee.example.com/<owner>/<repository>.git`；Bitbucket Cloud 的 access token 与 API token 都以 `x-token-auth` 为用户名。不论这台电脑为该主机配置了什么，例如 Git Credential Manager 设置的 `credential.<url>.username` 与 `credential.useHttpPath`，Git 都按这个用户名查找令牌；主机名写成大写或带端口的地址也能找到令牌。更早的 dsh-mnemon 会拒绝读取写明了用户名的已保存地址，连更改或断开也做不到，因此回退到旧版本前请先去掉地址中的用户名。
-- 主机拒绝了交给它的凭据时，页面会如实说明，并指出被拒绝的是哪一个：GitHub 登录的凭据，重新登录即可更新；保存的令牌，在**访问令牌**中填写新令牌即可替换；或 `MNEMON_SYNC_GIT_TOKEN`，它优先于前两者，只能在环境中更改。github.com 以外的主机，这一行还会提示地址中的用户名。只有在没有任何凭据时，页面才提示登录或填写令牌。
+- 主机拒绝了交给它的凭据时，页面会如实说明，并指出被拒绝的是哪一个：GitHub 登录的凭据，重新登录即可更新；保存的令牌，在**访问令牌**中填写新令牌即可替换；或 `MNEMON_SYNC_GIT_TOKEN`，它优先于前两者，只能在环境中更改。github.com 以外的主机，保存的令牌被拒绝时，这一行还会提示地址中的用户名。只有在没有任何凭据时，页面才提示登录或填写令牌。
 - 启动器没有下发代理策略时也能登录：Host 会通过自己发现的代理重试一次，一个都找不到时会提示设置 `HTTPS_PROXY`。回退方式见[同步通道](../reference/interfaces.md#同步通道)。
 - 读不到远端时，同步会在提交任何内容之前失败；提交之后才被远端拒绝的推送（例如没有写权限）会把提交留在镜像中并说明原因。两种情况都不会丢失数据，远端恢复后再同步一次即可。
 

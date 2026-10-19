@@ -4,9 +4,10 @@
 // src/client/MnemonSyncSection.tsx, src/client/MnemonSyncDialogs.tsx and src/client/locales.ts checked out. It prints
 // one JSON line per case: what `git credential fill` finds with the exact arguments the channel hands Git, what a
 // sync over a loopback HTTPS remote does and which requests that remote saw, and what the settings page says. Git
-// reads only a configuration the harness writes under a temporary HOME, goes through no proxy, and reaches
-// "gitee.com" at the loopback remote through `http.curloptResolve` (Git 2.37 and later); the token is made up and
-// nothing leaves the machine.
+// reads only a configuration the harness writes under a temporary HOME, none from the system or the environment,
+// goes through no proxy, and reaches "gitee.com" at the loopback remote through `http.curloptResolve`; an older Git
+// than 2.37, which has none, would look the real host up, so the harness skips that remote there. The token is made
+// up and nothing leaves the machine.
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,8 +32,13 @@ afterAll(async () => { for (const r of releases.reverse()) await r(); for (const
 
 const home = temporary('home')
 const globalConfig = join(home, '.gitconfig')
+// The global file Git reads from HOME before 2.32 and from GIT_CONFIG_GLOBAL after, and nothing else: no system
+// file, no configuration from the environment, and no proxy, as in tests/git-sync-credentials.spec.mjs.
+writeFileSync(globalConfig, '')
+for (const key of ['GIT_CONFIG_SYSTEM', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_SSL_CAINFO', 'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']) delete process.env[key]
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, 'xdg'), GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1', NO_PROXY: '*', no_proxy: '*' })
-for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']) delete process.env[key]
+const [major = 0, minor = 0] = (/(\d+)\.(\d+)/u.exec(spawnSync('git', ['--version'], { encoding: 'utf8' }).stdout ?? '') ?? []).slice(1).map(Number)
+const resolvesHosts = major > 2 || (major === 2 && minor >= 37)
 
 function configure(entries: Array<[string, string]>): void {
   writeFileSync(globalConfig, '')
@@ -91,6 +97,10 @@ it('reports what Git finds, what a sync does and what the page says', async () =
     ['wants x-token-auth, named in the address, as Bitbucket does', { accounts: [{ user: 'x-token-auth', token: TOKEN }] }, [], '127.0.0.1', 'x-token-auth@'],
   ]
   for (const [label, policy, entries, host, user] of remotes) {
+    if (host !== '127.0.0.1' && !resolvesHosts) {
+      print({ case: 'https: ' + label, outcome: 'skipped: Git ' + String(major) + '.' + String(minor) + ' has no http.curloptResolve' })
+      continue
+    }
     const requests: Array<{ user?: string; password: boolean; status: number }> = []
     const server = gitHttpsRemote({ ...policy, report: (event: { user?: string; password: boolean; status: number }) => requests.push(event) })
     const port: number = await server.start()

@@ -2,7 +2,7 @@
 
 [简体中文](./README.zh-CN.md) | **English**
 
-Issue [#408](https://github.com/omdsh-dev/dsh-mnemon/issues/408) and its comment. Tested on branch `claude/fix-408-git-credential-username`, written on main `2143a1ed` (v0.5.32) and revised after review, 2026-10-19 to 2026-10-20 (Asia/Shanghai), Node 24.19.0, pnpm 10.13.1 and Git 2.50.1 (Apple Git-155), against the pinned DSH 0.2.1-rc.2 and an installed DSH 0.2.0-rc.2. No account or token was used, and no request reached a Git host: every Git command ran against local repositories or loopback HTTPS remotes with made-up tokens, through no proxy, under a Git configuration the check wrote itself (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM=1`), so the machine's own configuration was never read.
+Issue [#408](https://github.com/omdsh-dev/dsh-mnemon/issues/408) and its comment. Tested on branch `claude/fix-408-git-credential-username`, written on main `2143a1ed` (v0.5.32) and revised after two reviews, 2026-10-19 to 2026-10-20 (Asia/Shanghai), Node 24.19.0, pnpm 10.13.1 and Git 2.50.1 (Apple Git-155), against the pinned DSH 0.2.1-rc.2 and an installed DSH 0.2.0-rc.2. No account or token was used, and no request reached a Git host: every Git command ran against local repositories or loopback HTTPS remotes with made-up tokens, through no proxy, under a Git configuration the check wrote itself (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM=1`; the one test of a system file names a file of its own with `GIT_CONFIG_SYSTEM` and runs only on Git 2.32 and later, which read that file in place of the machine's), so the machine's own configuration was never read.
 
 The rule the review set: every setup that works today stays as it is, and behavior changes only where it fails.
 
@@ -18,12 +18,12 @@ All three ended in a message that sent the user to sign in or add a token. The s
 
 ## What changed
 
-**The user name.** The store holds the user name the address names, else `oauth2` for `gitee.com` and `x-access-token` for every other host, as before (`src/host/git-sync.ts`, `credentialTarget`). The host is kept exactly as the address writes it, and the token is percent-encoded, which Git decodes back; a token made of letters, digits, `-`, `_`, `.` and `~`, as GitHub's, GitLab's, Gitee's and Gitea's are, is written byte for byte as before.
+**The user name.** The store holds the user name the address names, else `oauth2` for `gitee.com`, also when written `gitee.com.`, and `x-access-token` for every other host, as before (`src/host/git-sync.ts`, `credentialTarget`). The host is kept exactly as the address writes it, and the token is percent-encoded, which Git decodes back; a token made of letters, digits, `-`, `_`, `.` and `~`, as GitHub's, GitLab's, Gitee's and Gitea's are, is written byte for byte as before.
 
 **The lookup.** Git must look the token up under that name, whatever the machine configures, and the command must otherwise stay the one that has always run:
 
-- **Git 2.26 and later** get `-c credential.useHttpPath=false -c credential.username=<name>` and the address without a user name. From 2.26 on, the last `credential.username` Git reads wins, and the command line is read after every configuration file ([82eb2498](https://code.googlesource.com/git/+/82eb249853868582d8ba65e3afc5a7dcaeb620ea%5E%21/), "credential: use the last matching username in the config"). Credential sections are applied in the order they are read whatever their URL pattern, so a more specific pattern does not win: the tests include `credential.https://github.com/<owner>.username` and one for a single repository, an included file, the system file, `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_COUNT`. The requests a working setup makes are the ones it made before; the two keys only add a name Git would otherwise have taken from the store.
-- **An older Git** (the channel supports 2.20 and later) kept the first configured user name, so a name on the command line would lose to a global one there. It runs the command main has always run, unless `git config --get-urlmatch credential <address>`, read in the command's own environment and directory, names a user for the address: then the store's name goes into the address, `https://<name>@<host>/...`, which every Git takes before any configured name ([gitcredentials](https://git-scm.com/docs/gitcredentials): `username` is "a default username, if one is not provided in the URL"). When it turns `credential.useHttpPath` on, the command turns it off.
+- **Git 2.26 and later** get `-c credential.useHttpPath=false -c credential.username=<name>` and the address without a user name. From 2.26 on, the last `credential.username` Git reads wins, and the command line is read after every configuration file ([82eb2498](https://code.googlesource.com/git/+/82eb249853868582d8ba65e3afc5a7dcaeb620ea%5E%21/), "credential: use the last matching username in the config"). Credential sections are applied in the order they are read whatever their URL pattern, so a more specific pattern does not win: the tests include `credential.https://github.com/<owner>.username` and one for a single repository, an included file, `GIT_CONFIG_PARAMETERS` in the form every Git reads, `GIT_CONFIG_COUNT` from Git 2.31 and a system file from Git 2.32, each first shown to be in effect. The requests a working setup makes are the ones it made before; the two keys only add a name Git would otherwise have taken from the store.
+- **An older Git** (the channel supports 2.20 and later) kept the first configured user name, so a name on the command line would lose to a global one there. It runs the command main has always run, unless `git config --get-urlmatch credential <address>`, read in the command's own environment and directory, names another user for the address than the store's, an empty name included: then the store's name goes into the address, `https://<name>@<host>/...`, which every Git takes before any configured name ([gitcredentials](https://git-scm.com/docs/gitcredentials): `username` is "a default username, if one is not provided in the URL"). A configured name that is the store's own, such as `credential.https://github.com.username = x-access-token`, which works on main, keeps main's command. When the configuration turns `credential.useHttpPath` on, read as Git reads a boolean, the command turns it off.
 - **An address that names its user** gets the same treatment: on Git 2.26 and later the name goes on the command line and the address without it; an older Git gets the address as written.
 
 The Git version is the one the channel already reads before every operation (`gitStatus`). The mirror's `mnemon.origin` keeps the configured address, and Git writes `FETCH_HEAD` without a user part.
@@ -36,7 +36,7 @@ The Git version is the one the channel already reads before every operation (`gi
 | `-c credential.username=<name>` and the plain address (Git 2.26 and later, this change) | none → `<name>:<token>` → `<name>:<token>` |
 | `https://<name>@host/...` (an older Git with a configured name, this change) | none → `<name>:<empty>` → `<name>:<token>` → `<name>:<token>` |
 
-The empty-password request is answered 401 by the hosts above, which then get the token, but it is one more request, and a host that answered it with 403 would refuse. So the address carries the name only on a Git where nothing else wins over a configured name, and only when one is configured. The issue's own patch, `-c credential.username=x-access-token`, is the Git 2.26 form for github.com, which the reporter verified against real GitHub with `ls-remote`, `fetch` and `push --dry-run`.
+The empty-password request is answered 401 by the hosts above, which then get the token, but it is one more request, and a host that answered it with 403 would refuse. So the address carries the name only on a Git where nothing else wins over a configured name, and only when another one is configured. The issue's own patch, `-c credential.username=x-access-token`, is the Git 2.26 form for github.com, which the reporter verified against real GitHub with `ls-remote`, `fetch` and `push --dry-run`.
 
 **A user name in the address.** `src/host/sync-rules.ts`, shared by the form and the Host, accepts an HTTPS address whose user part is a user name, judged as Git reads it:
 
@@ -51,11 +51,11 @@ The form's refusal reads "Only a user name may go in the address; enter the toke
 | Credential | github.com | Another host |
 |---|---|---|
 | The GitHub sign-in | GitHub rejected the sign-in; sign in again or check its access to this repository | — (the sign-in is offered to github.com alone) |
-| A saved token | GitHub rejected the saved access token; replace it | The host rejected the saved token; replace it, or name its user in the address |
-| `MNEMON_SYNC_GIT_TOKEN` | GitHub rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it | The host rejected MNEMON_SYNC_GIT_TOKEN; replace it, or name its user in the address |
+| A saved token | GitHub rejected the saved access token; replace it | The host rejected the saved token; replace it, or name the user it expects in the address |
+| `MNEMON_SYNC_GIT_TOKEN` | GitHub rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it | The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it |
 | None | unchanged: Needs credentials; sign in with GitHub or add an access token | unchanged: Needs credentials; add an access token |
 
-The Chinese texts are in `src/client/locales.ts`. The client decides from `credentialSource`, which the status already carries and which comes from the same resolution each command uses. SSH, local, not-found, network and timeout texts are unchanged, and Git's own words are not shown. Each line was placed in the state line of the live page at the record's 1280 px width beside **Set credentials** and **Check again**, and stays one row in both languages; the first version's English line ("The host rejected the credential; check the token, or put the user name it expects in the address") did not.
+The Chinese texts are in `src/client/locales.ts`. The client decides from `credentialSource`, which the status already carries and which comes from the same resolution each command uses. SSH, local, not-found, network and timeout texts are unchanged, and Git's own words are not shown. Each line was placed in the state line of the live page at the record's 1280 px width beside **Set credentials** and **Check again**, and stays one row in both languages. Beside them an English message has 514 px. With the variable's name in it, a pointer to the user name in the address takes 557 to 666 px however it is worded (the review's "The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it, or put the user name it expects in the address" takes 666), so the variable's line says in both languages what GitHub's does (399 px), and the pointer stays on the saved-token line (496 px) and in the guide. The first version's English line ("The host rejected the credential; check the token, or put the user name it expects in the address") did not fit either.
 
 ## User names hosts take with a token
 
@@ -96,7 +96,7 @@ So `x-access-token` stays the name every host is offered: github.com, GitHub Ent
 | HTTPS remote wanting `x-token-auth`, named in the address | refused: `sync repository must not embed credentials` | push published; `x-token-auth:<token>` (200) only |
 | The page, a refused credential (each source, both hosts) | Needs credentials … | the texts in the table above |
 
-The remote that answers for gitee.com is the loopback remote: Git resolves `gitee.com` to 127.0.0.1 through `http.curloptResolve`, the remote's certificate names it, and Git uses no proxy.
+The remote that answers for gitee.com is the loopback remote: Git resolves `gitee.com` to 127.0.0.1 through `http.curloptResolve`, the remote's certificate names it, and Git uses no proxy. A Git older than 2.37 has no `http.curloptResolve` and would look the real host up, so the probe and the test skip that remote there.
 
 ### In the WebUI
 
@@ -135,7 +135,7 @@ A wrong `MNEMON_SYNC_GIT_TOKEN`:
 
 | main | This change |
 |---|---|
-| ![main: Needs credentials](./en-environment-before.jpg) | ![this change: the host rejected MNEMON_SYNC_GIT_TOKEN](./en-environment-after.jpg) |
+| ![main: Needs credentials](./en-environment-before.jpg) | ![this change: the host rejected the token in MNEMON_SYNC_GIT_TOKEN](./en-environment-after.jpg) |
 | ![main, Chinese](./zh-environment-before.jpg) | ![this change, Chinese](./zh-environment-after.jpg) |
 
 The `x-token-auth` remote, written into the address:
@@ -159,7 +159,7 @@ The new and changed tests, run with main's six modules checked out: 17 of 69 fai
 
 ## Compatibility
 
-- **Working setups.** Every host but gitee.com is offered `x-access-token`, as before, so no host that worked sees another name. On Git 2.26 and later the command gains two `-c` keys and sends the same requests; a named address no longer sends the empty-password request first. On an older Git the command is the one main ran, unless this machine's configuration names a user for the address or turns `credential.useHttpPath` on, the cases that failed.
+- **Working setups.** Every host but gitee.com is offered `x-access-token`, as before, so no host that worked sees another name. On Git 2.26 and later the command gains two `-c` keys and sends the same requests; a named address no longer sends the empty-password request first. On an older Git the command is the one main ran, unless this machine's configuration names another user for the address than the store's or turns `credential.useHttpPath` on, the cases that failed.
 - **Stored data and settings.** No key changes: `state/sync-git.json` keeps `repoUrl` and `token`, and a configuration saved before reads the same. What changes is which addresses are accepted: one that names a user is now valid. An earlier dsh-mnemon reading such an address refuses the whole file (`sync repository must not embed credentials`), so its page can neither change nor disconnect the repository; remove the name before going back to an earlier version, or before sharing the data directory with one. The guide says so.
 - **What users see.** An address with mixed case or an explicit port now finds its stored credential. The page says "rejected" only when a credential was offered and refused, and names which.
 - **Mirror and process arguments.** The token reaches only the one-command store. The user name reaches the arguments only as described above, and Git writes it nowhere: the test scans both storage roots after a real HTTPS sync and finds the token in `sync-git.json` alone and the name nowhere, `FETCH_HEAD` and the mirror's config included.
@@ -171,7 +171,7 @@ The new and changed tests, run with main's six modules checked out: 17 of 69 fai
 
 | Check | Result |
 |---|---|
-| `pnpm exec vitest run tests/git-sync-credentials.spec.mjs` | 13 passed: 8 offline (Git in a home of its own; `git credential fill` over 21 host and configuration pairs and four more places Git reads configuration from; the sign-in's grant; named and encoded addresses; host case and port; the Git 2.26 and 2.25 forms with and without a configured name or path; the user name per host), 5 over HTTPS (git http-backend; a sync past a configured name; gitee.com through the loopback remote; refused tokens; a named address without the empty-password request) |
+| `pnpm exec vitest run tests/git-sync-credentials.spec.mjs` | 13 passed: 8 offline (Git in a home of its own; `git credential fill` over 21 host and configuration pairs and four more places Git reads configuration from; the sign-in's grant; named and encoded addresses; host case and port; the Git 2.26 and 2.25 forms with no configured name, another, the store's own or an empty one, and with a path setting; the user name per host), 5 over HTTPS (git http-backend; a sync past a configured name; gitee.com through the loopback remote, from Git 2.37; refused tokens; a named address without the empty-password request) |
 | Client, rules, configuration and presentation tests (`tests/client-sync.spec.tsx`, `tests/sync-rules.spec.ts`, `tests/sync-config.spec.ts`, `tests/client-presentation.spec.ts`) | 61 passed |
 | The same new and changed tests on main's modules | 17 of 69 failed, as listed above |
 | `pnpm exec vitest run tests/git-sync.spec.ts tests/sync-rpc.spec.ts tests/auto-backup.spec.ts tests/github-auth.spec.ts` | 107 passed |
@@ -207,7 +207,8 @@ node scripts/fixtures/git-https-remote.mjs --account oauth2:<made-up token> --re
 
 ## Limits
 
-- No Git older than 2.26 was available here. Its form is checked by the arguments the channel builds for a reported `git version 2.25.1` and `2.20.0`, with and without a configured name or path, and by Git's own history for which name wins; `git config --get-urlmatch credential` was checked on Git 2.50 to report a configured `credential.username`, `credential.<url>.username`, an owner pattern and `credential.useHttpPath`, and nothing for another host's settings.
+- No Git older than 2.26 was available here. Its form is checked by the arguments the channel builds for a reported `git version 2.25.1` and `2.20.0`, with no configured name, another, the store's own or an empty one, and with a path setting, and by Git's own history for which name wins; `git config --get-urlmatch credential` was checked on Git 2.50 to report a configured `credential.username`, `credential.<url>.username`, an owner pattern and `credential.useHttpPath`, and nothing for another host's settings.
+- `--get-urlmatch` matches the configuration as Git matches `http.<url>.*` settings: the address is normalized, so a path prefix, a wildcard, a host in other case or the default port written out match, and the most specific pattern wins whatever the order (checked on Git 2.50). A Git before 2.26 took the first name configured for the address and compared host and path as text. So on such a Git, a name it reports that the Git would not have applied still puts the store's name into the address, which works, with the empty-password request first; and a name the Git took first while `--get-urlmatch` reports the store's own, from a later and more specific pattern, fails as it does on main.
 - No real host was contacted. The loopback remotes answer as their policy says; the per-host table rests on each host's documentation, Gitea's source and the comment's Gitee measurements. A host that answered an empty password with 403 would refuse an address that names its user on a Git older than 2.26.
 - `credential.username` on the command line and `--get-urlmatch` cover the configurations Git reads; a credential helper the machine configures is still cleared for these commands, as before.
 - GitHub still answers "not found" for a private repository a credential cannot reach, and the not-found text still mentions a sign-in or a token; only the authentication case changed, as the issue asked.
