@@ -157,3 +157,7 @@ pnpm verify:plugins
    <img alt="Star 历史图表" src="https://api.star-history.com/chart?repos=omdsh-dev/dsh-mnemon&type=timeline&legend=bottom-right" />
  </picture>
 </a>
+
+## 许可证
+
+[MIT](https://github.com/omdsh-dev/dsh-mnemon/blob/main/LICENSE)。第三方 Provider 适用各自的许可证与服务条款，见[第三方声明](https://github.com/omdsh-dev/dsh-mnemon/blob/main/THIRD_PARTY_NOTICES.md)。
