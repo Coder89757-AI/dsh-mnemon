@@ -1,6 +1,6 @@
 {
   "name": "dsh-mnemon",
-  "version": "0.5.32",
+  "version": "0.5.33",
   "description": "Composable, view-based memory for DeepSeek Harness. Pluggable sources and strategies, with layered memory out of the box.",
   "keywords": [
     "deepseek-harness",
