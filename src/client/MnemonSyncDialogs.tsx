@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { Button, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MnemonPackComponent, MnemonPackComponentSummary, MnemonSyncBackupList, MnemonSyncDiff, MnemonSyncPreview } from '../host/protocol.ts'
+import type { MnemonPackComponent, MnemonPackComponentSummary, MnemonSyncBackupList, MnemonSyncCredentialSource, MnemonSyncDiff, MnemonSyncPreview } from '../host/protocol.ts'
 import type { MnemonClient } from './api.ts'
 import type { MnemonTranslate } from './locales.ts'
 import { MnemonDialog } from './MnemonDialog.tsx'
@@ -41,6 +41,8 @@ function summaryLine(t: MnemonTranslate, summary: readonly MnemonPackComponentSu
 interface SyncDialogProps {
   client: MnemonClient
   repoUrl: string
+  /** The credential the Host offers the repository, which a refusal is then said to be about. */
+  credential: MnemonSyncCredentialSource
   t: MnemonTranslate
   onClose: () => void
 }
@@ -50,7 +52,7 @@ interface SyncDialogProps {
  * which computer, and what it held. A page is read at a time; the commit is a
  * quiet tag, because the time and the computer are what a reader looks for.
  */
-export function SyncHistoryDialog({ client, repoUrl, t, onClose }: SyncDialogProps): JSX.Element {
+export function SyncHistoryDialog({ client, repoUrl, credential, t, onClose }: SyncDialogProps): JSX.Element {
   const [history, setHistory] = useState<MnemonSyncBackupList | null>(null)
   const [busy, setBusy] = useState(true)
   const [failed, setFailed] = useState<string | null>(null)
@@ -68,9 +70,9 @@ export function SyncHistoryDialog({ client, repoUrl, t, onClose }: SyncDialogPro
         return { ...page, commits: [...current.commits, ...fresh] }
       })
     } catch (reason) {
-      setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl))
+      setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl, credential))
     } finally { setBusy(false) }
-  }, [client, repoUrl, t])
+  }, [client, repoUrl, credential, t])
 
   useEffect(() => { void load() }, [load])
 
@@ -116,7 +118,7 @@ interface SyncCompareDialogProps extends SyncDialogProps {
  * deleted, and which removals the branch recorded. Reading writes nothing; the
  * footer offers the sync itself and a merge that publishes nothing.
  */
-export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSync, onChanged }: SyncCompareDialogProps): JSX.Element {
+export function SyncCompareDialog({ client, repoUrl, credential, writable, t, onClose, onSync, onChanged }: SyncCompareDialogProps): JSX.Element {
   const [preview, setPreview] = useState<MnemonSyncPreview | null>(null)
   const [difference, setDifference] = useState<MnemonSyncDiff | null>(null)
   const [busy, setBusy] = useState<'read' | 'merge' | 'revive' | 'sync' | null>('read')
@@ -137,9 +139,9 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
     } catch (reason) {
       setPreview(null); setDifference(null)
       setEmpty(reasonOf(reason) === 'remote-empty')
-      setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl))
+      setFailed(failureText(t, reasonOf(reason), message(reason), repoUrl, credential))
     } finally { setBusy(null) }
-  }, [client, repoUrl, t])
+  }, [client, repoUrl, credential, t])
 
   useEffect(() => { void read() }, [read])
 
@@ -152,7 +154,7 @@ export function SyncCompareDialog({ client, repoUrl, writable, t, onClose, onSyn
       const added = result.runtime?.added ?? 0
       setNotice(revive ? t('config.syncCompareRevived', { count: added }) : added > 0 ? t('config.syncMergedCount', { count: added }) : t('config.syncMerged', { commit: result.commit.slice(0, 8) }))
     } catch (reason) {
-      failure = failureText(t, reasonOf(reason), message(reason), repoUrl)
+      failure = failureText(t, reasonOf(reason), message(reason), repoUrl, credential)
     } finally { setBusy(null) }
     // A merge that failed can have written already: the Host reads Memory Spaces again
     // after the write, and that read can fail on its own.

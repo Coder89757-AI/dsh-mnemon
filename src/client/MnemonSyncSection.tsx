@@ -3,6 +3,7 @@ import { Button, PathLabel, StateDot } from '@deepseek-ai/dsh-client-ui-primitiv
 import {
   MNEMON_SYNC_TOKEN_ENV,
   type ClientConnectionHandle,
+  type MnemonSyncCredentialSource,
   type MnemonSyncGitHubStatus,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
@@ -128,6 +129,8 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
   const connected = status !== null && status.enabled !== false && repoUrl !== undefined
   const editable = !disabled && client !== null
   const gitReady = status?.git.available === true
+  // The credential the Host offers the repository, which a refusal is then said to be about.
+  const credential: MnemonSyncCredentialSource = status?.config.credentialSource ?? 'none'
 
   /**
    * The one primary action: merge the repository here, then publish the result.
@@ -139,11 +142,11 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
     let failure: string | null = null
     try {
       const result = await client.pushSync()
-      const feedback = syncResult(t, result, repoUrl)
+      const feedback = syncResult(t, result, repoUrl, credential)
       setSyncFeedback(feedback)
       if (feedback.tone === 'error') failure = feedback.text
     } catch (reason) {
-      failure = t('config.syncFailed', { error: failureText(t, reasonOf(reason), message(reason), repoUrl) })
+      failure = t('config.syncFailed', { error: failureText(t, reasonOf(reason), message(reason), repoUrl, credential) })
       setSyncFeedback({ tone: 'error', text: failure })
     } finally { setBusy(null) }
     // The branch is folded in before anything is published, so even a sync that did not
@@ -203,7 +206,7 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
   const minutes = status?.config.autoBackupMinutes ?? 0
   const autoOptions: SettingOption<string>[] = AUTO_SYNC_CHOICES.map(choice => ({ value: String(choice), label: intervalLabel(t, choice) }))
   const autoHint: ReactNode = autoBackup?.lastError !== undefined && minutes > 0
-    ? <span className={css.error}>{t('config.syncAutoFailed', { error: failureText(t, autoBackup.lastFailure, autoBackup.lastError, repoUrl ?? '') })}</span>
+    ? <span className={css.error}>{t('config.syncAutoFailed', { error: failureText(t, autoBackup.lastFailure, autoBackup.lastError, repoUrl ?? '', credential) })}</span>
     : minutes <= 0
       ? t('config.syncAutoHintOff')
       : [autoBackup?.nextAt === undefined ? '' : t('config.syncAutoNext', { time: when(autoBackup.nextAt) }), autoBackup?.lastAt === undefined ? '' : t('config.syncAutoLast', { time: when(autoBackup.lastAt) })].filter(Boolean).join(' · ') || t('config.syncAutoHintOn')
@@ -253,9 +256,9 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
         <AdvancedSettings client={client} status={status} disabled={!editable} t={t} onSaved={readStatus} />
       </>}
     </div>}
-    {client !== null && repoUrl !== undefined && dialog === 'compare' && <SyncCompareDialog client={client} repoUrl={repoUrl} writable={editable} t={t}
+    {client !== null && repoUrl !== undefined && dialog === 'compare' && <SyncCompareDialog client={client} repoUrl={repoUrl} credential={credential} writable={editable} t={t}
       onClose={() => setDialog(null)} onSync={sync} onChanged={() => { onMerged?.(); void readStatus() }} />}
-    {client !== null && repoUrl !== undefined && dialog === 'history' && <SyncHistoryDialog client={client} repoUrl={repoUrl} t={t} onClose={() => setDialog(null)} />}
+    {client !== null && repoUrl !== undefined && dialog === 'history' && <SyncHistoryDialog client={client} repoUrl={repoUrl} credential={credential} t={t} onClose={() => setDialog(null)} />}
     {repoUrl !== undefined && dialog === 'disconnect' && <SyncConfirmDialog title={t('config.syncDisconnectTitle')}
       body={t('config.syncDisconnectBody', { repository: repositoryName(repoUrl) })} confirm={t('config.syncDisconnect')}
       busy={busy === 'disconnect'} error={disconnectFailed} t={t} onConfirm={() => void disconnect()} onClose={() => { setDialog(null); setDisconnectFailed(null) }} />}
@@ -263,12 +266,12 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
 }
 
 /** What one finished sync did, said as one line. */
-function syncResult(t: MnemonTranslate, result: MnemonSyncPushResult, repoUrl: string): Feedback {
+function syncResult(t: MnemonTranslate, result: MnemonSyncPushResult, repoUrl: string, credential: MnemonSyncCredentialSource): Feedback {
   const added = result.merged?.runtime?.added ?? 0
   const commit = result.commit.slice(0, 8)
   if (result.pushed) return { tone: 'success', text: added > 0 ? t('config.syncDoneMerged', { count: added, commit }) : t('config.syncDone', { commit }) }
   if (!result.committed) return { tone: 'success', text: added > 0 ? t('config.syncUpToDateMerged', { count: added }) : t('config.syncUpToDate') }
-  return { tone: 'error', text: t('config.syncPushFailed', { reason: failureText(t, result.failure, result.reason ?? '', repoUrl) }) }
+  return { tone: 'error', text: t('config.syncPushFailed', { reason: failureText(t, result.failure, result.reason ?? '', repoUrl, credential) }) }
 }
 
 /** Where the repository is, whether it answers, and how it is authenticated. */
@@ -281,7 +284,7 @@ function RepositoryState({ status, checking, t, onRecheck, onFix }: { status: Mn
     : !status.git.available
       ? { dot: 'idle' as const, text: t('config.syncReasonGitMissing') }
       : !remote.reachable
-        ? { dot: 'error' as const, text: issueText(t, remote.issue, url, remote.error) }
+        ? { dot: 'error' as const, text: issueText(t, remote.issue, url, remote.error, status.config.credentialSource) }
         : {
           // Reading an HTTPS repository can succeed without credentials while pushing to it cannot.
           dot: credential === undefined && transportOf(url) === 'https' ? 'warning' as const : 'done' as const,

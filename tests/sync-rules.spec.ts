@@ -34,7 +34,30 @@ describe('sync setting rules shared by the form and the Host', () => {
   it('check a repository address alike, except a local path, which only the Host can check by its platform', () => {
     const remote = {
       'https://github.com/example/memory.git': undefined, 'ssh://git@github.com:22/example/memory.git': undefined, 'git@github.com:example/memory.git': undefined,
-      'https://user:secret@github.com/example/memory.git': 'credentials', 'https://token@github.com/example/memory.git': 'credentials',
+      'https://user:secret@github.com/example/memory.git': 'credentials', 'https://user:@github.com/example/memory.git': 'credentials',
+      // A user name the host wants a token under may stay in the address (#408); a password or a token may not.
+      'https://x-token-auth@bitbucket.org/team/memory.git': undefined, 'https://alice@git.example.com:8443/memory.git': undefined,
+      'https://gitlab+deploy-token-7@gitlab.com/team/memory.git': undefined, 'https://al!ce@github.com/example/memory.git': undefined,
+      'https://alice%2Dsmith@git.example.com/memory.git': undefined,
+      // A long Azure DevOps organization name, 50 letters and digits, the most it allows.
+      ['https://' + 'contoso'.repeat(7) + 'w@dev.azure.com/contoso/memory/_git/memory']: undefined,
+      ['https://' + 'z'.repeat(51) + '@git.example.com/memory.git']: undefined,
+      'https://ghp_0123456789abcdefABCDEF0123456789abcd@github.com/example/memory.git': 'credentials',
+      'https://github_pat_11ABCDEFG0123456789_abcdefghij@github.com/example/memory.git': 'credentials',
+      'https://glpat-abcdefghij0123456789@gitlab.com/team/memory.git': 'credentials',
+      'https://gldt-abcdefghij0123456789@gitlab.com/team/memory.git': 'credentials',
+      'https://glcbt-abcdefghij0123456789@gitlab.com/team/memory.git': 'credentials',
+      'https://hf_abcdefghijklmnopqrstuvwxyz0123456@huggingface.co/team/memory': 'credentials',
+      'https://0123456789abcdef0123456789abcdef@gitee.com/team/memory.git': 'credentials',
+      ['https://' + 'z'.repeat(52) + '@git.example.com/memory.git']: 'credentials',
+      'https://@github.com/example/memory.git': 'credentials', 'https://a@b@github.com/example/memory.git': 'credentials',
+      ['https://' + 'a-'.repeat(51) + '@github.com/example/memory.git']: 'credentials', 'https://al#ce@github.com/example/memory.git': 'credentials',
+      // Escapes are read as Git reads them: an escaped colon is a password, an escaped prefix a token.
+      'https://alice%3Ahunter2@git.example.com/memory.git': 'credentials', 'https://alice%40example.com@git.example.com/memory.git': 'credentials',
+      'https://%67hp_0123456789abcdefABCDEF0123456789abcd@github.com/example/memory.git': 'credentials',
+      'https://alice%0A@git.example.com/memory.git': 'credentials', 'https://alice%0D@git.example.com/memory.git': 'credentials',
+      'https://alice%20smith@git.example.com/memory.git': 'credentials', 'https://alice%zz@git.example.com/memory.git': 'credentials',
+      'https://%C3@git.example.com/memory.git': 'credentials',
       'ssh://user@github.com/example/memory.git': undefined, 'ftp://host/repo': 'format', 'file:///srv/memory.git': 'format',
       'https://github.com': 'format', 'github.com/example/memory': 'format', 'https://github.com/example/memory.git extra': 'format', ['https://x/' + 'y'.repeat(2000)]: 'format',
     } as const
