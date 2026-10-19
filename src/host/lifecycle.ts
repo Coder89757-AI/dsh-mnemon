@@ -974,7 +974,17 @@ export class MnemonLifecycle {
     }
   }
 
-  /** Resolve the same model route and preset composition as an ordinary fresh DSH Agent. */
+  /**
+   * Resolve the same model route and preset composition as an ordinary fresh DSH Agent.
+   *
+   * DSH persists a task Agent's session like any other. Its sidebar and ACP session
+   * list leave out a session whose header has `origin: 'subagent'`, the origin DSH
+   * gives its own subagents. Without it the sidebar hides a session that never started
+   * a turn only while DSH's projection cache holds a record of it, so a finished task
+   * could stay listed as an untitled Ungrouped conversation (#435). No `parentSession`
+   * or `delegationDepth`: the task belongs to no conversation, and its children stay
+   * one level deep.
+   */
   private async taskAgentCreation(
     fallbackSessionId: string,
     workspaceRoot: string | undefined,
@@ -986,9 +996,10 @@ export class MnemonLifecycle {
     const presets = presetService(this.ctx.get('agentPresets'))
     const presetId = presets === undefined ? undefined : (await presets.resolve()).id
     const workingDirectory = workFrom === undefined ? undefined : this.ctx.get('workingDirectory') as WorkingDirectoryService | undefined
-    if (presets === undefined && typeof workingDirectory?.set !== 'function') return { meta: { cwd }, agentOptions }
+    const meta = { cwd, origin: 'subagent' as const, ...(presetId === undefined ? {} : { agentPreset: presetId }) }
+    if (presets === undefined && typeof workingDirectory?.set !== 'function') return { meta, agentOptions }
     return {
-      meta: { cwd, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
+      meta,
       agentOptions,
       setup: async (agentCtx, agent) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
