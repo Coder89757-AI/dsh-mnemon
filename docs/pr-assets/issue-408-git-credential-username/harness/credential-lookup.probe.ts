@@ -1,10 +1,12 @@
 // Issue #408 record harness, not part of the suite. Copy it into tests/ as credential-lookup.spec.ts and run
 //   GIT_CONFIG_GLOBAL=<empty file> GIT_CONFIG_NOSYSTEM=1 pnpm exec vitest run tests/credential-lookup.spec.ts
-// once on the branch and once with main's src/host/git-sync.ts, src/host/sync-rules.ts, src/client/sync-view.ts
-// and src/client/locales.ts checked out. It prints one JSON line per case: what `git credential fill` finds
-// with the exact arguments the channel hands Git, what a sync over a loopback HTTPS remote does, and what
-// the settings page says. It writes its own Git configuration under a temporary HOME and reads none of
-// the machine's; the token is made up and nothing leaves the machine.
+// once on the branch and once with main's src/host/git-sync.ts, src/host/sync-rules.ts, src/client/sync-view.ts,
+// src/client/MnemonSyncSection.tsx, src/client/MnemonSyncDialogs.tsx and src/client/locales.ts checked out. It prints
+// one JSON line per case: what `git credential fill` finds with the exact arguments the channel hands Git, what a
+// sync over a loopback HTTPS remote does and which requests that remote saw, and what the settings page says. Git
+// reads only a configuration the harness writes under a temporary HOME, goes through no proxy, and reaches
+// "gitee.com" at the loopback remote through `http.curloptResolve` (Git 2.37 and later); the token is made up and
+// nothing leaves the machine.
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,8 +30,9 @@ const temporary = (label: string): string => { const d = mkdtempSync(join(tmpdir
 afterAll(async () => { for (const r of releases.reverse()) await r(); for (const d of directories) rmSync(d, { recursive: true, force: true }) })
 
 const home = temporary('home')
-const globalConfig = join(home, 'gitconfig')
-Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, 'xdg'), GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1' })
+const globalConfig = join(home, '.gitconfig')
+Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, 'xdg'), GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1', NO_PROXY: '*', no_proxy: '*' })
+for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']) delete process.env[key]
 
 function configure(entries: Array<[string, string]>): void {
   writeFileSync(globalConfig, '')
@@ -48,22 +51,25 @@ async function channel(label: string, run?: ProcessRunner, withSources = false) 
   return { root, sources, sync: new MnemonGitSync(runner, config, new MnemonPackManager(runner, config), run) }
 }
 
-it('reports what Git finds and what a sync does', async () => {
+it('reports what Git finds, what a sync does and what the page says', async () => {
   // 1. `git credential fill` with the arguments the status check's ls-remote is given.
   const fills: Array<[string, string, Array<[string, string]>]> = [
     ['GCM user name for github.com', 'https://github.com/octocat/memory.git', [['credential.https://github.com.username', 'alice']]],
     ['user name for one owner', 'https://github.com/octocat/memory.git', [['credential.https://github.com/octocat.username', 'alice']]],
     ['credential.username', 'https://github.com/octocat/memory.git', [['credential.username', 'alice']]],
     ['GCM useHttpPath for dev.azure.com', 'https://dev.azure.com/contoso/project/_git/memory', [['credential.https://dev.azure.com.useHttpPath', 'true']]],
-    ['no configuration, Gitee', 'https://gitee.com/someone/memory.git', []],
+    ['no configuration, gitee.com', 'https://gitee.com/someone/memory.git', []],
+    ['no configuration, another host', 'https://git.example.com/team/memory.git', []],
     ['host written GitHub.com:443', 'https://GitHub.com:443/octocat/memory.git', []],
   ]
   for (const [label, repoUrl, entries] of fills) {
     configure(entries)
     let found = ''
+    let given = ''
     const run: ProcessRunner = async (command, args, options) => {
       const at = args.indexOf('ls-remote')
       if (at === -1) return runProcess(command, args, options)
+      given = args.slice(0, at).filter(argument => argument.startsWith('credential.') && !argument.startsWith('credential.helper')).join(' ') + ' ' + String(args[at + 2])
       const result = spawnSync(command, [...args.slice(0, at), 'credential', 'fill'], { env: options.env, input: 'url=' + args[at + 2] + '\n\n', encoding: 'utf8' })
       found = result.status === 0
         ? result.stdout.split('\n').filter(line => /^(host|username|password)=/u.test(line)).join(' ')
@@ -73,22 +79,25 @@ it('reports what Git finds and what a sync does', async () => {
     const { sync } = await channel('fill', run)
     await sync.configure({ repoUrl, token: TOKEN })
     await sync.status()
-    print({ case: 'credential fill: ' + label, outcome: short(found) })
+    print({ case: 'credential fill: ' + label, given: given.trim(), outcome: short(found) })
   }
 
   // 2. A real sync over a loopback HTTPS remote that takes only the credentials it is told to.
-  const remotes: Array<[string, Record<string, unknown>, Array<[string, string]>, string]> = [
-    ['takes the token under any name; GCM user name configured', { accounts: [{ user: '*', token: TOKEN }] }, [['credential.https://127.0.0.1.username', 'alice']], ''],
-    ['refuses x-access-token, takes oauth2, as Gitee does', { accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'] }, [], ''],
-    ['wants x-token-auth, named in the address, as Bitbucket does', { accounts: [{ user: 'x-token-auth', token: TOKEN }] }, [], 'x-token-auth@'],
+  const remotes: Array<[string, Record<string, unknown>, Array<[string, string]>, string, string]> = [
+    ['takes the token under any name; GCM user name configured', { accounts: [{ user: '*', token: TOKEN }] }, [['credential.https://127.0.0.1:PORT.username', 'alice']], '127.0.0.1', ''],
+    ['gitee.com: refuses x-access-token, takes oauth2', { accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'], names: ['gitee.com'] }, [['http.curloptResolve', 'gitee.com:PORT:127.0.0.1']], 'gitee.com', ''],
+    ['a host like it under another name', { accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'] }, [], '127.0.0.1', ''],
+    ['the same, oauth2 named in the address', { accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'] }, [], '127.0.0.1', 'oauth2@'],
+    ['wants x-token-auth, named in the address, as Bitbucket does', { accounts: [{ user: 'x-token-auth', token: TOKEN }] }, [], '127.0.0.1', 'x-token-auth@'],
   ]
-  for (const [label, policy, entries, user] of remotes) {
-    const server = gitHttpsRemote(policy)
+  for (const [label, policy, entries, host, user] of remotes) {
+    const requests: Array<{ user?: string; password: boolean; status: number }> = []
+    const server = gitHttpsRemote({ ...policy, report: (event: { user?: string; password: boolean; status: number }) => requests.push(event) })
     const port: number = await server.start()
     releases.push(() => server.close())
     process.env.GIT_SSL_CAINFO = server.certificate
-    const { url } = server.repository('team/memory.git') as { url: string }
-    configure(entries.map(([key, value]) => [key.replace('https://127.0.0.1', 'https://127.0.0.1:' + String(port)), value]))
+    const { url } = server.repository('team/memory.git', host) as { url: string }
+    configure(entries.map(([key, value]) => [key.replace('PORT', String(port)), value.replace('PORT', String(port))]))
     const { sync, sources } = await channel('https', undefined, true)
     let outcome: string
     try {
@@ -98,18 +107,21 @@ it('reports what Git finds and what a sync does', async () => {
       else {
         await sources!.runtime.mutate('mutate', { action: 'add', target: 'user', content: 'Probe entry', importance: 'normal' }, { confirmed: true })
         const pushed = await sync.push({ message: 'Probe' })
-        outcome = 'status reachable; push ' + (pushed.pushed ? 'published ' + pushed.commit.slice(0, 8) : 'not published: ' + short(pushed.reason ?? ''))
+        outcome = 'status reachable; push ' + (pushed.pushed ? 'published' : 'not published: ' + short(pushed.reason ?? ''))
       }
     } catch (error) {
       outcome = 'refused: ' + short(error instanceof Error ? error.message : String(error))
     }
-    print({ case: 'https: ' + label, outcome })
+    const seen = [...new Set(requests.filter(request => request.user !== undefined).map(request => request.user + (request.password ? ':<token>' : ':<empty>') + ' ' + String(request.status)))]
+    print({ case: 'https: ' + label, outcome, requests: seen })
   }
 
-  // 3. What the page says for an HTTPS remote that refused authentication, with and without a credential.
-  for (const [label, url] of [['github.com', 'https://github.com/octocat/memory.git'], ['another host', 'https://gitee.com/someone/memory.git']]) {
-    const call = issueText as unknown as (...args: unknown[]) => string
-    print({ case: 'page, ' + label + ', credential offered', outcome: call(translateEn, 'auth', url, 'Authentication failed', true) })
-    print({ case: 'page, ' + label + ', no credential', outcome: call(translateEn, 'auth', url, 'Authentication failed', false) })
+  // 3. What the page says for an HTTPS remote that refused authentication, by where the credential came from.
+  const call = issueText as unknown as (...args: unknown[]) => string
+  for (const [label, url] of [['github.com', 'https://github.com/octocat/memory.git'], ['another host', 'https://gitee.com/someone/memory.git']] as const) {
+    for (const source of ['github', 'token', 'environment', 'none'] as const) {
+      if (source === 'github' && label !== 'github.com') continue
+      print({ case: 'page, ' + label + ', ' + source, outcome: call(translateEn, 'auth', url, 'Authentication failed', source) })
+    }
   }
-}, 120_000)
+}, 180_000)
