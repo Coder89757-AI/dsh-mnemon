@@ -255,7 +255,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 
 - token 不会出现在任何响应或错误信息中。通道在每次网络操作时解析一个凭据，顺序为：环境变量 `MNEMON_SYNC_GIT_TOKEN`、`state/sync-git.json`（权限 `0600`）中保存的 token，最后是 GitHub 登录写入 DSH 凭据存储（键 `dsh-mnemon/github`）的凭据。
 - `credentialSource` 指出生效的那一个——`environment`、`token`、`github` 或 `none`——前三者都让 `hasToken` 为 `true`，因此已登录的账号完全不需要填 token。失败会以 `details.reason` 带上类别，页面据此用自己的语言说明；有可用凭据时出现 `remote-auth`，表示主机拒绝了这个凭据。
-- Git 从一个只为一条命令存在的凭据存储取得 token，用户名为仓库地址中写明的用户名；没有写明时，`github.com` 用 `x-access-token`，其他主机用 `oauth2`。Git 2.26 及以后的版本在命令行上得到这个用户名，它优先于这台电脑配置的任何 `credential.username`；更早的 Git 则在地址中得到它。命令同时关闭 `credential.useHttpPath`，因为凭据存储只写明主机。
+- Git 从一个只为一条命令存在的凭据存储取得 token，用户名为仓库地址中写明的用户名；没有写明时，`gitee.com` 用 `oauth2`，其他主机用 `x-access-token`。Git 2.26 及以后的版本在命令行上得到这个用户名，它优先于这台电脑配置的任何 `credential.username`，同时关闭 `credential.useHttpPath`，交给 Git 的地址不带用户名。更早的 Git 得到的命令与以前相同，除非在该命令自身的环境中运行 `git config --get-urlmatch credential <地址>` 发现为这个地址配置了用户名（此时地址带上凭据存储中的用户名），或开启了 `credential.useHttpPath`（此时命令将其关闭）。
 - GitHub 请求先走环境自带的 `fetch`（与版本检查相同的接缝），启动器配置的代理策略对它同样生效。当这次请求完全连不上时，通道会用从 `HTTPS_PROXY`、`http_proxy`、`all_proxy` 发现的代理——Windows 上还会读系统代理设置——以 Node 自带模块搭建的 CONNECT 隧道重试一次；应答成功的代理会被记住，失效的代理会被丢弃，因此换网络后无需重启即可恢复。
 - 失败只报告 GitHub 的错误码与 HTTP 状态，不回显响应体的其他内容；无法使用的设备码回应还会给出它的 content type 与字段名，但不含字段值。`accept: application/json` 请求头没有到达 GitHub 时（例如被其他插件对 `fetch` 的改写丢掉），GitHub 会以表单编码回应，通道按同样的方式读取。完全没到达 GitHub 的请求会报告传输层原因，且在没找到代理时直接指出应设置 `HTTPS_PROXY`。
 
