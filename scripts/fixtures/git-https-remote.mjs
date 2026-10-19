@@ -3,8 +3,10 @@
 // tokens it is given, under a certificate openssl makes for 127.0.0.1 when the remote starts. No
 // account and no network are involved. Git trusts the certificate through GIT_SSL_CAINFO, or skips
 // the check with GIT_SSL_NO_VERIFY=1. `tests/git-sync-credentials.spec.mjs` uses it; run it with
-// `node` for a WebUI check, giving the DSH it serves GIT_SSL_CAINFO:
-//   node scripts/fixtures/git-https-remote.mjs --account <user>:<token> [--account ...] [--refuse <user>] [--repository <path>] [--port <n>] [--port-file <file>]
+// `node` for a WebUI check, giving the DSH it serves GIT_SSL_CAINFO. With `--name <host>` the
+// certificate also names that host, which Git 2.37 and later can send here with
+// `http.curloptResolve = <host>:<port>:127.0.0.1`, so the remote can answer for a host by its name:
+//   node scripts/fixtures/git-https-remote.mjs --account <user>:<token> [--account ...] [--refuse <user>] [--name <host>] [--repository <path>] [--port <n>] [--port-file <file>]
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -36,11 +38,12 @@ function basic(header) {
  * A remote, listening on a free loopback port once `start()` resolves:
  * - `accounts` lists the `{ user, token }` pairs it takes, `user: '*'` taking the token under any name;
  * - `refuse` names user names answered 403 whatever the token, as a host that wants another name does;
- * - every other request without accepted credentials is answered 401 with a Basic challenge.
+ * - every other request without accepted credentials is answered 401 with a Basic challenge;
+ * - `names` are host names the certificate covers beside 127.0.0.1.
  * `report` receives each request as it finishes, with the user name it came with and whether a
  * password came with it, never the password itself.
  */
-export function gitHttpsRemote({ accounts = [], refuse = [], report = () => {} } = {}) {
+export function gitHttpsRemote({ accounts = [], refuse = [], names = [], report = () => {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'mnemon-git-https-remote-'))
   const projects = join(root, 'repositories')
   mkdirSync(projects)
@@ -51,7 +54,7 @@ export function gitHttpsRemote({ accounts = [], refuse = [], report = () => {} }
   // where a certificate is found by its subject.
   const made = spawnSync('openssl', [
     'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-subj', '/CN=git-https-remote ' + randomBytes(6).toString('hex'),
-    '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', join(root, 'key.pem'), '-out', join(root, 'certificate.pem'),
+    '-addext', 'subjectAltName=' + ['IP:127.0.0.1', ...names.map(name => 'DNS:' + name)].join(','), '-keyout', join(root, 'key.pem'), '-out', join(root, 'certificate.pem'),
   ], { encoding: 'utf8' })
   if (made.status !== 0) {
     rmSync(root, { recursive: true, force: true })
@@ -137,13 +140,13 @@ export function gitHttpsRemote({ accounts = [], refuse = [], report = () => {} }
       })
       return server.address().port
     },
-    /** A new empty bare repository, by its path under the remote, and the address Git reaches it at. */
-    repository(path = 'team/memory.git') {
+    /** A new empty bare repository, by its path under the remote, and the address Git reaches it at by `host`. */
+    repository(path = 'team/memory.git', host = '127.0.0.1') {
       const made = spawnSync('git', ['init', '--bare', '--quiet', join(projects, path)], {
         env: { ...process.env, HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: config }, encoding: 'utf8',
       })
       if (made.status !== 0) throw new Error('git init failed: ' + made.stderr.trim())
-      return { directory: join(projects, path), url: 'https://127.0.0.1:' + String(server.address().port) + '/' + path }
+      return { directory: join(projects, path), url: 'https://' + host + ':' + String(server.address().port) + '/' + path }
     },
     async close() {
       server.closeAllConnections()
@@ -158,6 +161,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
   const { values } = parseArgs({ options: {
     account: { type: 'string', multiple: true, default: [] },
     refuse: { type: 'string', multiple: true, default: [] },
+    name: { type: 'string', multiple: true, default: [] },
     repository: { type: 'string', multiple: true, default: [] },
     port: { type: 'string', default: '0' },
     'port-file': { type: 'string' },
@@ -170,7 +174,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
   const port = Number(values.port)
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('--port must be 0 through 65535')
   const remote = gitHttpsRemote({
-    accounts, refuse: values.refuse,
+    accounts, refuse: values.refuse, names: values.name,
     report: event => console.log('Git HTTPS remote: ' + event.method + ' ' + event.path + ' as '
       + (event.user === undefined ? '(no credentials)' : event.user + (event.password ? ' with a password' : ' without a password')) + ' -> ' + String(event.status)),
   })

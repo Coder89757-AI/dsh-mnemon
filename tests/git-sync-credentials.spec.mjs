@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { gitHttpsRemote, opensslAvailable } from '../scripts/fixtures/git-https-remote.mjs'
 import { resolveConfig } from '../src/host/config.ts'
 import { MnemonGitSync, credentialTarget } from '../src/host/git-sync.ts'
@@ -14,17 +14,42 @@ import { sourceFixture } from './fixtures/sources.ts'
 const TOKEN = 'made-up-token-408'
 const directories = []
 const releases = []
-// Every Git process here reads a configuration this suite writes, never the machine's own.
+// Every Git process here reads a configuration this suite writes, never the machine's own, and goes
+// through no proxy: a remote that answers for a host by its name must never reach that host.
+const PROXIES = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy']
 const ISOLATION = [
   'HOME', 'XDG_CONFIG_HOME', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_SYSTEM', 'GIT_SSL_CAINFO',
-  'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0',
+  'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', ...PROXIES,
 ]
 let saved = {}
 let globalConfig = ''
 
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'ignore' }).status === 0
+/**
+ * A home of its own for Git: its `.gitconfig` is the global configuration, which Git before 2.32
+ * reads from HOME and later Git from GIT_CONFIG_GLOBAL, and no system file is read.
+ */
+function isolatedHome(label) {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-mnemon-' + label + '-'))
+  const gitconfig = join(home, '.gitconfig')
+  writeFileSync(gitconfig, '')
+  return { home, gitconfig, env: { HOME: home, XDG_CONFIG_HOME: join(home, 'xdg'), GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_NOSYSTEM: '1' } }
+}
+
+// The probes run in such a home as well, so this machine's own configuration can neither skip nor fail
+// them. Git that is not installed skips the suites; Git that is installed and fails a probe fails them.
+const probe = isolatedHome('credential-probe')
+const probeEnvironment = { ...process.env, ...probe.env }
+const gitVersion = spawnSync('git', ['--version'], { env: probeEnvironment, encoding: 'utf8' })
+const gitInstalled = gitVersion.error?.code !== 'ENOENT'
 // `git http-backend` answers a request without a repository with a 500 page, and exits 0.
-const httpsAvailable = gitAvailable && opensslAvailable() && spawnSync('git', ['http-backend'], { stdio: 'ignore', env: { ...process.env, REQUEST_METHOD: 'GET' } }).status === 0
+const backend = gitInstalled ? spawnSync('git', ['http-backend'], { env: { ...probeEnvironment, REQUEST_METHOD: 'GET' }, input: '', encoding: 'utf8' }) : undefined
+const [major = 0, minor = 0] = (/(\d+)\.(\d+)/u.exec(gitVersion.stdout ?? '') ?? []).slice(1).map(Number)
+const gitAtLeast = (wantedMajor, wantedMinor) => major > wantedMajor || (major === wantedMajor && minor >= wantedMinor)
+// From Git 2.26 the command line's user name wins; `http.curloptResolve`, which sends a host name to the
+// loopback remote so that it answers for that host, came with Git 2.37.
+const lastNameWins = gitAtLeast(2, 26)
+const resolvesHosts = gitAtLeast(2, 37)
+afterAll(() => rmSync(probe.home, { recursive: true, force: true }))
 
 function temporary(label) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-mnemon-' + label + '-'))
@@ -34,12 +59,12 @@ function temporary(label) {
 
 beforeEach(() => {
   saved = Object.fromEntries(ISOLATION.map(key => [key, process.env[key]]))
-  const home = temporary('credential-home')
-  globalConfig = join(home, 'gitconfig')
-  writeFileSync(globalConfig, '')
-  Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, 'xdg'), GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1' })
-  delete process.env.GIT_CONFIG_SYSTEM
-  delete process.env.GIT_SSL_CAINFO
+  const home = isolatedHome('credential-home')
+  directories.push(home.home)
+  globalConfig = home.gitconfig
+  Object.assign(process.env, home.env)
+  for (const key of ['GIT_CONFIG_SYSTEM', 'GIT_SSL_CAINFO', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', ...PROXIES]) delete process.env[key]
+  Object.assign(process.env, { NO_PROXY: '*', no_proxy: '*' })
 })
 
 afterEach(async () => {
@@ -94,9 +119,15 @@ async function channel(label, run, withSources = false) {
   return { root, sync, sources }
 }
 
-describe.skipIf(!gitAvailable)('the credential Git sync hands Git', { timeout: 60_000 }, () => {
+describe.skipIf(!gitInstalled)('the credential Git sync hands Git', { timeout: 60_000 }, () => {
+  it('runs Git in a home of its own', () => {
+    expect(gitVersion.error, gitVersion.stderr).toBeUndefined()
+    expect(gitVersion.status, gitVersion.stderr).toBe(0)
+  })
+
   it('is found under the user name the store holds, whatever this machine configures for the host', async () => {
-    for (const [origin, user] of [['https://github.com', 'x-access-token'], ['https://git.example.com', 'oauth2']]) {
+    // Every host keeps x-access-token, which it has always been offered, except one known to refuse it.
+    for (const [origin, user] of [['https://github.com', 'x-access-token'], ['https://git.example.com', 'x-access-token'], ['https://gitee.com', 'oauth2']]) {
       const configurations = [
         [], [['credential.username', 'alice']], [['credential.' + origin + '.username', 'alice']],
         [['credential.' + origin + '/team.username', 'alice']], [['credential.' + origin + '/team/memory.git.username', 'alice']],
@@ -151,14 +182,21 @@ describe.skipIf(!gitAvailable)('the credential Git sync hands Git', { timeout: 6
 
   it('offers the token under the user name an address names, as Bitbucket addresses do', async () => {
     configure([['credential.https://git.example.com.username', 'alice']])
-    const filled = []
-    const { sync } = await channel('credential-named', fillingRunner(filled))
-    await sync.configure({ repoUrl: 'https://x-token-auth@git.example.com/team/memory.git', token: TOKEN })
-    await sync.status()
-    expect(fields(filled[0].output)).toMatchObject({ host: 'git.example.com', username: 'x-token-auth', password: TOKEN })
-    // The address goes to Git as it was written, and no other name comes with it.
-    expect(filled[0].args).toContain('https://x-token-auth@git.example.com/team/memory.git')
-    expect(filled[0].args.some(argument => argument.startsWith('credential.username='))).toBe(false)
+    for (const [repoUrl, name] of [['https://x-token-auth@git.example.com/team/memory.git', 'x-token-auth'], ['https://alice%2Dsmith@git.example.com/team/memory.git', 'alice-smith']]) {
+      const filled = []
+      const { sync } = await channel('credential-named', fillingRunner(filled))
+      await sync.configure({ repoUrl, token: TOKEN })
+      await sync.status()
+      expect(fields(filled[0].output), repoUrl).toMatchObject({ host: 'git.example.com', username: name, password: TOKEN })
+      if (lastNameWins) {
+        // The name goes on the command line and the address without it, so Git never offers the name
+        // alone first, as it does for a name it finds in the address.
+        expect(filled[0].args).toContain('https://git.example.com/team/memory.git')
+        expect(filled[0].args).toContain('credential.username=' + name)
+      } else {
+        expect(filled[0].args).toContain(repoUrl)
+      }
+    }
   })
 
   it('stores the host as the address writes it and a token as Git reads it back', async () => {
@@ -167,37 +205,63 @@ describe.skipIf(!gitAvailable)('the credential Git sync hands Git', { timeout: 6
     // Git compares hosts as text, its case and port included, and decodes the stored password.
     await sync.configure({ repoUrl: 'https://Git.Example.com:443/team/memory.git', token: 'p@ss/w%rd:408' })
     await sync.status()
-    expect(fields(filled[0].output)).toMatchObject({ host: 'Git.Example.com:443', username: 'oauth2', password: 'p@ss/w%rd:408' })
+    expect(fields(filled[0].output)).toMatchObject({ host: 'Git.Example.com:443', username: 'x-access-token', password: 'p@ss/w%rd:408' })
   })
 
-  it('names the user on the command line from Git 2.26, and in the address before, where a configured name came first', async () => {
-    for (const [version, expected] of [['2.50.1', 'command line'], ['2.26.0', 'command line'], ['2.25.1', 'address'], ['2.20.0', 'address']]) {
+  it('names the user on the command line from Git 2.26, and before only where the configuration would name another', async () => {
+    const lsRemote = async (version, configured, repoUrl = 'https://git.example.com/team/memory.git') => {
       const commands = []
       const run = async (_command, args) => {
         commands.push([...args])
-        return { stdout: args.includes('--version') ? 'git version ' + version + '\n' : '', stderr: '', exitCode: 0 }
+        if (args.includes('--version')) return { stdout: 'git version ' + version + '\n', stderr: '', exitCode: 0 }
+        if (args.includes('--get-urlmatch')) return { stdout: configured, stderr: '', exitCode: configured === '' ? 1 : 0 }
+        return { stdout: '', stderr: '', exitCode: 0 }
       }
       const { sync } = await channel('credential-version', run)
-      await sync.configure({ repoUrl: 'https://git.example.com/team/memory.git', token: TOKEN })
+      await sync.configure({ repoUrl, token: TOKEN })
       await sync.status()
-      const lsRemote = commands.find(args => args.includes('ls-remote'))
-      expect(lsRemote, version).toBeDefined()
-      expect(lsRemote.includes('credential.username=oauth2'), version).toBe(expected === 'command line')
-      expect(lsRemote.includes('https://oauth2@git.example.com/team/memory.git'), version).toBe(expected === 'address')
-      expect(lsRemote.includes('credential.useHttpPath=false'), version).toBe(true)
-      // The token itself never reaches an argument.
-      expect(lsRemote.some(argument => argument.includes(TOKEN)), version).toBe(false)
+      const args = commands.find(command => command.includes('ls-remote'))
+      expect(args.some(argument => argument.includes(TOKEN)), version).toBe(false)
+      return { args, probed: commands.some(command => command.includes('--get-urlmatch')), credential: args.filter(argument => argument.startsWith('credential.')) }
+    }
+    for (const version of ['2.50.1', '2.26.0']) {
+      const plain = await lsRemote(version, '')
+      expect(plain.probed, version).toBe(false)
+      expect(plain.credential.slice(2), version).toEqual(['credential.useHttpPath=false', 'credential.username=x-access-token'])
+      expect(plain.args, version).toContain('https://git.example.com/team/memory.git')
+      const named = await lsRemote(version, '', 'https://x-token-auth@git.example.com/team/memory.git')
+      expect(named.credential.slice(2), version).toEqual(['credential.useHttpPath=false', 'credential.username=x-token-auth'])
+      expect(named.args, version).toContain('https://git.example.com/team/memory.git')
+    }
+    for (const version of ['2.25.1', '2.20.0']) {
+      // Nothing configured for the address: the command main has always run.
+      const plain = await lsRemote(version, '')
+      expect(plain.probed, version).toBe(true)
+      expect(plain.credential, version).toEqual(['credential.helper=', expect.stringMatching(/^credential\.helper=store --file=/u)])
+      expect(plain.args, version).toContain('https://git.example.com/team/memory.git')
+      // A user name configured for it: the store's name goes into the address, which every Git takes first.
+      expect((await lsRemote(version, 'credential.helper manager\ncredential.username alice\n')).args, version).toContain('https://x-access-token@git.example.com/team/memory.git')
+      // A path added to the lookup: it is taken out again, and the address stays as it is.
+      const path = await lsRemote(version, 'credential.usehttppath true\n')
+      expect(path.credential.slice(2), version).toEqual(['credential.useHttpPath=false'])
+      expect(path.args, version).toContain('https://git.example.com/team/memory.git')
+      // An address that names its user is passed as written.
+      expect((await lsRemote(version, 'credential.username alice\n', 'https://x-token-auth@git.example.com/team/memory.git')).args, version).toContain('https://x-token-auth@git.example.com/team/memory.git')
     }
   })
 
-  it('takes x-access-token for github.com, the address\'s own user name first, and oauth2 for any other host', () => {
-    expect(credentialTarget('https://github.com/octocat/memory.git')).toEqual({ user: 'x-access-token', named: false, host: 'github.com' })
-    expect(credentialTarget('https://GitHub.com/octocat/memory.git')).toEqual({ user: 'x-access-token', named: false, host: 'GitHub.com' })
-    expect(credentialTarget('https://alice@github.com/octocat/memory.git')).toEqual({ user: 'alice', named: true, host: 'github.com' })
-    expect(credentialTarget('https://gitee.com/someone/memory.git')).toEqual({ user: 'oauth2', named: false, host: 'gitee.com' })
-    expect(credentialTarget('https://gitlab.example.com:8443/team/memory.git')).toEqual({ user: 'oauth2', named: false, host: 'gitlab.example.com:8443' })
-    expect(credentialTarget('https://x-token-auth@bitbucket.org/team/memory.git')).toEqual({ user: 'x-token-auth', named: true, host: 'bitbucket.org' })
-    expect(credentialTarget('https://alice%40example.com@git.example.com/memory.git')).toEqual({ user: 'alice%40example.com', named: true, host: 'git.example.com' })
+  it('takes the address\'s own user name first, oauth2 for gitee.com and x-access-token for every other host', () => {
+    expect(credentialTarget('https://github.com/octocat/memory.git')).toEqual({ user: 'x-access-token', name: 'x-access-token', named: false, host: 'github.com', address: 'https://github.com/octocat/memory.git' })
+    expect(credentialTarget('https://GitHub.com/octocat/memory.git')).toMatchObject({ user: 'x-access-token', host: 'GitHub.com' })
+    expect(credentialTarget('https://alice@github.com/octocat/memory.git')).toEqual({ user: 'alice', name: 'alice', named: true, host: 'github.com', address: 'https://github.com/octocat/memory.git' })
+    expect(credentialTarget('https://gitee.com/someone/memory.git')).toMatchObject({ user: 'oauth2', named: false, host: 'gitee.com' })
+    expect(credentialTarget('https://Gitee.com:8443/someone/memory.git')).toMatchObject({ user: 'oauth2', host: 'Gitee.com:8443' })
+    expect(credentialTarget('https://gitee.example.com/someone/memory.git')).toMatchObject({ user: 'x-access-token' })
+    expect(credentialTarget('https://gitlab.example.com:8443/team/memory.git')).toMatchObject({ user: 'x-access-token', host: 'gitlab.example.com:8443' })
+    expect(credentialTarget('https://x-token-auth@bitbucket.org/team/memory.git')).toEqual({ user: 'x-token-auth', name: 'x-token-auth', named: true, host: 'bitbucket.org', address: 'https://bitbucket.org/team/memory.git' })
+    expect(credentialTarget('https://alice%2Dsmith@git.example.com/memory.git')).toMatchObject({ user: 'alice%2Dsmith', name: 'alice-smith' })
+    // A host named like an object's own property is still just a host.
+    expect(credentialTarget('https://constructor/team/memory.git')).toMatchObject({ user: 'x-access-token', host: 'constructor' })
   })
 })
 
@@ -216,18 +280,25 @@ function holding(directory, text) {
 }
 
 // A real Git against a real HTTPS remote on loopback, which takes only the credentials it is given.
-describe.skipIf(!httpsAvailable)('Git sync over HTTPS', { timeout: 120_000 }, () => {
-  async function remote(options) {
+describe.skipIf(!gitInstalled || !opensslAvailable())('Git sync over HTTPS', { timeout: 120_000 }, () => {
+  async function remote(options, host) {
     const requests = []
     const server = gitHttpsRemote({ ...options, report: event => requests.push(event) })
-    await server.start()
+    const port = await server.start()
     releases.push(() => server.close())
     process.env.GIT_SSL_CAINFO = server.certificate
-    return { ...server.repository('team/memory.git'), requests }
+    return { ...server.repository('team/memory.git', host), port, requests }
   }
 
-  it('syncs through a host that refuses x-access-token, past the user name this machine configures for it', async () => {
-    const { url, requests } = await remote({ accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'] })
+  /** What one remote saw from Git: the user names it was asked with, and whether a password came along. */
+  const signed = requests => requests.filter(request => request.user !== undefined)
+
+  it('serves Git over HTTP with git http-backend', () => {
+    expect(backend?.status, backend?.stderr).toBe(0)
+  })
+
+  it('syncs past the user name this machine configures for the host, asking as x-access-token alone', async () => {
+    const { url, requests } = await remote({ accounts: [{ user: '*', token: TOKEN }] })
     configure([['credential.' + new URL(url).origin + '.username', 'alice'], ['credential.useHttpPath', 'true']])
     const machineA = await channel('https-a', undefined, true)
     await machineA.sync.configure({ repoUrl: url, token: TOKEN })
@@ -240,35 +311,51 @@ describe.skipIf(!httpsAvailable)('Git sync over HTTPS', { timeout: 120_000 }, ()
     expect(await machineB.sync.pull()).toMatchObject({ imported: true })
     expect(readFileSync(join(machineB.root, 'runtime', 'USER.md'), 'utf8')).toContain('Synced over HTTPS with a token')
 
-    // Git asked as oauth2 with the token each time, and never as another name or without the token.
-    const signed = requests.filter(request => request.user !== undefined)
-    expect(signed.length).toBeGreaterThan(0)
-    expect(signed.every(request => request.user === 'oauth2' && request.password && request.status === 200)).toBe(true)
+    // Git asked as x-access-token with the token each time, never as another name or without the token.
+    expect(signed(requests).length).toBeGreaterThan(0)
+    expect(signed(requests).every(request => request.user === 'x-access-token' && request.password && request.status === 200)).toBe(true)
     // The token stays in the settings file it was saved to and goes nowhere else, and the user name
     // Git was given stays nowhere at all: not in the mirror's config, its FETCH_HEAD or its logs.
     for (const machine of [machineA, machineB]) {
       expect(holding(join(machine.root, 'state'), TOKEN)).toEqual(['sync-git.json'])
-      expect(holding(join(machine.root, 'state'), 'oauth2')).toEqual([])
+      expect(holding(join(machine.root, 'state'), 'x-access-token')).toEqual([])
       expect(readdirSync(join(machine.root, 'state')).filter(name => name.startsWith('.credentials.'))).toEqual([])
     }
   })
 
-  it('reports a credential the host refuses as an authentication failure with a credential offered', async () => {
-    const { url } = await remote({ accounts: [{ user: 'oauth2', token: TOKEN }] })
-    const machineA = await channel('https-refused', undefined, true)
-    await machineA.sync.configure({ repoUrl: url, token: 'not-' + TOKEN })
-    const status = await machineA.sync.status()
-    expect(status.remote).toMatchObject({ reachable: false, issue: 'auth' })
-    expect(status.config).toMatchObject({ hasToken: true, credentialSource: 'token' })
-    expect(status.remote.error).not.toContain('not-' + TOKEN)
-    await expect(machineA.sync.push({ message: 'Refused' })).rejects.toMatchObject({ reason: 'remote-auth' })
+  it.skipIf(!resolvesHosts)('syncs with gitee.com under oauth2, which it takes where it refuses x-access-token', async () => {
+    const { url, port, requests } = await remote({ accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'], names: ['gitee.com'] }, 'gitee.com')
+    // Git reaches gitee.com here at the loopback remote, which answers for it as the issue's comment found it does.
+    configure([['http.curloptResolve', 'gitee.com:' + String(port) + ':127.0.0.1'], ['credential.https://gitee.com:' + String(port) + '.username', 'alice']])
+    const machineA = await channel('https-gitee', undefined, true)
+    await machineA.sync.configure({ repoUrl: url, token: TOKEN })
+    expect((await machineA.sync.status()).remote).toEqual({ reachable: true, branchExists: false })
+    expect(await machineA.sync.push({ message: 'To gitee.com' })).toMatchObject({ committed: true, pushed: true })
+    expect(signed(requests).every(request => request.user === 'oauth2' && request.password && request.status === 200)).toBe(true)
   })
 
-  it('publishes under the user name the address names', async () => {
-    const { url, requests } = await remote({ accounts: [{ user: 'x-token-auth', token: TOKEN }] })
+  it('reports a credential the host refuses as an authentication failure with a credential offered', async () => {
+    // A wrong token, and a right one under a name the host will not take it with: Gitee's answer to
+    // x-access-token, which a host Git sync knows nothing of gets, as it always did.
+    for (const [policy, token] of [[{ accounts: [{ user: '*', token: TOKEN }] }, 'not-' + TOKEN], [{ accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'] }, TOKEN]]) {
+      const { url } = await remote(policy)
+      const machineA = await channel('https-refused', undefined, true)
+      await machineA.sync.configure({ repoUrl: url, token })
+      const status = await machineA.sync.status()
+      expect(status.remote).toMatchObject({ reachable: false, issue: 'auth' })
+      expect(status.config).toMatchObject({ hasToken: true, credentialSource: 'token' })
+      expect(status.remote.error).not.toContain(token)
+      await expect(machineA.sync.push({ message: 'Refused' })).rejects.toMatchObject({ reason: 'remote-auth' })
+    }
+  })
+
+  it('publishes under the user name the address names, without offering it alone first', async () => {
+    const { url, requests } = await remote({ accounts: [{ user: 'oauth2', token: TOKEN }], refuse: ['x-access-token'] })
     const machineA = await channel('https-named', undefined, true)
-    await machineA.sync.configure({ repoUrl: url.replace('https://', 'https://x-token-auth@'), token: TOKEN })
+    await machineA.sync.configure({ repoUrl: url.replace('https://', 'https://oauth2@'), token: TOKEN })
     expect(await machineA.sync.push({ message: 'Named in the address' })).toMatchObject({ committed: true, pushed: true })
-    expect(requests.filter(request => request.status === 200).every(request => request.user === 'x-token-auth')).toBe(true)
+    expect(signed(requests).every(request => request.user === 'oauth2')).toBe(true)
+    // Given the name on the command line, Git sends it with the token or not at all.
+    if (lastNameWins) expect(signed(requests).every(request => request.password)).toBe(true)
   })
 })
