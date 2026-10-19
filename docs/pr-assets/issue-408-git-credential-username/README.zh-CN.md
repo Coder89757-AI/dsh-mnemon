@@ -55,7 +55,7 @@ Git 版本取自同步通道在每次操作前本来就会读取的版本（`git
 | `MNEMON_SYNC_GIT_TOKEN` | GitHub 拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它 | 仓库主机拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它 |
 | 无 | 不变：需要凭据，请用 GitHub 登录或填写访问令牌 | 不变：需要凭据，请填写访问令牌 |
 
-英文文案见 `src/client/locales.ts`。客户端依据 `credentialSource` 判断，状态里本来就带有它，且与每条命令使用的凭据出自同一次解析。SSH、本地路径、找不到仓库、网络与超时的文案都不变，页面不显示 Git 的原始输出。每条文案都放进实时页面的状态行中、与**设置凭据**和**重新检查**并排，在记录采用的 1280 像素宽度下测量，中英文都保持一行。英文文案在两个按钮旁有 514 像素。带上环境变量名之后，不论怎样措辞，指向地址中用户名的提示都要 557 至 666 像素（审查给出的 "The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it, or put the user name it expects in the address" 要 666 像素），因此环境变量这一行在两种语言中都与 GitHub 的那一行说法相同（399 像素），这一提示保留在保存的令牌那一行（496 像素）与操作指南中。第一版的英文文案（"The host rejected the credential; check the token, or put the user name it expects in the address"）同样放不下。
+英文文案见 `src/client/locales.ts`。客户端依据 `credentialSource` 判断，状态里本来就带有它，且与每条命令使用的凭据出自同一次解析。SSH、本地路径、找不到仓库、网络与超时的文案都不变，页面不显示 Git 的原始输出。每条文案都放进实时页面的状态行中、与**设置凭据**和**重新检查**并排，在记录采用的 1280 像素宽度下测量，中英文都保持一行。英文文案在两个按钮旁有 514 像素。带上环境变量名之后，指向地址中用户名的提示在试过的每种措辞下都要 534 至 666 像素（审查给出的 "The host rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it, or put the user name it expects in the address" 要 666 像素），因此环境变量这一行在两种语言中都与 GitHub 的那一行说法相同（399 像素），这一提示保留在保存的令牌那一行（496 像素）与操作指南中。第一版的英文文案（"The host rejected the credential; check the token, or put the user name it expects in the address"）同样放不下。
 
 ## 各主机接受的令牌用户名
 
