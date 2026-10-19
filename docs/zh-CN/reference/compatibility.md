@@ -39,9 +39,9 @@ dsh-mnemon 支持 `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`：DSH 0.2.0 �
 
 ### 升级顺序
 
-先在现有 DSH 中更新 dsh-mnemon，再升级 DSH。在 DSH 0.1.7-rc.2 上，先把 dsh-mnemon 更新到 0.5.30（`dsh plugin --profile web add dsh-mnemon@0.5.30`），然后安装 DSH 0.2.0-rc.2 或 0.2.1-rc.2，再更新一次 dsh-mnemon。若先升级了 DSH，它会停用不受支持的版本，记忆数据不受影响；更新插件后即可恢复。不要用 `allow-version` 为不受支持的版本放行。
+先在现有 DSH 中更新 dsh-mnemon，再升级 DSH。在 DSH 0.1.7-rc.2 上，先把 dsh-mnemon 更新到 0.5.30（`dsh plugin --profile web add dsh-mnemon@0.5.30`），然后安装 DSH 0.2.0-rc.2 或 0.2.1-rc.2，再更新一次 dsh-mnemon。若先升级了 DSH，DSH 0.2 会停用 0.5.19 之前的版本，记忆数据不受影响，更新插件后即可恢复；在 DSH 0.2.1 上，0.5.30 及更早的版本仍会运行，但记忆子 Agent 与**检查版本 → 更新**都会失败，直到更新为止。不要用 `allow-version` 为不受支持的版本放行。
 
-在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`。请退出 DSH，运行 `dsh plugin --profile web add dsh-mnemon@<版本>`（`desktop` profile 改在桌面版的插件页中管理），再启动 DSH。之后的更新照常通过**检查版本**完成。
+在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`。请退出 DSH，运行 `dsh plugin --profile web add dsh-mnemon@<版本>`，再启动 DSH。命令行不管理桌面版的 `desktop` profile：在桌面版中，请在插件页**卸载** dsh-mnemon，再通过**添加插件**以 `dsh-mnemon@<版本>` 重新安装，然后完全退出并重新打开应用。记忆数据与设置都会保留。之后的更新照常通过**检查版本**完成。
 
 ### 从 v0.4 升级
 
@@ -68,7 +68,7 @@ dsh-mnemon 在两个版本上运行方式相同，使用同一份记忆数据。
 
   在 DSH 0.2.0 上，记忆任务无法续接。
 - **工作目录。** 每一步之前，如果当前目录已不存在，DSH 0.2.1 会把 Agent 退回会话的原始目录；原始目录也不存在时就停止该 Agent。因此工作区文件夹被删除或移动后，该工作区的后台记忆任务仍然以这个工作区为准（它操作的正是这个工作区的记忆），并在第一个仍存在的工作区或 DSH 的启动目录中运行。DSH 0.2.0 不为每个会话保存工作目录。
-- **检查版本 → 更新。** DSH 0.2.0 用自己的安装器安装新版本。开启热重载时，DSH 0.2.1 不再覆盖安装 profile 中已有的插件：要换成另一个版本，只能先移除再安装，这会让 dsh-mnemon 在更新自己时中途停止，安装失败还会让 profile 失去它。因此在 DSH 0.2.1 上，dsh-mnemon 对新版本运行 DSH 自己的 `dsh plugin add`（[更新如何进行](../guides/operations.md#版本检查与更新)）：它持有 profile 的锁，使用 DSH 启动时的包管理器，并在安装任何东西之前拒绝与当前 DSH 不兼容的版本。DSH 没有提供这个命令时，错误信息会给出应在 DSH 停止时运行的 `dsh plugin` 命令。两个版本上更新都在重启后生效。dsh-mnemon 0.5.30 及更早版本在 DSH 0.2.1 上会停在 `DSH could not install dsh-mnemon@<版本>: already-installed`；请按[升级顺序](#升级顺序)在命令行中更新一次。
+- **检查版本 → 更新。** DSH 0.2.0 用自己的安装器安装新版本。开启热重载时，DSH 0.2.1 不再覆盖安装 profile 中已有的插件：要换成另一个版本，只能先移除再安装，这会让 dsh-mnemon 在更新自己时中途停止，安装失败还会让 profile 失去它。因此在 DSH 0.2.1 上，dsh-mnemon 对新版本运行 DSH 自己的 `dsh plugin add`（[更新如何进行](../guides/operations.md#版本检查与更新)）：它持有 profile 的锁，使用 DSH 启动时的包管理器，并在安装任何东西之前拒绝与当前 DSH 不兼容的版本。DSH 没有提供这个命令时，错误信息会给出应在 DSH 停止时运行的 `dsh plugin` 命令。两个版本上更新都在重启后生效。dsh-mnemon 0.5.30 及更早版本在 DSH 0.2.1 上会停在 `DSH could not install dsh-mnemon@<版本>: already-installed`；请按[升级顺序](#升级顺序)中的方法更新一次。
 - **不兼容的版本。** DSH 以不兼容为由拒绝更新时，错误信息会写明该版本的要求：DSH 0.2.1 报告版本的 requirements，显示为 `requires DSH ^0.3.0`；DSH 0.2.0 报告它的 peer，显示为 `requires @deepseek-ai/dsh ^0.3.0`。
 - **插件页。** DSH 0.2.0 会把 Starter 的分组行列为已关闭的组件，见 [DSH 0.2.0 上的 bundle 组件列表](#dsh-020-上的-bundle-组件列表)。DSH 0.2.1 只列出各组件。
 
