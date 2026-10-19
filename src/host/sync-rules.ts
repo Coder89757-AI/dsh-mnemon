@@ -12,7 +12,12 @@ const HTTPS = /^https:\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u
 const SSH = /^ssh:\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u
 const SCP = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\s]+$/u
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//u
-const EMBEDDED_CREDENTIAL = /^https:\/\/[^/]*@/u
+const HTTPS_USER = /^https:\/\/([^/]*)@/u
+// A user name as a URL carries it: unreserved characters and `+`, or escaped ones.
+const USER_NAME = /^(?:[A-Za-z0-9._~+-]|%[0-9A-Fa-f]{2}){1,100}$/u
+// What a user name never is: a token as GitHub and GitLab prefix theirs, or the long run of letters
+// and digits other hosts' tokens are, as Gitee's, Gitea's and Azure DevOps' are.
+const TOKEN_SHAPE = /^(?:gh[opsru]_|github_pat_|glpat-)|^[A-Za-z0-9]{32,}$/u
 const EMAIL = /^[^\s<>@]+@[^\s<>@]+$/u
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/u
 // A name is shown on one line of a history row, so it carries no control characters.
@@ -39,13 +44,16 @@ export type MnemonSyncRepositoryProblem = 'format' | 'credentials'
 
 /**
  * What is wrong with a repository address, or nothing for an https:// or ssh:// URL without
- * credentials in it, a git@host:path address, or a local path that `localPath` takes.
+ * credentials in it, a git@host:path address, or a local path that `localPath` takes. An HTTPS
+ * address may name the user a host wants its token offered under, as Bitbucket's do, but never a
+ * password, nor a token written where that name goes.
  */
 export function syncRepositoryProblem(url: string, localPath: (path: string) => boolean): MnemonSyncRepositoryProblem | undefined {
   if (url === '' || url.length > 2000 || /\s/u.test(url)) return 'format'
   if (SCHEME.test(url)) {
     if (!HTTPS.test(url) && !SSH.test(url)) return 'format'
-    return EMBEDDED_CREDENTIAL.test(url) ? 'credentials' : undefined
+    const user = HTTPS_USER.exec(url)?.[1]
+    return user === undefined || (USER_NAME.test(user) && !TOKEN_SHAPE.test(user)) ? undefined : 'credentials'
   }
   return SCP.test(url) || localPath(url) ? undefined : 'format'
 }

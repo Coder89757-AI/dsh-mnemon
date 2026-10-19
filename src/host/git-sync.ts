@@ -141,6 +141,31 @@ export function isGitHubHttps(repoUrl: string): boolean {
   }
 }
 
+/** The user name GitHub documents for a token Git hands it, which its sign-in's grant takes as well. */
+const GITHUB_TOKEN_USER = 'x-access-token'
+/**
+ * The user name a token goes to any other host under. GitLab and Gitee take it for their tokens, and
+ * Gitea and Azure DevOps do not check the name a token comes with; a host that wants one of its own,
+ * as Bitbucket does, is given it in the address.
+ */
+const TOKEN_USER = 'oauth2'
+/**
+ * From this version on, the last `credential.username` Git reads wins, which is the command line's.
+ * Before it, the first one configured did, and only a name in the address came before that.
+ */
+const LAST_USERNAME_WINS_GIT = '2.26'
+
+/**
+ * Who Git is to look the token up as for one HTTPS address, and for which host: the user name the
+ * address names, which Git takes from there before any configured one, else the one its host's
+ * tokens go under; and the host exactly as the address writes it, since Git compares a stored
+ * credential's host as text, its case and port included.
+ */
+export function credentialTarget(url: string): { user: string; named: boolean; host: string } {
+  const [, user, host = ''] = /^https:\/\/(?:([^/@]*)@)?([^/]*)/u.exec(url) ?? []
+  return { user: user ?? (isGitHubHttps(url) ? GITHUB_TOKEN_USER : TOKEN_USER), named: user !== undefined, host }
+}
+
 /**
  * What kind of failure one Git error describes. Git words these differently per
  * transport and per host, so the patterns are the phrases each transport uses:
@@ -566,6 +591,8 @@ export class MnemonGitSync {
   private readonly store: MnemonSyncSettingsStore
   private readonly machine: MnemonMachineStore
   private sequence = 0
+  /** The Git version the last check found, which decides how a token's user name is given to Git. */
+  private gitVersion: string | undefined
   private auth: MnemonGitHubAuth | undefined
   private autoBackupView: (() => MnemonSyncAutoBackup | undefined) | undefined
 
@@ -1142,8 +1169,10 @@ export class MnemonGitSync {
       const result = await this.git(['--version'], { signal })
       version = /(\d+\.\d+(?:\.\d+)?)/u.exec(result.stdout)?.[1]
     } catch (error) {
+      this.gitVersion = undefined
       return { available: false, required, issue: error instanceof Error ? error.message : String(error) }
     }
+    this.gitVersion = version
     if (version === undefined) return { available: false, required, issue: 'git --version did not report a version' }
     if (!versionAtLeast(version, required)) {
       return { available: false, required, version, issue: 'Git ' + version + ' is older than ' + required + ', which this channel needs' }
@@ -1548,14 +1577,26 @@ export class MnemonGitSync {
   private credentials(args: string[], options: GitOptions): { args: string[]; cleanup: () => void } {
     const token = options.token
     if (token === undefined || token === '' || options.authenticated !== true) return { args: [...NO_REWRITE, ...args], cleanup: () => {} }
-    const url = args.find(argument => argument.startsWith('https://'))
-    if (url === undefined) return { args: [...NO_REWRITE, ...args], cleanup: () => {} }
+    const index = args.findIndex(argument => argument.startsWith('https://'))
+    if (index === -1) return { args: [...NO_REWRITE, ...args], cleanup: () => {} }
+    const url = args[index]!
+    const target = credentialTarget(url)
     this.sequence += 1
-    const host = new URL(url).host
     const path = join(this.store.directory(), '.credentials.' + branchSlug(String(process.pid)) + '.' + String(this.sequence) + '.tmp')
-    writeFileSync(path, 'https://x-access-token:' + token + '@' + host + '\n', { encoding: 'utf8', mode: 0o600 })
+    writeFileSync(path, 'https://' + target.user + ':' + encodeURIComponent(token) + '@' + target.host + '\n', { encoding: 'utf8', mode: 0o600 })
+    // Git must look the token up under the name the store holds, not under one this machine configures,
+    // as Git Credential Manager setups do (#408). A name in the address comes first in every Git, but
+    // Git then offers it once without the token, so the command line names it wherever it wins.
+    const command = [...args]
+    const lookup: string[] = []
+    if (!target.named) {
+      if (this.gitVersion !== undefined && versionAtLeast(this.gitVersion, LAST_USERNAME_WINS_GIT)) lookup.push('-c', 'credential.username=' + target.user)
+      else command[index] = 'https://' + target.user + '@' + url.slice('https://'.length)
+    }
     return {
-      args: [...NO_REWRITE, '-c', 'credential.helper=', '-c', 'credential.helper=store --file=' + shellQuote(path), ...args],
+      // `credential.useHttpPath` would add the repository's path to the lookup, as Git Credential
+      // Manager configures for Azure DevOps, and the store names the host alone.
+      args: [...NO_REWRITE, '-c', 'credential.helper=', '-c', 'credential.helper=store --file=' + shellQuote(path), '-c', 'credential.useHttpPath=false', ...lookup, ...command],
       cleanup: () => { rmSync(path, { force: true }) },
     }
   }

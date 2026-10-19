@@ -188,7 +188,7 @@ describe('Git sync section', () => {
     expect(screen.getByText('地址需要是 https://、ssh://、git@主机:路径 或本机绝对路径')).toBeTruthy()
     expect(connect.disabled).toBe(true)
     fireEvent.change(address, { target: { value: 'https://ghp_secret@github.com/owner/repo.git' } })
-    expect(screen.getByText('不要把令牌写进地址，请填在“访问令牌”里')).toBeTruthy()
+    expect(screen.getByText('地址里只能写用户名，令牌请填在“访问令牌”里')).toBeTruthy()
     expect(host.calls('configure')).toEqual([])
 
     fireEvent.change(address, { target: { value: '/srv/memory.git' } })
@@ -198,6 +198,20 @@ describe('Git sync section', () => {
     // The state line is the answer to a connection, not a notice claiming one.
     expect(await screen.findByText('已连接')).toBeTruthy()
     expect(screen.getByRole('button', { name: '立即同步' })).toBeTruthy()
+  })
+
+  it('takes a user name in an HTTPS address, with the token beside it, and refuses a password there (#408)', async () => {
+    const host = fakeHost()
+    section(host.connection)
+    const address = await screen.findByLabelText('仓库地址')
+    fireEvent.change(address, { target: { value: 'https://alice:secret@bitbucket.org/team/memory.git' } })
+    expect(screen.getByText('地址里只能写用户名，令牌请填在“访问令牌”里')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '连接' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(address, { target: { value: 'https://x-token-auth@bitbucket.org/team/memory.git' } })
+    expect(screen.queryByText('地址里只能写用户名，令牌请填在“访问令牌”里')).toBeNull()
+    fireEvent.change(screen.getByLabelText('访问令牌'), { target: { value: 'token-value' } })
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    await waitFor(() => expect(host.calls('configure')).toEqual([{ repoUrl: 'https://x-token-auth@bitbucket.org/team/memory.git', token: 'token-value' }]))
   })
 
   it('asks for a token only for an HTTPS address', async () => {
@@ -471,6 +485,29 @@ describe('Git sync section after review', () => {
     expect(await within(dialog).findByText('sync configuration could not be written')).toBeTruthy()
   })
 
+  it('says the host refused a credential it was offered, and asks for one only when none was (#408)', async () => {
+    const remote = { reachable: false, branchExists: false, issue: 'auth' as const, error: 'remote: Invalid user name or token fatal: Authentication failed' }
+    const token = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', credentialSource: 'token', remote })
+    section(token.connection)
+    expect(await screen.findByText('仓库主机拒绝了这个凭据，请检查令牌，或在地址中写上它要求的用户名')).toBeTruthy()
+    // The way to another credential stays open beside it.
+    expect(screen.getByRole('button', { name: '设置凭据' })).toBeTruthy()
+    cleanup()
+    const signedIn = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git', credentialSource: 'github', remote })
+    section(signedIn.connection, { t: translateEn })
+    expect(await screen.findByText('GitHub rejected the credential; sign in again or check its access to this repository')).toBeTruthy()
+    cleanup()
+    const none = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', remote })
+    section(none.connection, { t: translateEn })
+    expect(await screen.findByText('Needs credentials; add an access token')).toBeTruthy()
+    cleanup()
+    // A sync that fails the same way says so too.
+    const refused = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', credentialSource: 'environment', push: { reason: 'remote-auth', message: 'git fetch failed: remote: Invalid user name or token' } })
+    section(refused.connection, { t: translateEn })
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync now' }))
+    expect(await screen.findByText('Sync failed: The host rejected the credential; check the token, or put the user name it expects in the address')).toBeTruthy()
+  })
+
   it('asks a host other than GitHub for a token, not a GitHub sign-in', async () => {
     const host = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', remote: { reachable: false, branchExists: false, issue: 'auth', error: 'Authentication failed' } })
     section(host.connection)
@@ -692,5 +729,10 @@ describe('Git sync view helpers', () => {
     expect(failureText(translateZh, undefined, 'fatal: something else', '/srv/memory.git')).toBe('fatal: something else')
     expect(failureText(translateZh, 'remote-not-found', 'not found', 'https://github.com/o/r.git')).toBe('找不到这个仓库，请检查地址；私有仓库需要先登录或填写令牌')
     expect(failureText(translateZh, 'busy', 'another Mnemon sync operation is still running', '')).toBe('另一个同步操作还在进行，请稍后再试')
+    // A refusal is said to be one only where a credential was offered over HTTPS (#408).
+    expect(failureText(translateEn, 'remote-auth', 'Authentication failed', 'https://git.example.com/me/memory.git', true)).toBe('The host rejected the credential; check the token, or put the user name it expects in the address')
+    expect(failureText(translateEn, 'remote-auth', 'Authentication failed', 'https://git.example.com/me/memory.git')).toBe('Needs credentials; add an access token')
+    expect(failureText(translateEn, 'remote-auth', 'Permission denied (publickey)', 'git@github.com:o/r.git', true)).toBe('SSH authentication failed; check this computer\'s SSH key')
+    expect(failureText(translateEn, 'remote-not-found', 'not found', 'https://github.com/o/r.git', true)).toBe('Repository not found; check the address, as a private repository needs a sign-in or a token')
   })
 })

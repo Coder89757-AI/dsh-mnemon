@@ -117,11 +117,16 @@ export function when(value: string | undefined, now: Date = new Date()): string 
     : at.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-/** Why a remote could not be read, said for the transport the repository uses. */
-export function issueText(t: MnemonTranslate, issue: MnemonSyncRemoteIssue | undefined, url: string, error?: string): string {
+/**
+ * Why a remote could not be read, said for the transport the repository uses and for whether the
+ * Host offered it a credential, which `credential` says.
+ */
+export function issueText(t: MnemonTranslate, issue: MnemonSyncRemoteIssue | undefined, url: string, error?: string, credential = false): string {
   const transport = transportOf(url)
   switch (issue) {
     case 'auth':
+      // A credential the host refused is not fixed by adding one, so the page says it was refused.
+      if (transport === 'https' && credential) return onGitHub(url) ? t('config.syncIssueRejectedGitHub') : t('config.syncIssueRejected')
       // A GitHub sign-in is offered to github.com alone; any other HTTPS host takes a token.
       if (transport === 'https') return onGitHub(url) ? t('config.syncIssueAuthHttps') : t('config.syncIssueAuthToken')
       return transport === 'ssh' ? t('config.syncIssueAuthSsh') : t('config.syncIssueAuth')
@@ -141,9 +146,9 @@ const REMOTE_ISSUE: Partial<Record<MnemonSyncFailureReason, MnemonSyncRemoteIssu
 }
 
 /** A failure the Host named, in this page's language; anything it could not name keeps its own words. */
-export function failureText(t: MnemonTranslate, reason: string | undefined, message: string, url: string): string {
+export function failureText(t: MnemonTranslate, reason: string | undefined, message: string, url: string, credential = false): string {
   const issue = reason === undefined ? undefined : REMOTE_ISSUE[reason as MnemonSyncFailureReason]
-  if (issue !== undefined) return issueText(t, issue, url, message)
+  if (issue !== undefined) return issueText(t, issue, url, message, credential)
   switch (reason) {
     case 'busy': return t('config.syncReasonBusy')
     case 'no-repository': return t('config.syncReasonNoRepository')

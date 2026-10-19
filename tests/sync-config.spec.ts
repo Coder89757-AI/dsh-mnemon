@@ -139,6 +139,9 @@ describe('Mnemon sync configuration', () => {
     expect(syncRepositoryUrl('git@github.com:example/memory.git')).toBe('git@github.com:example/memory.git')
     expect(syncRepositoryUrl('/srv/memory.git')).toBe('/srv/memory.git')
     expect(() => syncRepositoryUrl('https://user:secret@github.com/example/memory.git')).toThrow('must not embed credentials')
+    // A host's user name may come with the address, as Bitbucket's clone addresses carry one; a token never does.
+    expect(syncRepositoryUrl('https://x-token-auth@bitbucket.org/team/memory.git')).toBe('https://x-token-auth@bitbucket.org/team/memory.git')
+    expect(() => syncRepositoryUrl('https://ghp_0123456789abcdefABCDEF0123456789abcd@github.com/example/memory.git')).toThrow('must not embed credentials')
     expect(() => syncRepositoryUrl('github.com/example/memory')).toThrow('sync repository must be')
     expect(() => syncRepositoryUrl('file:///srv/memory.git')).toThrow('sync repository must be')
     expect(() => syncRepositoryUrl('https://github.com/example/memory.git extra')).toThrow('sync repository must be')
