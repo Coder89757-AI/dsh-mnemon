@@ -3,6 +3,7 @@ import { Button, PathLabel, StateDot } from '@deepseek-ai/dsh-client-ui-primitiv
 import {
   MNEMON_SYNC_TOKEN_ENV,
   type ClientConnectionHandle,
+  type MnemonSyncCredentialSource,
   type MnemonSyncGitHubStatus,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
@@ -128,8 +129,8 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
   const connected = status !== null && status.enabled !== false && repoUrl !== undefined
   const editable = !disabled && client !== null
   const gitReady = status?.git.available === true
-  // Whether the Host offers the repository a credential, which a refusal is then said to be about.
-  const credential = status !== null && status.config.credentialSource !== 'none'
+  // The credential the Host offers the repository, which a refusal is then said to be about.
+  const credential: MnemonSyncCredentialSource = status?.config.credentialSource ?? 'none'
 
   /**
    * The one primary action: merge the repository here, then publish the result.
@@ -265,7 +266,7 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
 }
 
 /** What one finished sync did, said as one line. */
-function syncResult(t: MnemonTranslate, result: MnemonSyncPushResult, repoUrl: string, credential: boolean): Feedback {
+function syncResult(t: MnemonTranslate, result: MnemonSyncPushResult, repoUrl: string, credential: MnemonSyncCredentialSource): Feedback {
   const added = result.merged?.runtime?.added ?? 0
   const commit = result.commit.slice(0, 8)
   if (result.pushed) return { tone: 'success', text: added > 0 ? t('config.syncDoneMerged', { count: added, commit }) : t('config.syncDone', { commit }) }
@@ -283,7 +284,7 @@ function RepositoryState({ status, checking, t, onRecheck, onFix }: { status: Mn
     : !status.git.available
       ? { dot: 'idle' as const, text: t('config.syncReasonGitMissing') }
       : !remote.reachable
-        ? { dot: 'error' as const, text: issueText(t, remote.issue, url, remote.error, status.config.credentialSource !== 'none') }
+        ? { dot: 'error' as const, text: issueText(t, remote.issue, url, remote.error, status.config.credentialSource) }
         : {
           // Reading an HTTPS repository can succeed without credentials while pushing to it cannot.
           dot: credential === undefined && transportOf(url) === 'https' ? 'warning' as const : 'done' as const,

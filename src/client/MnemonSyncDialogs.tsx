@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { Button, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MnemonPackComponent, MnemonPackComponentSummary, MnemonSyncBackupList, MnemonSyncDiff, MnemonSyncPreview } from '../host/protocol.ts'
+import type { MnemonPackComponent, MnemonPackComponentSummary, MnemonSyncBackupList, MnemonSyncCredentialSource, MnemonSyncDiff, MnemonSyncPreview } from '../host/protocol.ts'
 import type { MnemonClient } from './api.ts'
 import type { MnemonTranslate } from './locales.ts'
 import { MnemonDialog } from './MnemonDialog.tsx'
@@ -41,8 +41,8 @@ function summaryLine(t: MnemonTranslate, summary: readonly MnemonPackComponentSu
 interface SyncDialogProps {
   client: MnemonClient
   repoUrl: string
-  /** Whether the Host offers the repository a credential, which a refusal is then said to be about. */
-  credential: boolean
+  /** The credential the Host offers the repository, which a refusal is then said to be about. */
+  credential: MnemonSyncCredentialSource
   t: MnemonTranslate
   onClose: () => void
 }

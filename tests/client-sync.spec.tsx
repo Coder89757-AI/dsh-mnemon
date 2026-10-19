@@ -489,13 +489,13 @@ describe('Git sync section after review', () => {
     const remote = { reachable: false, branchExists: false, issue: 'auth' as const, error: 'remote: Invalid user name or token fatal: Authentication failed' }
     const token = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', credentialSource: 'token', remote })
     section(token.connection)
-    expect(await screen.findByText('仓库主机拒绝了这个凭据，请检查令牌，或在地址中写上它要求的用户名')).toBeTruthy()
+    expect(await screen.findByText('仓库主机拒绝了保存的访问令牌，请更换令牌，或在地址中写上它要求的用户名')).toBeTruthy()
     // The way to another credential stays open beside it.
     expect(screen.getByRole('button', { name: '设置凭据' })).toBeTruthy()
     cleanup()
     const signedIn = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git', credentialSource: 'github', remote })
     section(signedIn.connection, { t: translateEn })
-    expect(await screen.findByText('GitHub rejected the credential; sign in again or check its access to this repository')).toBeTruthy()
+    expect(await screen.findByText('GitHub rejected the sign-in; sign in again or check its access to this repository')).toBeTruthy()
     cleanup()
     const none = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', remote })
     section(none.connection, { t: translateEn })
@@ -505,7 +505,26 @@ describe('Git sync section after review', () => {
     const refused = fakeHost({ repoUrl: 'https://git.example.com/me/memory.git', credentialSource: 'environment', push: { reason: 'remote-auth', message: 'git fetch failed: remote: Invalid user name or token' } })
     section(refused.connection, { t: translateEn })
     fireEvent.click(await screen.findByRole('button', { name: 'Sync now' }))
-    expect(await screen.findByText('Sync failed: The host rejected the credential; check the token, or put the user name it expects in the address')).toBeTruthy()
+    expect(await screen.findByText('Sync failed: The host rejected MNEMON_SYNC_GIT_TOKEN; replace it, or name its user in the address')).toBeTruthy()
+  })
+
+  it('asks for another token, not another sign-in, when github.com refuses a token or the variable (#408)', async () => {
+    // A saved token and the environment variable come before the sign-in, so signing in again changes nothing.
+    const remote = { reachable: false, branchExists: false, issue: 'auth' as const, error: 'remote: Invalid username or token. fatal: Authentication failed' }
+    const token = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git', credentialSource: 'token', github: { available: true, writable: true, signedIn: true, login: 'octocat' }, remote })
+    section(token.connection)
+    expect(await screen.findByText('GitHub 拒绝了保存的访问令牌，请更换令牌')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '设置凭据' })).toBeTruthy()
+    cleanup()
+    const variable = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git', credentialSource: 'environment', remote })
+    section(variable.connection, { t: translateEn })
+    expect(await screen.findByText('GitHub rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it')).toBeTruthy()
+    cleanup()
+    // A sync on github.com that the variable fails says so in the same words.
+    const refused = fakeHost({ repoUrl: 'https://github.com/octocat/memory.git', credentialSource: 'environment', push: { reason: 'remote-auth', message: 'git fetch failed: remote: Invalid username or token' } })
+    section(refused.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '立即同步' }))
+    expect(await screen.findByText('同步失败：GitHub 拒绝了 MNEMON_SYNC_GIT_TOKEN 中的令牌，请更换它')).toBeTruthy()
   })
 
   it('asks a host other than GitHub for a token, not a GitHub sign-in', async () => {
@@ -729,10 +748,16 @@ describe('Git sync view helpers', () => {
     expect(failureText(translateZh, undefined, 'fatal: something else', '/srv/memory.git')).toBe('fatal: something else')
     expect(failureText(translateZh, 'remote-not-found', 'not found', 'https://github.com/o/r.git')).toBe('找不到这个仓库，请检查地址；私有仓库需要先登录或填写令牌')
     expect(failureText(translateZh, 'busy', 'another Mnemon sync operation is still running', '')).toBe('另一个同步操作还在进行，请稍后再试')
-    // A refusal is said to be one only where a credential was offered over HTTPS (#408).
-    expect(failureText(translateEn, 'remote-auth', 'Authentication failed', 'https://git.example.com/me/memory.git', true)).toBe('The host rejected the credential; check the token, or put the user name it expects in the address')
-    expect(failureText(translateEn, 'remote-auth', 'Authentication failed', 'https://git.example.com/me/memory.git')).toBe('Needs credentials; add an access token')
-    expect(failureText(translateEn, 'remote-auth', 'Permission denied (publickey)', 'git@github.com:o/r.git', true)).toBe('SSH authentication failed; check this computer\'s SSH key')
-    expect(failureText(translateEn, 'remote-not-found', 'not found', 'https://github.com/o/r.git', true)).toBe('Repository not found; check the address, as a private repository needs a sign-in or a token')
+    // A refusal is said to be one only where a credential was offered over HTTPS, in words for where it came from (#408).
+    const refused = (url: string, credential?: 'environment' | 'token' | 'github' | 'none') => failureText(translateEn, 'remote-auth', 'Authentication failed', url, credential)
+    expect(refused('https://git.example.com/me/memory.git', 'token')).toBe('The host rejected the saved token; replace it, or name its user in the address')
+    expect(refused('https://git.example.com/me/memory.git', 'environment')).toBe('The host rejected MNEMON_SYNC_GIT_TOKEN; replace it, or name its user in the address')
+    expect(refused('https://github.com/o/r.git', 'github')).toBe('GitHub rejected the sign-in; sign in again or check its access to this repository')
+    expect(refused('https://github.com/o/r.git', 'token')).toBe('GitHub rejected the saved access token; replace it')
+    expect(refused('https://github.com/o/r.git', 'environment')).toBe('GitHub rejected the token in MNEMON_SYNC_GIT_TOKEN; replace it')
+    expect(refused('https://git.example.com/me/memory.git')).toBe('Needs credentials; add an access token')
+    expect(refused('https://github.com/o/r.git', 'none')).toBe('Needs credentials; sign in with GitHub or add an access token')
+    expect(failureText(translateEn, 'remote-auth', 'Permission denied (publickey)', 'git@github.com:o/r.git', 'environment')).toBe('SSH authentication failed; check this computer\'s SSH key')
+    expect(failureText(translateEn, 'remote-not-found', 'not found', 'https://github.com/o/r.git', 'token')).toBe('Repository not found; check the address, as a private repository needs a sign-in or a token')
   })
 })

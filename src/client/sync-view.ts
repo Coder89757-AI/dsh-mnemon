@@ -9,6 +9,7 @@ import {
   syncDirectoryParts,
   syncEmailValid,
   syncRepositoryProblem,
+  type MnemonSyncCredentialSource,
   type MnemonSyncFailureReason,
   type MnemonSyncRemoteIssue,
   type MnemonSyncRepositoryProblem,
@@ -118,15 +119,15 @@ export function when(value: string | undefined, now: Date = new Date()): string 
 }
 
 /**
- * Why a remote could not be read, said for the transport the repository uses and for whether the
- * Host offered it a credential, which `credential` says.
+ * Why a remote could not be read, said for the transport the repository uses and for the credential
+ * the Host offered it, which `credential` names as the status does.
  */
-export function issueText(t: MnemonTranslate, issue: MnemonSyncRemoteIssue | undefined, url: string, error?: string, credential = false): string {
+export function issueText(t: MnemonTranslate, issue: MnemonSyncRemoteIssue | undefined, url: string, error?: string, credential: MnemonSyncCredentialSource = 'none'): string {
   const transport = transportOf(url)
   switch (issue) {
     case 'auth':
       // A credential the host refused is not fixed by adding one, so the page says it was refused.
-      if (transport === 'https' && credential) return onGitHub(url) ? t('config.syncIssueRejectedGitHub') : t('config.syncIssueRejected')
+      if (transport === 'https' && credential !== 'none') return rejectedText(t, url, credential)
       // A GitHub sign-in is offered to github.com alone; any other HTTPS host takes a token.
       if (transport === 'https') return onGitHub(url) ? t('config.syncIssueAuthHttps') : t('config.syncIssueAuthToken')
       return transport === 'ssh' ? t('config.syncIssueAuthSsh') : t('config.syncIssueAuth')
@@ -138,6 +139,17 @@ export function issueText(t: MnemonTranslate, issue: MnemonSyncRemoteIssue | und
   }
 }
 
+/**
+ * A credential the host refused, said for where it came from: a saved token or the environment variable
+ * comes before the GitHub sign-in, so only replacing that one changes what Git is given.
+ */
+function rejectedText(t: MnemonTranslate, url: string, credential: Exclude<MnemonSyncCredentialSource, 'none'>): string {
+  const github = onGitHub(url)
+  if (credential === 'environment') return t(github ? 'config.syncIssueRejectedGitHubEnvironment' : 'config.syncIssueRejectedEnvironment', { env: MNEMON_SYNC_TOKEN_ENV })
+  if (credential === 'github') return t('config.syncIssueRejectedGitHub')
+  return t(github ? 'config.syncIssueRejectedGitHubToken' : 'config.syncIssueRejected')
+}
+
 const REMOTE_ISSUE: Partial<Record<MnemonSyncFailureReason, MnemonSyncRemoteIssue>> = {
   'remote-auth': 'auth',
   'remote-not-found': 'not-found',
@@ -146,7 +158,7 @@ const REMOTE_ISSUE: Partial<Record<MnemonSyncFailureReason, MnemonSyncRemoteIssu
 }
 
 /** A failure the Host named, in this page's language; anything it could not name keeps its own words. */
-export function failureText(t: MnemonTranslate, reason: string | undefined, message: string, url: string, credential = false): string {
+export function failureText(t: MnemonTranslate, reason: string | undefined, message: string, url: string, credential: MnemonSyncCredentialSource = 'none'): string {
   const issue = reason === undefined ? undefined : REMOTE_ISSUE[reason as MnemonSyncFailureReason]
   if (issue !== undefined) return issueText(t, issue, url, message, credential)
   switch (reason) {
