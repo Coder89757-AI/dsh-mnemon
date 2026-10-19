@@ -156,3 +156,7 @@ Use Node.js `^22.19.0 || >=24.0.0` and pnpm. `node scripts/serve-e2e.mjs` starts
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=omdsh-dev/dsh-mnemon&type=timeline&legend=bottom-right" />
  </picture>
 </a>
+
+## License
+
+[MIT](https://github.com/omdsh-dev/dsh-mnemon/blob/main/LICENSE). Third-party providers keep their own licenses and terms; see [Third-party notices](https://github.com/omdsh-dev/dsh-mnemon/blob/main/THIRD_PARTY_NOTICES.md).
