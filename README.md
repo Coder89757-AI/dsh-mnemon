@@ -146,3 +146,17 @@ pnpm verify:plugins
 ```
 
 Use Node.js `^22.19.0 || >=24.0.0` and pnpm. `node scripts/serve-e2e.mjs` starts a disposable real WebUI; add `--docs-demo` for the seeded project behind these screenshots, and `--live-model` to have the DeepSeek API answer, with the key read from `DEEPSEEK_API_KEY`. Mechanical tests are not claims about model accuracy or live cloud Providers. [Development and verification](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/development/README.md).
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=omdsh-dev%2Fdsh-mnemon&type=timeline&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=omdsh-dev/dsh-mnemon&type=timeline&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=omdsh-dev/dsh-mnemon&type=timeline&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=omdsh-dev/dsh-mnemon&type=timeline&legend=bottom-right" />
+ </picture>
+</a>
+
+## License
+
+[MIT](https://github.com/omdsh-dev/dsh-mnemon/blob/main/LICENSE). Third-party providers keep their own licenses and terms; see [Third-party notices](https://github.com/omdsh-dev/dsh-mnemon/blob/main/THIRD_PARTY_NOTICES.md).

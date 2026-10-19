@@ -204,7 +204,7 @@ export interface HostAgentHandle {
 
 export interface CreateHostAgentOptions {
   sessionId: string
-  meta?: { cwd?: string; agentPreset?: string }
+  meta?: { cwd?: string; agentPreset?: string; origin?: 'subagent' }
   agentOptions?: { provider?: string; model?: string; maxTokens?: number; reasoningEffort?: string }
   signal?: AbortSignal
   /** DSH calls it with the unpublished Agent's context and the Agent itself. */

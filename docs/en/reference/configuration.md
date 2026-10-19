@@ -312,7 +312,7 @@ After the Memory Space directory has been established, long-term semantic operat
 
 ## Background Task Agent Model Route
 
-Tidy names and descriptions, Ask Agent, Save to memory in the Memory System and in conversations, and document archiving create a clean independent top-level task Agent. It uses the selected workspace as its cwd, works even when no main Agent session is selected, and is disposed after the task finishes.
+Tidy names and descriptions, Ask Agent, Save to memory in the Memory System and in conversations, and document archiving create a clean independent top-level task Agent. It uses the selected workspace as its cwd, works even when no main Agent session is selected, and is disposed after the task finishes. DSH keeps its session with the origin it gives its own subagents, so neither the sidebar nor the ACP session list shows it as a conversation ([#435](https://github.com/omdsh-dev/dsh-mnemon/issues/435)).
 
 **Background tasks → Task Agent model** on the Layered strategy's page offers three choices for these task Agents and the idle review worker:
 

@@ -131,6 +131,8 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
     review: vi.fn(async () => ({ delegated: true, runId: 'review-child', provider: 'fork', summary: 'No durable change', action: 'skipped', memoryBodyIds: [] })),
     maintainMetadata: vi.fn(async () => ({ delegated: true, runId: 'metadata-child', provider: 'spawn', summary: 'updated', updates: [] })),
     archiveDocument: vi.fn(async () => ({ success: true, action: 'archived', document: { id: 'doc-1' } })),
+    document: vi.fn(async () => ({ success: true, action: 'created', document: { id: 'doc-2' } })),
+    placeProvider: vi.fn(async () => ({ providerId: 'mnemon-native', reason: 'local', confidence: 'high' })),
     snapshot: vi.fn(() => ({ recalls: 0, writes: 0, answers: 0, reviews: 0, failures: 0 })),
   } as unknown as MnemonSubagentCoordinator
   const createTaskAgent = vi.fn(async (options: CreateHostAgentOptions) => {
@@ -440,7 +442,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     expect(value.createTaskAgent).toHaveBeenCalledTimes(2)
     expect(value.createTaskAgent).toHaveBeenNthCalledWith(1, expect.objectContaining({
       sessionId: expect.any(String),
-      meta: { cwd: workspaceTwo, agentPreset: 'default' },
+      meta: { cwd: workspaceTwo, origin: 'subagent', agentPreset: 'default' },
       agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
       setup: expect.any(Function),
       signal: expect.any(AbortSignal),
@@ -448,12 +450,35 @@ describe('Mnemon DSH lifecycle integration', () => {
     const metadataAgent = vi.mocked(value.coordinator.maintainMetadata).mock.calls[0]?.[0] as HostAgent
     expect(metadataAgent).not.toBe(value.agent)
     expect(metadataAgent.session.header?.cwd).toBe(workspaceTwo)
-    expect(value.coordinator.archiveDocument).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: { cwd: workspaceTwo, agentPreset: 'default' } }) }), 'doc-1', expect.any(AbortSignal))
+    expect(value.coordinator.archiveDocument).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: { cwd: workspaceTwo, origin: 'subagent', agentPreset: 'default' } }) }), 'doc-1', expect.any(AbortSignal))
     expect(value.defaultModel.currentSelection).toHaveBeenCalledTimes(2)
     expect(value.agentPresets.resolve).toHaveBeenCalledTimes(2)
     expect(value.agentPresets.mount).toHaveBeenCalledTimes(2)
     expect(value.disposedTaskAgents).toHaveLength(2)
     expect(value.lifecycle.snapshot()).toMatchObject({ activeAgents: 1, taskAgentAvailable: true })
+  })
+
+  // Every way the Host starts a task Agent. The maintenance runner also serves memory reconciliation and the
+  // runtime memory capacity maintenance that condenses a full user profile before Save to memory adds to it.
+  const taskAgentPaths: ReadonlyArray<readonly [string, (lifecycle: MnemonLifecycle) => Promise<unknown>]> = [
+    ['runtime memory capacity maintenance and memory reconciliation', lifecycle => lifecycle.runRuntimeMaintenanceTask({ storage: 'workspace', workspaceId: workspaceTwo, sessionId: 'session-1' }, new AbortController().signal, async () => 'maintained')],
+    ['Save to memory', lifecycle => lifecycle.superviseTask('session-1', 'Keep the release checklist durable.', 'message-1', workspaceTwo)],
+    ['Ask Agent', lifecycle => lifecycle.answerTask('', 'Which database?', [], workspaceTwo)],
+    ['a Document write that makes room', lifecycle => lifecycle.mutateDocumentTask('session-1', { action: 'create', title: 'Release', content: 'Checklist.' }, workspaceTwo)],
+    ['Document archive', lifecycle => lifecycle.archiveDocument('', 'doc-1', workspaceTwo)],
+    ['a new Memory Space Provider', lifecycle => lifecycle.placeProviderTask('', { name: 'Release', description: 'Release decisions.' }, { prompt: 'Choose one.', candidates: [], appliedRules: [], selectorBrief: '' }, workspaceTwo)],
+    ['Tidy names and descriptions', lifecycle => lifecycle.maintainMetadata('', ['project'], workspaceTwo)],
+  ]
+
+  it.each(taskAgentPaths)('creates the task Agent for %s with the subagent origin and no conversation lineage (#435)', async (_path, run) => {
+    const value = fixture()
+
+    await run(value.lifecycle)
+
+    // DSH's sidebar and ACP session list leave out a session with this origin, the one DSH gives its own subagents.
+    expect(value.createTaskAgent).toHaveBeenCalledOnce()
+    expect(value.createTaskAgent.mock.calls[0]![0].meta).toEqual({ cwd: workspaceTwo, origin: 'subagent', agentPreset: 'default' })
+    expect(value.disposedTaskAgents).toHaveLength(1)
   })
 
   it.each([false, true])('runs Runtime maintenance with clean workspace ownership and disposes it on failure=%s', async failed => {
@@ -477,7 +502,7 @@ describe('Mnemon DSH lifecycle integration', () => {
 
     await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global' }, new AbortController().signal, async agent => agent.session.header?.cwd)
 
-    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: registryWorkspace, agentPreset: 'default' } }))
+    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: registryWorkspace, origin: 'subagent', agentPreset: 'default' } }))
   })
 
   it('keeps a workspace whose folder is gone as the task cwd, and works from an existing one where DSH checks', async () => {
@@ -489,11 +514,11 @@ describe('Mnemon DSH lifecycle integration', () => {
     const cwd = await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'workspace', workspaceId: gone }, new AbortController().signal, async agent => agent.session.header?.cwd)
 
     expect(cwd).toBe(gone)
-    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: gone, agentPreset: 'default' } }))
-    expect(workingDirectory.set).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: { cwd: gone, agentPreset: 'default' } }) }), registryWorkspace, expect.any(AbortSignal))
+    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: gone, origin: 'subagent', agentPreset: 'default' } }))
+    expect(workingDirectory.set).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: { cwd: gone, origin: 'subagent', agentPreset: 'default' } }) }), registryWorkspace, expect.any(AbortSignal))
     await value.lifecycle.archiveDocument('', 'doc-1', gone)
     expect(workingDirectory.set).toHaveBeenLastCalledWith(expect.anything(), registryWorkspace, expect.any(AbortSignal))
-    expect(value.coordinator.archiveDocument).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: { cwd: gone, agentPreset: 'default' } }) }), 'doc-1', expect.any(AbortSignal))
+    expect(value.coordinator.archiveDocument).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: { cwd: gone, origin: 'subagent', agentPreset: 'default' } }) }), 'doc-1', expect.any(AbortSignal))
   })
 
   it('works from the Host directory when no workspace folder exists, and leaves an existing workspace alone', async () => {
@@ -532,7 +557,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     const cwd = await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global' }, new AbortController().signal, async agent => agent.session.header?.cwd)
 
     expect(cwd).toBe(process.cwd())
-    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: process.cwd(), agentPreset: 'default' } }))
+    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: process.cwd(), origin: 'subagent', agentPreset: 'default' } }))
   })
 
   it('uses a fixed Provider and model for independent task Agents when configured', async () => {
@@ -695,7 +720,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     await value.lifecycle.answerTask('', 'Which database?', [], workspaceTwo)
 
     expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({
-      meta: { cwd: workspaceTwo, agentPreset: 'default' },
+      meta: { cwd: workspaceTwo, origin: 'subagent', agentPreset: 'default' },
       agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
     }))
     expect(value.coordinator.answer).toHaveBeenCalledWith(expect.objectContaining({
@@ -1375,7 +1400,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     const result = await value.lifecycle.superviseTask('', 'Keep workspace release decisions durable.', undefined, workspaceTwo)
 
     expect(result).toMatchObject({ delegated: true, runId: 'write-child' })
-    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: workspaceTwo, agentPreset: 'default' } }))
+    expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: workspaceTwo, origin: 'subagent', agentPreset: 'default' } }))
     expect(value.coordinator.write).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ header: expect.objectContaining({ cwd: workspaceTwo }) }) }), 'supervised-writeback', {
       content: 'Keep workspace release decisions durable.',
       source: 'explicit Mnemon tab submission',
