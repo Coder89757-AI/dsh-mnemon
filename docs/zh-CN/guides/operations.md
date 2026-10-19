@@ -37,7 +37,7 @@ Test-Path "$env:LOCALAPPDATA\Programs\mnemon\mnemon.exe"
 
 检查只读，不会自动安装。只有发现更高版本并安全识别安装来源时才显示“更新”：Mnemon 支持官方 npm 启动器、Homebrew Cask / Formula 与 `go install`；dsh-mnemon 支持当前 DSH Profile 中的 npm 安装。`link:` / `file:` 开发版本与无法识别的手工安装只显示说明，避免覆盖源码。
 
-dsh-mnemon 通过 DSH 自己的插件安装器更新，效果与 `dsh plugin add dsh-mnemon@<版本>` 相同；Profile 单独安装的可选 Strategy 也是如此。安装器使用 Profile 自己的包管理器，桌面版中即应用自带的 pnpm，因此 PATH 上不需要 pnpm；同时沿用 Profile 的安装源设置与备用源，并等待 Profile 的锁。保留新版本之前，DSH 会检查它声明支持的 DSH 版本。安装失败时，DSH 恢复 Profile 的 `package.json` 与锁文件，面板显示 pnpm 的错误行和 DSH 的日志路径，已启用的插件保持不变；安装已下载的文件可能留下，“检查版本”仍显示 Profile 记录的版本。通过 DSH 的安装器，Host 只更新自己所运行的 Profile。DSH 未提供插件安装器时，Host 在所属 Profile 中运行 PATH 上的 pnpm。既没有应用自带的 pnpm、PATH 上也没有 pnpm 时，面板会提示安装 pnpm 并重启 DSH。dsh-mnemon 0.5.21 及更早的版本只有 pnpm 这一种方式：在桌面版中从这些版本更新时，需要在插件页移除 dsh-mnemon 后重新添加一次，记忆数据会保留。
+dsh-mnemon 通过 DSH 自己的插件安装器更新，效果与 `dsh plugin add dsh-mnemon@<版本>` 相同；Profile 单独安装的可选 Strategy 也是如此。安装器使用 Profile 自己的包管理器，桌面版中即应用自带的 pnpm，因此 PATH 上不需要 pnpm；同时沿用 Profile 的安装源设置与备用源，并等待 Profile 的锁。保留新版本之前，DSH 会检查它声明支持的 DSH 版本。安装失败时，DSH 恢复 Profile 的 `package.json` 与锁文件，面板显示 pnpm 的错误行和 DSH 的日志路径，已启用的插件保持不变；安装已下载的文件可能留下，“检查版本”仍显示 Profile 记录的版本。通过 DSH 的安装器，Host 只更新自己所运行的 Profile。DSH 未提供插件安装器时，Host 在所属 Profile 中运行 PATH 上的 pnpm。既没有应用自带的 pnpm、PATH 上也没有 pnpm 时，面板会提示安装 pnpm 并重启 DSH。dsh-mnemon 0.5.21 及更早的版本只有 pnpm 这一种方式：在桌面版中从这些版本更新时，需要在插件页**卸载** dsh-mnemon，再通过**添加插件**以 `dsh-mnemon@<版本>` 重新安装一次，记忆数据与设置都会保留。在 DSH 0.2.1 上，安装器不再覆盖安装 Profile 中已有的插件，0.5.30 及更早的版本会停在 `already-installed`；在桌面版中从这些版本更新，也用同样的方法。
 
 npm 更新要求当前启动器属于现有 npm 所报告的全局安装目录；不同 Node/npm 环境或启动器故障会显示修复指引。首次安装或迁移使用 `npm install --global @mnemon-dev/mnemon@latest`，后续使用 `mnemon update`。命令在 DSH 宿主运行，需要 Node.js 22+。修改 PATH 或 CLI 配置后，重新检查并核对面板中的可执行文件路径。
 
@@ -315,7 +315,7 @@ Host 调用 Mnemon CLI 时不经过 shell，限制每次调用的时间与输出
 | ZIP 导入 checksum / schema 失败 | 备份损坏或格式不兼容；保留当前根，不要手工解压覆盖 |
 | 更新按钮不出现 | 当前已是最新、远程检查失败，或安装来源是 link / 手工模式；按面板提示沿原方式更新 |
 | 已认证远程页面能读取或激活记忆空间，但不能保存设置或执行其他写入 | 默认管理限制；确需远程管理时，保留当前配置、在本地设置 `remoteAccess: trusted-host` 并重启 DSH |
-| DSH 桌面版中运行时记忆、记忆空间与插件设置均为只读，而 Agent 工具仍能写入 | dsh-mnemon 0.5.18 及更早版本把桌面窗口当成远程页面（[#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)）；在桌面版插件页更新到 0.5.19 或更新版本，无需修改 `remoteAccess` |
+| DSH 桌面版中运行时记忆、记忆空间与插件设置均为只读，而 Agent 工具仍能写入 | dsh-mnemon 0.5.18 及更早版本把桌面窗口当成远程页面（[#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)）；在桌面版插件页**卸载** dsh-mnemon，再通过**添加插件**重新安装，无需修改 `remoteAccess` |
 | DSH 0.2 安装或启动时提示 dsh-mnemon 不兼容 | 安装到的是 0.5.19 之前的版本；更新 dsh-mnemon，新版本发布 24 小时内按[安装与启动](./installation.md#常见问题)安装带版本号的包 |
 | Profile 中装有 dshmarket，DSH 启动时提示 `mkt-client-dsh-mnemon-source-memory-spaces` 未能激活（`Memory Spaces requires at least one explicit Provider child`），状态页的运行时记忆或项目档案出现两次，或每轮对话都因 `found ambiguous working-context Sources` 失败 | Profile 中另外单独安装了某个 Source 包，dshmarket 1.66 又把它作为仅客户端挂载加载了一次（[#359](https://github.com/omdsh-dev/dsh-mnemon/issues/359)）。将 dsh-mnemon 更新到 0.5.27 或更高版本。记忆空间由 Profile 独立维护时，还要把它更新到 0.5.18 或更高版本：宿主的 PATH 上有 pnpm 时可在**检查版本**中更新，否则运行 `dsh plugin --profile web add dsh-mnemon-source-memory-spaces@0.5.18`。然后重启 DSH。把单独安装的 Source 从 Profile 中移除也能消除这些问题，例如 `dsh plugin --profile web remove dsh-mnemon-source-memory-spaces`，因为 Starter 自带这些组件。记忆数据不受影响 |
 | DSH 运行期间更新 dsh-mnemon 后，启用组件提示 `ERR_PACKAGE_PATH_NOT_EXPORTED`（`Package subpath './starter'` 或 `'./bundle'`） | 正在运行的进程仍按旧版本的包信息加载；完全退出并重新启动 DSH（桌面版按 `Cmd+Q`）。使用 0.5.18 或 0.5.19 时不要关闭 `dsh-mnemon/starter`，见[安装与启动](./installation.md#更新后启用时提示-err_package_path_not_exported) |
