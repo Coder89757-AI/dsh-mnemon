@@ -458,9 +458,10 @@ describe('Mnemon DSH lifecycle integration', () => {
     expect(value.lifecycle.snapshot()).toMatchObject({ activeAgents: 1, taskAgentAvailable: true })
   })
 
-  // Every way the Host runs a task Agent: Runtime capacity maintenance, and each page action that needs one.
+  // Every way the Host starts a task Agent. The maintenance runner also serves memory reconciliation and the
+  // runtime memory capacity maintenance that condenses a full user profile before Save to memory adds to it.
   const taskAgentPaths: ReadonlyArray<readonly [string, (lifecycle: MnemonLifecycle) => Promise<unknown>]> = [
-    ['Runtime capacity maintenance', lifecycle => lifecycle.runRuntimeMaintenanceTask({ storage: 'workspace', workspaceId: workspaceTwo, sessionId: 'session-1' }, new AbortController().signal, async () => 'maintained')],
+    ['runtime memory capacity maintenance and memory reconciliation', lifecycle => lifecycle.runRuntimeMaintenanceTask({ storage: 'workspace', workspaceId: workspaceTwo, sessionId: 'session-1' }, new AbortController().signal, async () => 'maintained')],
     ['Save to memory', lifecycle => lifecycle.superviseTask('session-1', 'Keep the release checklist durable.', 'message-1', workspaceTwo)],
     ['Ask Agent', lifecycle => lifecycle.answerTask('', 'Which database?', [], workspaceTwo)],
     ['a Document write that makes room', lifecycle => lifecycle.mutateDocumentTask('session-1', { action: 'create', title: 'Release', content: 'Checklist.' }, workspaceTwo)],

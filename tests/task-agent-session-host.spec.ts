@@ -21,11 +21,14 @@ import { loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 // Issue #435: DSH persists the session of every task Agent Mnemon runs outside a conversation. Its
 // sidebar and ACP session list leave out a session whose header has `origin: 'subagent'`, the origin
 // DSH gives its own subagents. Without it, a finished task stayed listed as an untitled conversation
-// under Ungrouped wherever DSH had no projection-cache record of it; this host composes no projection
-// cache either. The sessions are read back here as DSH's session list reads them.
+// under Ungrouped wherever DSH had no projection-cache record of it, and ACP always listed it. Here
+// DSH's own ACP agent lists the stored sessions, as `dsh acp` serves them to an editor, and Session
+// query reads their headers.
 
 const spawn = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-spawn-in-process'))
 const sessionQuery = await import(requireDsh.resolve('@deepseek-ai/dsh-session-query'))
+// DSH's ACP agent plugin takes its message stream from `config.stream`, as its own tests give it one.
+const acp = await import(requireDsh.resolve('@deepseek-ai/dsh-acp')) as { inject: string[]; apply(ctx: Context, config: object): void }
 
 type Message = GenerateOptions['messages'][number]
 type Reply = string | { name: string; args: Record<string, unknown> }
@@ -61,7 +64,38 @@ class ScriptedAdapter extends LlmAdapter {
 const disposers: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of disposers.splice(0)) await dispose() })
 
-/** A real DSH host with Mnemon's lifecycle, DSH's spawn provider and Session query, and one conversation. */
+/** DSH's ACP agent on this host over an in-memory message stream: the session ids its `session/list` offers. */
+async function acpSessionList(ctx: Context): Promise<() => Promise<string[]>> {
+  const toAgent = new TransformStream<object, object>()
+  const fromAgent = new TransformStream<object, object>()
+  await ctx.plugin({
+    inject: acp.inject,
+    apply: (scoped: Context) => acp.apply(scoped, { provider: 'scripted', model: 'fixture', sessionListPageSize: 100, stream: { readable: toAgent.readable, writable: fromAgent.writable } }),
+  })
+  const writer = toAgent.writable.getWriter()
+  const reader = fromAgent.readable.getReader()
+  let calls = 0
+  const call = async (method: string, params: object): Promise<unknown> => {
+    const id = ++calls
+    await writer.write({ jsonrpc: '2.0', id, method, params })
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) throw new Error('the ACP stream closed')
+      const message = value as { id?: number; result?: unknown; error?: unknown }
+      if (message.id !== id) continue
+      if (message.error !== undefined) throw new Error(`${method}: ${JSON.stringify(message.error)}`)
+      return message.result
+    }
+  }
+  await call('initialize', { protocolVersion: 1, clientCapabilities: {} })
+  return async () => ((await call('session/list', {})) as { sessions: Array<{ sessionId: string }> }).sessions.map(session => session.sessionId).sort()
+}
+
+/**
+ * A real DSH host with Mnemon's lifecycle, DSH's spawn provider, Session query and ACP agent, one open
+ * conversation, and `plain`: a finished session created as main created a task Agent's, through
+ * `agents.create` with only a cwd, which ACP lists. ACP leaves out a session that is still attached.
+ */
 async function host() {
   const f = await compositionFixture()
   const project = (await f.memorySpace()).id
@@ -69,7 +103,7 @@ async function host() {
   let stop: (() => void) | undefined
   disposers.push(async () => { stop?.(); await ctx.fiber.dispose(); await f.dispose() })
   const adapter = new ScriptedAdapter(options => {
-    if (options.sessionId === 'parent') return 'Noted.'
+    if (options.sessionId === 'parent' || options.sessionId === 'plain') return 'Noted.'
     if (options.messages.some(message => message.role === 'user' && text(message).includes(CHILD_STEP))) return 'Maintenance step done.'
     // The Save to memory writer stores the candidate in the project space, then reports.
     const system = JSON.stringify(options.messages.filter(message => message.role === 'system'))
@@ -101,21 +135,26 @@ async function host() {
   const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'scripted', model: 'fixture' }, { cwd: f.workspace })
   parent.followup(createUserMessage({ content: [{ type: 'text', text: 'What is our release process?' }], source: { kind: 'user' } }))
   await parent.whenIdle()
+  const agents = (ctx as unknown as { agents: { create(options: object): Promise<{ agent: { followup(message: unknown): void; whenIdle(): Promise<void> }; dispose(): Promise<void> }> } }).agents
+  const plain = await agents.create({ sessionId: SessionId('plain'), meta: { cwd: f.workspace }, agentOptions: { provider: 'scripted', model: 'fixture' } })
+  plain.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Hello.' }], source: { kind: 'user' } }))
+  await plain.agent.whenIdle()
+  await plain.dispose()
+  const listed = await acpSessionList(ctx)
   const query = (ctx as unknown as { sessionQuery: { listSessions(): Promise<ReadonlyArray<{ header: Header }>> } }).sessionQuery
-  /** Every persisted session's header by id, as DSH's session list reads them. */
+  /** Every stored session's header by id, as Session query reads them. */
   const sessions = async () => new Map((await query.listSessions()).map(record => [record.header.id, record.header]))
-  /** The sessions DSH's sidebar and ACP session list can show: every one without the subagent origin. */
-  const listed = async () => [...(await sessions()).values()].filter(header => header.origin !== 'subagent').map(header => header.id)
   return { f, dsh, lifecycle, project, sessions, listed }
 }
 
-it('lists no Save to memory task Agent among the conversations, and its writer still saves', async () => {
+it("keeps a Save to memory task Agent out of DSH's ACP session list and any lineage, and its writer still saves", async () => {
   const h = await host()
+  expect(await h.listed()).toEqual(['plain'])
 
   const result = await h.lifecycle.superviseTask('', CANDIDATE, undefined, h.f.workspace)
 
   expect(result).toMatchObject({ delegated: true, action: 'stored', memoryBodyIds: [h.project] })
-  expect(await h.listed()).toEqual(['parent'])
+  expect(await h.listed()).toEqual(['plain'])
   const sessions = await h.sessions()
   // With no conversation, the receipt names the task Agent: a session of its own, outside any lineage.
   const task = sessions.get(result.sessionId)
@@ -127,7 +166,7 @@ it('lists no Save to memory task Agent among the conversations, and its writer s
     .toEqual([expect.objectContaining({ id: result.runId, origin: 'subagent', delegationDepth: 1 })])
 }, 30_000)
 
-it('lists no Runtime maintenance task Agent among the conversations, and its child still runs under it', async () => {
+it("keeps a Runtime maintenance task Agent out of DSH's ACP session list, and its child still runs under it", async () => {
   const h = await host()
   const signal = new AbortController().signal
 
@@ -139,7 +178,7 @@ it('lists no Runtime maintenance task Agent among the conversations, and its chi
   })
 
   expect(outcome.result).toMatchObject({ output: [{ type: 'text', text: 'Maintenance step done.' }], stopReason: 'completed' })
-  expect(await h.listed()).toEqual(['parent'])
+  expect(await h.listed()).toEqual(['plain'])
   const sessions = await h.sessions()
   expect(sessions.get(outcome.task)).toMatchObject({ origin: 'subagent', cwd: h.f.workspace })
   expect(sessions.get(outcome.task)?.parentSession).toBeUndefined()

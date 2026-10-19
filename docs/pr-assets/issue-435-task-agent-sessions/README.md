@@ -11,7 +11,7 @@ Baseline: main `2143a1ed` (v0.5.32). Fix: `94d28a02`. The runs took place on 202
 
 ## Cause
 
-Every memory task dsh-mnemon runs outside a conversation runs under a fresh top-level DSH Agent: Save to memory (in a conversation or on the Memory Spaces page), Ask Agent, Document archive and the Document write that makes room, the Provider choice for a new Memory Space, Tidy names and descriptions, and Runtime capacity maintenance, one task Agent per routing batch. `runTaskAgent()` creates it with `taskAgentCreation()`, whose session metadata held `cwd` and the Agent preset only. DSH persists that session like any other.
+Every memory task dsh-mnemon runs outside a conversation runs under a fresh top-level DSH Agent: Save to memory (in a conversation or on the Memory Spaces page), Ask Agent, Document archive and the Document write that makes room, the Provider choice for a new Memory Space, Tidy names and descriptions, runtime memory capacity maintenance (a task Agent for each MEMORY.md routing batch, and one to condense USER.md, including before Save to memory adds to a full user profile) and memory reconciliation. `runTaskAgent()` creates it with `taskAgentCreation()`, whose session metadata held `cwd` and the Agent preset only. DSH persists that session like any other.
 
 DSH's sidebar decides with `sessionVisible()` in `dsh-client-ui-workspace`: a session whose header has `origin: "subagent"` is hidden first; otherwise a session counted as blank is hidden unless it is the current one. A task Agent never starts a turn, so its live session is blank. A cold one is blank only while DSH's projection cache holds a record of it: `summarizeCold()` in `dsh-api-session-controller` serves `blank: metadata?.blank ?? false`, and its source says "A large, metadata-less, or inaccessible cache miss remains unknown and visible". With no record, the session is listed; it belongs to no workspace's `sessionIds`, so it lands under Ungrouped, and with no title it reads Untitled. The reporter's host had no record for these sessions, nor for 601 of its 606 subagent sessions; those stayed hidden because DSH's own subagents carry `origin: "subagent"`.
 
@@ -47,7 +47,7 @@ In dsh-mnemon itself, `install()` still skips a task Agent by its id before it l
 
 ## Fix
 
-`taskAgentCreation()` gives every task Agent `origin: "subagent"`, in the one `meta` both of its returns use, so all seven paths above get it. It sets no `parentSession` and no `delegationDepth`: the task belongs to no conversation, and its children stay one level deep. `CreateHostAgentOptions.meta` in `src/host/dsh.ts` declares the field.
+`taskAgentCreation()` gives every task Agent `origin: "subagent"`, in the one `meta` both of its returns use, so every task above gets it. It sets no `parentSession` and no `delegationDepth`: the task belongs to no conversation, and its children stay one level deep. `CreateHostAgentOptions.meta` in `src/host/dsh.ts` declares the field.
 
 Rejected:
 - **A parent and a depth.** Page tasks have no conversation. Under one, archiving that conversation would stop the task and cancel its children, the conversation's model-selection policy would pass to them, and a depth of 1 would put the children at 2, past the `maxDepth: 1` Mnemon starts them with.
@@ -105,8 +105,8 @@ The report is right that `parent !== undefined → run(parent)` in `runtimeModel
 
 ## Automated checks
 
-- `tests/lifecycle.spec.ts`: each of the seven task Agent paths creates its Agent with `{ cwd, origin: 'subagent', agentPreset }` and no lineage (7 new cases); the six tests that pinned the task Agent's exact `meta` or header now include the origin. On main, those 13 fail; with the fix all 84 pass.
-- `tests/task-agent-session-host.spec.ts` (new) composes real DSH packages with JSONL persistence and Session query, a conversation, Mnemon's lifecycle and DSH's spawn provider. Save to memory from the page, with a real writer, and a Runtime maintenance task with a real child both leave only the conversation among the stored sessions without the subagent origin; the task's header has the origin and no parent, its child has the task as parent at depth 1, and the save lands in its Memory Space. On main both fail with `expected [ 'parent', '<task id>' ] to deeply equal [ 'parent' ]`. Both pass on the pinned DSH 0.2.1-rc.2 and on an installed 0.2.0-rc.2.
+- `tests/lifecycle.spec.ts`: each of the seven ways the Host starts a task Agent (the maintenance runner, which also serves memory reconciliation and condensing the user profile, and six page actions) creates its Agent with `{ cwd, origin: 'subagent', agentPreset }` and no lineage (7 new cases); the six tests that pinned the task Agent's exact `meta` or header now include the origin. On main, those 13 fail; with the fix all 84 pass.
+- `tests/task-agent-session-host.spec.ts` (new) composes real DSH packages with JSONL persistence, Session query and DSH's own ACP agent, which takes an in-memory message stream from its config as its own tests give it one, plus a conversation, Mnemon's lifecycle and DSH's spawn provider. As a control, `plain` is a finished session created as main created a task Agent's, through `agents.create` with only a cwd; ACP lists it, and leaves out the conversation, which is still attached. After Save to memory from the page, with a real writer, and after a Runtime maintenance task with a real child, ACP's `session/list` still offers only `plain`; Session query shows the task's header with the origin and no parent, its child with the task as parent at depth 1, and the save in its Memory Space. On main both fail with `expected [ 'plain', '<task id>' ] to deeply equal [ 'plain' ]`. Both pass on the pinned DSH 0.2.1-rc.2 and on an installed 0.2.0-rc.2. The sidebar's own rule lives in DSH's client bundle, which exports no such helper, so the WebUI runs above cover it.
 
 Commands and results:
 
@@ -118,13 +118,14 @@ Commands and results:
 | `pnpm run verify` | passed in 119 s: documentation, types, deterministic build (56 files), every plugin suite, root tests (152 files passed and 2 skipped; 2,131 tests passed and 7 skipped), Headless (38 tools, 8 of them Mnemon's), package contents and entries |
 | `MNEMON_CLI_PATH=/nonexistent/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 pnpm run verify:plugins` | passed in 211 s: 17 plugin repositories and 18 packed artifacts, the external consumer, the packed Starter in real DSH |
 | `DSH_HOST_ROOT=<0.2.0-rc.2>/lib/node_modules/@deepseek-ai/dsh pnpm run test:installed-dsh` | every root test on an installed 0.2.0-rc.2: 150 files passed and 4 skipped, 2,128 tests passed and 10 skipped (the 0.2.1-only working-directory and resumed-task specs, and the two opt-in live suites) |
-| `pnpm run verify:docs`, again after the record's last edit | 5,033 local links and 371 anchors verified |
+| `pnpm run verify:docs`, again after the record's last edit | 5,035 local links and 373 anchors verified |
 | WebUI | 8 runs before and after (2 releases, 2 languages) and 2 archive checks, in [verification.json](./verification.json) |
 
 ## Compatibility
 
 - Starter only: `src/host/lifecycle.ts` and the Host's own type in `src/host/dsh.ts`; no plugin package changes, so no version skew. A Profile that keeps an older or newer copy of a plugin is unaffected.
-- No public export, RPC, tool, setting or stored format changes. The origin is DSH's documented creation metadata, accepted by `agents.create` and the session header on DSH 0.2.0-rc.2 and 0.2.1-rc.2 alike, and DSH's own subagents carry it.
+- No public export, RPC, tool or setting changes. The origin is DSH's documented creation metadata, accepted by `agents.create` and the session header on DSH 0.2.0-rc.2 and 0.2.1-rc.2 alike, and DSH's own subagents carry it.
+- One thing changes for plugins that read session logs: a task Agent session's header now has `origin: "subagent"` and still no `parentSession` or `delegationDepth`, so a reader that groups subagents under their parent finds none for it. Its child is unchanged and carries the delegated line. [Delegated child sessions](../../en/reference/workflows.md#delegated-child-sessions) in the workflows reference now says so; it had described the task's session as a top-level one.
 - dsh-mnemon's own memory data is untouched; sessions earlier releases stored keep their header.
 
 ## Limits
@@ -132,3 +133,4 @@ Commands and results:
 - The reporter's host had no projection-cache record for most short-lived sessions, which this record does not explain; here the record is removed by hand to reach that state. The sidebar rule and the ACP list do not depend on it.
 - A task Agent session is still stored, so DSH's `@` session mentions can still offer it, as they offer DSH's own subagent sessions.
 - Rows that earlier releases left stay until archived.
+- After the fix a task Agent session cannot be opened by any route: DSH's session API refuses it with `session/agent-busy` (`validateAddress()`), and `subagentAddress()` builds no address without a parent, so its children can be reached only through a direct link. On main, a host with no projection-cache record let a user open the Untitled row and inspect a failed writer's transcript from it.

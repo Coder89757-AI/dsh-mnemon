@@ -498,8 +498,9 @@
     },
     {
       "command": "pnpm exec vitest run tests/task-agent-session-host.spec.ts",
-      "main": "2 failed: expected [ 'parent', '<task id>' ] to deeply equal [ 'parent' ]",
-      "fix": "2 passed on DSH 0.2.1-rc.2 (pinned) and 0.2.0-rc.2 (installed)"
+      "main": "2 failed: expected [ 'plain', '<task id>' ] to deeply equal [ 'plain' ]",
+      "fix": "2 passed on DSH 0.2.1-rc.2 (pinned) and 0.2.0-rc.2 (installed)",
+      "what": "DSH's own ACP agent (dsh-acp, given an in-memory stream through config.stream) lists the stored sessions; plain, a finished session created through agents.create with only a cwd as main created a task Agent's, is the control it lists; Session query reads the task and child headers"
     },
     {
       "command": "pnpm run typecheck",
@@ -519,7 +520,7 @@
     },
     {
       "command": "pnpm run verify:docs (after the record's last edit)",
-      "fix": "5033 local links and 371 anchors verified"
+      "fix": "5035 local links and 373 anchors verified"
     }
   ]
 }
