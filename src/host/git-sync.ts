@@ -142,6 +142,48 @@ export function isGitHubHttps(repoUrl: string): boolean {
 }
 
 /**
+ * The user name a token goes to Git under: the one GitHub documents for its tokens and its sign-in's
+ * grant, which every host has been offered, and which stays for every host not known to refuse it.
+ */
+const TOKEN_USER = 'x-access-token'
+/**
+ * The hosts known to refuse `x-access-token` with a token, and the name each takes instead: Gitee
+ * answers it with HTTP 403 and takes `oauth2` or the account name (#408). Any other host that wants
+ * a name of its own, a self-hosted Gitee included, is given it in the address.
+ */
+const TOKEN_USER_BY_HOST: ReadonlyMap<string, string> = new Map([['gitee.com', 'oauth2']])
+/**
+ * From this version on, the last `credential.username` Git reads wins, which is the command line's.
+ * Before it, the first one configured did, and only a name in the address came before that.
+ */
+const LAST_USERNAME_WINS_GIT = '2.26'
+
+/**
+ * Who Git is to look the token up as for one HTTPS address, and for which host: the user name the
+ * address names, else the one its host takes a token under; the host exactly as the address writes
+ * it, since Git compares a stored credential's host as text, its case and port included; and the
+ * address without its user name. `user` is written as an address writes it, `name` as Git reads it.
+ */
+export function credentialTarget(url: string): { user: string; name: string; named: boolean; host: string; address: string } {
+  const [, written, host = '', rest = ''] = /^https:\/\/(?:([^/@]*)@)?([^/]*)(.*)$/u.exec(url) ?? []
+  let hostname = ''
+  try {
+    // `gitee.com.` is the same host, written as a fully qualified name.
+    hostname = new URL(url).hostname.toLowerCase().replace(/\.$/u, '')
+  } catch {
+    // An address that does not parse keeps the name every host is offered.
+  }
+  const user = written ?? TOKEN_USER_BY_HOST.get(hostname) ?? TOKEN_USER
+  let name = user
+  try {
+    name = decodeURIComponent(user)
+  } catch {
+    // The settings refuse an address whose user name does not decode; Git would read it as written.
+  }
+  return { user, name, named: written !== undefined, host, address: 'https://' + host + rest }
+}
+
+/**
  * What kind of failure one Git error describes. Git words these differently per
  * transport and per host, so the patterns are the phrases each transport uses:
  * a refused or missing credential, an address that leads nowhere (GitHub answers
@@ -239,6 +281,15 @@ function versionAtLeast(version: string, minimum: string): boolean {
     if (difference !== 0) return difference > 0
   }
   return true
+}
+
+/**
+ * A boolean as Git reads one: `true`, `yes`, `on` or a number other than 0 is true, and
+ * `false`, `no`, `off`, 0 or an empty value is false.
+ */
+function gitBoolean(value: string): boolean {
+  const text = value.trim().toLowerCase()
+  return text === 'true' || text === 'yes' || text === 'on' || (/^[-+]?\d+$/u.test(text) && Number(text) !== 0)
 }
 
 /**
@@ -566,6 +617,8 @@ export class MnemonGitSync {
   private readonly store: MnemonSyncSettingsStore
   private readonly machine: MnemonMachineStore
   private sequence = 0
+  /** The Git version the last check found, which decides how a token's user name is given to Git. */
+  private gitVersion: string | undefined
   private auth: MnemonGitHubAuth | undefined
   private autoBackupView: (() => MnemonSyncAutoBackup | undefined) | undefined
 
@@ -1142,8 +1195,10 @@ export class MnemonGitSync {
       const result = await this.git(['--version'], { signal })
       version = /(\d+\.\d+(?:\.\d+)?)/u.exec(result.stdout)?.[1]
     } catch (error) {
+      this.gitVersion = undefined
       return { available: false, required, issue: error instanceof Error ? error.message : String(error) }
     }
+    this.gitVersion = version
     if (version === undefined) return { available: false, required, issue: 'git --version did not report a version' }
     if (!versionAtLeast(version, required)) {
       return { available: false, required, version, issue: 'Git ' + version + ' is older than ' + required + ', which this channel needs' }
@@ -1524,7 +1579,7 @@ export class MnemonGitSync {
   }
 
   private async git(args: string[], options: GitOptions): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-    const prepared = this.credentials(args, options)
+    const prepared = await this.credentials(args, options)
     try {
       const result = await this.run(GIT_LABEL, prepared.args, {
         timeoutMs: options.timeoutMs ?? MNEMON_SYNC_GIT_TIMEOUT_MS,
@@ -1544,20 +1599,75 @@ export class MnemonGitSync {
    * Hand the token to Git through a `0600` credential store that lives for one
    * command. The token never reaches an argument, a URL, a log, or the mirror,
    * and it is removed before the caller sees the result.
+   *
+   * Git must look the token up under the name the store holds, not under one this
+   * machine configures, as Git Credential Manager setups do, nor by a path the store
+   * does not hold (#408). Git 2.26 and later are told so on the command line, which
+   * they read last and let win, and are given the address without a user name, as
+   * Git offers a name it finds there once without the token. An older Git kept the
+   * first name it read, and only a name in the address comes before that: the name
+   * goes there only where this machine's configuration names another, and the path
+   * leaves the lookup only where it puts the path in, so every other command, one
+   * that configures the store's own name included, stays the one that has always run.
    */
-  private credentials(args: string[], options: GitOptions): { args: string[]; cleanup: () => void } {
+  private async credentials(args: string[], options: GitOptions): Promise<{ args: string[]; cleanup: () => void }> {
     const token = options.token
     if (token === undefined || token === '' || options.authenticated !== true) return { args: [...NO_REWRITE, ...args], cleanup: () => {} }
-    const url = args.find(argument => argument.startsWith('https://'))
-    if (url === undefined) return { args: [...NO_REWRITE, ...args], cleanup: () => {} }
+    const index = args.findIndex(argument => argument.startsWith('https://'))
+    if (index === -1) return { args: [...NO_REWRITE, ...args], cleanup: () => {} }
+    const url = args[index]!
+    const target = credentialTarget(url)
+    const command = [...args]
+    const lookup: string[] = []
+    if (this.gitVersion !== undefined && versionAtLeast(this.gitVersion, LAST_USERNAME_WINS_GIT)) {
+      lookup.push('-c', 'credential.useHttpPath=false', '-c', 'credential.username=' + target.name)
+      command[index] = target.address
+    } else {
+      const configured = await this.configuredLookup(url, options)
+      if (configured.path) lookup.push('-c', 'credential.useHttpPath=false')
+      if (configured.user !== undefined && configured.user !== target.name && !target.named) command[index] = 'https://' + target.user + '@' + target.address.slice('https://'.length)
+    }
     this.sequence += 1
-    const host = new URL(url).host
     const path = join(this.store.directory(), '.credentials.' + branchSlug(String(process.pid)) + '.' + String(this.sequence) + '.tmp')
-    writeFileSync(path, 'https://x-access-token:' + token + '@' + host + '\n', { encoding: 'utf8', mode: 0o600 })
+    writeFileSync(path, 'https://' + target.user + ':' + encodeURIComponent(token) + '@' + target.host + '\n', { encoding: 'utf8', mode: 0o600 })
     return {
-      args: [...NO_REWRITE, '-c', 'credential.helper=', '-c', 'credential.helper=store --file=' + shellQuote(path), ...args],
+      args: [...NO_REWRITE, '-c', 'credential.helper=', '-c', 'credential.helper=store --file=' + shellQuote(path), ...lookup, ...command],
       cleanup: () => { rmSync(path, { force: true }) },
     }
+  }
+
+  /**
+   * The user name this machine's configuration gives an address, if any, and whether
+   * it adds the address's path to the lookup, read in the environment and directory
+   * the command runs in. A configuration Git cannot read leaves the command as it
+   * was, which fails on it the same way.
+   */
+  private async configuredLookup(url: string, options: GitOptions): Promise<{ user: string | undefined; path: boolean }> {
+    let result: { stdout: string; exitCode: number | null }
+    try {
+      result = await this.run(GIT_LABEL, ['config', '--get-urlmatch', 'credential', url], {
+        timeoutMs: options.timeoutMs ?? MNEMON_SYNC_GIT_TIMEOUT_MS,
+        env: gitEnvironment(),
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        label: GIT_LABEL,
+      })
+    } catch (error) {
+      if (options.signal?.aborted === true) throw error
+      return { user: undefined, path: false }
+    }
+    const settings = new Map<string, string>()
+    if (result.exitCode === 0) {
+      // One `key value` per line, the value as written. Git prints a key written without
+      // a value alone, and refuses it in a credential section ("bad config variable"),
+      // so the command fails on it whatever it is given.
+      for (const line of result.stdout.split(/\r?\n/u)) {
+        const space = line.indexOf(' ')
+        if (space > 0) settings.set(line.slice(0, space).toLowerCase(), line.slice(space + 1))
+      }
+    }
+    const path = settings.get('credential.usehttppath')
+    return { user: settings.get('credential.username'), path: path !== undefined && gitBoolean(path) }
   }
 }
 

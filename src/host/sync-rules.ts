@@ -12,7 +12,17 @@ const HTTPS = /^https:\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u
 const SSH = /^ssh:\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u
 const SCP = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\s]+$/u
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//u
-const EMBEDDED_CREDENTIAL = /^https:\/\/[^/]*@/u
+const HTTPS_USER = /^https:\/\/([^/]*)@/u
+// The characters RFC 3986 lets the user part of a URL carry, its password's colon aside, or escaped ones.
+const USER_TEXT = /^(?:[A-Za-z0-9._~!$&'()*+,;=-]|%[0-9A-Fa-f]{2})+$/u
+// What a user name never holds once read as Git reads it: a password's colon, another `@`, a control
+// character or a space.
+const NOT_A_NAME = /[:@\s\p{Cc}]/u
+// What a user name never is: a token as GitHub, GitLab, Hugging Face and Atlassian prefix theirs; 32 or
+// more hexadecimal digits, as Gitee's and Gitea's tokens are; or 52 or more letters and digits, as
+// Azure DevOps' tokens are, which is longer than a user or organization name those hosts allow.
+const TOKEN_SHAPE = /^(?:gh[opsru]_|github_pat_|glpat-|gldt-|glcbt-|hf_|ATBB|ATCTT|ATATT)|^[0-9A-Fa-f]{32,}$|^[A-Za-z0-9]{52,}$/u
+const USER_NAME_MAX = 100
 const EMAIL = /^[^\s<>@]+@[^\s<>@]+$/u
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/u
 // A name is shown on one line of a history row, so it carries no control characters.
@@ -39,15 +49,34 @@ export type MnemonSyncRepositoryProblem = 'format' | 'credentials'
 
 /**
  * What is wrong with a repository address, or nothing for an https:// or ssh:// URL without
- * credentials in it, a git@host:path address, or a local path that `localPath` takes.
+ * credentials in it, a git@host:path address, or a local path that `localPath` takes. An HTTPS
+ * address may name the user a host wants its token offered under, as Bitbucket's do, but never a
+ * password, nor a token written where that name goes.
  */
 export function syncRepositoryProblem(url: string, localPath: (path: string) => boolean): MnemonSyncRepositoryProblem | undefined {
   if (url === '' || url.length > 2000 || /\s/u.test(url)) return 'format'
   if (SCHEME.test(url)) {
     if (!HTTPS.test(url) && !SSH.test(url)) return 'format'
-    return EMBEDDED_CREDENTIAL.test(url) ? 'credentials' : undefined
+    const user = HTTPS_USER.exec(url)?.[1]
+    return user === undefined || syncUserName(user) ? undefined : 'credentials'
   }
   return SCP.test(url) || localPath(url) ? undefined : 'format'
+}
+
+/**
+ * Whether the user part of an HTTPS address is a user name. It is judged as Git reads it, with its
+ * escapes decoded, so an escaped colon, an escaped token prefix or an escaped line break counts as what
+ * it decodes to; one that does not decode is no name at all.
+ */
+function syncUserName(written: string): boolean {
+  if (!USER_TEXT.test(written)) return false
+  let name: string
+  try {
+    name = decodeURIComponent(written)
+  } catch {
+    return false
+  }
+  return name.length <= USER_NAME_MAX && !NOT_A_NAME.test(name) && !TOKEN_SHAPE.test(name)
 }
 
 /**
