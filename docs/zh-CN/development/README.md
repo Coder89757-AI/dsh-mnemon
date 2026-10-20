@@ -4,7 +4,7 @@
 
 ## 环境与命令
 
-插件的 Node engine 下限为 20；锁定的完整 DSH 开发 Profile 是正式发布的 0.2.1-rc.2（npm `latest` 与 `next`），需要 Node `^22.19.0 || >=24.0.0`，建议开发使用 Node 24。Root、Source Client 测试和外部制品消费者均使用该依赖族，`dsh-client-store` 提供子 Agent projection 适配器使用的公开 selector 类型。CI 另在 Node 20 冒烟导入公开 Node 入口。DSH 0.2.0-rc.2（npm `latest`）同样受支持：`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的安装前兼容检查，覆盖受支持与不受支持的版本；CI 还会在已安装的 0.2.0-rc.2 上运行根测试。要自己在另一个安装上运行：
+插件的 Node engine 下限为 20；锁定的完整 DSH 开发 Profile 是正式发布的 0.2.1-rc.2（npm `latest` 与 `next`），需要 Node `^22.19.0 || >=24.0.0`，建议开发使用 Node 24。Root、Source Client 测试和外部制品消费者均使用该依赖族，`dsh-client-store` 提供子 Agent projection 适配器使用的公开 selector 类型。CI 另在 Node 20 冒烟导入公开 Node 入口。DSH 0.2.0-rc.2（npm `latest`）同样受支持：`tests/dsh-host-compatibility.spec.ts` 对全部 19 个包的清单执行 DSH 自己的安装前兼容检查，覆盖受支持与不受支持的版本；CI 还会在已安装的 0.2.0-rc.2 上运行根测试。要自己在另一个安装上运行：
 
 ```sh
 npm install --global --prefix <目录> @deepseek-ai/dsh@0.2.0-rc.2
@@ -21,7 +21,7 @@ pnpm run verify
 pnpm run verify:plugins
 ```
 
-`verify` 包含类型检查、根包确定性构建、独立插件构建、完整测试集、真实隔离 DSH Headless 和包出口/内容验证。独立插件检查在所有公开制品构建完成后分阶段执行。不要用 `pnpm -r verify` 同时清理重建制品和运行读取它们的测试；整个工作区使用 `pnpm verify`。`verify:plugins` 在工作区**外部**，基于 semver 安装的 tarball 重复验证，并测试外部 Source/Strategy/Provider/Client 消费者；还向真实 DSH 仅安装根包 tarball，从 loopback registry 解析全部十七个官方插件，不使用工作区链接或改写 manifest，再单独验证三个随附增强从默认停用到同时启用。外部消费者还通过完整 Strategy 的打包 SDK 编译自己实现的策略贡献。
+`verify` 包含类型检查、根包确定性构建、独立插件构建、完整测试集、真实隔离 DSH Headless 和包出口/内容验证。独立插件检查在所有公开制品构建完成后分阶段执行。不要用 `pnpm -r verify` 同时清理重建制品和运行读取它们的测试；整个工作区使用 `pnpm verify`。`verify:plugins` 在工作区**外部**，基于 semver 安装的 tarball 重复验证，并测试外部 Source/Strategy/Provider/Client 消费者；还向真实 DSH 仅安装根包 tarball，从 loopback registry 解析全部十八个官方插件，不使用工作区链接或改写 manifest，再单独验证三个随附增强从默认停用到同时启用。外部消费者还通过完整 Strategy 的打包 SDK 编译自己实现的策略贡献。
 
 ## 仓库归属
 
@@ -46,7 +46,7 @@ scripts/      reproducible build, artifacts, Headless and Web fixtures
 cordis.patch.yml   default Starter composition
 ```
 
-根包拥有 Core/SDK、DSH Host 和默认 Starter，不拥有 Source 存储实现：Host 复制或统计 Source 的文件时，从该 Source 的 `./contracts` 读取其文件名、锁文件与解析器（见[内置存储范围](./architecture.md#内置存储范围)）。`plugins/` 下每个目录都是可独立发布的项目。默认发行包按公开 semver 依赖全部十七个官方插件。Starter 安装通用策略与三个增强，其 Entry 默认停用；`memoryView.strategyTypeId` 记录由哪个主策略组合 View，各组件开关由 DSH 插件管理器记录。Source/Strategy 通过 peer 使用 Core SDK，策略贡献使用其完整 Strategy 的公开 SDK，Provider 使用 Memory Spaces SDK。peer/开发关系会产生包管理器环依赖提示；生产代码导入边界另有独立检查。
+根包拥有 Core/SDK、DSH Host 和默认 Starter，不拥有 Source 存储实现：Host 复制或统计 Source 的文件时，从该 Source 的 `./contracts` 读取其文件名、锁文件与解析器（见[内置存储范围](./architecture.md#内置存储范围)）。`plugins/` 下每个目录都是可独立发布的项目。默认发行包按公开 semver 依赖全部十八个官方插件。Starter 安装通用策略与三个增强，其 Entry 默认停用；`memoryView.strategyTypeId` 记录由哪个主策略组合 View，各组件开关由 DSH 插件管理器记录。Source/Strategy 通过 peer 使用 Core SDK，策略贡献使用其完整 Strategy 的公开 SDK，Provider 使用 Memory Spaces SDK。peer/开发关系会产生包管理器环依赖提示；生产代码导入边界另有独立检查。
 
 不再保留私有工作区包、控制器转发文件、业务 binding 或 compatibility 目录。兼容指用户配置、数据与使用流程，不是延续历史内部符号。[兼容登记表](./compatibility-register.md)列出为此保留的代码、保留原因，以及每一项可以移除的条件。
 
@@ -76,7 +76,7 @@ pnpm --filter dsh-mnemon-source-runtime verify
 
 工作区身份、Client 平台边界和委派工作区范围测试还会在 Windows 的 Node 22.19 与 24 上运行。它们覆盖真实文件系统错误和 junction 别名，并包含模拟 Windows 对文件后代返回 `ENOENT` 的跨平台回归；该模拟不能替代真实 Windows 运行。
 
-`tests/bundle-activation.spec.mjs` 用正式发布的 DSH Loader 启动临时激活计数器，覆盖 Starter 的全部十八个包。它验证旧版 `mnemon` 配置／停用目标及组件独立选择，再调用正式插件管理器：真实组件和 bundle 开关必须在重载、重启后保持，核心总开关必须停止全部运行中的子项，任何包都不能留下重复实例。两组用例都在锁定的宿主上运行；设置 `MNEMON_BUNDLE_TEST_PROFILE=/absolute/profile` 可改为检查另一份安装。夹具子进程不继承 `pnpm exec` 注入的 `NODE_PATH`：DSH 0.2 通过 Node 的搜索路径（包括 `NODE_PATH`）为插件包选路，继承它会解析到本仓库的真实插件而不是夹具包。夹具创建自己的临时 profile，不修改所提供的安装。它验证生命周期契约；真实 Mnemon 行为仍由制品 Headless 和 WebUI 检查负责。最后它核对 DSH 的配置 schema 收集器只把 Starter 的组件组报告为无法识别的树载体（已知取舍，见[兼容性说明](../reference/compatibility.md#安装后直接启用-starter)），不允许出现其他错误。执行 `node --expose-internals tests/fixtures/bundle-activation.mjs /absolute/profile manager --check-declared-rows` 可额外要求每个声明的 bundle 组件都可由管理器操作；该诊断会在 DSH 0.2.0 已知的原生 group 列表缺陷处失败，见[兼容性说明](../reference/compatibility.md#dsh-020-上的-bundle-组件列表)。
+`tests/bundle-activation.spec.mjs` 用正式发布的 DSH Loader 启动临时激活计数器，覆盖 Starter 的全部十九个包。它验证旧版 `mnemon` 配置／停用目标及组件独立选择，再调用正式插件管理器：真实组件和 bundle 开关必须在重载、重启后保持，核心总开关必须停止全部运行中的子项，任何包都不能留下重复实例。两组用例都在锁定的宿主上运行；设置 `MNEMON_BUNDLE_TEST_PROFILE=/absolute/profile` 可改为检查另一份安装。夹具子进程不继承 `pnpm exec` 注入的 `NODE_PATH`：DSH 0.2 通过 Node 的搜索路径（包括 `NODE_PATH`）为插件包选路，继承它会解析到本仓库的真实插件而不是夹具包。夹具创建自己的临时 profile，不修改所提供的安装。它验证生命周期契约；真实 Mnemon 行为仍由制品 Headless 和 WebUI 检查负责。最后它核对 DSH 的配置 schema 收集器只把 Starter 的组件组报告为无法识别的树载体（已知取舍，见[兼容性说明](../reference/compatibility.md#安装后直接启用-starter)），不允许出现其他错误。执行 `node --expose-internals tests/fixtures/bundle-activation.mjs /absolute/profile manager --check-declared-rows` 可额外要求每个声明的 bundle 组件都可由管理器操作；该诊断会在 DSH 0.2.0 已知的原生 group 列表缺陷处失败，见[兼容性说明](../reference/compatibility.md#dsh-020-上的-bundle-组件列表)。
 
 远程 Provider 使用可控 HTTP 响应；Native 进程测试使用可控命令 runner，另有可选 Windows 二进制冒烟。额外的 opt-in 测试接受经过官方 checksum 校验的 Native 二进制，创建临时记忆空间，通过 View 写入、召回并删除：
 
