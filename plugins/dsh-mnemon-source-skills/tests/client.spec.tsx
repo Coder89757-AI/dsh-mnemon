@@ -204,6 +204,21 @@ describe('Skills page', () => {
     expect((await management.read('cases', { skill: 'release-notes' })).value).toHaveLength(2)
   })
 
+  it('marks only the copy DSH loads as waiting for an improvement, not the one it shadows', async () => {
+    mkdirSync(join(directory, 'workspace', '.dsh', 'skills', 'release-notes'), { recursive: true })
+    writeFileSync(join(directory, 'workspace', '.dsh', 'skills', 'release-notes', 'SKILL.md'), SKILL)
+    await mutate('review-record', review())
+    const waiting = t('skills.waitingCount', { count: 1 })
+    page({ seed: 'skill:user-dsh:release-notes', nonce: 1 })
+    expect(await screen.findByText(t('skills.shadowedBy', { key: 'project-dsh:release-notes' }))).not.toBeNull()
+    expect(screen.getAllByTitle(waiting)).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: named(waiting, t('common.view')) })).toBeNull()
+    cleanup()
+    page({ seed: 'skill:project-dsh:release-notes', nonce: 2 })
+    expect(await screen.findByRole('button', { name: named(waiting, t('common.view')) })).not.toBeNull()
+    expect(screen.getAllByTitle(waiting)).toHaveLength(1)
+  })
+
   it('switches a whole skill from its row and uses it in the conversation input', async () => {
     const setDraft = vi.fn()
     const onReturn = vi.fn()
@@ -316,6 +331,14 @@ describe('Skills page', () => {
     expect(compareRuns(baseline, run('draft', [result('a', 'pass', 1), result('b', 'error', 0)]))).toEqual({ baseline: 0.5, candidate: 1, excluded: 1 })
     expect(compareRuns(baseline, run('draft', [result('a', 'error', 0), result('b', 'error', 0)]))).toEqual({ excluded: 2 })
     expect(compareRuns(baseline, { ...run('draft', []), status: 'running' })).toEqual({ excluded: 0 })
+  })
+
+  it('words counts in English by number, and leaves Chinese as written', () => {
+    expect(t('records.stats', { turns: 1, tools: 1 })).toBe('1 turn · 1 tool call')
+    expect(t('records.stats', { turns: 2, tools: 6 })).toBe('2 turns · 6 tool calls')
+    expect(t('draft.excluded', { count: 1 })).toBe('1 case could not run and is left out')
+    expect(t('market.installs', { count: '13.6K' })).toBe('13.6K installs')
+    expect(translate('zh-CN')('records.stats', { turns: 1, tools: 1 })).toBe('1 回合 · 1 次工具调用')
   })
 
   it('registers one page in the Memory System and releases it', () => {

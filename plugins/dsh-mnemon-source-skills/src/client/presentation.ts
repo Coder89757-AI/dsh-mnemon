@@ -13,7 +13,11 @@ export function translate(locale: string): SkillsTranslate {
   const dictionary: Record<string, string> = locale.startsWith('en') ? copy.en : copy.zh
   return (key, params) => {
     const text = dictionary[key] ?? copy.zh[key] ?? key
-    return params === undefined ? text : text.replace(/\{(\w+)\}/gu, (match, name: string) => name in params ? String(params[name]) : match)
+    if (params === undefined) return text
+    // English words after a count: {count:case|cases} follows the parameter it names.
+    return text
+      .replace(/\{(\w+):([^|{}]*)\|([^{}]*)\}/gu, (match, name: string, one: string, other: string) => name in params ? (Number(params[name]) === 1 ? one : other) : match)
+      .replace(/\{(\w+)\}/gu, (match, name: string) => name in params ? String(params[name]) : match)
   }
 }
 
