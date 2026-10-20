@@ -1,13 +1,16 @@
-// Documentation demo: a fictional project's memory, seeded through the public
-// Source contracts, and a scripted model that reads and corrects it with the
-// real View tools. It holds no personal memory and needs the Mnemon CLI for
-// the native Memory Spaces.
+// Documentation demo: a fictional project's memory and skills, seeded through
+// the public Source contracts, and a scripted model that reads and corrects it
+// with the real View tools. It holds no personal memory and needs the Mnemon
+// CLI for the native Memory Spaces. The skills half is in docs-demo-skills.mjs.
 import { realpathSync } from 'node:fs'
 import { MemoryCompositionRunner } from 'dsh-mnemon/testing'
 import * as runtimePlugin from 'dsh-mnemon-source-runtime'
 import * as documentsPlugin from 'dsh-mnemon-source-documents'
 import * as spacesPlugin from 'dsh-mnemon-source-memory-spaces'
 import * as strategyPlugin from 'dsh-mnemon-strategy-default-three-tier'
+import * as skillsPlugin from 'dsh-mnemon-source-skills'
+import { seedDocsDemoSkills, skillsDemoModel } from './docs-demo-skills.mjs'
+import { delegatedCompletion } from './delegated-completion.mjs'
 
 const CONTENT = {
   'zh-CN': {
@@ -71,6 +74,7 @@ const CONTENT = {
       documents.length === 0 ? '' : `\n详见档案${documents.map(title => `《${title}》`).join('、')}。`,
     ].filter(Boolean).join('\n'),
     saved: '已更新工作记忆：结账页目标改为 p75 LCP 低于 2.2 秒。',
+    reviewSkipped: '这段对话没有需要长期保存的新事实。',
     idle: '可以问我 Lumen 的目标、决策或流程，我会先查记忆再回答。',
     assistant: { name: 'Lumen 助手', description: 'Lumen 项目的工程助手（演示数据）。', persona: '你是 Lumen 项目的工程助手。用户用什么语言提问，就用什么语言回答。提到档案或记忆时，用标题或内容称呼，不要写出 id。' },
   },
@@ -135,6 +139,7 @@ const CONTENT = {
       documents.length === 0 ? '' : `\nSee ${documents.map(title => `“${title}”`).join(' and ')} in Documents.`,
     ].filter(Boolean).join('\n'),
     saved: 'Working memory updated: the checkout target is now p75 LCP under 2.2 s.',
+    reviewSkipped: 'Nothing in this checkpoint needs to be kept.',
     idle: 'Ask me about Lumen’s goals, decisions or process; I check memory before answering.',
     assistant: { name: 'Lumen assistant', description: 'Engineering assistant for the Lumen project (demo data).', persona: 'You are the engineering assistant for the Lumen project. Answer in the language the user writes in. Refer to documents and memories by title or content, never by id.' },
   },
@@ -151,9 +156,11 @@ export function docsDemoAssistant(language) {
 
 /**
  * Seed the demo into a disposable data root before the Host starts, through
- * the Sources' own management operations.
+ * the Sources' own management operations. With `skills`, the Skills Source
+ * gets the project's skills too: in `skills.workspace`, where DSH runs the
+ * conversation, and in the fixture's DSH and agents homes.
  */
-export async function seedDocsDemo({ dataDir, workspace, language }) {
+export async function seedDocsDemo({ dataDir, workspace, language, skills }) {
   const content = CONTENT[language]
   if (content === undefined) throw new Error('Unknown docs demo language: ' + language)
   const runner = new MemoryCompositionRunner()
@@ -165,6 +172,7 @@ export async function seedDocsDemo({ dataDir, workspace, language }) {
       dataDir, timeoutMs: 20_000, defaultRecallLimit: 20,
       providers: [{ use: 'dsh-mnemon-provider-mnemon-native', instanceId: 'mnemon-native' }],
     } })
+    if (skills !== undefined) await runner.mount(skillsPlugin, { instanceId: 'skills', config: { dataDir, dshHome: skills.dshHome, agentsHome: skills.agentsHome } })
     // The Host names a workspace by its resolved path, as DSH reports it.
     const scope = { storage: 'global', workspaceId: realpathSync(workspace) }
     const runtime = await runner.managementClient('source:runtime', scope)
@@ -187,6 +195,10 @@ export async function seedDocsDemo({ dataDir, workspace, language }) {
       const body = (await spaces.mutate('body-create', { name: space.name, description: space.description, active: true, providerId: 'mnemon-native', connection: {} }, { confirmed: true })).value
       for (const memory of space.memories) await spaces.mutate('remember', { ...memory, source: 'user', memoryBodyId: body.id }, { confirmed: true })
       if (!space.active) await spaces.mutate('body-update', { memoryBodyId: body.id, active: false }, { confirmed: true })
+    }
+    if (skills !== undefined) {
+      const project = realpathSync(skills.workspace)
+      await seedDocsDemoSkills({ runner, scope: { storage: 'global', workspaceId: project }, workspace: project, catalogDir: skills.catalogDir, language })
     }
   } finally {
     await runner.dispose()
@@ -216,7 +228,17 @@ function fields(value, keys, found = []) {
 export function docsDemoModel(language, report) {
   const content = CONTENT[language]
   if (content === undefined) throw new Error('Unknown docs demo language: ' + language)
+  const skills = skillsDemoModel(language, report)
   return request => {
+    const skillReply = skills(request)
+    if (skillReply !== undefined) return skillReply
+    // The Layered strategy's idle review of a scripted turn finds nothing new to keep.
+    const system = (request.messages ?? []).filter(message => message.role === 'system').map(text).join('\n')
+    if (system.includes('Deep Recall is unavailable after the parent TurnView closes')) {
+      const completion = delegatedCompletion(request)
+      report({ event: 'idle-review', action: 'skipped' })
+      return { name: completion.name, args: completion.wrap({ summary: content.reviewSkipped, action: 'skipped', memoryBodyIds: [], documentIds: [] }) }
+    }
     const messages = request.messages ?? []
     const userIndex = messages.findLastIndex(message => message.role === 'user')
     if (userIndex < 0) return content.idle
