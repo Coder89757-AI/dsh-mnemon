@@ -7,6 +7,8 @@ import { githubGrantFromRecord, MNEMON_SYNC_GITHUB_CREDENTIAL_KEY, MnemonGitHubA
 import { registerGuidance } from './guidance.ts'
 import { createRuntimeGraph, LiveMnemonRuntime } from './runtime.ts'
 import { MnemonLifecycle } from './lifecycle.ts'
+import { SkillEvolution } from './skill-evolution.ts'
+import { skillsSourceFor } from './skill-source.ts'
 import { registerRpc } from './rpc.ts'
 import { migrateLegacyDisplayMode, registerSettingsRpc } from './settings.ts'
 import { MnemonSubagentCoordinator } from './subagent.ts'
@@ -151,6 +153,12 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
   }, () => runtime.config.runtimeMemory.maintenanceMaxTokens,
   (scope, signal, operation) => lifecycle.runRuntimeMaintenanceTask(scope, signal, operation))
   const lifecycle = new MnemonLifecycle(ctx, coordinator, runtime.config, runtime)
+  const skills = new SkillEvolution({
+    source: agent => skillsSourceFor(runtime, agent),
+    runTask: (workspaceRoot, signal, operation) => lifecycle.runSkillTask(workspaceRoot, signal, operation),
+    skillTask: (parent, label, prompt, schema, persona, signal) => coordinator.skillTask(parent, label, prompt, schema, persona, signal),
+  })
+  lifecycle.useSkillEvolution(skills)
   // Registered before the lifecycle root so teardown runs the other way round:
   // the timer stops first, and only then does the runtime it reads go away.
   ctx.effect(() => {
@@ -161,6 +169,7 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
     const stop = lifecycle.start()
     return async () => {
       stop()
+      skills.dispose()
       await coordinator.dispose()
       runtime.dispose()
     }

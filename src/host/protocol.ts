@@ -539,9 +539,11 @@ export interface SubagentCounters {
   documentArchives: number
   metadataMaintenances: number
   reconciliations: number
+  /** Skill reviews, drafts, backtest runs and case derivations. */
+  skills?: number
   failures: number
   lastRunId?: string
-  lastOperation?: 'recall' | 'write' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile'
+  lastOperation?: 'recall' | 'write' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile' | 'skill'
   lastAt?: string
 }
 

@@ -42,9 +42,9 @@ function packageName(specifier: string): string {
 }
 
 describe('standalone plugin repository boundary', () => {
-  it('keeps three Sources, two main Strategies, three optional contributions and nine private Providers explicit', () => {
+  it('keeps four Sources, two main Strategies, three optional contributions and nine private Providers explicit', () => {
     expect(pluginNames.filter(name => name.startsWith('dsh-mnemon-source-'))).toEqual([
-      'dsh-mnemon-source-documents', 'dsh-mnemon-source-memory-spaces', 'dsh-mnemon-source-runtime',
+      'dsh-mnemon-source-documents', 'dsh-mnemon-source-memory-spaces', 'dsh-mnemon-source-runtime', 'dsh-mnemon-source-skills',
     ])
     expect(pluginNames.filter(name => name.startsWith('dsh-mnemon-strategy-'))).toEqual([...viewExtensions, ...mainStrategies].sort())
     expect(pluginNames.filter(name => name.startsWith('dsh-mnemon-provider-'))).toHaveLength(9)

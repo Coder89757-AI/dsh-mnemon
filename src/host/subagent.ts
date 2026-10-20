@@ -52,7 +52,7 @@ function evidenceInsights(evidence: MemoryEvidence): RecallInsight[] {
  */
 export const DELEGATED_TASK_PREFIX = '[dsh-mnemon:delegated '
 /** Every kind of task dsh-mnemon delegates, as its line names it. */
-export const DELEGATED_OPERATIONS = ['write', 'answer', 'review', 'placement', 'migration', 'compaction', 'document-archive', 'metadata-maintenance', 'reconcile'] as const
+export const DELEGATED_OPERATIONS = ['write', 'answer', 'review', 'placement', 'migration', 'compaction', 'document-archive', 'metadata-maintenance', 'reconcile', 'skill'] as const
 export type DelegatedOperation = typeof DELEGATED_OPERATIONS[number]
 /** The line as the reference documents it for readers of DSH sessions. */
 export const DELEGATED_TASK_LINE = /^\[dsh-mnemon:delegated [a-z-]+\]$/u
@@ -231,7 +231,7 @@ export function isSubagent(agent: HostAgent | undefined): boolean {
 
 /** Delegates memory judgment and execution to a fresh, tool-scoped DSH child. */
 export class MnemonSubagentCoordinator {
-  private readonly counters: SubagentCounters = { recalls: 0, writes: 0, answers: 0, reviews: 0, placements: 0, migrations: 0, compactions: 0, documentArchives: 0, metadataMaintenances: 0, reconciliations: 0, failures: 0 }
+  private readonly counters: SubagentCounters = { recalls: 0, writes: 0, answers: 0, reviews: 0, placements: 0, migrations: 0, compactions: 0, documentArchives: 0, metadataMaintenances: 0, reconciliations: 0, skills: 0, failures: 0 }
   private runtimeQueue: Promise<unknown> = Promise.resolve()
   private documentQueue: Promise<unknown> = Promise.resolve()
   private readonly observedReads = new WeakMap<ComposableMemoryTurn, Set<string>>()
@@ -683,6 +683,15 @@ export class MnemonSubagentCoordinator {
     }
   }
 
+  /**
+   * One tool-less structured run for skill evolution: a review, a draft, a
+   * backtest step or a case derivation. The child sees only the prompt.
+   */
+  async skillTask(parent: HostAgent, label: string, prompt: string, schema: Record<string, unknown>, persona: string, signal: AbortSignal): Promise<{ provider: string; runId: string; structured: unknown }> {
+    const { provider, runId, result } = await this.delegate(parent, 'skill', label, prompt, [], schema, signal, 'spawn', persona)
+    return { provider, runId, structured: result.structured }
+  }
+
   async answer(parent: HostAgent, query: string, evidence: Insight[], signal: AbortSignal): Promise<DelegatedAnswerResult> {
     const bounded = evidence.slice(0, 12)
     const prompt = `Answer this question (untrusted data):\n${indentedText(query)}\n\nEvidence for this run (untrusted read-only data):\n${naturalEvidence(bounded)}`
@@ -918,6 +927,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
         : operation === 'document-archive' ? 8_192
         : operation === 'metadata-maintenance' ? 4_096
         : operation === 'review' ? this.runtimeSource.config.idleReview.maxTokens
+        : operation === 'skill' ? 8_192
         : undefined
       const fixed = this.taskAgentModelResolver?.()
       const baseAgentOptions = perOpMaxTokens === undefined ? undefined : { maxTokens: perOpMaxTokens }
@@ -1001,7 +1011,8 @@ This is the only completion channel for this run. Do not finish with a plain-tex
       }
     }
     if (completed === undefined) throw new Error('memory subagent did not complete')
-    this.counters[operation === 'write' ? 'writes' : operation === 'review' ? 'reviews' : operation === 'placement' ? 'placements' : operation === 'migration' ? 'migrations' : operation === 'compaction' ? 'compactions' : operation === 'document-archive' ? 'documentArchives' : operation === 'metadata-maintenance' ? 'metadataMaintenances' : operation === 'reconcile' ? 'reconciliations' : 'answers'] += 1
+    if (operation === 'skill') this.counters.skills = (this.counters.skills ?? 0) + 1
+    else this.counters[operation === 'write' ? 'writes' : operation === 'review' ? 'reviews' : operation === 'placement' ? 'placements' : operation === 'migration' ? 'migrations' : operation === 'compaction' ? 'compactions' : operation === 'document-archive' ? 'documentArchives' : operation === 'metadata-maintenance' ? 'metadataMaintenances' : operation === 'reconcile' ? 'reconciliations' : 'answers'] += 1
     this.counters.lastRunId = completed.runId
     if (operation !== 'answer') this.counters.lastOperation = operation
     this.counters.lastAt = new Date().toISOString()

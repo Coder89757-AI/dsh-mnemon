@@ -113,6 +113,7 @@ The Starter pins a tested combination of independently versioned packages. One m
 | [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | Runtime memory: USER.md, MEMORY.md, revisions and local storage | On |
 | [dsh-mnemon-source-documents](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-documents/README.md) | Project Documents: Markdown, search, revisions and archiving | On |
 | [dsh-mnemon-source-memory-spaces](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-memory-spaces/README.md) | Memory Spaces: durable evidence and their Providers | On |
+| [dsh-mnemon-source-skills](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-skills/README.md) | Skills: DSH skills with versions, self-evolution from real conversations, evidence trajectories and eval sets | On (self-evolution off) |
 | [dsh-mnemon-strategy-default-three-tier](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-default-three-tier/README.md) | Layered strategy: resident runtime memory, the rest on demand | Selected |
 | [dsh-mnemon-strategy-general](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-general/README.md) | General strategy: every available source in one budget | Off |
 | [dsh-mnemon-strategy-auto-capture](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-auto-capture/README.md) | Active capture: in-turn guidance to keep useful facts | Off |

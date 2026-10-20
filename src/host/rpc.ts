@@ -109,6 +109,7 @@ const ASSISTANCE: Record<string, readonly string[]> = {
   'runtime': ['mutate'],
   'documents': ['mutate', 'archive'],
   'memory-spaces': ['agent-search', 'supervise', 'body-create', 'body-metadata-maintain'],
+  'skills': ['skill-draft', 'skill-backtest', 'skill-derive-cases', 'skill-review-now'],
 }
 function assistance(source: MemorySourceManagementInstance, lifecycle?: MnemonLifecycle, runtime?: ScopedRuntime): readonly string[] {
   const controls = source.sourceTypeId === 'memory-spaces' ? ['activation'] : []
@@ -171,6 +172,7 @@ async function assisted(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, type
       }
     }
   }
+  if (typeId === 'skills') return skillAssistance(runtime, lifecycle, operation, input, signal)
   if (typeId !== 'memory-spaces') throw new Error('unsupported Source assistance operation')
   const source = runtime.source(typeId)
   switch (operation) {
@@ -209,6 +211,58 @@ async function assisted(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, type
       const maintained = await lifecycle.maintainMetadata(sessionId, ids, workspaceRoot, signal)
       if (maintained.updates.length > 0) await source.mutate('body-metadata-update', { updates: maintained.updates }, signal)
       return maintained
+    }
+    default: throw new Error('unsupported Source assistance operation: ' + operation)
+  }
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw new Error(label + ' must be a string')
+  return value.trim() === '' ? undefined : value.trim()
+}
+
+/** Skill evolution's model work: drafts and backtests run in the background, cases and reviews answer here. */
+async function skillAssistance(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, operation: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  const skills = lifecycle.skills
+  if (skills === undefined) throw new Error('skill evolution is unavailable')
+  const source = runtime.source('skills')
+  const workspaceRoot = runtime.scope.workspaceId
+  switch (operation) {
+    case 'skill-draft': {
+      const root = optionalString(input.targetRoot, 'targetRoot')
+      if (root !== undefined && !['project-dsh', 'project-agents', 'user-dsh', 'user-agents'].includes(root)) throw new Error('unknown skill root: ' + root)
+      const suggestionId = optionalString(input.suggestionId, 'suggestionId')
+      const skill = optionalString(input.skill, 'skill')
+      if (suggestionId === undefined && skill === undefined) throw new Error('a draft needs a suggestion or a skill')
+      const guidance = optionalString(input.guidance, 'guidance')
+      if (guidance !== undefined && guidance.length > 4_000) throw new Error('guidance is too long (max 4000 characters)')
+      return skills.draft(source, workspaceRoot, {
+        ...(suggestionId === undefined ? {} : { suggestionId }), ...(skill === undefined ? {} : { skill }),
+        ...(guidance === undefined ? {} : { guidance }), ...(root === undefined ? {} : { targetRoot: root as never }),
+      })
+    }
+    case 'skill-backtest': {
+      const skillName = optionalString(input.skillName, 'skillName')
+      if (skillName === undefined) throw new Error('skillName is required')
+      const target = object(input.target)
+      if (!['current', 'draft', 'version', 'none'].includes(String(target.kind))) throw new Error('target kind must be current, draft, version or none')
+      const caseIds = input.caseIds === undefined ? undefined : input.caseIds
+      if (caseIds !== undefined && (!Array.isArray(caseIds) || caseIds.some(id => typeof id !== 'string'))) throw new Error('caseIds must be a string array')
+      return skills.backtest(source, workspaceRoot, { skillName, target: target as never, ...(caseIds === undefined ? {} : { caseIds: caseIds as string[] }) })
+    }
+    case 'skill-derive-cases': {
+      const trajectoryId = optionalString(input.trajectoryId, 'trajectoryId')
+      const skillName = optionalString(input.skillName, 'skillName')
+      if (trajectoryId === undefined || skillName === undefined) throw new Error('trajectoryId and skillName are required')
+      const steps = input.steps
+      if (steps !== undefined && (!Array.isArray(steps) || steps.some(step => !Number.isInteger(step)))) throw new Error('steps must be an integer array')
+      return skills.deriveCases(source, workspaceRoot, { trajectoryId, skillName, ...(steps === undefined ? {} : { steps: steps as number[] }) }, signal ?? new AbortController().signal)
+    }
+    case 'skill-review-now': {
+      const sessionId = runtime.scope.sessionId
+      if (sessionId === undefined || !runtime.liveSession) throw new Error('open the conversation to review, and run it once, before reviewing its skills')
+      return lifecycle.reviewSkills(sessionId)
     }
     default: throw new Error('unsupported Source assistance operation: ' + operation)
   }

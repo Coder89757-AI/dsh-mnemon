@@ -167,6 +167,7 @@
     "dsh-mnemon-source-documents": "0.5.11",
     "dsh-mnemon-source-memory-spaces": "0.5.22",
     "dsh-mnemon-source-runtime": "0.5.15",
+    "dsh-mnemon-source-skills": "0.5.0",
     "dsh-mnemon-strategy-auto-capture": "0.5.5",
     "dsh-mnemon-strategy-default-three-tier": "0.5.10",
     "dsh-mnemon-strategy-general": "0.5.1",

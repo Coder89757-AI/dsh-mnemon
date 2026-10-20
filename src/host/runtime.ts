@@ -64,6 +64,7 @@ export function memoryGenerationOptions(config: ResolvedConfig, workspaceRoot: s
       if (!isDefaultSourceInstance(installed.instanceKey, type)) return {}
       if (type === 'runtime') return { dataDir: directory, userDataDir: userDirectory, memoryLimitBytes: config.runtimeMemory.memoryLimitBytes, userLimitBytes: config.runtimeMemory.userLimitBytes }
       if (type === 'documents') return { dataDir: directory }
+      if (type === 'skills') return { dataDir: directory }
       if (type === 'memory-spaces') return JSON.parse(JSON.stringify({
         dataDir: directory, cliPath: config.cliPath, store: config.store, timeoutMs: config.timeoutMs,
         defaultRecallLimit: config.defaultRecallLimit, writeEnabled: config.writeEnabled,

@@ -23,7 +23,7 @@ Solid edges show Starter installation ownership; the dotted edge shows Strategy 
 
 Memory Spaces authors its **own** child Fibers and Provider protocol. Each configured Provider is an explicitly installed module; two Source instances can use the same child id without sharing their registry or credentials. No dependency scan or global Provider registry selects implementations.
 
-Like a Spring Boot starter, the default distribution chooses dependencies and explicit defaults. It does not turn Source business code into Core. Users still install only `dsh-mnemon`; 17 plugin packages can be independently built, tested and published. The Starter installs every official package. The General strategy and three Strategy enhancements ship as disabled Entries: an enhancement joins the View once its switch is on, and the General strategy composes it only after it is chosen as the main strategy. Replacing the main strategy is always an explicit choice.
+Like a Spring Boot starter, the default distribution chooses dependencies and explicit defaults. It does not turn Source business code into Core. Users still install only `dsh-mnemon`; 18 plugin packages can be independently built, tested and published. The Starter installs every official package. The General strategy and three Strategy enhancements ship as disabled Entries: an enhancement joins the View once its switch is on, and the General strategy composes it only after it is chosen as the main strategy. Replacing the main strategy is always an explicit choice.
 
 | Owner | Owns | Does not own |
 |---|---|---|

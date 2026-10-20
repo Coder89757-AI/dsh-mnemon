@@ -25,7 +25,7 @@ flowchart TB
 
 Memory Spaces **自己定义内部 Fiber 与 Provider 协议**。每个 Provider 都来自明确安装并配置的子模块；两个 Source 实例可以使用同名子节点，各自持有独立目录和凭据。不存在扫描依赖自动选择实现、全局 Provider 注册表等隐式装配。
 
-借鉴 Spring Boot Starter，默认发行包负责选依赖、给默认配置，不把 Source 业务收回 Core。用户仍只安装 `dsh-mnemon`；17 个插件包可独立开发、测试与发布。Starter 安装全部官方包，其中通用策略与三个策略增强以停用 Entry 随附：增强在开关打开后参与 View，通用策略只有被选为主策略后才组合 View。更换主策略始终需要显式选择。
+借鉴 Spring Boot Starter，默认发行包负责选依赖、给默认配置，不把 Source 业务收回 Core。用户仍只安装 `dsh-mnemon`；18 个插件包可独立开发、测试与发布。Starter 安装全部官方包，其中通用策略与三个策略增强以停用 Entry 随附：增强在开关打开后参与 View，通用策略只有被选为主策略后才组合 View。更换主策略始终需要显式选择。
 
 | 归属 | 负责 | 不负责 |
 |---|---|---|

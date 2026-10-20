@@ -114,6 +114,7 @@ Starter 固定一组经过测试、各自独立版本的包。同一时间只运
 | [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | 运行时记忆：USER.md、MEMORY.md、修订与本地存储 | 开启 |
 | [dsh-mnemon-source-documents](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-documents/README.md) | 项目档案：Markdown、检索、修订与归档 | 开启 |
 | [dsh-mnemon-source-memory-spaces](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-memory-spaces/README.md) | 记忆空间：长期证据及其 Provider | 开启 |
+| [dsh-mnemon-source-skills](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-skills/README.md) | 技能管理：DSH 技能的版本、来自真实对话的自进化、证据轨迹与评测集 | 开启（自进化默认关闭） |
 | [dsh-mnemon-strategy-default-three-tier](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-default-three-tier/README.md) | 分层策略：运行时记忆常驻，其余按需读取 | 选中 |
 | [dsh-mnemon-strategy-general](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-general/README.md) | 通用策略：全部可用来源共享一份预算 | 关闭 |
 | [dsh-mnemon-strategy-auto-capture](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-auto-capture/README.md) | 主动记录：在回合中提示保留有用的事实 | 关闭 |
