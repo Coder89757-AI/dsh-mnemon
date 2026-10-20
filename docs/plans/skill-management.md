@@ -164,9 +164,11 @@ Mutations: `settings-update`, `skill-create`, `skill-save`, `skill-invocation`, 
 - **Overview** — the evolution switch with one line on what it does, counts (skills, pending
   suggestions, drafts to review, evidence, cases, last review), a *needs you* list (suggestions,
   drafts, regressions) and the recent review log.
-- **Skills** — searchable list grouped by root, each with its switches, pending-suggestion and pass-rate
-  chips; detail with the rendered `SKILL.md`, edit, versions (with score per version and restore), its
+- **Skills** — searchable list grouped by root; each row has its icon, **Use** and a switch, with
+  pending-suggestion and pass-rate chips; detail with the rendered `SKILL.md`, edit, versions (with score per version and restore), its
   eval summary, and links to its suggestions and evidence. New skill and delete live here.
+- **Market** — registries, categories and search over every enabled registry; preview, install,
+  update.
 - **Evolution** — the suggestion inbox by status; a suggestion opens with its confidence, signals,
   rationale and cited steps; draft review shows the diff, the notes, the per-case backtest comparison
   and guidance for a redraft; adopt, redraft, discard, dismiss.
@@ -178,6 +180,63 @@ Mutations: `settings-update`, `skill-create`, `skill-save`, `skill-invocation`, 
 
 Copy follows the Memory System's rules: names, states and chips; a sentence only where an action
 needs its reason. Switches apply at once; typed values wait for their Apply.
+
+## Using and switching a skill
+
+A row in **Skills** is an icon, the name and one line of description, a **Use** button that appears on
+hover or focus, and a switch.
+
+- The switch turns the whole skill on or off: off writes both `disable-model-invocation: true` and
+  `user-invocable: false`, on removes both. The detail view keeps the two keys as separate switches,
+  and a row shows a chip when only one of them is off.
+- **Use** returns to the conversation with `/name ` at the start of its input, where DSH's own `/`
+  gesture loads the skill when the message is sent. The page and the composer meet through one
+  window event: the skills client registers an invisible member of the composer's
+  `conversation.input.left` row, which takes the request for its own session; a request made before
+  the conversation is on screen waits ten seconds for its composer to mount. The Memory System page
+  gains an optional `onReturnToConversation()` prop for this — the header's back action.
+
+## Market
+
+A registry is one JSON file anyone can host:
+
+```json
+{
+  "version": 1,
+  "id": "team",
+  "name": { "en": "Team skills", "zh-CN": "团队技能" },
+  "categories": [{ "id": "docs-writing", "label": { "en": "Writing", "zh-CN": "文档写作" } }],
+  "skills": [{
+    "name": "release-notes",
+    "title": { "en": "Release notes" },
+    "description": { "en": "…", "zh-CN": "…" },
+    "category": "docs-writing", "author": "…", "license": "MIT", "version": "1.0.0",
+    "source": { "type": "github", "repo": "org/repo", "path": "skills/release-notes", "ref": "main" }
+  }]
+}
+```
+
+A source is a GitHub folder (listed with one tree request, files read from raw.githubusercontent.com;
+`GITHUB_TOKEN` or `GH_TOKEN` is used when set), a URL to one `SKILL.md`, or a folder relative to a
+local registry file. Entries that cannot be installed — a name DSH would reject, a path leaving its
+folder, a duplicate — are dropped when the registry is read.
+
+- **The official registry** ships inside the package (`market/official.json`) and refreshes from the
+  same file on the repository's main branch. It lists open-source skills by their original
+  repositories (Anthropic, OpenAI, Composio's community collection, Jim Liu's baoyu skills, Corey
+  Haines' marketing skills) with our own bilingual descriptions; each installs from upstream, and its
+  license is the upstream one. Skills whose upstream license forbids redistribution are not listed.
+  It can be switched off, not removed.
+- **Other registries** are added by URL or absolute path, switched and removed under **Registries**.
+  A copy older than six hours is refreshed when the Market opens; a failed refresh keeps the copy it
+  had and says why.
+- **Install** previews the `SKILL.md` and file list first and says plainly that an Agent follows a
+  skill as written. Files are fetched outside the storage lock, bounded (300 files, 12 MiB), staged,
+  checked against DSH's rules (the `SKILL.md` must name the entry), then moved into the chosen root.
+  The install is recorded with the hash it wrote and leaves an `install` version.
+- **State** per entry: available, installed, update (the registry's version moved), edited locally
+  (the hash moved; updating replaces the edits only after confirmation, the old folder going to the
+  trash), or a name already taken by a skill that did not come from this entry.
 
 ## Out of scope
 

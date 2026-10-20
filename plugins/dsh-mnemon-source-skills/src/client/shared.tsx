@@ -1,8 +1,9 @@
 import { useId, type JSX, type ReactNode } from 'react'
+import Markdown from 'markdown-to-jsx'
 import { Button, Checkbox, StateDot, Tag, TextShimmer, type StateDotState, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives'
 import { EmptyState, SidebarModal } from 'dsh-mnemon/client'
 import type { EvolutionSignal, RunStatus, SuggestionStatus, TrajectoryAnnotation, TrajectoryStep } from '../contracts.ts'
-import { css, useT, type SkillsKey } from './presentation.ts'
+import { css, useT, type SkillsKey, type SkillsTranslate } from './presentation.ts'
 
 const SIGNAL_TONE: Record<EvolutionSignal, TagTone> = {
   correction: 'warning', directive: 'info', 'tool-failure': 'danger', 'approach-change': 'warning',
@@ -118,4 +119,28 @@ export function Field(props: { label: string; hint?: string; children: (control:
     {props.children({ id, ...(props.hint === undefined ? {} : { 'aria-describedby': hintId }) })}
     {props.hint !== undefined && <small id={hintId}>{props.hint}</small>}
   </div>
+}
+
+export function diffLabels(t: SkillsTranslate) {
+  return {
+    codeLabel: t('draft.labels.code'), wrapLabel: t('draft.labels.wrap'), unwrapLabel: t('draft.labels.unwrap'),
+    copy: t('draft.labels.copy'), copied: t('draft.labels.copied'), collapseAria: t('draft.labels.collapse'),
+    expandAria: (hidden: number) => t('draft.labels.expand', { count: hidden }), collapse: t('draft.labels.collapse'),
+    expand: (hidden: number) => t('draft.labels.expand', { count: hidden }),
+  }
+}
+
+/** The SKILL.md body as Markdown, without its frontmatter. */
+export function SkillMarkdown(props: { body: string }): JSX.Element {
+  return <div className={css.markdownBody}><Markdown options={{ disableParsingRawHTML: true, forceBlock: true }}>{props.body}</Markdown></div>
+}
+
+const CATEGORY_GLYPH: Record<string, string> = {
+  'docs-writing': '✎', 'content-creation': '✦', 'design-ui': '◐', development: '⌘', devops: '⇪', 'research-analysis': '⌕', productivity: '✓', marketing: '◎',
+}
+
+/** A square with the category's glyph, or the skill's initial. */
+export function SkillIcon(props: { name: string; category?: string | undefined }): JSX.Element {
+  const glyph = props.category === undefined ? undefined : CATEGORY_GLYPH[props.category]
+  return <span className={css.skIcon} aria-hidden="true">{glyph ?? props.name.slice(0, 1).toUpperCase()}</span>
 }

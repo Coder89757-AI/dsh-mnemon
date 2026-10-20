@@ -1,16 +1,21 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import {
   SKILL_ROOT_KINDS,
-  type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
+  type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView,
+  type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
   type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type SkillsSettings, type Trajectory, type TrajectorySummary,
 } from './contracts.ts'
 import { activeSkill, catalogFingerprint, findSkill, readCatalog, readSkillDocument, rootPath, sha256, type SkillRootOptions } from './catalog.ts'
 import { isSkillName, skillTemplate, validateSkillContent, withInvocation } from './frontmatter.ts'
 import { admitReview, expireSuggestions, OPEN_STATUSES, similarCase, trajectorySummary } from './policy.ts'
-import { MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, settingsFrom, SkillsStore, type EvalsFile, type LedgerFile } from './store.ts'
+import { MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, settingsFrom, SkillsStore, type EvalsFile, type LedgerFile, type RegistryRecord } from './store.ts'
+import {
+  bundledOfficialRegistry, defaultFetcher, fetchSkillDocument, fetchSkillFiles, listSkillFiles, loadRegistry, OFFICIAL_REGISTRY_ID, OFFICIAL_REGISTRY_URL,
+  REGISTRY_REFRESH_MS, registryId, type Fetcher, type SkillFile,
+} from './market.ts'
 
 /** A run still `running` after this long outlived the Host that started it. */
 const RUN_STALE_MS = 45 * 60 * 1000
@@ -59,7 +64,7 @@ function runScore(results: readonly CaseResult[]): { passRate: number; score: nu
 export class SkillsService {
   readonly store: SkillsStore
 
-  constructor(private readonly dataDir: string, private readonly roots: Omit<SkillRootOptions, 'workspace'> = {}, private readonly clock: () => Date = () => new Date()) {
+  constructor(private readonly dataDir: string, private readonly roots: Omit<SkillRootOptions, 'workspace'> = {}, private readonly clock: () => Date = () => new Date(), private readonly fetcher: Fetcher = defaultFetcher) {
     this.store = new SkillsStore(join(dataDir, 'skills'))
   }
 
@@ -729,5 +734,215 @@ export class SkillsService {
 
   trajectorySummary(trajectory: Trajectory): TrajectorySummary {
     return trajectorySummary(trajectory)
+  }
+
+  // ---- market --------------------------------------------------------------
+
+  /** The registries this Source knows; the official one is always there. */
+  private registryRecords(): RegistryRecord[] {
+    const stored = this.store.registries()
+    const official = stored.find(record => record.id === OFFICIAL_REGISTRY_ID)
+    return [
+      { id: OFFICIAL_REGISTRY_ID, location: OFFICIAL_REGISTRY_URL, builtin: true, enabled: official?.enabled ?? true },
+      ...stored.filter(record => record.id !== OFFICIAL_REGISTRY_ID).map(record => ({ ...record, builtin: false })),
+    ]
+  }
+
+  /** The newest copy of a registry: its cache, or the packaged snapshot for the official one. */
+  private registryFile(record: RegistryRecord): { registry?: MarketRegistryFile; fetchedAt?: string; error?: string } {
+    const cache = this.store.registryCache(record.id)
+    if (cache?.registry !== undefined) return cache
+    if (record.builtin) return { registry: bundledOfficialRegistry(), ...(cache?.error === undefined ? {} : { error: cache.error }) }
+    return cache ?? {}
+  }
+
+  marketView(workspace: string | undefined): MarketView {
+    const now = this.clock().getTime()
+    const catalog = this.catalog(workspace)
+    const installs = this.store.ledger().installs
+    const registries: MarketRegistry[] = []
+    const items: MarketItem[] = []
+    const categories = new Map<string, MarketView['categories'][number]>()
+    const stale: string[] = []
+    for (const record of this.registryRecords()) {
+      const file = this.registryFile(record)
+      registries.push({
+        id: record.id, location: record.location, builtin: record.builtin, enabled: record.enabled, entries: file.registry?.skills.length ?? 0,
+        ...(file.registry?.name === undefined ? {} : { name: file.registry.name }),
+        ...(file.registry?.description === undefined ? {} : { description: file.registry.description }),
+        ...(file.registry?.homepage === undefined ? {} : { homepage: file.registry.homepage }),
+        ...(file.fetchedAt === undefined ? {} : { fetchedAt: file.fetchedAt }),
+        ...(file.error === undefined || record.builtin && file.fetchedAt === undefined ? {} : { error: file.error }),
+      })
+      if (!record.enabled) continue
+      if (file.fetchedAt === undefined || now - Date.parse(file.fetchedAt) > REGISTRY_REFRESH_MS) stale.push(record.id)
+      for (const category of file.registry?.categories ?? []) if (!categories.has(category.id)) categories.set(category.id, category)
+      for (const entry of file.registry?.skills ?? []) {
+        const skill = activeSkill(catalog, entry.name)
+        const install = skill === undefined ? undefined : installs.find(candidate => candidate.skillKey === skill.key)
+        const fromHere = install !== undefined && install.registryId === record.id && install.name === entry.name
+        const state: MarketInstallState = skill === undefined ? 'available'
+          : !fromHere ? 'conflict'
+          : skill.hash !== install!.hash ? 'modified'
+          : entry.version !== undefined && install!.version !== undefined && entry.version !== install!.version ? 'update'
+          : 'installed'
+        items.push({ ...entry, registryId: record.id, state, ...(skill === undefined ? {} : { skillKey: skill.key }), ...(fromHere && install!.version !== undefined ? { installedVersion: install!.version } : {}) })
+      }
+    }
+    return { registries, categories: [...categories.values()], items, stale }
+  }
+
+  private entry(registry: string, name: string): { record: RegistryRecord; entry: MarketRegistryFile['skills'][number] } {
+    const record = this.registryRecords().find(candidate => candidate.id === registry)
+    if (record === undefined) throw new Error('unknown skill registry: ' + registry)
+    const entry = this.registryFile(record).registry?.skills.find(candidate => candidate.name === name)
+    if (entry === undefined) throw new Error(`${name} is not in registry ${registry}; refresh the market and try again`)
+    return { record, entry }
+  }
+
+  async marketPreview(registry: string, name: string, signal?: AbortSignal): Promise<MarketPreview> {
+    const { record, entry } = this.entry(registry, name)
+    const [content, files] = await Promise.all([fetchSkillDocument(entry, record.location, this.fetcher, signal), listSkillFiles(entry, record.location, this.fetcher, signal)])
+    return { registryId: registry, name, content, files: files.slice(0, 200), totalBytes: files.reduce((sum, file) => sum + file.bytes, 0) }
+  }
+
+  /** Fetch the named registries (all enabled ones by default) and keep what each answered. */
+  async refreshMarket(ids?: readonly string[], signal?: AbortSignal): Promise<MarketView['registries']> {
+    const records = this.registryRecords().filter(record => record.enabled && (ids === undefined || ids.includes(record.id)))
+    const results = await Promise.all(records.map(async record => {
+      try { return { record, registry: await loadRegistry(record.location, this.fetcher, signal) } } catch (error) { return { record, error: error instanceof Error ? error.message : String(error) } }
+    }))
+    await this.write(() => {
+      const at = this.clock().toISOString()
+      for (const result of results) {
+        const previous = this.store.registryCache(result.record.id)
+        this.store.saveRegistryCache(result.record.id, result.registry !== undefined
+          ? { fetchedAt: at, registry: result.registry }
+          // A failed refresh keeps the copy it had, and says why it is not newer.
+          : { ...(previous?.registry === undefined ? {} : { registry: previous.registry }), ...(previous?.fetchedAt === undefined ? {} : { fetchedAt: previous.fetchedAt }), error: result.error! })
+      }
+      this.touch()
+    })
+    return this.marketView(undefined).registries
+  }
+
+  async addRegistry(location: string, signal?: AbortSignal): Promise<MarketRegistry> {
+    const trimmed = location.trim()
+    if (!/^https?:\/\//u.test(trimmed) && !trimmed.startsWith('file://') && !isAbsoluteLocation(trimmed)) throw new Error('a registry is an http(s) URL or an absolute path to a JSON file')
+    if (this.registryRecords().some(record => record.location === trimmed)) throw new Error('this registry is already added')
+    const registry = await loadRegistry(trimmed, this.fetcher, signal)
+    const id = await this.write(() => {
+      const records = this.store.registries().filter(record => record.id !== OFFICIAL_REGISTRY_ID)
+      const id = registryId(trimmed, registry.id, new Set(records.map(record => record.id)))
+      this.store.saveRegistries([...this.store.registries().filter(record => record.id === OFFICIAL_REGISTRY_ID), ...records, { id, location: trimmed, enabled: true, builtin: false }])
+      this.store.saveRegistryCache(id, { fetchedAt: this.clock().toISOString(), registry })
+      this.touch()
+      return id
+    })
+    return this.marketView(undefined).registries.find(record => record.id === id)!
+  }
+
+  removeRegistry(id: string): Promise<{ removed: string }> {
+    return this.write(() => {
+      if (id === OFFICIAL_REGISTRY_ID) throw new Error('the official registry can be switched off, not removed')
+      const records = this.store.registries()
+      if (!records.some(record => record.id === id)) throw new Error('unknown skill registry: ' + id)
+      this.store.saveRegistries(records.filter(record => record.id !== id))
+      this.store.deleteRegistryCache(id)
+      this.touch()
+      return { removed: id }
+    })
+  }
+
+  toggleRegistry(id: string, enabled: boolean): Promise<MarketRegistry> {
+    return this.write(() => {
+      const records = this.registryRecords()
+      const record = records.find(candidate => candidate.id === id)
+      if (record === undefined) throw new Error('unknown skill registry: ' + id)
+      this.store.saveRegistries(records.map(candidate => candidate.id === id ? { ...candidate, enabled } : candidate))
+      this.touch()
+      return this.marketView(undefined).registries.find(candidate => candidate.id === id)!
+    })
+  }
+
+  /**
+   * Install a market skill, or update one installed from the same entry. The
+   * files are fetched before the lock, staged, checked against DSH's rules,
+   * then moved into place; a replaced folder goes to the trash first.
+   */
+  async installMarket(workspace: string | undefined, input: { registryId: string; name: string; root?: SkillRootKind; overwrite?: boolean }, signal?: AbortSignal): Promise<{ skill: SkillSummary; updated: boolean }> {
+    const { record, entry } = this.entry(input.registryId, input.name)
+    const files = await fetchSkillFiles(entry, record.location, this.fetcher, signal)
+    const document = files.find(file => file.path === 'SKILL.md')!.data.toString('utf8')
+    validateSkillContent(document, entry.name)
+    return this.write(() => {
+      const catalog = this.catalog(workspace)
+      const ledger = this.store.ledger()
+      const existing = activeSkill(catalog, entry.name)
+      const install = existing === undefined ? undefined : ledger.installs.find(candidate => candidate.skillKey === existing.key)
+      if (existing !== undefined && (install === undefined || install.registryId !== record.id || install.name !== entry.name)) {
+        throw new Error(`a skill named ${entry.name} already exists in ${existing.root}; it did not come from this market entry`)
+      }
+      if (existing !== undefined && existing.hash !== install!.hash && input.overwrite !== true) {
+        throw new Error(`${entry.name} was edited after it was installed; confirm to replace your changes`)
+      }
+      const root = existing?.root ?? input.root ?? this.store.settings().defaultRoot
+      const target = existing === undefined ? join(rootPath(catalog, root), entry.name) : existing.layout === 'bundle' ? dirname(existing.path) : existing.path
+      if (existing === undefined && (existsSync(target) || existsSync(target + '.md'))) throw new Error(`${entry.name} already exists in this root`)
+      const staged = stageFiles(this.store.stagingDirectory(), files)
+      const previous = existing === undefined ? undefined : readFileSync(existing.path, 'utf8')
+      let trashed: string | undefined
+      try {
+        if (existing !== undefined) trashed = this.store.trash(target, entry.name)
+        const finalTarget = existing?.layout === 'flat' ? join(dirname(target), entry.name) : target
+        moveInto(staged, finalTarget)
+      } catch (error) {
+        rmSync(staged, { recursive: true, force: true })
+        if (trashed !== undefined && !existsSync(target)) try { renameSync(trashed, target) } catch { /* The trash keeps it. */ }
+        throw error
+      }
+      const key = `${root}:${entry.name}`
+      const now = this.clock().toISOString()
+      const hash = sha256(document)
+      ledger.installs = [
+        { skillKey: key, registryId: record.id, name: entry.name, ...(entry.version === undefined ? {} : { version: entry.version }), source: entry.source, hash, files: files.length, installedAt: now } satisfies MarketInstall,
+        ...ledger.installs.filter(candidate => candidate.skillKey !== key),
+      ]
+      this.recordVersion(ledger, key, document, 'install', previous, { note: `${record.id}/${entry.name}` })
+      this.store.saveLedger(ledger)
+      return { skill: findSkill(this.catalog(workspace), key), updated: existing !== undefined }
+    })
+  }
+
+  installs(): MarketInstall[] {
+    return this.store.ledger().installs
+  }
+}
+
+function isAbsoluteLocation(location: string): boolean {
+  return location.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(location)
+}
+
+/** Write downloaded files into a fresh staging folder, never outside it. */
+function stageFiles(stagingRoot: string, files: readonly SkillFile[]): string {
+  const directory = join(stagingRoot, randomUUID())
+  for (const file of files) {
+    const path = join(directory, ...file.path.split('/'))
+    if (!path.startsWith(directory)) throw new Error('a file of the skill escapes its folder: ' + file.path)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, file.data)
+  }
+  return directory
+}
+
+/** Move a staged folder into place, copying when it lives on another volume. */
+function moveInto(staged: string, target: string): void {
+  mkdirSync(dirname(target), { recursive: true })
+  try {
+    renameSync(staged, target)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+    cpSync(staged, target, { recursive: true, errorOnExist: true })
+    rmSync(staged, { recursive: true, force: true })
   }
 }

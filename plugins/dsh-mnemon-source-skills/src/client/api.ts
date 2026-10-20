@@ -1,7 +1,7 @@
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
 import type { MnemonSourceManagementClient } from 'dsh-mnemon/client'
 import type {
-  BacktestRun, CatalogView, DraftView, EvalCase, EvidencePack, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
+  BacktestRun, CatalogView, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketView, EvidencePack, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
   SkillVersion, SkillsOverview, SkillsSettings, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary,
 } from '../contracts.ts'
 
@@ -46,6 +46,14 @@ export interface SkillsPageClient {
   updateDraft(id: string, content: string): Promise<SkillDraft>
   adoptDraft(id: string): Promise<{ skill: SkillSummary; version: SkillVersion }>
   discardDraft(id: string): Promise<SkillDraft>
+
+  market(): Promise<MarketView>
+  marketPreview(registryId: string, name: string): Promise<MarketPreview>
+  refreshMarket(ids?: string[]): Promise<MarketRegistry[]>
+  installMarket(input: { registryId: string; name: string; root?: SkillRootKind; overwrite?: boolean }): Promise<{ skill: SkillSummary; updated: boolean }>
+  addRegistry(location: string): Promise<MarketRegistry>
+  removeRegistry(id: string): Promise<{ removed: string }>
+  toggleRegistry(id: string, enabled: boolean): Promise<MarketRegistry>
 
   /** Whether the Host offers a task Agent for this model work. */
   canAssist(operation: 'skill-draft' | 'skill-backtest' | 'skill-derive-cases' | 'skill-review-now'): boolean
@@ -112,6 +120,14 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
     updateDraft: (id, content) => mutate('draft-update', { id, content }),
     adoptDraft: id => mutate('draft-adopt', { id }),
     discardDraft: id => mutate('draft-discard', { id }),
+
+    market: () => read('market'),
+    marketPreview: (registryId, name) => read('market-preview', { registryId, name }),
+    refreshMarket: ids => mutate('market-refresh', ids === undefined ? {} : { ids }),
+    installMarket: input => mutate('market-install', input),
+    addRegistry: location => mutate('registry-add', { location }),
+    removeRegistry: id => mutate('registry-remove', { id }),
+    toggleRegistry: (id, enabled) => mutate('registry-toggle', { id, enabled }),
 
     canAssist: operation => management.assistance?.operations.includes(operation) === true,
     generateDraft: input => assist('skill-draft', input),

@@ -1,25 +1,10 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
-import Markdown from 'markdown-to-jsx'
 import { Button, DiffBlock, SegmentedControl, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SearchField, SelectField, SidebarModal } from 'dsh-mnemon/client'
 import { SKILL_ROOT_KINDS, type CatalogView, type SkillDocument, type SkillRootKind, type SkillSummary, type SkillVersion } from '../contracts.ts'
-import { css, errorText, percent, stamp, useT, type SkillsTranslate } from './presentation.ts'
-import { Busy, Confirm, Empty, Field } from './shared.tsx'
+import { css, errorText, percent, stamp, useT } from './presentation.ts'
+import { Busy, Confirm, diffLabels, Empty, Field, SkillIcon, SkillMarkdown } from './shared.tsx'
 import type { SkillsLocation, SkillsPageContext } from './ui.tsx'
-
-export function diffLabels(t: SkillsTranslate) {
-  return {
-    codeLabel: t('draft.labels.code'), wrapLabel: t('draft.labels.wrap'), unwrapLabel: t('draft.labels.unwrap'),
-    copy: t('draft.labels.copy'), copied: t('draft.labels.copied'), collapseAria: t('draft.labels.collapse'),
-    expandAria: (hidden: number) => t('draft.labels.expand', { count: hidden }), collapse: t('draft.labels.collapse'),
-    expand: (hidden: number) => t('draft.labels.expand', { count: hidden }),
-  }
-}
-
-/** The SKILL.md body as Markdown, without its frontmatter. */
-export function SkillMarkdown(props: { body: string }): JSX.Element {
-  return <div className={css.markdownBody}><Markdown options={{ disableParsingRawHTML: true, forceBlock: true }}>{props.body}</Markdown></div>
-}
 
 export function SkillsPage(props: { context: SkillsPageContext; location: SkillsLocation }): JSX.Element {
   const t = useT()
@@ -54,7 +39,7 @@ export function SkillsPage(props: { context: SkillsPageContext; location: Skills
       {catalog.skills.length > 0 && visible.length === 0 && <p className={css.skMuted}>{t('list.noMatch')}</p>}
       {groups.filter(group => group.skills.length > 0).map(group => <section key={group.root.kind} className={css.skListGroup}>
         <h5 title={group.root.path}>{t(`root.${group.root.kind}`)}</h5>
-        {group.skills.map(skill => <SkillRow key={skill.key} skill={skill} stats={catalog.stats[skill.name]} selected={selected === skill.key} onSelect={() => setSelected(skill.key)} />)}
+        {group.skills.map(skill => <SkillRow key={skill.key} context={context} skill={skill} stats={catalog.stats[skill.name]} selected={selected === skill.key} onSelect={() => setSelected(skill.key)} />)}
       </section>)}
       {catalog.problems.length > 0 && <details className={css.skProblems}>
         <summary>{t('list.problems', { count: catalog.problems.length })}</summary>
@@ -70,19 +55,39 @@ export function SkillsPage(props: { context: SkillsPageContext; location: Skills
   </div>
 }
 
-function SkillRow(props: { skill: SkillSummary; stats: CatalogView['stats'][string] | undefined; selected: boolean; onSelect: () => void }): JSX.Element {
+/**
+ * One skill: its icon, name and description open it; "Use" (on hover or
+ * focus) brings it into the conversation; the switch turns it on or off for
+ * both the model and the / menu.
+ */
+function SkillRow(props: { context: SkillsPageContext; skill: SkillSummary; stats: CatalogView['stats'][string] | undefined; selected: boolean; onSelect: () => void }): JSX.Element {
   const t = useT()
-  const { skill, stats } = props
-  return <button type="button" className={css.skListItem} data-selected={props.selected ? '' : undefined} data-shadowed={skill.shadowedBy === undefined ? undefined : ''} onClick={props.onSelect}>
-    <div><strong>{skill.name}</strong>{stats?.lastPassRate !== undefined && <span className={css.skRate} data-good={stats.lastPassRate >= 0.8 ? '' : undefined}>{percent(stats.lastPassRate)}</span>}</div>
-    <p>{skill.description}</p>
-    <footer>
-      {skill.shadowedBy !== undefined && <Tag tone="quiet">{t('chip.shadowed')}</Tag>}
-      {!skill.invocation.modelInvocable && <Tag tone="outline">{t('chip.modelOff')}</Tag>}
-      {!skill.invocation.userInvocable && <Tag tone="outline">{t('chip.menuOff')}</Tag>}
-      {(stats?.open ?? 0) > 0 && <Tag tone="info">{t('chip.open', { count: stats!.open })}</Tag>}
-    </footer>
-  </button>
+  const { skill, stats, context } = props
+  const [busy, setBusy] = useState(false)
+  const on = skill.invocation.modelInvocable || skill.invocation.userInvocable
+  const toggle = async (next: boolean) => {
+    setBusy(true)
+    try { await context.client.setInvocation(skill.key, { modelInvocable: next, userInvocable: next }, skill.hash); context.refresh() } catch (error) { context.fail(error) } finally { setBusy(false) }
+  }
+  return <div className={css.skRow} data-selected={props.selected ? '' : undefined} data-shadowed={skill.shadowedBy === undefined ? undefined : ''} data-off={on ? undefined : ''}>
+    <button type="button" className={css.skRowMain} onClick={props.onSelect}>
+      <SkillIcon name={skill.name} />
+      <span className={css.skRowText}>
+        <strong>{skill.name}{stats?.lastPassRate !== undefined && <i className={css.skRate} data-good={stats.lastPassRate >= 0.8 ? '' : undefined}>{percent(stats.lastPassRate)}</i>}</strong>
+        <small>{skill.description}</small>
+        {(skill.shadowedBy !== undefined || (on && (!skill.invocation.modelInvocable || !skill.invocation.userInvocable)) || (stats?.open ?? 0) > 0) && <span className={css.skRowChips}>
+          {skill.shadowedBy !== undefined && <Tag tone="quiet">{t('chip.shadowed')}</Tag>}
+          {on && !skill.invocation.modelInvocable && <Tag tone="outline">{t('chip.modelOff')}</Tag>}
+          {on && !skill.invocation.userInvocable && <Tag tone="outline">{t('chip.menuOff')}</Tag>}
+          {(stats?.open ?? 0) > 0 && <Tag tone="info">{t('chip.open', { count: stats!.open })}</Tag>}
+        </span>}
+      </span>
+    </button>
+    <div className={css.skRowActions}>
+      {on && skill.shadowedBy === undefined && skill.invocation.userInvocable && <Button variant="outline" size="sm" className={css.skUse} title={t('row.useHint', { name: skill.name })} onClick={() => context.useSkill(skill.name)}>{t('row.use')}</Button>}
+      <Switch checked={on} label={t('row.toggle', { name: skill.name })} disabled={busy || !context.writable} onChange={next => void toggle(next)} />
+    </div>
+  </div>
 }
 
 type DetailView = 'content' | 'versions'

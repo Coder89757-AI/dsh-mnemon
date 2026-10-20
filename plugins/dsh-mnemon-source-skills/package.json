@@ -23,13 +23,15 @@
       "default": "./lib/contracts.js"
     },
     "./presentation/locales.json": "./presentation/locales.json",
-    "./presentation/page.module.css": "./presentation/page.module.css"
+    "./presentation/page.module.css": "./presentation/page.module.css",
+    "./market/official.json": "./market/official.json"
   },
   "files": [
     "lib",
     "locale",
     "README.md",
-    "presentation"
+    "presentation",
+    "market"
   ],
   "dsh": {
     "client": {

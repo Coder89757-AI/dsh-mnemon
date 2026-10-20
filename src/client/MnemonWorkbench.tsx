@@ -345,6 +345,7 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
       ...(sessionId === undefined ? {} : { sessionId }), ...(workspaceId === undefined ? {} : { workspaceId }),
       ...(navigationInput?.page === entryId ? { navigationInput: navigationInput.value } : {}),
       ...(preferences === undefined ? {} : { preferences }), onRefresh: mutate, refreshKey, onResetScroll: resetViewportScroll, onRevealElement: revealElement,
+      ...(onClose === undefined ? {} : { onReturnToConversation: onClose }),
     }, { only: entryId })
   }
   const activeStoppedType = stoppedSourceTypeId(page)

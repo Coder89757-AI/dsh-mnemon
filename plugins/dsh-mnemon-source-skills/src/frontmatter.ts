@@ -10,32 +10,8 @@ export function isSkillName(value: string): boolean {
   return value.length <= MAX_SKILL_NAME && SKILL_NAME.test(value)
 }
 
-export interface SplitSkill {
-  /** Frontmatter text between the fences, verbatim. */
-  frontmatter: string
-  body: string
-  /** Offsets into the original text, so an edit can keep everything else byte for byte. */
-  frontmatterStart: number
-  frontmatterEnd: number
-}
-
-/** The same fence rules as `dsh-skill-filesystem`: `---` on the first line and on a later line of its own. */
-export function splitFrontmatter(raw: string): SplitSkill | undefined {
-  const firstLineEnd = raw.indexOf('\n')
-  if (firstLineEnd < 0 || raw.slice(0, firstLineEnd).replace(/\r$/u, '') !== '---') return undefined
-  const start = firstLineEnd + 1
-  let lineStart = start
-  while (lineStart <= raw.length) {
-    const next = raw.indexOf('\n', lineStart)
-    const lineEnd = next < 0 ? raw.length : next
-    if (raw.slice(lineStart, lineEnd).replace(/\r$/u, '') === '---') {
-      return { frontmatter: raw.slice(start, lineStart), body: raw.slice(next < 0 ? raw.length : next + 1), frontmatterStart: start, frontmatterEnd: lineStart }
-    }
-    if (next < 0) return undefined
-    lineStart = next + 1
-  }
-  return undefined
-}
+export { splitFrontmatter, type SplitSkill } from './fence.ts'
+import { splitFrontmatter, type SplitSkill } from './fence.ts'
 
 export interface ParsedSkill {
   name: string

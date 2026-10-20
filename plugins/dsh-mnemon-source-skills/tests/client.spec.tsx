@@ -21,6 +21,7 @@ vi.mock('dsh-mnemon/client', async () => {
 
 import * as plugin from '../src/index.ts'
 import { installSkillsMemoryUI, SkillsSourcePage } from '../src/client.ts'
+import { draftWithSkill, SkillUseBridge } from '../src/client/use-skill.tsx'
 import { translate } from '../src/client/presentation.ts'
 import type { ReviewRecordInput } from '../src/contracts.ts'
 
@@ -157,6 +158,51 @@ describe('Skills page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: t('common.save') }))
     expect(await screen.findByText('Breaking first')).not.toBeNull()
     expect((await management.read('cases', { skill: 'release-notes' })).value).toHaveLength(2)
+  })
+
+  it('switches a whole skill from its row and uses it in the conversation input', async () => {
+    const setDraft = vi.fn()
+    const onReturn = vi.fn()
+    render(<>
+      <SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={management} sessionId="session-1" onReturnToConversation={onReturn} navigationInput={{ seed: 'skill:user-dsh:release-notes', nonce: 1 }} />
+      <SkillUseBridge sessionId="session-1" inputActions={{ setDraft }} useInput={selector => selector({ draft: 'draft v2 notes' })} />
+      <SkillUseBridge sessionId="other-session" inputActions={{ setDraft: () => { throw new Error('wrong composer') } }} />
+    </>)
+    fireEvent.click(await screen.findByRole('button', { name: t('row.use') }))
+    expect(setDraft).toHaveBeenCalledWith('/release-notes draft v2 notes')
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('switch', { name: t('row.toggle', { name: 'release-notes' }) }))
+    await waitFor(() => expect(readFileSync(skillPath(), 'utf8')).toContain('user-invocable: false'))
+    expect(readFileSync(skillPath(), 'utf8')).toContain('disable-model-invocation: true')
+    await waitFor(() => expect(screen.queryByRole('button', { name: t('row.use') })).toBeNull())
+    expect(draftWithSkill('/release-notes already', 'release-notes')).toBe('/release-notes already')
+    expect(draftWithSkill('  ', 'pdf')).toBe('/pdf ')
+  })
+
+  it('installs a skill from a registry added by path, without the network', async () => {
+    const team = join(directory, 'team')
+    mkdirSync(join(team, 'weekly-report'), { recursive: true })
+    writeFileSync(join(team, 'weekly-report', 'SKILL.md'), '---\nname: weekly-report\ndescription: Write the weekly report.\n---\n\n# Weekly report\n\n1. Collect merged PRs\n')
+    writeFileSync(join(team, 'registry.json'), JSON.stringify({ version: 1, id: 'team', name: { en: 'Team skills', 'zh-CN': '团队技能' }, skills: [
+      { name: 'weekly-report', title: { en: 'Weekly report' }, description: { en: 'Writes the weekly report from merged work.' }, category: 'docs-writing', author: 'Team', source: { type: 'path', path: 'weekly-report' } },
+    ] }))
+    await mutate('registry-toggle', { id: 'official', enabled: false })
+    page()
+    fireEvent.click(await screen.findByRole('tab', { name: t('tab.market') }))
+    fireEvent.click(await screen.findByRole('button', { name: `${t('market.registries')} · 0` }))
+    const registries = await screen.findByRole('dialog')
+    fireEvent.change(within(registries).getByLabelText(t('registry.add')), { target: { value: join(team, 'registry.json') } })
+    fireEvent.click(within(registries).getByRole('button', { name: t('registry.add') }))
+    expect(await within(registries).findByText('Team skills')).not.toBeNull()
+    fireEvent.click(within(registries).getAllByRole('button', { name: t('common.close') }).at(-1)!)
+    fireEvent.click(await screen.findByRole('button', { name: t('market.install') }))
+    const detail = await screen.findByRole('dialog')
+    expect(await within(detail).findByText('Collect merged PRs')).not.toBeNull()
+    expect(within(detail).getByText(t('market.trust'))).not.toBeNull()
+    fireEvent.click(within(detail).getByRole('button', { name: t('market.install') }))
+    await waitFor(() => expect(readFileSync(join(directory, 'dsh', 'skills', 'weekly-report', 'SKILL.md'), 'utf8')).toContain('Collect merged PRs'))
+    expect(await screen.findByText(t('market.installedNote', { name: 'weekly-report' }))).not.toBeNull()
+    expect(await screen.findByText(t('market.installed'))).not.toBeNull()
   })
 
   it('registers one page in the Memory System and releases it', () => {

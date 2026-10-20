@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { basename, join } from 'node:path'
 import {
   DEFAULT_SKILLS_SETTINGS, SKILL_ROOT_KINDS,
-  type BacktestRun, type EvalCase, type ReviewLogEntry, type SkillDraft, type SkillSuggestion, type SkillVersion, type SkillsSettings, type Trajectory, type TrajectorySummary,
+  type BacktestRun, type EvalCase, type MarketInstall, type MarketRegistryFile, type ReviewLogEntry, type SkillDraft, type SkillSuggestion, type SkillVersion, type SkillsSettings, type Trajectory, type TrajectorySummary,
 } from './contracts.ts'
 
 export const MAX_TRAJECTORIES = 100
@@ -22,6 +22,21 @@ export interface LedgerFile {
   reviews: ReviewLogEntry[]
   versions: SkillVersion[]
   trajectories: TrajectorySummary[]
+  /** Skills installed from a market, by skill key. */
+  installs: MarketInstall[]
+}
+
+export interface RegistryRecord {
+  id: string
+  location: string
+  enabled: boolean
+  builtin: boolean
+}
+
+export interface RegistryCache {
+  fetchedAt?: string
+  registry?: MarketRegistryFile
+  error?: string
 }
 
 export interface EvalsFile {
@@ -31,7 +46,7 @@ export interface EvalsFile {
 }
 
 function emptyLedger(): LedgerFile {
-  return { version: 1, generation: 0, suggestions: [], drafts: [], reviews: [], versions: [], trajectories: [] }
+  return { version: 1, generation: 0, suggestions: [], drafts: [], reviews: [], versions: [], trajectories: [], installs: [] }
 }
 
 function emptyEvals(): EvalsFile {
@@ -81,6 +96,11 @@ export class SkillsStore {
 
   private path(name: string): string {
     return join(this.directory, name)
+  }
+
+  /** A directory beside the data, for staging a download before it is moved into place. */
+  stagingDirectory(): string {
+    return this.path('staging')
   }
 
   private readJson(name: string): unknown {
@@ -135,6 +155,7 @@ export class SkillsStore {
       reviews: array(value.reviews),
       versions: array(value.versions),
       trajectories: array(value.trajectories),
+      installs: array(value.installs),
     }
   }
 
@@ -192,6 +213,28 @@ export class SkillsStore {
 
   deleteVersionContent(version: SkillVersion): void {
     rmSync(this.path(join('versions', keyDirectory(version.skillKey), `${version.id}.md`)), { force: true })
+  }
+
+  registries(): RegistryRecord[] {
+    return array<RegistryRecord>(object(this.readJson(join('market', 'registries.json')))?.registries)
+  }
+
+  saveRegistries(registries: RegistryRecord[]): void {
+    this.writeJson(join('market', 'registries.json'), { version: 1, registries })
+  }
+
+  registryCache(id: string): RegistryCache | undefined {
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(id)) return undefined
+    return object(this.readJson(join('market', 'cache', `${id}.json`))) as RegistryCache | undefined
+  }
+
+  saveRegistryCache(id: string, cache: RegistryCache): void {
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(id)) throw new Error('invalid registry id')
+    this.writeJson(join('market', 'cache', `${id}.json`), cache)
+  }
+
+  deleteRegistryCache(id: string): void {
+    if (/^[a-z0-9][a-z0-9-]{0,62}$/u.test(id)) rmSync(this.path(join('market', 'cache', `${id}.json`)), { force: true })
   }
 
   /** Move a bundle or a flat file out of DSH's reach, never deleting it. */

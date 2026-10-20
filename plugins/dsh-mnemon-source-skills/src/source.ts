@@ -263,10 +263,13 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
                   ...(optionalText(fields.skill, 'skill', 64) === undefined ? {} : { skill: optionalText(fields.skill, 'skill', 64)! }),
                 })
                 case 'target-content': return service.targetContent(root, text(fields.skillName, 'skillName', 64)!, runTarget(fields.target!))
+                case 'market': return service.marketView(root)
+                case 'market-preview': return service.marketPreview(text(fields.registryId, 'registryId', 80)!, text(fields.name, 'name', 64)!, request.signal)
+                case 'installs': return service.installs()
                 default: throw new Error('unsupported Skills read operation: ' + request.operation)
               }
             }
-            const result = value()
+            const result = await value()
             return { revision: revision(), value: JSON.parse(JSON.stringify(result ?? null)) as MemoryJsonValue }
           }
           if (!request.confirmed) throw new Error('Skills management mutation requires explicit confirmation')
@@ -325,6 +328,14 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
               break
             }
             case 'review-record': value = await service.recordReview(root, reviewRecord(fields)); break
+            case 'market-refresh': value = await service.refreshMarket(stringArray(fields.ids, 'ids', 50), request.signal); break
+            case 'market-install': value = await service.installMarket(root, {
+              registryId: text(fields.registryId, 'registryId', 80)!, name: text(fields.name, 'name', 64)!,
+              ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }), ...(fields.overwrite === true ? { overwrite: true } : {}),
+            }, request.signal); break
+            case 'registry-add': value = await service.addRegistry(text(fields.location, 'location', 2_000)!, request.signal); break
+            case 'registry-remove': value = await service.removeRegistry(text(fields.id, 'id', 80)!); break
+            case 'registry-toggle': value = await service.toggleRegistry(text(fields.id, 'id', 80)!, bool(fields.enabled, 'enabled')); break
             default: throw new Error('unsupported Skills mutation: ' + request.operation)
           }
           return { revision: revision(), value: JSON.parse(JSON.stringify(value ?? null)) as MemoryJsonValue }

@@ -63,7 +63,7 @@
 .skOverviewColumns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 
 /* List and detail panes. */
-.skSplit { display: grid; min-height: 560px; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 12px; }
+.skSplit { display: grid; min-height: 560px; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 12px; }
 .skList,
 .skPane { min-width: 0; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
 .skList { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 6px; }
@@ -241,6 +241,55 @@
 .skChecks > div { display: flex; align-items: center; gap: 8px; }
 .skChecks > div > span { flex: none; color: var(--mn-faint); font-size: 11px; }
 .skChecks > div > input { min-width: 0; flex: 1; }
+
+/* Skill rows: icon, name and description, then Use on hover and the switch. */
+.skIcon { display: grid; flex: none; width: 32px; height: 32px; place-items: center; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-md); color: var(--mn-text); background: var(--mn-layer-1); font-size: 14px; font-weight: 600; line-height: 1; }
+.skRow { position: relative; display: flex; align-items: center; gap: 8px; margin: 4px 6px 0; padding: 0 8px 0 0; border-radius: var(--dsw-radius-md); transition: background-color .15s; }
+.skRow:hover { background: var(--mn-hover); }
+.skRow[data-selected] { background: var(--mn-fill); }
+.skRow[data-off] .skRowText,
+.skRow[data-shadowed] .skRowText { opacity: .6; }
+.skRowMain { display: flex; min-width: 0; flex: 1; align-items: flex-start; gap: 10px; border: 0; padding: 8px 0 8px 8px; color: var(--mn-text); background: transparent; text-align: left; cursor: pointer; }
+.skRowText { display: grid; min-width: 0; gap: 1px; }
+.skRowText strong { display: flex; min-width: 0; align-items: baseline; gap: 6px; overflow: hidden; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+.skRowText strong i { font-style: normal; }
+.skRowText small { display: -webkit-box; overflow: hidden; color: var(--mn-faint); font-size: 12px; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+.skRowChips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.skRowActions { display: flex; flex: none; align-items: center; gap: 8px; }
+.skUse { opacity: 0; transition: opacity .12s; }
+.skRow:hover .skUse,
+.skRow:focus-within .skUse,
+.skRow[data-selected] .skUse { opacity: 1; }
+@media (hover: none) { .skUse { opacity: 1; } }
+
+/* Market. */
+.skMarket { display: grid; gap: 12px; }
+.skMarketBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.skMarketBar > :first-child { min-width: 220px; flex: 1; }
+.skMarketGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.skMarketCard { display: flex; min-width: 0; flex-direction: column; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); transition: border-color .15s, box-shadow .15s; }
+.skMarketCard:hover { border-color: var(--mn-line-strong); box-shadow: var(--dsw-elevation-soft); }
+.skMarketOpen { display: grid; flex: 1; gap: 8px; border: 0; padding: 14px 14px 8px; color: var(--mn-text); background: transparent; text-align: left; cursor: pointer; }
+.skMarketOpen > header { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.skMarketOpen > header > div { display: grid; min-width: 0; }
+.skMarketOpen strong { overflow: hidden; font-size: 13px; font-weight: 500; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.skMarketOpen code { overflow: hidden; color: var(--mn-faint); font: 11px/16px var(--mn-code); text-overflow: ellipsis; white-space: nowrap; }
+.skMarketOpen p { display: -webkit-box; margin: 0; overflow: hidden; color: var(--mn-muted); font-size: 12px; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.skMarketCard > footer { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px 10px; }
+.skMarketCard > footer > span { min-width: 0; overflow: hidden; color: var(--mn-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.skMarketDetail { display: grid; gap: 10px; }
+.skMarketDetail a { color: var(--dsw-alias-link, var(--mn-accent)); overflow-wrap: anywhere; }
+.skRegistries { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.skRegistries > li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-md); }
+.skRegistries > li > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.skRegistries > li > div > strong { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.skRegistries small { color: var(--mn-faint); font-size: 11px; }
+.skRegistries code { overflow: hidden; color: var(--mn-faint); font: 11px/16px var(--mn-code); text-overflow: ellipsis; white-space: nowrap; }
+.skRegistries em { color: var(--mn-danger); font-size: 11px; font-style: normal; }
+.skInline { display: flex; align-items: center; gap: 8px; }
+.skInline > input { min-width: 0; flex: 1; }
+.skFormat summary { color: var(--mn-muted); font-size: 12px; cursor: pointer; }
+.skFormat pre { margin: 8px 0 0; max-height: 220px; overflow: auto; padding: 8px 10px; border-radius: var(--dsw-radius-md); color: var(--mn-text); background: var(--mn-fill); font: 11px/1.55 var(--mn-code); }
 
 @media (max-width: 1100px) {
   .skStats { grid-template-columns: repeat(3, minmax(0, 1fr)); }

@@ -6,11 +6,13 @@ import { skillsPageClient, type SkillsPageClient } from './api.ts'
 import { EvalsPage } from './evals-page.tsx'
 import { EvidencePage } from './evidence-page.tsx'
 import { EvolutionPage } from './evolution-page.tsx'
+import { MarketPage } from './market-page.tsx'
 import { OverviewPage } from './overview-page.tsx'
 import { css, errorText, sidebarCss, translate, useT } from './presentation.ts'
 import { SkillsPage } from './skills-page.tsx'
+import { installSkillUseBridge, requestSkillUse } from './use-skill.tsx'
 
-export type SkillsTab = 'overview' | 'skills' | 'evolution' | 'evidence' | 'evals'
+export type SkillsTab = 'overview' | 'skills' | 'market' | 'evolution' | 'evidence' | 'evals'
 
 /** Where a link inside the page points: a tab, and what to select there. */
 export interface SkillsLocation {
@@ -34,9 +36,11 @@ export interface SkillsPageContext {
   navigate(location: SkillsLocation): void
   notice(text: string): void
   fail(error: unknown): void
+  /** Put `/name` into the conversation's input and go back to it. */
+  useSkill(name: string): void
 }
 
-const TABS: readonly SkillsTab[] = ['overview', 'skills', 'evolution', 'evidence', 'evals']
+const TABS: readonly SkillsTab[] = ['overview', 'skills', 'market', 'evolution', 'evidence', 'evals']
 const POLL_MS = 3_000
 
 /** `skill:<key>`, `suggestion:<id>`, `draft:<id>`, `trajectory:<id>` or `evals:<skill>` from a link elsewhere. */
@@ -106,6 +110,12 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
     navigate: next => setLocation({ ...next, nonce: Date.now() }),
     notice: text => { setNotice(text); setError(null) },
     fail: reason => { setError(errorText(reason)); setNotice(null) },
+    useSkill: name => {
+      const taken = requestSkillUse(name, props.sessionId)
+      if (props.onReturnToConversation !== undefined) props.onReturnToConversation()
+      else if (taken) { setNotice(t('row.used', { name })); setError(null) }
+      else { setError(t('row.noSession')); setNotice(null) }
+    },
   }
   const enabled = overview?.settings.enabled === true
   const toggle = async (next: boolean) => {
@@ -145,6 +155,7 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
     <div className={css.skPage}>
       {location.tab === 'overview' && <OverviewPage context={context} overview={overview} onToggle={next => void toggle(next)} switching={switching} />}
       {location.tab === 'skills' && <SkillsPage context={context} location={location} />}
+      {location.tab === 'market' && <MarketPage context={context} location={location} />}
       {location.tab === 'evolution' && <EvolutionPage context={context} location={location} />}
       {location.tab === 'evidence' && <EvidencePage context={context} location={location} />}
       {location.tab === 'evals' && <EvalsPage context={context} location={location} />}
@@ -171,4 +182,5 @@ export const inject = ['slots']
 /** The tab is named by the component's declaration; the page label is only a fallback. */
 export function apply(ctx: Parameters<typeof installMemorySourceUI>[0]): void {
   installSkillsMemoryUI(ctx)
+  installSkillUseBridge(ctx)
 }

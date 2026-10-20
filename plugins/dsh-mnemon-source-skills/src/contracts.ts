@@ -64,7 +64,7 @@ export interface SkillDocument extends SkillSummary {
   body: string
 }
 
-export type SkillVersionReason = 'original' | 'edit' | 'evolution' | 'restore' | 'invocation' | 'create'
+export type SkillVersionReason = 'original' | 'edit' | 'evolution' | 'restore' | 'invocation' | 'create' | 'install'
 
 export interface SkillVersion {
   id: string
@@ -392,4 +392,94 @@ export interface DraftView {
   /** The file the draft replaces, as it is now. */
   base?: SkillDocument
   runs: BacktestRun[]
+}
+
+// ---- skill market -------------------------------------------------------------
+
+/** A string, or the same text per language. */
+export type LocalizedText = string | { en?: string; 'zh-CN'?: string }
+
+/** Where a market entry's files come from. */
+export type MarketSource =
+  | { type: 'github'; repo: string; path: string; ref?: string }
+  | { type: 'url'; url: string }
+  | { type: 'path'; path: string }
+
+export interface MarketEntry {
+  /** The SKILL.md name it installs as; unique within its registry. */
+  name: string
+  title?: LocalizedText
+  description: LocalizedText
+  category?: string
+  tags?: string[]
+  author?: string
+  license?: string
+  version?: string
+  homepage?: string
+  source: MarketSource
+}
+
+/** A skill registry as published: one JSON file anyone can host. */
+export interface MarketRegistryFile {
+  version: 1
+  id?: string
+  name: LocalizedText
+  description?: LocalizedText
+  homepage?: string
+  categories?: Array<{ id: string; label: LocalizedText }>
+  skills: MarketEntry[]
+}
+
+/** A registry this Source knows: the official one, or one the user added by URL or path. */
+export interface MarketRegistry {
+  id: string
+  /** http(s) URL or absolute file path; the official registry also ships inside the package. */
+  location: string
+  builtin: boolean
+  enabled: boolean
+  name?: LocalizedText
+  description?: LocalizedText
+  homepage?: string
+  fetchedAt?: string
+  entries: number
+  error?: string
+}
+
+export type MarketInstallState = 'available' | 'installed' | 'update' | 'modified' | 'conflict'
+
+export interface MarketItem extends MarketEntry {
+  registryId: string
+  state: MarketInstallState
+  /** The installed skill, when one with this name exists. */
+  skillKey?: string
+  installedVersion?: string
+}
+
+export interface MarketView {
+  registries: MarketRegistry[]
+  categories: Array<{ id: string; label: LocalizedText }>
+  items: MarketItem[]
+  /** Registries whose copy is older than the refresh window, or missing. */
+  stale: string[]
+}
+
+export interface MarketPreview {
+  registryId: string
+  name: string
+  content: string
+  files: Array<{ path: string; bytes: number }>
+  totalBytes: number
+}
+
+/** Where an installed skill came from, so an update can be offered. */
+export interface MarketInstall {
+  skillKey: string
+  registryId: string
+  name: string
+  version?: string
+  source: MarketSource
+  /** SKILL.md hash right after install; a different hash later means it was edited. */
+  hash: string
+  files: number
+  installedAt: string
 }

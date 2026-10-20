@@ -41,6 +41,12 @@ export interface MemorySourcePageProps {
    * `topInset` below the top when the Source pins and measures its own header.
    */
   onRevealElement?(element: HTMLElement, topInset?: number): void
+  /**
+   * Leave the Memory System for the conversation it was opened from, as the
+   * header's back button does. Absent where the page is already beside the
+   * conversation, such as the conversation tab.
+   */
+  onReturnToConversation?(): void
   /** Optional, Source-bound product preferences; no raw settings service or secrets. */
   preferences?: { value: MemoryJsonValue; writable: boolean; replace(value: MemoryJsonValue): Promise<void> }
 }
