@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { Button, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRefreshOutlineRegular, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SearchField, SelectField, SidebarModal, useLocale } from 'dsh-mnemon/client'
 import { SKILL_ROOT_KINDS, type LocalizedText, type MarketItem, type MarketPreview, type MarketView, type SkillRootKind } from '../contracts.ts'
 import { splitFrontmatter } from '../fence.ts'
@@ -58,13 +58,13 @@ export function MarketPage(props: { context: SkillsPageContext; location: Skills
   return <div className={css.skMarket}>
     <header className={css.skMarketBar}>
       <SearchField label={t('market.search')} placeholder={t('market.search')} value={query} onChange={event => setQuery(event.target.value)} />
-      <SelectField size="sm" hideLabel label={t('market.allCategories')} value={category} onChange={setCategory} options={[{ value: '', label: t('market.allCategories') }, ...view.categories.map(entry => ({ value: entry.id, label: text(entry.label, language) }))]} />
-      <Button variant="outline" size="sm" onClick={() => setRegistriesOpen(true)}>{t('market.registries')} · {view.registries.filter(registry => registry.enabled).length}</Button>
-      <Button variant="ghost" size="sm" disabled={refreshing || !context.writable} onClick={() => void refresh()}>{refreshing ? t('market.refreshing') : t('market.refresh')}</Button>
+      <SelectField size="sm" hideLabel label={t('market.category')} value={category} onChange={setCategory} options={[{ value: '', label: t('market.allCategories') }, ...view.categories.map(entry => ({ value: entry.id, label: text(entry.label, language) }))]} />
+      <Button variant="ghost" size="sm" onClick={() => setRegistriesOpen(true)}>{t('market.registries', { count: view.registries.filter(registry => registry.enabled).length })}</Button>
+      <button type="button" className={css.skIconButton} disabled={refreshing || !context.writable} data-busy={refreshing ? '' : undefined} onClick={() => void refresh()} aria-label={t('market.refresh')} title={t('market.refresh')}><IconRefreshOutlineRegular size={16} /></button>
     </header>
     {items.length === 0 ? <Empty glyph="⌕" title={t('market.empty')}>{t('market.emptyBody')}</Empty> : <div className={css.skMarketGrid}>
-      {items.map(item => <article key={`${item.registryId}/${item.name}`} className={css.skMarketCard} data-state={item.state}>
-        <button type="button" className={css.skMarketOpen} onClick={() => setOpen(item)} aria-label={`${t('market.preview')} ${item.name}`}>
+      {items.map((item, index) => <article key={`${item.registryId}/${item.name}`} className={css.skMarketCard} data-state={item.state} style={{ animationDelay: `${Math.min(index, 12) * 18}ms` }}>
+        <button type="button" className={css.skMarketOpen} onClick={() => setOpen(item)} aria-label={t('market.preview', { name: item.name })}>
           <header>
             <SkillIcon name={item.name} category={item.category} />
             <div><strong>{text(item.title, language) || item.name}</strong><code>{item.name}</code></div>
@@ -75,7 +75,7 @@ export function MarketPage(props: { context: SkillsPageContext; location: Skills
           <span>{item.author ?? registryName(item.registryId)}</span>
           {item.state === 'available'
             ? <Button variant="outline" size="sm" disabled={!context.writable} onClick={() => setOpen(item)}>{t('market.install')}</Button>
-            : <Tag tone={STATE_TONE[item.state]}>{t(item.state === 'update' ? 'market.update' : item.state === 'modified' ? 'market.modified' : item.state === 'conflict' ? 'market.conflict' : 'market.installed')}</Tag>}
+            : <Tag tone={STATE_TONE[item.state]}>{t(`market.state.${item.state}`)}</Tag>}
         </footer>
       </article>)}
     </div>}
@@ -103,7 +103,7 @@ function MarketDetail(props: { context: SkillsPageContext; item: MarketItem; reg
     setError(null)
     try {
       const result = await context.client.installMarket({ registryId: item.registryId, name: item.name, root, ...(item.state === 'modified' ? { overwrite: true } : {}) })
-      context.notice(t(result.updated ? 'market.updatedNote' : 'market.installedNote', { name: item.name }))
+      context.notice(t(result.updated ? 'market.updated' : 'market.installed', { name: item.name }))
       context.refresh()
       props.onClose()
     } catch (reason) { setError(errorText(reason)) } finally { setBusy(false) }
@@ -112,30 +112,30 @@ function MarketDetail(props: { context: SkillsPageContext; item: MarketItem; reg
   const body = preview === null ? undefined : splitFrontmatter(preview.content)?.body ?? preview.content
   return <SidebarModal wide title={text(item.title, language) || item.name} description={text(item.description, language)} busy={busy} onClose={props.onClose} footer={<>
     {error !== null && <span className={css.skFormError}>{error}</span>}
+    {item.state === 'available' && <SelectField size="sm" inline label={t('market.installTo')} value={root} onChange={setRoot} options={SKILL_ROOT_KINDS.map(kind => ({ value: kind, label: t(`root.${kind}`) }))} />}
     {item.skillKey !== undefined && <Button variant="ghost" onClick={() => { props.onClose(); context.navigate({ tab: 'skills', skillKey: item.skillKey! }) }}>{t('market.open')}</Button>}
     <Button variant="ghost" onClick={props.onClose}>{t('common.close')}</Button>
     {canInstall && <Button variant="primary" disabled={busy || !context.writable} onClick={() => void install()}>
-      {busy ? t('market.installing') : item.state === 'modified' ? t('market.overwrite') : item.state === 'update' ? t('market.update') : t('market.install')}
+      {busy ? t('market.installing') : t(item.state === 'modified' ? 'market.overwrite' : item.state === 'update' ? 'market.update' : 'market.install')}
     </Button>}
   </>}>
     <div className={css.skMarketDetail}>
       <div className={css.skChips}>
-        <SkillIcon name={item.name} category={item.category} />
         <code>{item.name}</code>
-        <Tag tone="outline">{t('market.from', { registry: props.registryName })}</Tag>
+        <Tag tone="outline">{props.registryName}</Tag>
         {item.version !== undefined && <Tag tone="neutral">{t('market.version', { version: item.version })}</Tag>}
         {item.installedVersion !== undefined && <Tag tone="success">{t('market.installedVersion', { version: item.installedVersion })}</Tag>}
-        <Tag tone="quiet">{item.license === undefined ? t('market.licenseUpstream') : t('market.license', { license: item.license })}</Tag>
+        <Tag tone="quiet">{item.license ?? t('market.upstreamLicense')}</Tag>
+        {item.homepage !== undefined && <a className={css.skLink} href={item.homepage} target="_blank" rel="noreferrer">{t('market.source')} ↗</a>}
       </div>
-      {item.homepage !== undefined && <p className={css.skMuted}>{t('market.source')}: <a href={item.homepage} target="_blank" rel="noreferrer">{item.homepage}</a></p>}
-      <p className={css.skWarn}>{t('market.trust')}</p>
-      {item.state === 'modified' && <p className={css.skWarn}>{t('market.overwriteHint')}</p>}
-      {item.state === 'available' && <div className={css.skFormRow}><SelectField size="sm" inline label={t('market.installTo')} value={root} onChange={setRoot} options={SKILL_ROOT_KINDS.map(kind => ({ value: kind, label: t(`root.${kind}`) }))} /></div>}
+      <p className={css.skWarn}>{item.state === 'modified' ? t('market.overwriteHint') : t('market.trust')}</p>
       {previewError !== null && <p className={css.inlineError}>{previewError}</p>}
       {preview === null && previewError === null && <Busy label={t('common.loading')} />}
       {preview !== null && <>
-        <p className={css.skMuted}>{t('market.files', { count: preview.files.length, size: size(preview.totalBytes) })}</p>
-        {preview.files.length > 1 && <div className={css.skResources}>{preview.files.slice(0, 40).map(file => <code key={file.path}>{file.path}</code>)}</div>}
+        {preview.files.length > 1 && <details className={css.skProblems}>
+          <summary>{t('market.files', { count: preview.files.length, size: size(preview.totalBytes) })}</summary>
+          <div className={css.skResources}>{preview.files.slice(0, 40).map(file => <code key={file.path}>{file.path}</code>)}</div>
+        </details>}
         <SkillMarkdown body={body ?? ''} />
       </>}
     </div>
@@ -154,7 +154,7 @@ function RegistriesDialog(props: { context: SkillsPageContext; view: MarketView;
     setError(null)
     try { await operation(); after?.(); context.refresh() } catch (reason) { setError(errorText(reason)) } finally { setBusy(false) }
   }
-  return <SidebarModal wide title={t('registry.title')} description={t('registry.description')} busy={busy} onClose={props.onClose} footer={<>
+  return <SidebarModal wide title={t('registry.title')} busy={busy} onClose={props.onClose} footer={<>
     {error !== null && <span className={css.skFormError}>{error}</span>}
     <Button variant="ghost" onClick={props.onClose}>{t('common.close')}</Button>
   </>}>
@@ -172,7 +172,7 @@ function RegistriesDialog(props: { context: SkillsPageContext; view: MarketView;
           <Switch checked={registry.enabled} label={t('registry.enabled', { name: text(registry.name, language) || registry.id })} disabled={busy || !context.writable} onChange={next => void act(() => context.client.toggleRegistry(registry.id, next))} />
         </li>)}
       </ul>
-      <Field label={t('registry.add')}>{control => <div className={css.skInline}>
+      <Field label={t('registry.add')} hint={t('registry.addHint')}>{control => <div className={css.skInline}>
         <input {...control} value={location} placeholder={t('registry.placeholder')} onChange={event => setLocation(event.target.value)} />
         <Button variant="primary" size="sm" disabled={busy || location.trim() === '' || !context.writable} onClick={() => void act(() => context.client.addRegistry(location.trim()), () => setLocation(''))}>{busy ? t('registry.adding') : t('registry.add')}</Button>
       </div>}</Field>

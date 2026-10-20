@@ -1,13 +1,14 @@
 import type {
-  BacktestRun, EvalCase, EvidencePack, ReviewRecordInput, ReviewRecordResult, RunTarget, SkillCatalog, SkillDocument, SkillDraft, SkillRootKind, SkillsSettings, Trajectory,
+  BacktestRun, EvalCase, EvidencePack, ReviewLogEntry, ReviewRecordInput, ReviewRecordResult, RunTarget, SkillCatalog, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, Trajectory,
 } from 'dsh-mnemon-source-skills/contracts'
 import type { HostAgent, HostPreStepDecision, HostSessionEvent } from './dsh.ts'
+import type { ResolvedSkillsConfig, SkillActivitySnapshot, TurnSkillReview } from './protocol.ts'
 import {
   gradeCase, parseCases, parseExecution, parseSkillDraft, parseSkillReview, SKILL_CASES_PERSONA, SKILL_CASES_SCHEMA, SKILL_DRAFT_PERSONA, SKILL_DRAFT_SCHEMA,
   SKILL_EXECUTOR_PERSONA, SKILL_EXECUTOR_SCHEMA, SKILL_JUDGE_PERSONA, SKILL_JUDGE_SCHEMA, SKILL_REVIEW_PERSONA, SKILL_REVIEW_SCHEMA,
   skillCasesPrompt, skillDraftPrompt, skillExecutorPrompt, skillJudgePrompt, skillReviewPrompt,
 } from './skill-review.ts'
-import { captureTurn, redact, sessionTitle, TrajectoryWindow } from './skill-trajectory.ts'
+import { captureTurn, redact, sessionTitle, TrajectoryWindow, turnSkillUses } from './skill-trajectory.ts'
 
 /** The Skills Source's management protocol, as the Host calls it. */
 export interface SkillsSourcePort {
@@ -16,6 +17,8 @@ export interface SkillsSourcePort {
 }
 
 export interface SkillEvolutionHost {
+  /** 技能管理's settings as they are now; read at every turn and review. */
+  settings(): ResolvedSkillsConfig
   /** The Skills Source for a conversation's workspace; undefined when it is not installed or its layer is off. */
   source(agent: HostAgent): SkillsSourcePort | undefined
   /** Run model work under a fresh task Agent in a workspace, outside any conversation. */
@@ -28,10 +31,20 @@ export interface SkillEvolutionHost {
 interface SessionState {
   window: TrajectoryWindow
   timer?: ReturnType<typeof setTimeout>
+  /** The turn a review waiting for the conversation to sit idle will be placed under. */
+  scheduled?: number
   running?: Promise<void>
+  /** The turn the review under way is placed under. */
+  reviewing?: number
   lastReviewAt?: number
   failures: number
 }
+
+/** A new skill goes to the user's own DSH skills unless the page chose another root. */
+const DEFAULT_TARGET_ROOT: SkillRootKind = 'user-dsh'
+/** A conversation's turn bars read at most this many of its reviews. */
+const ACTIVITY_REVIEWS = 50
+const WAITING_STATUSES: ReadonlySet<string> = new Set(['pending', 'drafting', 'review'])
 
 /** A session stops reviewing after this many failures in a row, until DSH recreates its Agent. */
 const MAX_CONSECUTIVE_FAILURES = 3
@@ -124,19 +137,20 @@ export class SkillEvolution {
   private cancelTimer(sessionId: string): void {
     const state = this.sessions.get(sessionId)
     if (state?.timer !== undefined) { clearTimeout(state.timer); delete state.timer }
+    if (state !== undefined) delete state.scheduled
   }
 
-  private async settings(source: SkillsSourcePort): Promise<SkillsSettings | undefined> {
-    try { return await source.read<SkillsSettings>('settings') } catch { return undefined }
+  /** 技能管理's settings as they are now. */
+  config(): ResolvedSkillsConfig {
+    return this.host.settings()
   }
 
   /** Capture the finished turn and, when the window has earned it, schedule a review for the next pause. */
   async turnEnded(agent: HostAgent, turn: number): Promise<void> {
     if (this.disposed) return
-    const source = this.source(agent)
-    if (source === undefined) return
-    const settings = await this.settings(source)
-    if (settings?.enabled !== true) return
+    const settings = this.host.settings()
+    if (!settings.evolution) return
+    if (this.source(agent) === undefined) return
     const captured = captureTurn(agent.session.snapshotEvents(), turn)
     if (captured === undefined || captured.steps.length === 0) return
     const state = this.state(agent)
@@ -145,15 +159,18 @@ export class SkillEvolution {
     this.schedule(agent, state, settings)
   }
 
-  private schedule(agent: HostAgent, state: SessionState, settings: SkillsSettings): void {
+  private schedule(agent: HostAgent, state: SessionState, settings: ResolvedSkillsConfig): void {
     this.cancelTimer(agent.id)
     if (state.running !== undefined || state.window.score().score < settings.reviewThreshold) return
     const now = this.now().getTime()
     const cooldown = state.lastReviewAt === undefined ? 0 : Math.max(0, state.lastReviewAt + settings.cooldownSeconds * 1000 - now)
+    const turn = state.window.lastTurn
+    if (turn !== undefined) state.scheduled = turn
     state.timer = setTimeout(() => {
       delete state.timer
+      delete state.scheduled
       if (this.disposed || state.running !== undefined) return
-      if (agent.status !== 'idle') return
+      if (agent.status !== 'idle' || !this.host.settings().evolution) return
       state.running = this.review(agent, state, 'automatic').then(() => undefined).finally(() => { delete state.running })
     }, Math.max(settings.idleSeconds * 1000, cooldown))
   }
@@ -192,6 +209,10 @@ export class SkillEvolution {
     // The window moves out now; turns that end during the review start the next one.
     const window = state.window
     state.window = new TrajectoryWindow()
+    const turn = window.lastTurn
+    if (turn !== undefined) state.reviewing = turn
+    const settings = this.host.settings()
+    const policy = { minConfidence: settings.minConfidence, expiryDays: settings.expiryDays, maxPendingPerSession: settings.maxPendingPerSession }
     const events = agent.session.snapshotEvents()
     const workspace = agent.session.header?.cwd?.trim() || undefined
     const steps = window.steps()
@@ -201,7 +222,7 @@ export class SkillEvolution {
     const controller = new AbortController()
     this.jobs.add(controller)
     const base = {
-      at: started.toISOString(), sessionId: agent.id, ...(title === undefined ? {} : { sessionTitle: title }), trigger,
+      at: started.toISOString(), sessionId: agent.id, ...(title === undefined ? {} : { sessionTitle: title }), trigger, ...(turn === undefined ? {} : { turn }),
       score: { score: score.score, threshold: score.threshold, textLengthScore: score.textLengthScore, turnScore: score.turnScore, toolCallScore: score.toolCallScore, toolDiversityScore: score.toolDiversityScore },
     }
     const trajectory: ReviewRecordInput['trajectory'] = {
@@ -228,7 +249,7 @@ export class SkillEvolution {
       const parsed = parseSkillReview(answer.structured)
       const result = await source.mutate<ReviewRecordResult>('review-record', {
         review: { ...base, durationMs: this.now().getTime() - started.getTime(), outcome: parsed.suggestions.length > 0 ? 'suggested' : 'nothing', summary: parsed.summary },
-        trajectory, annotations: parsed.annotations, suggestions: parsed.suggestions, cases: parsed.cases,
+        trajectory, annotations: parsed.annotations, suggestions: parsed.suggestions, cases: parsed.cases, policy,
       } satisfies ReviewRecordInput)
       state.failures = 0
       state.lastReviewAt = this.now().getTime()
@@ -250,6 +271,7 @@ export class SkillEvolution {
       return error instanceof Error ? error : new Error(String(error))
     } finally {
       this.jobs.delete(controller)
+      delete state.reviewing
     }
   }
 
@@ -281,10 +303,10 @@ export class SkillEvolution {
 
   private async writeDraft(source: SkillsSourcePort, workspace: string | undefined, input: { suggestionId?: string; skill?: string; guidance?: string; targetRoot?: SkillRootKind }, signal: AbortSignal): Promise<SkillDraft> {
     const pack = await source.read<EvidencePack>('evidence-pack', { ...(input.suggestionId === undefined ? {} : { suggestionId: input.suggestionId }), ...(input.skill === undefined ? {} : { skill: input.skill }) }, signal)
-    const settings = await source.read<SkillsSettings>('settings', null, signal)
+    const settings = this.host.settings()
     const previous = pack.drafts.find(draft => input.suggestionId === undefined ? draft.suggestionId === undefined : draft.suggestionId === input.suggestionId)
     const guidance = [...(previous?.guidance ?? []), ...(input.guidance?.trim() ? [input.guidance.trim()] : [])].slice(-8)
-    const targetRoot = input.targetRoot ?? settings.defaultRoot
+    const targetRoot = input.targetRoot ?? DEFAULT_TARGET_ROOT
     let prompt = skillDraftPrompt(pack, guidance, targetRoot)
     let draft: SkillDraft | undefined
     for (let attempt = 0; draft === undefined; attempt++) {
@@ -317,7 +339,7 @@ export class SkillEvolution {
   /** Start a backtest of one version of a skill against its enabled cases; it runs in the background. */
   async backtest(port: SkillsSourcePort, workspace: string | undefined, input: { skillName: string; target: RunTarget; caseIds?: string[] }): Promise<{ runId: string }> {
     const source = retryingSource(port)
-    const settings = await source.read<SkillsSettings>('settings')
+    const settings = this.host.settings()
     const cases = (await source.read<EvalCase[]>('cases', { skill: input.skillName })).filter(entry => entry.enabled && (input.caseIds === undefined || input.caseIds.includes(entry.id))).slice(0, settings.casesPerRun)
     if (cases.length === 0) throw new Error(`${input.skillName} has no enabled eval case to run`)
     const resolved = await source.read<{ content?: string; target: RunTarget }>('target-content', { skillName: input.skillName, target: input.target })
@@ -378,6 +400,37 @@ export class SkillEvolution {
     const cases = parseCases(answer.structured)
     if (cases.length === 0) return { added: [], skipped: 0 }
     return source.mutate('cases-add', { skillName: input.skillName, trajectoryId: input.trajectoryId, ...(input.steps === undefined ? {} : { steps: input.steps }), cases }, signal)
+  }
+
+  /**
+   * What one conversation did with skills, for the bars under its turns: the
+   * skills each turn used, read from its own log, and each review placed under
+   * the turn its window ended with — the one waiting or under way first, then
+   * the recorded ones with the suggestions they left that still wait. A
+   * conversation that is not live passes its stored log.
+   */
+  async activity(agent: HostAgent, events?: readonly HostSessionEvent[]): Promise<SkillActivitySnapshot> {
+    const port = this.host.source(agent)
+    if (port === undefined) return { available: false, turns: [], reviews: [] }
+    const turns = turnSkillUses(events ?? agent.session.snapshotEvents())
+    const state = this.sessions.get(agent.id)
+    const reviews: TurnSkillReview[] = []
+    if (state?.reviewing !== undefined) reviews.push({ turn: state.reviewing, state: 'reviewing', suggestions: [] })
+    else if (state?.scheduled !== undefined) reviews.push({ turn: state.scheduled, state: 'scheduled', suggestions: [] })
+    const [log, suggestions] = await Promise.all([
+      port.read<ReviewLogEntry[]>('reviews', { sessionId: agent.id, limit: ACTIVITY_REVIEWS }),
+      port.read<SkillSuggestion[]>('suggestions', {}),
+    ])
+    const byId = new Map(suggestions.map(suggestion => [suggestion.id, suggestion]))
+    for (const entry of log) {
+      if (entry.turn === undefined || reviews.some(review => review.turn === entry.turn)) continue
+      const left = (entry.suggestionIds ?? []).flatMap(id => {
+        const suggestion = byId.get(id)
+        return suggestion === undefined || !WAITING_STATUSES.has(suggestion.status) ? [] : [{ id, skillName: suggestion.skillName, action: suggestion.action, status: suggestion.status }]
+      })
+      reviews.push({ turn: entry.turn, state: entry.outcome, suggestions: left, ...(entry.error === undefined ? {} : { error: entry.error }) })
+    }
+    return { available: true, turns, reviews }
   }
 
   /** The window each live session has collected, for the page. */

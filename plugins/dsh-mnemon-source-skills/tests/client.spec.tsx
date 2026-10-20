@@ -27,6 +27,8 @@ import { compareRuns } from '../src/client/evolution-page.tsx'
 import type { BacktestRun, CaseResult, ReviewRecordInput } from '../src/contracts.ts'
 
 const t = translate('en')
+/** An accessible name made of these parts in order, however its markup spaces them. */
+const named = (...parts: string[]) => new RegExp(parts.map(part => part.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('\\s*'), 'u')
 let directory: string
 let runner: MemoryCompositionRunner
 let management: Awaited<ReturnType<MemoryCompositionRunner['managementClient']>>
@@ -81,81 +83,122 @@ function page(navigationInput?: { seed: string; nonce: number }) {
 }
 
 describe('Skills page', () => {
-  it('turns self-evolution on from the overview and applies typed settings together', async () => {
-    page()
-    expect(await screen.findByRole('heading', { name: t('overview.offTitle') })).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: t('overview.enable') }))
-    expect(await screen.findByRole('heading', { name: t('overview.onTitle') })).not.toBeNull()
-    expect((await management.read('settings', null)).value).toMatchObject({ enabled: true })
-    fireEvent.click(screen.getByRole('button', { name: t('overview.settings') }))
-    const dialog = await screen.findByRole('dialog')
-    const apply = within(dialog).getByRole('button', { name: t('common.apply') }) as HTMLButtonElement
-    expect(apply.disabled).toBe(true)
-    fireEvent.change(within(dialog).getByLabelText(t('settings.reviewThreshold')), { target: { value: '7' } })
-    fireEvent.change(within(dialog).getByLabelText(t('settings.minConfidence')), { target: { value: '3' } })
-    expect(within(dialog).getByText(t('settings.invalid', { field: t('settings.minConfidence') }))).not.toBeNull()
-    fireEvent.change(within(dialog).getByLabelText(t('settings.minConfidence')), { target: { value: '0.7' } })
-    fireEvent.click(apply)
-    await waitFor(async () => expect((await management.read('settings', null)).value).toMatchObject({ reviewThreshold: 7, minConfidence: 0.7 }))
+  it('offers to turn self-evolution on where it is off, and opens its settings', async () => {
+    const replace = vi.fn(async () => undefined)
+    const onOpenSettings = vi.fn()
+    render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={management}
+      preferences={{ value: { evolution: false }, writable: true, replace }} onOpenSettings={onOpenSettings} navigationInput={{ seed: 'evolution:pending', nonce: 1 }} />)
+    expect(await screen.findByRole('heading', { name: t('evolution.off') })).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: t('evolution.turnOn') }))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith({ evolution: true }))
+    fireEvent.click(screen.getByRole('button', { name: t('common.settings') }))
+    expect(onOpenSettings).toHaveBeenCalledTimes(1)
+    // The page itself carries no settings of its own.
+    expect(screen.queryByRole('switch', { name: /evolution/iu })).toBeNull()
   })
 
   it('lists, switches and edits a skill, keeping each change as a version', async () => {
     page({ seed: 'skill:user-dsh:release-notes', nonce: 1 })
     expect(await screen.findByRole('heading', { name: 'release-notes' })).not.toBeNull()
     expect(screen.getByText('Read CHANGELOG.md')).not.toBeNull()
-    fireEvent.click(screen.getByRole('switch', { name: t('detail.model') }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${t('invocation.label')}`, 'u') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('invocation.slash') }))
     await waitFor(() => expect(readFileSync(skillPath(), 'utf8')).toContain('disable-model-invocation: true'))
-    expect(await screen.findByText(t('chip.modelOff'))).not.toBeNull()
+    expect(readFileSync(skillPath(), 'utf8')).not.toContain('user-invocable: false')
+    expect(await screen.findByText(t('invocation.slashShort'))).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: t('common.edit') }))
     const editor = await screen.findByLabelText('SKILL.md')
     fireEvent.change(editor, { target: { value: (editor as HTMLTextAreaElement).value.replace('1. Read CHANGELOG.md', '1. Read CHANGELOG.md\n2. Group by component') } })
     fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
     await waitFor(() => expect(readFileSync(skillPath(), 'utf8')).toContain('2. Group by component'))
-    fireEvent.click(await screen.findByRole('tab', { name: `${t('detail.versions')} · 3` }))
-    expect(screen.getByText(t('versions.reason.invocation'))).not.toBeNull()
+    // Versions wait, folded, until asked for.
+    expect(screen.queryByText(t('versions.reason.original'))).toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: named(t('versions.title'), '3') }))
+    expect(await screen.findByText(t('versions.reason.invocation'))).not.toBeNull()
     expect(screen.getByText(t('versions.reason.original'))).not.toBeNull()
   })
 
-  it('shows a suggestion with its cited steps, then reviews and adopts its draft', async () => {
+  it('shows a suggestion with its evidence folded, then reviews and adopts its draft', async () => {
     await mutate('review-record', review())
     const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
     page({ seed: `suggestion:${suggestion!.id}`, nonce: 1 })
     expect(await screen.findByText('Group entries by component', { selector: 'p' })).not.toBeNull()
-    expect(screen.getByText('Grouping by component was missing')).not.toBeNull()
+    expect(screen.getByText('Corrected twice.')).not.toBeNull()
+    // Without a task Agent, drafting waits.
+    expect((screen.getByRole('button', { name: t('evolution.draft') }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByText('Grouping by component was missing')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${t('evolution.evidence')}`, 'u') }))
+    expect(await screen.findByText('Grouping by component was missing')).not.toBeNull()
     expect(screen.getByText('command=git log')).not.toBeNull()
-    expect(screen.getByText(t('evolution.noAgent'))).not.toBeNull()
     const next = SKILL.replace('1. Read CHANGELOG.md', '1. Read CHANGELOG.md\n2. Group by component')
     await mutate('draft-record', { suggestionId: suggestion!.id, skillName: 'release-notes', content: next, notes: 'Groups entries by component.', changes: ['Group by component'], guidance: [] })
     cleanup()
     page({ seed: `suggestion:${suggestion!.id}`, nonce: 2 })
     expect(await screen.findByText('Groups entries by component.')).not.toBeNull()
-    expect(screen.getByText(t('draft.diff'))).not.toBeNull()
+    // The review left a case, not yet run against the draft.
+    expect(screen.getByText(t('draft.notTested'))).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: t('draft.adopt') }))
     await waitFor(() => expect(readFileSync(skillPath(), 'utf8')).toBe(next))
-    expect(await screen.findByText(t('draft.adopted', { key: 'user-dsh:release-notes' }))).not.toBeNull()
+    expect(await screen.findByText(t('draft.adopted', { name: 'release-notes' }))).not.toBeNull()
   })
 
-  it('steps through evidence, filters by signal and pins a trajectory', async () => {
+  it('follows a link once, keeping what the reader chose since when the page reloads', async () => {
+    await mutate('review-record', review())
+    const other = review()
+    await mutate('review-record', {
+      ...other,
+      review: { ...other.review, sessionId: 'session-2' },
+      trajectory: { ...other.trajectory, sessionId: 'session-2' },
+      suggestions: [{ skillName: 'weekly-digest', action: 'create', summary: 'A weekly digest', confidence: 0.9, signals: ['procedure'], steps: [1, 4] }],
+      cases: [],
+    })
+    const linked = ((await management.read('suggestions', null)).value as Array<{ id: string; skillName: string }>).find(entry => entry.skillName === 'release-notes')!
+    let reloads = 0
+    const watched = new Proxy(management, {
+      get: (target, key, receiver) => key === 'read'
+        ? (operation: string, input: unknown) => { if (operation === 'suggestions') reloads += 1; return target.read(operation as never, input as never) }
+        : Reflect.get(target, key, receiver),
+    })
+    const props = { sourceTypeId: 'skills', sourceInstanceKey: 'source:skills', sourceInstances: [], locale: 'en', writable: true, management: watched, navigationInput: { seed: `suggestion:${linked.id}`, nonce: 1 } }
+    const { rerender } = render(<SkillsSourcePage {...props} refreshKey={1} />)
+    expect(await screen.findByRole('heading', { name: 'release-notes' })).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /weekly-digest/u }))
+    expect(await screen.findByRole('heading', { name: 'weekly-digest' })).not.toBeNull()
+    const before = reloads
+    rerender(<SkillsSourcePage {...props} refreshKey={2} />)
+    await waitFor(() => expect(reloads).toBeGreaterThan(before))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'weekly-digest' })).not.toBeNull())
+    expect(screen.queryByRole('heading', { name: 'release-notes' })).toBeNull()
+  })
+
+  it('keeps the conversations a review read as 进化\'s evidence, to pin and to follow to its suggestions', async () => {
     const recorded = await mutate('review-record', review()) as { trajectoryId: string }
     page({ seed: `trajectory:${recorded.trajectoryId}`, nonce: 1 })
     expect(await screen.findByRole('heading', { name: 'Release v2' })).not.toBeNull()
+    expect(screen.getByRole('tab', { name: named(t('tab.evolution')), selected: true })).not.toBeNull()
+    expect(screen.getByRole('tab', { name: t('evolution.evidence'), selected: true })).not.toBeNull()
     expect(screen.getByText('The user corrected the grouping.')).not.toBeNull()
     expect(screen.getByText('Write the v2 release notes')).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: t('evidence.pin') }))
+    fireEvent.click(screen.getByRole('button', { name: t('records.pin') }))
     await waitFor(async () => expect((await management.read('trajectory', { id: recorded.trajectoryId })).value).toMatchObject({ pinned: true }))
-    expect(await screen.findByRole('button', { name: t('evidence.unpin') })).not.toBeNull()
+    expect(await screen.findByRole('button', { name: t('records.unpin') })).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: `${t('records.suggestion', { index: 1 })} ›` }))
+    expect(await screen.findByText('Group entries by component', { selector: 'p' })).not.toBeNull()
+    expect(screen.getByRole('tab', { name: new RegExp(`^${t('evolution.pending')}`, 'u'), selected: true })).not.toBeNull()
   })
 
-  it('adds an eval case by hand and shows the cases a review left', async () => {
+  it('leads from a skill to its tests under 评测, and adds a case by hand beside the ones a review left', async () => {
     await mutate('review-record', review())
-    page({ seed: 'evals:release-notes', nonce: 1 })
+    page({ seed: 'name:release-notes', nonce: 1 })
+    fireEvent.click(await screen.findByRole('button', { name: named(t('tests.title'), t('tests.count', { count: 1 })) }))
     expect(await screen.findByText('Grouped notes')).not.toBeNull()
-    expect(screen.getByText(t('evals.origin.review'))).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: t('evals.add') }))
+    expect(screen.getByRole('tab', { name: t('tab.evals'), selected: true })).not.toBeNull()
+    expect(screen.getByText(t('evals.tested'))).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: t('tests.add') }))
     const dialog = await screen.findByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText(t('evals.title')), { target: { value: 'Breaking first' } })
-    fireEvent.change(within(dialog).getByLabelText(t('evals.prompt')), { target: { value: 'Notes with a breaking change' } })
-    fireEvent.change(within(dialog).getByPlaceholderText(t('evals.checkPlaceholder')), { target: { value: 'Breaking change listed first' } })
+    fireEvent.change(within(dialog).getByLabelText(t('tests.caseTitle')), { target: { value: 'Breaking first' } })
+    fireEvent.change(within(dialog).getByLabelText(t('tests.prompt')), { target: { value: 'Notes with a breaking change' } })
+    fireEvent.change(within(dialog).getByPlaceholderText(t('tests.checkPlaceholder')), { target: { value: 'Breaking change listed first' } })
     fireEvent.click(within(dialog).getByRole('button', { name: t('common.save') }))
     expect(await screen.findByText('Breaking first')).not.toBeNull()
     expect((await management.read('cases', { skill: 'release-notes' })).value).toHaveLength(2)
@@ -169,13 +212,14 @@ describe('Skills page', () => {
       <SkillUseBridge sessionId="session-1" inputActions={{ setDraft }} useInput={selector => selector({ draft: 'draft v2 notes' })} />
       <SkillUseBridge sessionId="other-session" inputActions={{ setDraft: () => { throw new Error('wrong composer') } }} />
     </>)
-    fireEvent.click(await screen.findByRole('button', { name: t('row.use') }))
+    await screen.findByRole('heading', { name: 'release-notes' })
+    fireEvent.click(screen.getAllByRole('button', { name: t('skills.use') })[0]!)
     expect(setDraft).toHaveBeenCalledWith('/release-notes draft v2 notes')
     expect(onReturn).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('switch', { name: t('row.toggle', { name: 'release-notes' }) }))
+    fireEvent.click(screen.getByRole('switch', { name: t('skills.toggle', { name: 'release-notes' }) }))
     await waitFor(() => expect(readFileSync(skillPath(), 'utf8')).toContain('user-invocable: false'))
     expect(readFileSync(skillPath(), 'utf8')).toContain('disable-model-invocation: true')
-    await waitFor(() => expect(screen.queryByRole('button', { name: t('row.use') })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: t('skills.use') })).toBeNull())
     expect(draftWithSkill('/release-notes already', 'release-notes')).toBe('/release-notes already')
     expect(draftWithSkill('  ', 'pdf')).toBe('/pdf ')
   })
@@ -190,7 +234,7 @@ describe('Skills page', () => {
     await mutate('registry-toggle', { id: 'official', enabled: false })
     page()
     fireEvent.click(await screen.findByRole('tab', { name: t('tab.market') }))
-    fireEvent.click(await screen.findByRole('button', { name: `${t('market.registries')} · 0` }))
+    fireEvent.click(await screen.findByRole('button', { name: t('market.registries', { count: 0 }) }))
     const registries = await screen.findByRole('dialog')
     fireEvent.change(within(registries).getByLabelText(t('registry.add')), { target: { value: join(team, 'registry.json') } })
     fireEvent.click(within(registries).getByRole('button', { name: t('registry.add') }))
@@ -202,8 +246,8 @@ describe('Skills page', () => {
     expect(within(detail).getByText(t('market.trust'))).not.toBeNull()
     fireEvent.click(within(detail).getByRole('button', { name: t('market.install') }))
     await waitFor(() => expect(readFileSync(join(directory, 'dsh', 'skills', 'weekly-report', 'SKILL.md'), 'utf8')).toContain('Collect merged PRs'))
-    expect(await screen.findByText(t('market.installedNote', { name: 'weekly-report' }))).not.toBeNull()
-    expect(await screen.findByText(t('market.installed'))).not.toBeNull()
+    expect(await screen.findByText(t('market.installed', { name: 'weekly-report' }))).not.toBeNull()
+    expect(await screen.findByText(t('market.state.installed'))).not.toBeNull()
   })
 
   it('compares the latest backtest of a draft, not the first one linked to it', async () => {
@@ -224,7 +268,8 @@ describe('Skills page', () => {
     await backtest({ kind: 'draft', draftId: draft.id }, 'pass', 1)
     await backtest({ kind: 'current' }, 'fail', 0.5)
     page({ seed: `draft:${draft.id}`, nonce: 1 })
-    expect(await screen.findByText(t('draft.improved', { delta: 50 }))).not.toBeNull()
+    expect(await screen.findByText('+50')).not.toBeNull()
+    expect(screen.getByText(`${t('draft.current')} 50 → ${t('draft.candidate')} 100`)).not.toBeNull()
     expect(screen.queryByText(t('draft.excluded', { count: 1 }))).toBeNull()
   })
 

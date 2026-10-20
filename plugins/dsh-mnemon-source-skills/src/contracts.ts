@@ -286,39 +286,31 @@ export interface ReviewLogEntry {
   cases: number
   trajectoryId?: string
   error?: string
+  /** The conversation turn the reviewed window ended with. */
+  turn?: number
+  /** The suggestions this review created or strengthened. */
+  suggestionIds?: string[]
 }
 
-export interface SkillsSettings {
-  enabled: boolean
-  reviewThreshold: number
-  cooldownSeconds: number
-  idleSeconds: number
+/** How the Source admits a review's suggestions; the Host sends its settings with each review. */
+export interface SkillsPolicy {
   minConfidence: number
   expiryDays: number
   maxPendingPerSession: number
-  autoBacktest: boolean
-  casesPerRun: number
-  defaultRoot: SkillRootKind
 }
 
-export const DEFAULT_SKILLS_SETTINGS: Readonly<SkillsSettings> = Object.freeze({
-  enabled: false,
-  reviewThreshold: 5,
-  cooldownSeconds: 150,
-  idleSeconds: 20,
+export const DEFAULT_SKILLS_POLICY: Readonly<SkillsPolicy> = Object.freeze({
   minConfidence: 0.6,
   expiryDays: 7,
   maxPendingPerSession: 5,
-  autoBacktest: true,
-  casesPerRun: 8,
-  defaultRoot: 'user-dsh',
 })
 
 export interface SkillsOverview {
-  settings: SkillsSettings
   counts: {
     skills: number
     pending: number
+    /** Suggestions whose draft is being written. */
+    drafting: number
     drafts: number
     trajectories: number
     cases: number
@@ -332,7 +324,9 @@ export interface SkillsOverview {
 
 /** What the Host records after one skill review. */
 export interface ReviewRecordInput {
-  review: Omit<ReviewLogEntry, 'id' | 'trajectoryId' | 'suggestions' | 'cases'>
+  review: Omit<ReviewLogEntry, 'id' | 'trajectoryId' | 'suggestions' | 'cases' | 'suggestionIds'>
+  /** The admission rules to apply; missing values fall back to the defaults. */
+  policy?: Partial<SkillsPolicy>
   trajectory: Omit<Trajectory, 'id' | 'createdAt' | 'pinned' | 'suggestionIds' | 'caseIds' | 'annotationCount' | 'signals' | 'outcome' | 'reviewId'>
   annotations: TrajectoryAnnotation[]
   suggestions: Array<{
@@ -356,6 +350,7 @@ export interface ReviewRecordInput {
 export interface ReviewRecordResult {
   reviewId: string
   trajectoryId?: string
+  suggestionIds: string[]
   inserted: number
   updated: number
   casesAdded: number

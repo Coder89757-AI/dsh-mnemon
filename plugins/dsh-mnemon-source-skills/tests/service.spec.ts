@@ -147,8 +147,9 @@ describe('review admission', () => {
 
   it('drops weak, uncited and recently dismissed proposals and keeps the session within its limit', async () => {
     const store = service()
-    await store.updateSettings({ maxPendingPerSession: 2 })
+    // The Host passes its admission settings with each review; out-of-range values fall back.
     const result = await store.recordReview(workspace, review({
+      policy: { maxPendingPerSession: 2, minConfidence: 2 },
       cases: [],
       suggestions: [
         { skillName: 'Weak One', action: 'create', summary: 'Weak', confidence: 0.3, signals: [], steps: [1] },

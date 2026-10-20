@@ -29,12 +29,12 @@ mechanism. Three properties shape it:
 
 | Piece | Behaviour |
 |---|---|
-| Gate | One switch per storage scope, off until the user turns it on |
+| Gate | One switch on 技能管理's page under Plugins, off until the user turns it on |
 | Trigger | After every turn: `min(⌊userChars/50⌋,3) + turns + min(⌊toolCalls/5⌋,2) + (unique≥3 ? min(unique−2,2) : 0)` — the post-turn score the idle memory review already uses (`src/host/review-activity.ts`); review at ≥5; skill reviews of one session at least 150 s apart; score reset after a review; paused after 3 consecutive failures |
 | Reviewer | One tool-less structured run with the numbered trajectory, a list of *strong signals* and two three-question audits (one for an invoked skill → update, one for a new procedure → create) |
 | Admission | Confidence < 0.6 dropped; a dismissal blocks the same skill+action from the same session for 24 h; one open suggestion per skill+action (higher confidence replaces); at most 5 pending per session; expiry 7 days; `update` records the `SKILL.md` SHA-256 and is invalidated when the file changes |
 | Evolve | Draft → backtest → adopt, in the page; adopting writes the file under its hash fence |
-| Log | One entry per review (`suggested`, `nothing`, `error`) and counters on the Overview |
+| Log | One entry per review (`suggested`, `nothing`, `error`), with the turn it followed; the conversation shows it under that turn |
 
 dsh-mnemon already has the pieces the loop needs: the post-turn score, task Agents, structured
 delegated runs, the Source management protocol and the Memory System workbench.
@@ -58,7 +58,8 @@ delegated runs, the Source management protocol and the Memory System workbench.
    Plugin-provided and bundled skills are not files a user edits and are not listed.
 
 3. **Switching a skill off uses DSH's own switches.** "Model can load it" writes
-   `disable-model-invocation`, "`/` menu" writes `user-invocable`; both keys stay in the file, so DSH,
+   `disable-model-invocation`, "`/` menu" writes `user-invocable` (the page offers them as one choice);
+   both keys stay in the file, so DSH,
    the editor and Git all agree on what is on. Deleting moves the bundle or file into the ledger's
    trash; it is never unlinked.
 
@@ -127,11 +128,16 @@ delegated runs, the Source management protocol and the Memory System workbench.
     (`read revision`) immediately before each mutation instead of failing on unrelated background
     writes.
 
-12. **Settings live with the data they govern.** `settings.json` in the ledger holds `enabled`
-    (default **off**: turning it on is one switch on the Overview), the trigger threshold (5),
-    cooldown (150 s), idle delay (20 s), minimum confidence (0.6), expiry (7 days), pending limit per
-    session (5), auto-backtest (on), cases per run (8) and the root new skills are created in
-    (`user-dsh`). They follow the storage scope like every other Source's data.
+12. **Settings are dsh-mnemon's, on the component's page under Plugins.** They form one group of
+    the dsh-mnemon entry, `skills` (wire namespace `mnemon-skills`), declared live so a change applies
+    without rebuilding the memory runtime: `evolution` (default **off**), `autoBacktest` (on), `hints`
+    (on), `sidebar` (off), and the review parameters — trigger threshold (5), idle delay (20 s), cooldown
+    (150 s), minimum confidence (0.6), expiry (7 days), pending limit per session (5), cases per run (8).
+    dsh-mnemon draws them on 技能管理's page under Plugins, as it draws the Layered strategy's: switches
+    apply at once, the review parameters sit in a folded group with their own Apply. The Host reads them
+    for scheduling and passes the admission parameters with each `review-record`, so the Source holds
+    data only. The Skills page carries no settings; where evolution is off it says so and offers to
+    turn it on.
 
 ## Storage
 
@@ -139,7 +145,6 @@ Under the effective data directory, `skills/`:
 
 | Path | Holds |
 |---|---|
-| `settings.json` | settings above |
 | `ledger.json` | suggestions, drafts, review log, version index |
 | `evals.json` | cases and backtest runs (results bounded: 2 000 characters of output per case) |
 | `trajectories/<id>.json` | one captured, annotated window each |
@@ -150,40 +155,67 @@ All writes are atomic (temporary file + rename, mode 0600) under `withMemoryStor
 
 ## Source protocol
 
-Reads: `revision`, `overview`, `settings`, `catalog`, `skill {key}`, `versions {key}`,
+Reads: `revision`, `overview`, `catalog`, `skill {key}`, `versions {key}`,
 `version {key, id}`, `suggestions {status?}`, `suggestion {id}`, `trajectories {filter?}`,
 `trajectory {id}`, `cases {skill}`, `runs {skill}`, `run {id}`, `drafts {suggestionId? | skill}`,
-`draft {id}`, `reviews {limit?}`, `evidence-pack {suggestionId | skill}` (what a draft prompt needs).
+`draft {id}`, `reviews {sessionId?, limit?}`, `evidence-pack {suggestionId | skill}` (what a draft prompt needs).
 
-Mutations: `settings-update`, `skill-create`, `skill-save`, `skill-invocation`, `skill-delete`,
+Mutations: `skill-create`, `skill-save`, `skill-invocation`, `skill-delete`,
 `version-restore`, `suggestion-dismiss`, `suggestion-status`, `trajectory-pin`, `trajectory-delete`,
 `case-save`, `case-delete`, `cases-add`, `draft-record`, `draft-update`, `draft-adopt`,
 `draft-discard`, `run-start`, `run-progress`, `run-finish`, `review-record`.
 
 ## Page
 
-`技能管理` sits after Memory Spaces and has its own header and tabs:
+`技能管理` sits after Memory Spaces. It has four tabs, each with its own toolbar, and no settings,
+explanations or dashboards of its own: what needs the user shows as a count on its tab.
 
-- **Overview** — the evolution switch with one line on what it does, counts (skills, pending
-  suggestions, drafts to review, evidence, cases, last review), a *needs you* list (suggestions,
-  drafts, and regressions — the live version scoring below its own previous backtest) and the
-  recent review log.
-- **Skills** — searchable list grouped by root; each row has its icon, **Use** and a switch, with
-  pending-suggestion and pass-rate chips; detail with the rendered `SKILL.md`, edit, versions (with score per version and restore), its
-  eval summary, and links to its suggestions and evidence. New skill and delete live here.
-- **Market** — registries, categories and search over every enabled registry; preview, install,
-  update.
-- **Evolution** — the suggestion inbox by status; a suggestion opens with its confidence, signals,
-  rationale and cited steps; draft review shows the diff, the notes, the per-case backtest comparison
-  and guidance for a redraft; adopt, redraft, discard, dismiss.
-- **Evidence** — trajectories with their annotations: a step timeline where cited steps are marked by
-  signal, filters by skill and signal, pin, delete, and *make test cases* from selected steps.
-- **Evals** — per skill: cases (add, edit, switch off, delete, origin link), run backtest against the
-  current version or a draft, run history with a score trend across versions, per-case verdicts with
-  the judge's notes and the executor's output.
+- **技能 (Skills)** — a searchable list grouped by root with **New** beside the search; each row has
+  its icon, **Use** on hover and a switch, and a dot when an improvement waits for it. The detail shows
+  the rendered `SKILL.md` with **Use**, **Edit** and a menu (draft an improvement, delete); a waiting
+  improvement shows as one line linking to it. Invocation is one choice (both, `/` only, model only).
+  Versions and bundled files are folded sections, closed by default; *Tests* is one row with the case
+  count and last score that leads to the skill under 评测.
+- **进化 (Evolution)** — an inbox filtered as *pending* and *done*. A suggestion shows what it
+  proposes and why, with **Draft** and **Dismiss**; its evidence (the cited steps of the conversation)
+  is folded. Once drafted, the same view reviews the draft: what changed, the backtest as one line
+  (current → draft) that unfolds to per-case results, the diff, and **Adopt**, **Discard** and
+  *redraft with a note*. Where evolution is off the inbox says so with one button. Its third view,
+  *evidence*, lists the conversations reviews read, narrowed by the skills they used, each with its
+  timeline, pin, delete and *make test cases*; every suggestion's evidence and every case's origin
+  links there.
+- **评测 (Evals)** — every skill's tests: the skills with cases first, each with its last score
+  against the loaded version, then the rest, and skills a suggestion proposes that do not exist yet.
+  The chosen skill shows its cases (each with a switch) and its backtests, newest first, each opening
+  to its per-case verdicts.
+- **市场 (Market)** — search, category, registries and refresh in the toolbar; cards open a preview
+  that installs.
+
+Evidence is not a tab of its own: it exists only once self-evolution has run and is read from the
+suggestions it explains, so it stays with them. Tests are: any skill can have them, with or without
+self-evolution, and checking coverage and scores across skills is its own task.
+
+In its own sidebar entry the page is the whole view: the workbench header carries its title, refresh
+and a gear that opens its settings, and the Memory System lists it no more.
 
 Copy follows the Memory System's rules: names, states and chips; a sentence only where an action
-needs its reason. Switches apply at once; typed values wait for their Apply.
+needs its reason.
+
+## In the conversation
+
+Like the turn's memory bar, a one-line *本回合技能* bar sits under a finished turn when there is
+something to say: the skills the turn used (each opens it on the Skills tab), *复盘中* while a review of
+the window that ended with this turn is waiting or running, and *N 条建议* once it produced
+suggestions (one opens that suggestion, several open the inbox). It reads one Host snapshot per
+conversation — the skills each turn used, from the session's own events, and each review with the turn
+it followed — and polls only while a review is pending. The `hints` setting removes it.
+
+## Its own sidebar entry
+
+With `sidebar` on, 技能管理 is a DSH sidebar panel of its own, after the Memory System, with DSH's skill
+icon. The panel is the Memory System workbench focused on the Skills Source: its header is the page's
+title, refresh and settings, and links that open a skills page — from the conversation, the Status
+card, anywhere — open this panel instead. Turning it off returns the page to the Memory System.
 
 ## Using and switching a skill
 
@@ -191,8 +223,8 @@ A row in **Skills** is an icon, the name and one line of description, a **Use** 
 hover or focus, and a switch.
 
 - The switch turns the whole skill on or off: off writes both `disable-model-invocation: true` and
-  `user-invocable: false`, on removes both. The detail view keeps the two keys as separate switches,
-  and a row shows a chip when only one of them is off.
+  `user-invocable: false`, on removes both. The detail view offers the two keys as one choice — both,
+  `/` only, model only — and a row shows a chip when only one of them is off.
 - **Use** returns to the conversation with `/name ` at the start of its input, where DSH's own `/`
   gesture loads the skill when the message is sent. The page and the composer meet through one
   window event: the skills client registers an invisible member of the composer's
@@ -257,5 +289,6 @@ folder, a duplicate — are dropped when the registry is read.
 3. Host: trajectory capture and score, scheduler, review prompt/parse, task-Agent runs, assistance for
    draft, backtest, derive and review-now — with tests over fake agents.
 4. Starter wiring (patch row, dependency, rows, counts, docs, changesets).
-5. Client page (five tabs) — with jsdom tests over a real composition runner.
+5. Client page — with jsdom tests over a real composition runner; then the settings on the component
+   page, the conversation bar and the sidebar entry in dsh-mnemon's client.
 6. Verify: `pnpm verify`, then the WebUI fixture with a scripted model.

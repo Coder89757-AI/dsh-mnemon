@@ -11,6 +11,7 @@ import type { MemoryPluginEntryView } from '../host/view-protocol.ts'
 import { MnemonClient } from './api.ts'
 import { isRemoteConnection } from './remote-rpc.ts'
 import { CompositionBoard, usePageTrail, type ComponentSettingsRenderer, type LayerSettings } from './CompositionBoard.tsx'
+import { subscribeComponentPage, takeComponentPage } from './component-page-request.ts'
 import { componentCopy } from './component-copy.ts'
 import { useViewFeedback } from './view-feedback.tsx'
 import { SelectRow, ToggleRow } from './settings-controls.tsx'
@@ -86,6 +87,19 @@ export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractio
   const viewClient = useMemo(() => connection === undefined ? undefined : new MnemonClient(connection, sessionId, workspaceId), [connection, sessionId, workspaceId])
   const view = useViewStore(viewClient, dataRevision)
   const pages = usePageTrail()
+  // A page elsewhere asked for one component's settings, such as 技能管理's gear: open its page here.
+  const entries = view.state.dashboard?.entries
+  const openPage = pages.open
+  useEffect(() => {
+    if (entries === undefined || component !== undefined) return
+    const take = (): void => {
+      const requested = takeComponentPage()
+      const entry = requested === undefined ? undefined : entries.find(candidate => candidate.packageName === requested)
+      if (entry !== undefined) openPage(entry.entryId, 'configuration')
+    }
+    take()
+    return subscribeComponentPage(take)
+  }, [entries, component, openPage])
   // A layer an earlier configuration turned off comes back on through its saved switch.
   const layerSettings = useMemo<LayerSettings>(() => ({
     set: async (layerId, enabled) => {

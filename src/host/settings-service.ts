@@ -12,7 +12,7 @@ type NativeDescriptor = ReturnType<HostSettingsService['describe']>[number]
 type SettingsListener = (namespace: string, value: unknown) => void
 type Registration = {
   namespace: string
-  field?: 'conversationInteraction' | 'memoryView'
+  field?: 'conversationInteraction' | 'memoryView' | 'skills'
   legacy: boolean
   schema: (value: unknown) => unknown
   base: unknown
@@ -97,8 +97,10 @@ export class ProfileMnemonSettings implements HostSettingsService {
       if (this.closed) return
       for (const registration of this.registrations.values()) {
         if (registration.legacy) continue
+        // A change to a field another namespace owns is that namespace's alone: 技能管理's settings
+        // never rebuild the memory runtime.
         const changed = paths.some(path => registration.field === undefined
-          ? path.length === 0 || !['memoryView', 'legacySettingsImported'].includes(path[0]!)
+          ? path.length === 0 || !['memoryView', 'legacySettingsImported', 'skills'].includes(path[0]!)
           : path.length === 0 || path[0] === registration.field)
         if (!changed) continue
         const value = this.resolve(registration)
@@ -138,6 +140,7 @@ export class ProfileMnemonSettings implements HostSettingsService {
     if (this.registrations.has(namespace)) throw new Error(`Mnemon settings already registered: ${namespace}`)
     if (typeof schema !== 'function') throw new Error('Mnemon settings require a schema')
     const field = namespace === 'mnemon-ui' ? 'conversationInteraction'
+      : namespace === 'mnemon-skills' ? 'skills'
       : /^mnemon-view(?:-[a-f0-9]{16})?$/u.test(namespace) ? 'memoryView' : undefined
     const legacy = /^mnemon-plugins(?:-[a-f0-9]{16})?$/u.test(namespace)
     if (namespace !== 'mnemon' && field === undefined && !legacy) throw new Error('Unsupported Mnemon settings namespace')
@@ -164,7 +167,7 @@ export class ProfileMnemonSettings implements HostSettingsService {
   private unchanged(previous: NativeDescriptor, current: NativeDescriptor, registration: Registration, operations: SettingsOperation[]): boolean {
     const project = (value: unknown): unknown => {
       if (registration.field !== undefined) return object(value)[registration.field]
-      const { memoryView: _view, legacySettingsImported: _imported, conversationInteraction, ...core } = object(value)
+      const { memoryView: _view, legacySettingsImported: _imported, skills: _skills, conversationInteraction, ...core } = object(value)
       return operations.some(operation => operation.path[0] === 'conversationInteraction')
         ? { ...core, conversationInteraction } : core
     }

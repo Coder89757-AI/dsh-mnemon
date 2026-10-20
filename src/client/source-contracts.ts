@@ -49,4 +49,14 @@ export interface MemorySourcePageProps {
   onReturnToConversation?(): void
   /** Optional, Source-bound product preferences; no raw settings service or secrets. */
   preferences?: { value: MemoryJsonValue; writable: boolean; replace(value: MemoryJsonValue): Promise<void> }
+  /**
+   * Open this Source component's own settings, on its page under Plugins.
+   * Present while that page offers navigation.
+   */
+  onOpenSettings?(): void
+  /**
+   * The page is the whole view, as in a sidebar entry of its own: the view's
+   * header already carries its title.
+   */
+  standalone?: boolean
 }

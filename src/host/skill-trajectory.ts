@@ -1,7 +1,7 @@
 import type { TrajectoryStep, TrajectoryStats } from 'dsh-mnemon-source-skills/contracts'
 import type { HostSessionEvent } from './dsh.ts'
 import { scoreReviewActivity } from './review-activity.ts'
-import type { ReviewActivityScore } from './protocol.ts'
+import type { ReviewActivityScore, TurnSkillUse } from './protocol.ts'
 
 /** Each step keeps at most this much text; a window keeps at most this many steps. */
 export const TRAJECTORY_STEP_CHARACTERS = 600
@@ -143,6 +143,45 @@ export function captureTurn(events: readonly HostSessionEvent[], turn: number): 
   return { turn, steps, userCharacters, toolCalls, toolFailures, toolNames: [...toolNames], skills: [...skills], ...(typeof reason === 'string' ? { reason } : {}) }
 }
 
+/**
+ * The skills each turn used, read once over the whole log: the user's `/name`
+ * and the model's successful `skill` calls, each name once per turn.
+ */
+export function turnSkillUses(events: readonly HostSessionEvent[]): Array<{ turn: number; skills: TurnSkillUse[] }> {
+  const turns = new Map<number, TurnSkillUse[]>()
+  const calls = new Map<string, { turn: number; name: string }>()
+  let turn: number | undefined
+  const use = (at: number, skill: TurnSkillUse): void => {
+    const list = turns.get(at) ?? []
+    if (!list.some(existing => existing.name === skill.name)) list.push(skill)
+    turns.set(at, list)
+  }
+  for (const event of events) {
+    if (event.type === 'turn/start' && typeof event.data.turn === 'number') { turn = event.data.turn; continue }
+    if (event.type === 'turn/end') { turn = undefined; continue }
+    if (turn === undefined) continue
+    if (event.type === 'user/message') {
+      const source = record(event.data.source)
+      if (source.kind === 'skill-invocation' && typeof source.name === 'string' && source.name.trim() !== '') use(turn, { name: source.name.trim(), by: 'user' })
+      continue
+    }
+    if (event.type === 'tool/call' && event.data.name === 'skill' && typeof event.data.callId === 'string') {
+      const name = skillArgument(event.data.arguments)
+      if (name !== undefined) calls.set(event.data.callId, { turn, name })
+      continue
+    }
+    if (event.type === 'tool/result') {
+      const message = record(event.data.message)
+      const callId = typeof record(message.source).callId === 'string' ? String(record(message.source).callId) : typeof message.toolCallId === 'string' ? message.toolCallId : undefined
+      const call = callId === undefined ? undefined : calls.get(callId)
+      if (call === undefined) continue
+      calls.delete(callId!)
+      if (event.data.error === undefined && message.isError !== true) use(call.turn, { name: call.name, by: 'model' })
+    }
+  }
+  return [...turns].map(([number, skills]) => ({ turn: number, skills }))
+}
+
 /** The session's newest title, when DSH has one. */
 export function sessionTitle(events: readonly HostSessionEvent[]): string | undefined {
   for (let index = events.length - 1; index >= 0; index--) {
@@ -170,6 +209,11 @@ export class TrajectoryWindow {
 
   get size(): number {
     return this.turns.length
+  }
+
+  /** The newest turn in the window, which a review of it is placed under. */
+  get lastTurn(): number | undefined {
+    return this.turns.length === 0 ? undefined : Math.max(...this.turns.map(turn => turn.turn))
   }
 
   /** The captured turns, oldest first. */

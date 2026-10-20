@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import {
-  DEFAULT_SKILLS_SETTINGS, SKILL_ROOT_KINDS,
-  type BacktestRun, type EvalCase, type MarketInstall, type MarketRegistryFile, type ReviewLogEntry, type SkillDraft, type SkillSuggestion, type SkillVersion, type SkillsSettings, type Trajectory, type TrajectorySummary,
+import type {
+  BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, ReviewLogEntry, SkillDraft, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary,
 } from './contracts.ts'
 
 export const MAX_TRAJECTORIES = 100
@@ -66,27 +65,6 @@ export function keyDirectory(skillKey: string): string {
   return createHash('sha256').update(skillKey).digest('hex').slice(0, 16)
 }
 
-export function settingsFrom(value: unknown): SkillsSettings {
-  const input = object(value) ?? {}
-  const number = (key: keyof SkillsSettings, minimum: number, maximum: number) => {
-    const candidate = input[key]
-    return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= minimum && candidate <= maximum ? candidate : DEFAULT_SKILLS_SETTINGS[key] as number
-  }
-  const root = input.defaultRoot
-  return {
-    enabled: input.enabled === true,
-    reviewThreshold: Math.round(number('reviewThreshold', 1, 50)),
-    cooldownSeconds: Math.round(number('cooldownSeconds', 0, 86_400)),
-    idleSeconds: Math.round(number('idleSeconds', 0, 3_600)),
-    minConfidence: number('minConfidence', 0, 1),
-    expiryDays: Math.round(number('expiryDays', 1, 365)),
-    maxPendingPerSession: Math.round(number('maxPendingPerSession', 1, 50)),
-    autoBacktest: input.autoBacktest === undefined ? DEFAULT_SKILLS_SETTINGS.autoBacktest : input.autoBacktest === true,
-    casesPerRun: Math.round(number('casesPerRun', 1, 20)),
-    defaultRoot: typeof root === 'string' && (SKILL_ROOT_KINDS as readonly string[]).includes(root) ? root as SkillsSettings['defaultRoot'] : DEFAULT_SKILLS_SETTINGS.defaultRoot,
-  }
-}
-
 /**
  * The Skills Source's own files under `<dataDir>/skills`. Every file is
  * replaced atomically; callers serialize writes with the storage lock.
@@ -128,20 +106,12 @@ export class SkillsStore {
 
   /** Name, size and time of each file the revision depends on. */
   fingerprint(): string {
-    return ['settings.json', 'ledger.json', 'evals.json'].map(name => {
+    return ['ledger.json', 'evals.json'].map(name => {
       try {
         const info = statSync(this.path(name))
         return `${name}:${info.size}:${info.mtimeMs}`
       } catch { return `${name}:-` }
     }).join('|')
-  }
-
-  settings(): SkillsSettings {
-    return settingsFrom(this.readJson('settings.json'))
-  }
-
-  saveSettings(settings: SkillsSettings): void {
-    this.writeJson('settings.json', settings)
   }
 
   ledger(): LedgerFile {

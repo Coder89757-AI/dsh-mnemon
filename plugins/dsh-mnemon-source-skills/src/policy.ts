@@ -1,4 +1,4 @@
-import { EVOLUTION_SIGNALS, type EvalCase, type EvolutionSignal, type ReviewLogEntry, type ReviewRecordInput, type ReviewRecordResult, type SkillCatalog, type SkillSuggestion, type SkillsSettings, type Trajectory, type TrajectoryAnnotation, type TrajectorySummary } from './contracts.ts'
+import { DEFAULT_SKILLS_POLICY, EVOLUTION_SIGNALS, type EvalCase, type EvolutionSignal, type ReviewLogEntry, type ReviewRecordInput, type ReviewRecordResult, type SkillCatalog, type SkillSuggestion, type SkillsPolicy, type Trajectory, type TrajectoryAnnotation, type TrajectorySummary } from './contracts.ts'
 import { activeSkill } from './catalog.ts'
 import { isSkillName } from './frontmatter.ts'
 import { MAX_CASES_PER_SKILL, MAX_TRAJECTORIES, type EvalsFile, type LedgerFile } from './store.ts'
@@ -88,10 +88,23 @@ export function similarCase(cases: readonly EvalCase[], skillName: string, title
   return cases.find(entry => entry.skillName === skillName && similarity(`${entry.title}\n${entry.prompt}`, candidate) >= 0.8)
 }
 
+/** The admission rules a review asked for, each kept within its range or left at its default. */
+export function policyFrom(value: Partial<SkillsPolicy> | undefined): SkillsPolicy {
+  const pick = (key: keyof SkillsPolicy, minimum: number, maximum: number): number => {
+    const candidate = value?.[key]
+    return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= minimum && candidate <= maximum ? candidate : DEFAULT_SKILLS_POLICY[key]
+  }
+  return {
+    minConfidence: pick('minConfidence', 0, 1),
+    expiryDays: Math.round(pick('expiryDays', 1, 90)),
+    maxPendingPerSession: Math.round(pick('maxPendingPerSession', 1, 20)),
+  }
+}
+
 export interface AdmissionContext {
   ledger: LedgerFile
   evals: EvalsFile
-  settings: SkillsSettings
+  policy: SkillsPolicy
   catalog: SkillCatalog
   now: Date
   id: () => string
@@ -103,7 +116,7 @@ export interface AdmissionContext {
  * the context; returns the trajectory to persist and what happened.
  */
 export function admitReview(context: AdmissionContext, input: ReviewRecordInput): { result: ReviewRecordResult; trajectory: Trajectory; removedTrajectories: string[] } {
-  const { ledger, evals, settings, catalog, now } = context
+  const { ledger, evals, policy, catalog, now } = context
   const at = now.toISOString()
   const reviewId = context.id()
   const trajectoryId = context.id()
@@ -137,7 +150,7 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
     const confidence = Math.min(1, Math.max(0, proposal.confidence))
     const cited = steps(proposal.steps)
     const evidence = { trajectoryId, steps: cited }
-    if (confidence < settings.minConfidence) { skipped.push({ skillName: proposal.skillName, action: proposal.action, reason: 'low_confidence' }); continue }
+    if (confidence < policy.minConfidence) { skipped.push({ skillName: proposal.skillName, action: proposal.action, reason: 'low_confidence' }); continue }
     const dismissed = ledger.suggestions.find(suggestion => suggestion.skillName === proposal.skillName && suggestion.action === proposal.action
       && suggestion.status === 'dismissed' && suggestion.sourceSessionId === input.review.sessionId && now.getTime() - Date.parse(suggestion.updatedAt) < DISMISSED_COOLDOWN_MS)
     if (dismissed !== undefined) { skipped.push({ skillName: proposal.skillName, action: proposal.action, reason: 'recently_dismissed' }); continue }
@@ -177,7 +190,7 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
       status: 'pending',
       createdAt: at,
       updatedAt: at,
-      expiresAt: new Date(now.getTime() + settings.expiryDays * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(now.getTime() + policy.expiryDays * 24 * 60 * 60 * 1000).toISOString(),
     }
     ledger.suggestions.unshift(suggestion)
     touched.push(suggestion)
@@ -186,8 +199,8 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
 
   // At most N pending per session: the least confident, then the oldest, expire first.
   const pending = ledger.suggestions.filter(suggestion => suggestion.status === 'pending' && suggestion.sourceSessionId === input.review.sessionId)
-  if (pending.length > settings.maxPendingPerSession) {
-    const excess = [...pending].sort((a, b) => a.confidence - b.confidence || Date.parse(a.createdAt) - Date.parse(b.createdAt)).slice(0, pending.length - settings.maxPendingPerSession)
+  if (pending.length > policy.maxPendingPerSession) {
+    const excess = [...pending].sort((a, b) => a.confidence - b.confidence || Date.parse(a.createdAt) - Date.parse(b.createdAt)).slice(0, pending.length - policy.maxPendingPerSession)
     for (const suggestion of excess) { suggestion.status = 'expired'; suggestion.updatedAt = at }
   }
 
@@ -243,10 +256,11 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
     suggestions: inserted + updated,
     cases: casesAdded,
     trajectoryId,
+    ...(touched.length === 0 ? {} : { suggestionIds: touched.map(suggestion => suggestion.id) }),
   }
   ledger.reviews.unshift(log)
   const removedTrajectories = boundedTrajectories(ledger, evals)
-  return { result: { reviewId, trajectoryId, inserted, updated, casesAdded, skipped }, trajectory, removedTrajectories }
+  return { result: { reviewId, trajectoryId, suggestionIds: touched.map(suggestion => suggestion.id), inserted, updated, casesAdded, skipped }, trajectory, removedTrajectories }
 }
 
 export function trajectorySummary(trajectory: Trajectory): TrajectorySummary {

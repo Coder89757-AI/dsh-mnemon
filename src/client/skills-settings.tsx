@@ -1,0 +1,88 @@
+import type { JSX } from 'react'
+import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DEFAULT_SKILLS_CONFIG, type ClientSettingsScope, type ResolvedSkillsConfig, type SkillsConfig, type SettingsOperation } from '../host/protocol.ts'
+import type { MemoryComponentSettingsProps } from './component-ui.tsx'
+import type { MnemonTranslate } from './locales.ts'
+import css from './MnemonSettingsCard.module.css'
+import { ToggleRow } from './settings-controls.tsx'
+import { PanelActions, useLive, useScope, useStaged, WriteFailure } from './settings-panel.tsx'
+
+/** The package 技能管理 ships as; its page under Plugins carries these settings. */
+export const SKILLS_PACKAGE = 'dsh-mnemon-source-skills'
+
+/** 技能管理's settings as stored, every missing key at its default. */
+export function resolvedSkills(value: SkillsConfig | undefined): ResolvedSkillsConfig {
+  return { ...DEFAULT_SKILLS_CONFIG, ...value }
+}
+
+type Parameter = 'reviewThreshold' | 'idleSeconds' | 'cooldownSeconds' | 'minConfidence' | 'expiryDays' | 'maxPendingPerSession' | 'casesPerRun'
+
+/** The review parameters, with the ranges the Host accepts. */
+const PARAMETERS: ReadonlyArray<{ key: Parameter; min: number; max: number; integer: boolean }> = [
+  { key: 'reviewThreshold', min: 1, max: 50, integer: true },
+  { key: 'idleSeconds', min: 0, max: 3_600, integer: true },
+  { key: 'cooldownSeconds', min: 0, max: 86_400, integer: true },
+  { key: 'minConfidence', min: 0, max: 1, integer: false },
+  { key: 'expiryDays', min: 1, max: 90, integer: true },
+  { key: 'maxPendingPerSession', min: 1, max: 20, integer: true },
+  { key: 'casesPerRun', min: 1, max: 20, integer: true },
+]
+
+/** The value a parameter stores, or undefined when the Host would refuse it. */
+function parameterValue(field: typeof PARAMETERS[number], text: string): number | undefined {
+  if (text.trim() === '') return undefined
+  const value = Number(text)
+  if (!Number.isFinite(value) || value < field.min || value > field.max) return undefined
+  return field.integer && !Number.isInteger(value) ? undefined : value
+}
+
+const parametersOf = (settings: ResolvedSkillsConfig): Record<Parameter, string> =>
+  Object.fromEntries(PARAMETERS.map(field => [field.key, String(settings[field.key])])) as Record<Parameter, string>
+
+function set(key: keyof ResolvedSkillsConfig, value: boolean | number): SettingsOperation {
+  return { op: 'set', path: [key], value }
+}
+
+/**
+ * 技能管理's settings on its page under Plugins. Switches apply at once; the
+ * review parameters wait, folded, for their own Apply. Evolution's own
+ * switches show only while it is on.
+ */
+export function SkillsSettings(props: { scope: ClientSettingsScope<SkillsConfig>; page: MemoryComponentSettingsProps; t: MnemonTranslate }): JSX.Element {
+  const { scope, page, t } = props
+  const snapshot = useScope(scope)
+  const saved = resolvedSkills(snapshot.value)
+  const write = (key: keyof ResolvedSkillsConfig) => async (value: boolean): Promise<void> => { await scope.mutate([set(key, value)]) }
+  const evolution = useLive(saved.evolution, write('evolution'))
+  const autoBacktest = useLive(saved.autoBacktest, write('autoBacktest'))
+  const hints = useLive(saved.hints, write('hints'))
+  const sidebar = useLive(saved.sidebar, write('sidebar'))
+  const parameters = useStaged(parametersOf(saved), async draft => {
+    const changed = PARAMETERS.filter(field => parameterValue(field, draft[field.key]) !== saved[field.key])
+    if (changed.length > 0) await scope.mutate(changed.map(field => set(field.key, parameterValue(field, draft[field.key])!)))
+  })
+  const disabled = !page.writable || snapshot.status === 'loading' || !snapshot.writable
+  const invalid = PARAMETERS.find(field => parameterValue(field, parameters.draft[field.key]) === undefined)
+  return <section className={css.panelSection} aria-label={t('skills.label')}>
+    <div className={css.rows}>
+      <ToggleRow id="mnemon-skills-evolution" label={t('skills.evolution')} hint={t('skills.evolutionHint')} checked={evolution.value} disabled={disabled} onChange={evolution.set} />
+      {evolution.value && <ToggleRow id="mnemon-skills-backtest" label={t('skills.autoBacktest')} hint={t('skills.autoBacktestHint')} checked={autoBacktest.value} disabled={disabled} onChange={autoBacktest.set} />}
+      {evolution.value && <details className={css.advanced}>
+        <summary>{t('skills.parameters')}<IconChevronDownOutlineRegular size={12} /></summary>
+        <div className={css.fieldGrid}>
+          {PARAMETERS.map(field => <label key={field.key}>{t(`skills.${field.key}`)}
+            <input type="number" step={field.integer ? 1 : 0.05} inputMode={field.integer ? 'numeric' : 'decimal'} value={parameters.draft[field.key]} disabled={disabled}
+              aria-invalid={parameterValue(field, parameters.draft[field.key]) === undefined}
+              onChange={event => parameters.edit({ [field.key]: event.target.value })} />
+          </label>)}
+        </div>
+        <PanelActions dirty={parameters.dirty} saving={parameters.saving} applied={parameters.applied} failed={parameters.failed} disabled={disabled} t={t}
+          invalid={invalid === undefined ? null : t('skills.invalid', { field: t(`skills.${invalid.key}`), min: invalid.min, max: invalid.max })}
+          onDiscard={parameters.discard} onApply={() => { void parameters.apply() }} />
+      </details>}
+      <ToggleRow id="mnemon-skills-hints" label={t('skills.hints')} hint={t('skills.hintsHint')} checked={hints.value} disabled={disabled} onChange={hints.set} />
+      <ToggleRow id="mnemon-skills-sidebar" label={t('skills.sidebar')} hint={t('skills.sidebarHint')} checked={sidebar.value} disabled={disabled} onChange={sidebar.set} />
+    </div>
+    <WriteFailure error={evolution.failed ?? autoBacktest.failed ?? hints.failed ?? sidebar.failed} t={t} />
+  </section>
+}

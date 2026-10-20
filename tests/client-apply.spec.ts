@@ -181,9 +181,10 @@ describe('Mnemon Web client composition', () => {
     expect(reads()).toBe(before)
     revision = 7
     for (const listener of listeners) listener()
-    await vi.waitFor(() => expect(reads()).toBe(before + 2))
+    await vi.waitFor(() => expect(reads()).toBe(before + 3))
     expect(context.connection.rpc.call).toHaveBeenCalledWith('/dsh-mnemon-settings', 'get', { namespace: 'mnemon' }, expect.anything())
     expect(context.connection.rpc.call).toHaveBeenCalledWith('/dsh-mnemon-settings', 'get', { namespace: 'mnemon-ui' }, expect.anything())
+    expect(context.connection.rpc.call).toHaveBeenCalledWith('/dsh-mnemon-settings', 'get', { namespace: 'mnemon-skills' }, expect.anything())
   })
 
   it.each([undefined, 'sidebar'])('keeps one complete Sidebar for displayMode=%s with live visibility', async displayMode => {

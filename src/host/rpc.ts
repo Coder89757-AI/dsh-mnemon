@@ -10,7 +10,7 @@ import type { MemoryCapability, MemoryJsonValue, MemoryOperationScope, MemorySou
 import type { CreateMemorySpaceRequest, Insight, MemorySpaceCatalog, PreparedMemoryPlacement, RememberRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { RuntimeMemoryMutation } from 'dsh-mnemon-source-runtime/contracts'
 import type { DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
-import { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL, type MemoryCompositionStatus, type MnemonPackComponent, type MnemonPackImportMode } from './protocol.ts'
+import { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL, type MemoryCompositionStatus, type MnemonPackComponent, type MnemonPackImportMode, type SkillsStatusSummary } from './protocol.ts'
 import { MNEMON_PACK_COMPONENTS } from './protocol.ts'
 import { applyReconcileOperations, selectReconcileOperations, sourceApplier, type MnemonReconcileSessions } from './reconcile.ts'
 export { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL } from './protocol.ts'
@@ -327,6 +327,14 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
           // Every Memory System page reads this status, so each one can say what a restart would load.
           let restartPending
           try { restartPending = versions?.restartStatus() } catch { /* The reminder is optional; the status is not. */ }
+          // 技能管理's card: how many skills there are and what waits for the user.
+          let skills: SkillsStatusSummary | undefined
+          if (composition.sources.some(source => source.sourceTypeId === 'skills')) {
+            try {
+              const overview = await runtime.source('skills').read<{ counts: { skills: number; pending: number; drafts: number } }>('overview', null, signal)
+              skills = { evolution: lifecycle?.skills?.config().evolution ?? false, skills: overview.counts.skills, waiting: overview.counts.pending + overview.counts.drafts }
+            } catch { /* The card falls back to its own note. */ }
+          }
           const hasSpaces = composition.sources.some(source => source.sourceTypeId === 'memory-spaces')
           const status = hasSpaces ? await runtime.source('memory-spaces').read<Record<string, unknown>>(endpoint, payload, signal) : {
             healthy: composition.evaluation.state === 'ready', commandFound: false, cliPath: runtime.graph.config.cliPath ?? '',
@@ -339,6 +347,7 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
             ...(restartPending === undefined ? {} : { restartPending }),
             ...(lifecycle === undefined ? {} : { lifecycle: lifecycle.snapshot(runtime.scope.sessionId, isWorkspaceStorageScope(runtime.graph.config.storageScope) ? runtime.scope.workspaceId : undefined) }),
             ...(documents === undefined ? {} : { documents }),
+            ...(skills === undefined ? {} : { skills }),
             memorySystem: composition,
             storage: runtime.graph.storage.catalog(runtime.scope.workspaceId),
             workspaceContext: {
@@ -357,6 +366,9 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
           const snapshot = lifecycle.turnActivities(String(payload.sessionId ?? ''))
           return success(endpoint === 'turn-activities' ? snapshot : snapshot.activities.find(activity => activity.turn === Number(payload.turn)) ?? null)
         }
+        case 'skill-activity':
+          if (lifecycle === undefined) throw new Error('Mnemon skill activity is unavailable')
+          return success(await lifecycle.skillActivity(String(payload.sessionId ?? '')))
         case 'assistant-message':
           if (lifecycle === undefined) throw new Error('Mnemon assistant message is unavailable')
           return success(lifecycle.assistantMessage(String(payload.sessionId ?? ''), String(payload.messageId ?? '')))

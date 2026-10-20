@@ -6,12 +6,12 @@ import {
   SKILL_ROOT_KINDS,
   type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView,
   type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
-  type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type SkillsSettings, type Trajectory, type TrajectorySummary,
+  type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary,
 } from './contracts.ts'
 import { activeSkill, catalogFingerprint, findSkill, readCatalog, readSkillDocument, rootPath, sha256, type SkillRootOptions } from './catalog.ts'
 import { isSkillName, skillTemplate, validateSkillContent, withInvocation } from './frontmatter.ts'
-import { admitReview, expireSuggestions, OPEN_STATUSES, similarCase, trajectorySummary } from './policy.ts'
-import { MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, settingsFrom, SkillsStore, type EvalsFile, type LedgerFile, type RegistryRecord } from './store.ts'
+import { admitReview, expireSuggestions, OPEN_STATUSES, policyFrom, similarCase, trajectorySummary } from './policy.ts'
+import { MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, SkillsStore, type EvalsFile, type LedgerFile, type RegistryRecord } from './store.ts'
 import {
   bundledOfficialRegistry, defaultFetcher, fetchSkillDocument, fetchSkillFiles, listSkillFiles, loadRegistry, OFFICIAL_REGISTRY_ID, OFFICIAL_REGISTRY_URL,
   REGISTRY_REFRESH_MS, registryId, type Fetcher, type SkillFile,
@@ -43,6 +43,9 @@ function writeFileAtomic(path: string, content: string): void {
     renameSync(temporary, path)
   } finally { rmSync(temporary, { force: true }) }
 }
+
+/** Where a new skill goes when nothing says otherwise: the user's own DSH skills. */
+const DEFAULT_ROOT: SkillRootKind = 'user-dsh'
 
 function staleRun(run: BacktestRun, now: number): BacktestRun {
   return run.status === 'running' && now - Date.parse(run.startedAt) > RUN_STALE_MS ? { ...run, status: 'interrupted' } : run
@@ -88,10 +91,6 @@ export class SkillsService {
     return readCatalog(this.options(workspace))
   }
 
-  settings(): SkillsSettings {
-    return this.store.settings()
-  }
-
   // ---- reads ---------------------------------------------------------------
 
   catalogView(workspace: string | undefined): CatalogView {
@@ -135,10 +134,10 @@ export class SkillsService {
     }
     attention.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
     return {
-      settings: this.store.settings(),
       counts: {
         skills: new Set(catalog.skills.map(skill => skill.name)).size,
         pending: ledger.suggestions.filter(suggestion => suggestion.status === 'pending').length,
+        drafting: ledger.suggestions.filter(suggestion => suggestion.status === 'drafting').length,
         drafts: ledger.drafts.filter(draft => draft.status === 'ready').length,
         trajectories: ledger.trajectories.length,
         cases: evals.cases.filter(entry => entry.enabled).length,
@@ -232,8 +231,9 @@ export class SkillsService {
     return { draft, ...(base === undefined ? {} : { base: readSkillDocument(base) }), runs: draft.runIds.flatMap(id => { const run = this.store.evals().runs.find(candidate => candidate.id === id); return run === undefined ? [] : [staleRun(run, now)] }) }
   }
 
-  reviews(limit = 50): LedgerFile['reviews'] {
-    return this.store.ledger().reviews.slice(0, Math.max(1, Math.min(200, limit)))
+  reviews(filter: { sessionId?: string; limit?: number } = {}): LedgerFile['reviews'] {
+    const reviews = this.store.ledger().reviews
+    return (filter.sessionId === undefined ? reviews : reviews.filter(review => review.sessionId === filter.sessionId)).slice(0, Math.max(1, Math.min(200, filter.limit ?? 50)))
   }
 
   /** What a draft or a case derivation needs, gathered once. */
@@ -279,15 +279,6 @@ export class SkillsService {
 
   // ---- writes --------------------------------------------------------------
 
-  updateSettings(patch: Record<string, unknown>): Promise<SkillsSettings> {
-    return this.write(() => {
-      const next = settingsFrom({ ...this.store.settings(), ...patch })
-      this.store.saveSettings(next)
-      this.touch()
-      return next
-    })
-  }
-
   /** Bump the ledger generation, so the revision moves with every write. */
   private touch(): void {
     this.store.saveLedger(this.store.ledger())
@@ -328,7 +319,7 @@ export class SkillsService {
     return this.write(() => {
       if (!isSkillName(input.name)) throw new Error('a skill name uses lowercase letters, digits and single hyphens (max 64)')
       const catalog = this.catalog(workspace)
-      const root = input.root ?? this.store.settings().defaultRoot
+      const root = input.root ?? DEFAULT_ROOT
       if (!SKILL_ROOT_KINDS.includes(root)) throw new Error('unknown skill root: ' + root)
       const directory = join(rootPath(catalog, root), input.name)
       if (catalog.skills.some(skill => skill.root === root && skill.name === input.name) || existsSync(directory) || existsSync(directory + '.md')) throw new Error(`${input.name} already exists in this root`)
@@ -555,7 +546,7 @@ export class SkillsService {
         ...(input.suggestionId === undefined ? {} : { suggestionId: input.suggestionId }),
         skillName: input.skillName,
         action: loaded === undefined ? 'create' : 'update',
-        ...(loaded === undefined ? { targetRoot: input.targetRoot ?? this.store.settings().defaultRoot } : { baseKey: loaded.key, baseHash: loaded.hash }),
+        ...(loaded === undefined ? { targetRoot: input.targetRoot ?? DEFAULT_ROOT } : { baseKey: loaded.key, baseHash: loaded.hash }),
         content: input.content,
         notes: clip(input.notes, 2_000),
         changes: input.changes.map(change => clip(change, 300)).filter(Boolean).slice(0, 12),
@@ -585,7 +576,8 @@ export class SkillsService {
     })
   }
 
-  adoptDraft(workspace: string | undefined, id: string): Promise<{ skill: SkillSummary; version: SkillVersion }> {
+  /** Adopt a draft; a new skill goes to `root` when given, else where the draft was meant to go. */
+  adoptDraft(workspace: string | undefined, id: string, input: { root?: SkillRootKind } = {}): Promise<{ skill: SkillSummary; version: SkillVersion }> {
     return this.write(() => {
       const ledger = this.store.ledger()
       const draft = ledger.drafts.find(candidate => candidate.id === id)
@@ -601,7 +593,7 @@ export class SkillsService {
         writeFileAtomic(base.path, draft.content)
         key = base.key
       } else {
-        const root = draft.targetRoot ?? this.store.settings().defaultRoot
+        const root = input.root ?? draft.targetRoot ?? DEFAULT_ROOT
         if (activeSkill(catalog, draft.skillName) !== undefined) throw new Error(`${draft.skillName} exists now; draft it again as an update`)
         const directory = join(rootPath(catalog, root), draft.skillName)
         if (existsSync(directory) || existsSync(directory + '.md')) throw new Error(`${draft.skillName} already exists in this root`)
@@ -731,7 +723,7 @@ export class SkillsService {
       const ledger = this.store.ledger()
       const evals: EvalsFile = this.store.evals()
       const { result, trajectory, removedTrajectories } = admitReview({
-        ledger, evals, settings: this.store.settings(), catalog: this.catalog(workspace), now: this.clock(), id: randomUUID,
+        ledger, evals, policy: policyFrom(input.policy), catalog: this.catalog(workspace), now: this.clock(), id: randomUUID,
       }, input)
       this.store.saveTrajectory(trajectory)
       for (const id of removedTrajectories) this.store.deleteTrajectory(id)
@@ -895,7 +887,7 @@ export class SkillsService {
       if (existing !== undefined && existing.hash !== install!.hash && input.overwrite !== true) {
         throw new Error(`${entry.name} was edited after it was installed; confirm to replace your changes`)
       }
-      const root = existing?.root ?? input.root ?? this.store.settings().defaultRoot
+      const root = existing?.root ?? input.root ?? DEFAULT_ROOT
       const target = existing === undefined ? join(rootPath(catalog, root), entry.name) : existing.layout === 'bundle' ? dirname(existing.path) : existing.path
       if (existing === undefined && (existsSync(target) || existsSync(target + '.md'))) throw new Error(`${entry.name} already exists in this root`)
       const staged = stageFiles(this.store.stagingDirectory(), files)

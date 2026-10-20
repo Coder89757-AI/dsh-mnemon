@@ -27,8 +27,8 @@ describe('Skills Source', () => {
         input: { key: 'user-dsh:pdf', modelInvocable: false, userInvocable: true, expectedHash: skill.hash } })
       expect(toggled.value).toMatchObject({ invocation: { modelInvocable: false, userInvocable: true } })
       expect(toggled.revision).not.toBe(catalog.revision)
-      const settings = await runner.executeManagement({ ...base, mode: 'mutate', operation: 'settings-update', confirmed: true, expectedRevision: toggled.revision, input: { patch: { enabled: true, minConfidence: 2 } } })
-      expect(settings.value).toMatchObject({ enabled: true, minConfidence: 0.6 })
+      // Settings are the Host's: the Source has none of its own to change.
+      await expect(runner.executeManagement({ ...base, mode: 'mutate', operation: 'settings-update', confirmed: true, expectedRevision: toggled.revision, input: { patch: { minConfidence: 0.9 } } })).rejects.toThrow()
       await expect(runner.executeManagement({ ...base, mode: 'read', operation: 'nope', input: null })).rejects.toThrow('unsupported Skills read operation')
       const turn = await runner.beginTurn({ scope: base.scope })
       try {

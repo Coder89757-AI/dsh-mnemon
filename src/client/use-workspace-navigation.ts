@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import type { JsonValue, MemorySourceManagementCatalog, MemorySourceManagementInstance } from '../host/protocol.ts'
 import type { MemoryViewDashboard } from '../host/view-protocol.ts'
-import { consumeMnemonAnchor, subscribeMnemonAnchor, type MnemonAnchor } from './anchor.ts'
+import { consumeMnemonAnchor, subscribeMnemonAnchor, type MnemonAnchor, type MnemonAnchorFilter } from './anchor.ts'
 import { sourceOf } from './component-model.ts'
 import type { MnemonToast } from './feedback.tsx'
 import { useT } from './page-kit.tsx'
@@ -69,6 +69,10 @@ export function useWorkspaceNavigation(options: {
   dashboard: MemoryViewDashboard | null
   sourceName: (sourceTypeId: string, fallback?: string) => string
   showWorkspaceToast: (toast: MnemonToast) => void
+  /** The pages anchors may open here; another view owns the rest. */
+  accepts?: MnemonAnchorFilter
+  /** The page this view shows when none is chosen, instead of Status. */
+  home?: Page
 }): {
   page: Page
   /** What an anchor carried into the page it opened, until a tab or another view context replaces it. */
@@ -76,9 +80,11 @@ export function useWorkspaceNavigation(options: {
   openTab: (next: Page) => void
   sourceNavigationEntries: SourceNavigationEntry[]
 } {
-  const { sessionId, viewContextKey, resetViewportScroll, sourceCatalog, sourcePageEntries, visibleSourcePages, managedSourceTypes, stoppedTypes, dashboard, sourceName, showWorkspaceToast } = options
+  const { sessionId, viewContextKey, resetViewportScroll, sourceCatalog, sourcePageEntries, visibleSourcePages, managedSourceTypes, stoppedTypes, dashboard, sourceName, showWorkspaceToast, accepts, home = 'status' } = options
   const t = useT()
-  const [page, setPage] = useState<Page>('status')
+  const [page, setPage] = useState<Page>(home)
+  // A view with a home of its own goes there once its page is known, and stays.
+  useEffect(() => { if (page === 'status' && home !== 'status') setPage(home) }, [home, page])
 
   const selectPage = useCallback((next: Page) => setPage(next), [])
 
@@ -133,7 +139,7 @@ export function useWorkspaceNavigation(options: {
     const entryId = sourcePageEntryId(page)
     const managedTypeId = managedSourceTypeId(page)
     const stoppedTypeId = stoppedSourceTypeId(page)
-    const whileStopped = (sourceTypeId: string | undefined): Page => sourceTypeId !== undefined && stoppedTypes.has(sourceTypeId) ? stoppedSourcePage(sourceTypeId) : 'status'
+    const whileStopped = (sourceTypeId: string | undefined): Page => sourceTypeId !== undefined && stoppedTypes.has(sourceTypeId) ? stoppedSourcePage(sourceTypeId) : home
     if (entryId !== undefined && !visibleSourcePages.some(entry => entry.id === entryId)) {
       setPage(whileStopped(sourcePageEntries.find(entry => entry.id === entryId)?.sourceTypeId))
     } else if (managedTypeId !== undefined && !managedSourceTypes.some(([sourceTypeId]) => sourceTypeId === managedTypeId)) {
@@ -141,10 +147,10 @@ export function useWorkspaceNavigation(options: {
     } else if (stoppedTypeId !== undefined && !stoppedTypes.has(stoppedTypeId)) {
       const resumed = visibleSourcePages.find(entry => entry.sourceTypeId === stoppedTypeId && (entry.navigation?.primary ?? true))
       setPage(resumed !== undefined ? sourcePage(resumed.id)
-        : managedSourceTypes.some(([sourceTypeId]) => sourceTypeId === stoppedTypeId) ? managedSourcePage(stoppedTypeId) : 'status')
+        : managedSourceTypes.some(([sourceTypeId]) => sourceTypeId === stoppedTypeId) ? managedSourcePage(stoppedTypeId) : home)
       showWorkspaceToast({ text: t('feedback.layerResumed', { layer: sourceName(stoppedTypeId, resumed?.label) }), tone: 'success' })
     }
-  }, [managedSourceTypes, page, sourcePageEntries, stoppedTypes, visibleSourcePages, sourceCatalog, showWorkspaceToast, sourceName, t])
+  }, [managedSourceTypes, page, sourcePageEntries, stoppedTypes, visibleSourcePages, sourceCatalog, showWorkspaceToast, sourceName, t, home])
 
   useLayoutEffect(() => { setNavigationInput(undefined) }, [viewContextKey])
 
@@ -154,9 +160,9 @@ export function useWorkspaceNavigation(options: {
     selectPage(anchor.page === 'status' ? 'status' : sourcePage(anchor.page))
   }, [selectPage])
   useEffect(() => {
-    const held = consumeMnemonAnchor(sessionId)
+    const held = consumeMnemonAnchor(sessionId, accepts)
     if (held !== null) applyAnchor(held)
-    return subscribeMnemonAnchor(sessionId, applyAnchor)
-  }, [sessionId, applyAnchor])
+    return subscribeMnemonAnchor(sessionId, applyAnchor, accepts)
+  }, [sessionId, applyAnchor, accepts])
   return { page, navigationInput, openTab, sourceNavigationEntries }
 }

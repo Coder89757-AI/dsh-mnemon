@@ -24,7 +24,7 @@ import { modelMemoryWake } from './view-presentation.ts'
 import { strategyDrives, viewStrategy } from './strategy-workflows.ts'
 import { mainStrategyTypeId } from './main-strategy.ts'
 import { AgentMemoryTurn, openAgentTurn, type DelegatedMemoryView } from './agent-memory-turn.ts'
-import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, SupervisedWritebackResult, TaskAgentModelCatalog } from "./protocol.ts"
+import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, SkillActivitySnapshot, SupervisedWritebackResult, TaskAgentModelCatalog } from "./protocol.ts"
 import type { PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { MemoryWake } from "../core/contracts/index.ts"
 import { agentScope, type MnemonAgentRuntimeSource } from './runtime.ts'
@@ -638,6 +638,26 @@ export class MnemonLifecycle {
   /** Model work for skill evolution under a fresh task Agent, outside any conversation. */
   runSkillTask<T>(workspaceRoot: string | undefined, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>): Promise<T> {
     return this.runTaskAgent('', workspaceRoot, signal, operation)
+  }
+
+  /**
+   * What one conversation did with skills, for the bars under its turns. A
+   * conversation reopened from history has no live Agent until it continues,
+   * so its stored log answers instead, read through DSH without making it live.
+   */
+  async skillActivity(sessionId: string): Promise<SkillActivitySnapshot> {
+    const id = sessionId.trim()
+    const unavailable: SkillActivitySnapshot = { available: false, turns: [], reviews: [] }
+    if (id === '' || this.skillEvolution === undefined) return unavailable
+    const agent = this.ctx.agents.get(id)
+    if (agent !== undefined) return this.skillEvolution.activity(agent)
+    const query = this.ctx.get('sessionQuery') as { readSession(sessionId: string): Promise<{ session: HostAgent['session']['header']; events: HostSessionEvent[] }> } | undefined
+    if (query === undefined) return unavailable
+    let log
+    try { log = await query.readSession(id) } catch { return unavailable }
+    // The Skills Source resolves through the conversation's own workspace, as it does for a live Agent.
+    const stored = { id, session: { header: log.session } } as unknown as HostAgent
+    return this.skillEvolution.activity(stored, log.events)
   }
 
   /** Review a live conversation's skills now, whatever its score. */

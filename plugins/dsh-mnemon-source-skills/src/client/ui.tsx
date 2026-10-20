@@ -1,30 +1,36 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
-import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
-import { installMemorySourceUI, MemorySourcePageFrame, PageHeader, type MemorySourcePageProps } from 'dsh-mnemon/client'
+import { installMemorySourceUI, MemorySourcePageFrame, PageHeader, Reveal, type MemorySourcePageProps } from 'dsh-mnemon/client'
 import type { SkillsOverview } from '../contracts.ts'
 import { skillsPageClient, type SkillsPageClient } from './api.ts'
 import { EvalsPage } from './evals-page.tsx'
-import { EvidencePage } from './evidence-page.tsx'
 import { EvolutionPage } from './evolution-page.tsx'
 import { MarketPage } from './market-page.tsx'
-import { OverviewPage } from './overview-page.tsx'
 import { css, errorText, sidebarCss, translate, useT } from './presentation.ts'
 import { SkillsPage } from './skills-page.tsx'
 import { installSkillUseBridge, requestSkillUse } from './use-skill.tsx'
 
-export type SkillsTab = 'overview' | 'skills' | 'market' | 'evolution' | 'evidence' | 'evals'
+export type SkillsTab = 'skills' | 'evolution' | 'evals' | 'market'
+/** What 进化 lists: suggestions still waiting, those handled, or the conversations reviews read. */
+export type EvolutionFilter = 'pending' | 'done' | 'evidence'
 
 /** Where a link inside the page points: a tab, and what to select there. */
 export interface SkillsLocation {
   tab: SkillsTab
   skillKey?: string
+  /** A skill by name: the one DSH loads, its first waiting suggestion, or its tests. */
+  skillName?: string
   suggestionId?: string
   draftId?: string
   trajectoryId?: string
   steps?: number[]
-  evalSkill?: string
-  runId?: string
+  filter?: EvolutionFilter
   nonce?: number
+}
+
+/** Self-evolution as the page knows it from its settings: on or off, and turning it on from here. */
+export interface EvolutionState {
+  on: boolean
+  enable?: () => Promise<void>
 }
 
 export interface SkillsPageContext {
@@ -38,38 +44,50 @@ export interface SkillsPageContext {
   fail(error: unknown): void
   /** Put `/name` into the conversation's input and go back to it. */
   useSkill(name: string): void
+  /** Unknown where the page has no settings to read. */
+  evolution: EvolutionState | undefined
+  /** Open 技能管理's settings under Plugins. */
+  openSettings?: () => void
+  sessionId?: string
 }
 
-const TABS: readonly SkillsTab[] = ['overview', 'skills', 'market', 'evolution', 'evidence', 'evals']
+const TABS: readonly SkillsTab[] = ['skills', 'evolution', 'evals', 'market']
 const POLL_MS = 3_000
+const NOTICE_MS = 5_000
+const FILTERS: readonly EvolutionFilter[] = ['pending', 'done', 'evidence']
 
-/** `skill:<key>`, `suggestion:<id>`, `draft:<id>`, `trajectory:<id>` or `evals:<skill>` from a link elsewhere. */
+/**
+ * `skill:<key>`, `name:<skill>`, `suggestion:<id>`, `draft:<id>`,
+ * `trajectory:<id>`, `evals:<skill>` or `evolution:<filter>` from a link
+ * elsewhere, such as the skills line under a turn.
+ */
 function seedLocation(input: MemorySourcePageProps['navigationInput']): SkillsLocation | undefined {
   if (typeof input !== 'object' || input === null || Array.isArray(input) || typeof input.seed !== 'string') return undefined
   const nonce = typeof input.nonce === 'number' ? input.nonce : Date.now()
   const [kind, ...rest] = input.seed.split(':')
   const value = rest.join(':')
+  if (kind === 'evolution') return { tab: 'evolution', filter: (FILTERS as readonly string[]).includes(value) ? value as EvolutionFilter : 'pending', nonce }
+  if (kind === 'evals') return { tab: 'evals', ...(value === '' ? {} : { skillName: value }), nonce }
   if (value === '') return undefined
   if (kind === 'skill') return { tab: 'skills', skillKey: value, nonce }
+  if (kind === 'name') return { tab: 'skills', skillName: value, nonce }
   if (kind === 'suggestion') return { tab: 'evolution', suggestionId: value, nonce }
   if (kind === 'draft') return { tab: 'evolution', draftId: value, nonce }
-  if (kind === 'trajectory') return { tab: 'evidence', trajectoryId: value, nonce }
-  if (kind === 'evals') return { tab: 'evals', evalSkill: value, nonce }
+  if (kind === 'trajectory') return { tab: 'evolution', filter: 'evidence', trajectoryId: value, nonce }
   return undefined
 }
 
-const remembered = new WeakMap<object, SkillsTab>()
+/** The tab the page showed last, while the client runs: reopening the page lands there again. */
+let rememberedTab: SkillsTab = 'skills'
 
 function SkillsView(props: MemorySourcePageProps & { management: NonNullable<MemorySourcePageProps['management']> }): JSX.Element {
   const t = useT()
   const client = useMemo(() => skillsPageClient(props.management), [props.management])
-  const [location, setLocation] = useState<SkillsLocation>(() => seedLocation(props.navigationInput) ?? { tab: remembered.get(props.management) ?? 'overview' })
+  const [location, setLocation] = useState<SkillsLocation>(() => seedLocation(props.navigationInput) ?? { tab: rememberedTab })
   const [revision, setRevision] = useState(0)
   const [overview, setOverview] = useState<SkillsOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [switching, setSwitching] = useState(false)
-  const [reviewing, setReviewing] = useState(false)
   const refresh = useCallback(() => setRevision(value => value + 1), [])
   const refreshKey = useRef(props.refreshKey)
   useEffect(() => {
@@ -81,26 +99,31 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
     const seeded = seedLocation(props.navigationInput)
     if (seeded !== undefined) setLocation(seeded)
   }, [props.navigationInput])
-  useEffect(() => { remembered.set(props.management, location.tab) }, [props.management, location.tab])
+  useEffect(() => { rememberedTab = location.tab }, [location.tab])
   useLayoutEffect(() => { props.onResetScroll?.() }, [location.tab, props.onResetScroll])
   useEffect(() => {
     let active = true
-    void client.overview().then(value => { if (active) { setOverview(value); setError(null) } }).catch(reason => { if (active) setError(errorText(reason)) })
+    void client.overview().then(value => { if (active) setOverview(value) }).catch(reason => { if (active) setError(errorText(reason)) })
     return () => { active = false }
   }, [client, revision])
-  // Background reviews, drafts and backtests finish on their own; follow them while one is running.
-  const busy = overview !== null && overview.counts.runsRunning > 0
-  const [drafting, setDrafting] = useState(false)
+  // Drafts and backtests finish in the background; follow them while one is under way.
+  const busy = overview !== null && (overview.counts.runsRunning > 0 || overview.counts.drafting > 0)
   useEffect(() => {
-    let active = true
-    void client.suggestions(['drafting']).then(list => { if (active) setDrafting(list.length > 0) }).catch(() => undefined)
-    return () => { active = false }
-  }, [client, revision])
-  useEffect(() => {
-    if (!busy && !drafting) return
+    if (!busy) return
     const timer = setInterval(refresh, POLL_MS)
     return () => clearInterval(timer)
-  }, [busy, drafting, refresh])
+  }, [busy, refresh])
+  useEffect(() => {
+    if (notice === null) return
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
+  const preferences = props.preferences
+  const evolution = useMemo<EvolutionState | undefined>(() => {
+    const value = preferences?.value
+    if (typeof value !== 'object' || value === null || Array.isArray(value) || typeof value.evolution !== 'boolean') return undefined
+    return { on: value.evolution, ...(preferences!.writable ? { enable: () => preferences!.replace({ evolution: true }) } : {}) }
+  }, [preferences])
 
   const context: SkillsPageContext = {
     client,
@@ -113,52 +136,33 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
     useSkill: name => {
       const taken = requestSkillUse(name, props.sessionId)
       if (props.onReturnToConversation !== undefined) props.onReturnToConversation()
-      else if (taken) { setNotice(t('row.used', { name })); setError(null) }
-      else { setError(t('row.noSession')); setNotice(null) }
+      else if (taken) { setNotice(t('skills.used', { name })); setError(null) }
+      else { setError(t('skills.noConversation')); setNotice(null) }
     },
+    evolution,
+    ...(props.onOpenSettings === undefined ? {} : { openSettings: props.onOpenSettings }),
+    ...(props.sessionId === undefined ? {} : { sessionId: props.sessionId }),
   }
-  const enabled = overview?.settings.enabled === true
-  const toggle = async (next: boolean) => {
-    setSwitching(true)
-    try { await client.updateSettings({ enabled: next }); refresh() } catch (reason) { context.fail(reason) } finally { setSwitching(false) }
-  }
-  const reviewNow = async () => {
-    setReviewing(true)
-    try {
-      const result = await client.reviewNow()
-      context.notice(result.inserted + result.updated + result.casesAdded > 0 ? t('review.done', { count: result.inserted + result.updated, cases: result.casesAdded }) : t('review.nothing'))
-      refresh()
-    } catch (reason) { context.fail(reason) } finally { setReviewing(false) }
-  }
-  const badge = (tab: SkillsTab): number | undefined => tab === 'evolution' && overview !== null && overview.counts.pending + overview.counts.drafts > 0 ? overview.counts.pending + overview.counts.drafts : undefined
-  const canReview = props.sessionId !== undefined && client.canAssist('skill-review-now')
+  const waiting = overview === null ? 0 : overview.counts.pending + overview.counts.drafts
+  const tabs = <div className={sidebarCss.memoryNavigation}>
+    <div className={sidebarCss.memoryTabs} role="tablist" aria-label={t('tabs.aria')}>
+      {TABS.map(tab => <button key={tab} type="button" role="tab" aria-selected={location.tab === tab} data-active={location.tab === tab ? '' : undefined} onClick={() => setLocation({ tab })}>
+        {t(`tab.${tab}`)}{tab === 'evolution' && waiting > 0 && <b className={css.skTabBadge} aria-label={t('tabs.waiting', { count: waiting })}>{waiting}</b>}
+      </button>)}
+    </div>
+  </div>
   return <>
     <section className={sidebarCss.memoryWorkspace}>
-      <PageHeader title={t('skills.title')} description={t('skills.description')} {...(context.writable ? {} : { meta: t('skills.readOnly') })} action={<div className={css.skHeaderActions}>
-        {canReview && <Button variant="outline" size="sm" disabled={reviewing || !context.writable} onClick={() => void reviewNow()}>{reviewing ? t('review.running') : t('review.now')}</Button>}
-        <label className={css.skEvolutionSwitch} data-on={enabled ? '' : undefined}>
-          <span>{t('evolution.label')}</span>
-          <em>{switching ? t('evolution.saving') : enabled ? t('evolution.on') : t('evolution.off')}</em>
-          <Switch checked={enabled} label={t('evolution.switch')} disabled={overview === null || switching || !context.writable} onChange={next => void toggle(next)} />
-        </label>
-      </div>} />
-      <div className={sidebarCss.memoryNavigation}>
-        <div className={sidebarCss.memoryTabs} role="tablist" aria-label={t('tabs.aria')}>
-          {TABS.map(tab => <button key={tab} type="button" role="tab" aria-selected={location.tab === tab} data-active={location.tab === tab ? '' : undefined} onClick={() => setLocation({ tab })}>
-            {t(`tab.${tab}`)}{badge(tab) !== undefined && <b className={css.skTabBadge}>{badge(tab)}</b>}
-          </button>)}
-        </div>
-      </div>
+      {props.standalone !== true && <PageHeader title={t('page.title')} description={t('page.description')} {...(context.writable ? {} : { meta: t('page.readOnly') })} />}
+      {tabs}
     </section>
-    {error !== null && <div className={css.inlineError} role="alert">{error}<button type="button" className={css.skDismiss} onClick={() => setError(null)} aria-label={t('common.close')}>×</button></div>}
-    {notice !== null && <div className={css.skNotice} role="status">{notice}<button type="button" className={css.skDismiss} onClick={() => setNotice(null)} aria-label={t('common.close')}>×</button></div>}
-    <div className={css.skPage}>
-      {location.tab === 'overview' && <OverviewPage context={context} overview={overview} onToggle={next => void toggle(next)} switching={switching} />}
+    <Reveal>{error === null ? null : <div className={css.skAlert} role="alert"><span>{error}</span><button type="button" className={css.skDismiss} onClick={() => setError(null)} aria-label={t('common.close')}>×</button></div>}</Reveal>
+    <Reveal>{notice === null ? null : <div className={css.skNotice} role="status"><span>{notice}</span><button type="button" className={css.skDismiss} onClick={() => setNotice(null)} aria-label={t('common.close')}>×</button></div>}</Reveal>
+    <div key={location.tab} className={css.skPage}>
       {location.tab === 'skills' && <SkillsPage context={context} location={location} />}
-      {location.tab === 'market' && <MarketPage context={context} location={location} />}
       {location.tab === 'evolution' && <EvolutionPage context={context} location={location} />}
-      {location.tab === 'evidence' && <EvidencePage context={context} location={location} />}
       {location.tab === 'evals' && <EvalsPage context={context} location={location} />}
+      {location.tab === 'market' && <MarketPage context={context} location={location} />}
     </div>
   </>
 }
@@ -171,7 +175,7 @@ export function SkillsSourcePage(props: MemorySourcePageProps): ReactNode {
 export function installSkillsMemoryUI(ctx: Parameters<typeof installMemorySourceUI>[0], locale = 'zh'): () => void {
   const t = translate(locale)
   return installMemorySourceUI(ctx, { sourceTypeId: 'skills', pages: [{
-    id: 'library', order: 800, label: () => t('skills.title'),
+    id: 'library', order: 800, label: () => t('page.title'),
     // This page pins its own title and tabs, as Memory Spaces does.
     navigation: { stickyHeader: false, group: 'tools', glyph: '✦' },
     component: SkillsSourcePage,

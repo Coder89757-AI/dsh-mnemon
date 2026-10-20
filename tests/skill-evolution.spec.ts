@@ -7,9 +7,10 @@ import * as skillsPlugin from 'dsh-mnemon-source-skills'
 import * as generalStrategy from 'dsh-mnemon-strategy-general'
 import type { BacktestRun, SkillDraft, SkillSuggestion, Trajectory } from 'dsh-mnemon-source-skills/contracts'
 import type { HostAgent, HostAgentContext, HostSessionEvent } from '../src/host/dsh.ts'
+import { DEFAULT_SKILLS_CONFIG, type ResolvedSkillsConfig } from '../src/host/protocol.ts'
 import { SkillEvolution, type SkillsSourcePort } from '../src/host/skill-evolution.ts'
 import { gradeCase, parseSkillDraft, parseSkillReview, renderSteps } from '../src/host/skill-review.ts'
-import { captureTurn, redact, sessionTitle, TrajectoryWindow } from '../src/host/skill-trajectory.ts'
+import { captureTurn, redact, sessionTitle, TrajectoryWindow, turnSkillUses } from '../src/host/skill-trajectory.ts'
 import { sessionLog } from './fixtures/session-log.ts'
 
 type Listener = (...args: never[]) => unknown
@@ -59,6 +60,24 @@ describe('trajectory capture', () => {
     expect(renderSteps(steps.slice(1, 3))).toBe('[2] turn 1 · skill loaded: release-notes (by the model)\n[3] turn 1 · tool bash (command=git log --oneline token=***) FAILED: fatal: not a git repository')
     expect(redact('Bearer abc.def and sk-1234567890abcdef')).toBe('Bearer *** and sk-1234***')
   })
+
+  it('lists the skills each turn used: a / command, and the skill loads that succeeded, each once', () => {
+    const events: HostSessionEvent[] = []
+    turn(events, 1, 'Write the release notes', [
+      { name: 'skill', args: { name: 'release-notes' } },
+      { name: 'skill', args: { name: 'release-notes' } },
+      { name: 'skill', args: { name: 'pdf' }, error: 'unknown skill' },
+    ])
+    const push = (type: string, data: Record<string, unknown>) => events.push({ type, seq: events.length, data })
+    push('turn/start', { turn: 2 })
+    push('user/message', { id: 'u2', role: 'user', content: [{ type: 'text', text: 'weekly' }], source: { kind: 'skill-invocation', name: 'weekly-report' } })
+    push('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    turn(events, 3, 'Thanks')
+    expect(turnSkillUses(events)).toEqual([
+      { turn: 1, skills: [{ name: 'release-notes', by: 'model' }] },
+      { turn: 2, skills: [{ name: 'weekly-report', by: 'user' }] },
+    ])
+  })
 })
 
 describe('skill model answers', () => {
@@ -92,9 +111,11 @@ describe('skill evolution in the Host', () => {
   let events: HostSessionEvent[]
   let agent: HostAgent
   let listeners: Map<string, Listener>
+  let config: ResolvedSkillsConfig
 
   beforeEach(async () => {
     vi.useFakeTimers()
+    config = { ...DEFAULT_SKILLS_CONFIG }
     directory = mkdtempSync(join(tmpdir(), 'mnemon-skill-evolution-'))
     mkdirSync(join(directory, 'dsh', 'skills', 'release-notes'), { recursive: true })
     mkdirSync(join(directory, 'workspace'))
@@ -135,7 +156,7 @@ describe('skill evolution in the Host', () => {
       return { structured: value }
     })
     const runTask = vi.fn(async (_root: string | undefined, _signal: AbortSignal, operation: (task: HostAgent) => Promise<unknown>) => operation(agent))
-    const host = { source: () => source, runTask: runTask as never, skillTask, warn: vi.fn() }
+    const host = { settings: () => config, source: () => source, runTask: runTask as never, skillTask, warn: vi.fn() }
     return { skills: new SkillEvolution(host), skillTask, runTask, host }
   }
 
@@ -156,7 +177,7 @@ describe('skill evolution in the Host', () => {
   })
 
   it('reviews an idle window that reached the score, records evidence and starts a new window', async () => {
-    await source.mutate('settings-update', { patch: { enabled: true, idleSeconds: 20 } })
+    config = { ...config, evolution: true, idleSeconds: 20 }
     let prompt = ''
     const { skills, skillTask } = evolution([(_label, text) => {
       prompt = text
@@ -192,8 +213,36 @@ describe('skill evolution in the Host', () => {
     expect(skills.pending('session-1')).toEqual({ turns: 0, score: 0 })
   })
 
+  it('tells the conversation which skills each turn used and how its review went', async () => {
+    config = { ...config, evolution: true, idleSeconds: 20 }
+    const { skills } = evolution([() => ({
+      outcome: 'suggest', summary: 'The user corrected the grouping.',
+      suggestions: [{ skillName: 'release-notes', action: 'update', summary: 'Group entries by component', confidence: 0.85, signals: ['correction'], steps: [3, 6] }],
+    })])
+    skills.watch(agent)
+    await endTurn(1, 'Write the release notes for v2 from the changelog in this repository, please.', [
+      { name: 'skill', args: { name: 'release-notes' } }, { name: 'bash', args: { command: 'git log' }, error: 'not a git repository' }, { name: 'read', args: { path: 'CHANGELOG.md' } },
+    ])
+    await endTurn(2, 'No, group them by component from now on, and put breaking changes first in every section.')
+    expect(await skills.activity(agent)).toEqual({
+      available: true,
+      turns: [{ turn: 1, skills: [{ name: 'release-notes', by: 'model' }] }],
+      reviews: [{ turn: 2, state: 'scheduled', suggestions: [] }],
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    const [suggestion] = await source.read<SkillSuggestion[]>('suggestions')
+    expect((await skills.activity(agent)).reviews).toEqual([{ turn: 2, state: 'suggested', suggestions: [{ id: suggestion!.id, skillName: 'release-notes', action: 'update', status: 'pending' }] }])
+    // A handled suggestion leaves the line; the review stays.
+    await source.mutate('suggestion-dismiss', { id: suggestion!.id })
+    expect((await skills.activity(agent)).reviews).toEqual([{ turn: 2, state: 'suggested', suggestions: [] }])
+    // Turning self-evolution off stops what is scheduled next.
+    config = { ...config, evolution: false }
+    await endTurn(3, 'Now do the same for the v3 changelog, grouped by component with breaking changes first.', [{ name: 'skill', args: { name: 'release-notes' } }])
+    expect((await skills.activity(agent)).reviews.map(review => review.state)).toEqual(['suggested'])
+  })
+
   it('logs a failed review, keeps its window and pauses the session after three failures', async () => {
-    await source.mutate('settings-update', { patch: { enabled: true, idleSeconds: 1, cooldownSeconds: 0, reviewThreshold: 1 } })
+    config = { ...config, evolution: true, idleSeconds: 1, cooldownSeconds: 0, reviewThreshold: 1 }
     const { skills, skillTask, host } = evolution([() => new Error('model unavailable'), () => new Error('model unavailable'), () => new Error('model unavailable')])
     skills.watch(agent)
     for (let index = 1; index <= 4; index++) {
@@ -209,7 +258,7 @@ describe('skill evolution in the Host', () => {
   })
 
   it('drafts in the background, backtests draft and baseline, and adopts through the Source', async () => {
-    await source.mutate('settings-update', { patch: { enabled: true } })
+    config = { ...config, evolution: true }
     await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Grouped notes', prompt: 'Write v2 notes', checks: [{ text: 'Grouped by component', must: true }] } })
     const next = '---\nname: release-notes\ndescription: Write release notes grouped by component.\n---\n\n1. Read CHANGELOG.md\n2. Group by component\n'
     // Two runs share the model at once, so answer by what each call asks rather than by order.

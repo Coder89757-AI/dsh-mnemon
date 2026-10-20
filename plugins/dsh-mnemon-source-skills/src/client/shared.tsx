@@ -1,7 +1,10 @@
-import { useId, type JSX, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type JSX, type ReactNode } from 'react'
 import Markdown from 'markdown-to-jsx'
-import { Button, Checkbox, StateDot, Tag, TextShimmer, type StateDotState, type TagTone } from '@deepseek-ai/dsh-client-ui-primitives'
-import { EmptyState, SidebarModal } from 'dsh-mnemon/client'
+import {
+  Button, Checkbox, IconChevronDownOutlineRegular, IconEllipsisOutlineRegular, Menu, StateDot, Tag, TextShimmer,
+  type StateDotState, type TagTone,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import { EmptyState, Reveal, SidebarModal } from 'dsh-mnemon/client'
 import type { EvolutionSignal, RunStatus, SuggestionStatus, TrajectoryAnnotation, TrajectoryStep } from '../contracts.ts'
 import { css, useT, type SkillsKey, type SkillsTranslate } from './presentation.ts'
 
@@ -24,35 +27,40 @@ export function StatusTag(props: { status: SuggestionStatus }): JSX.Element {
   return <Tag tone={STATUS_TONE[props.status]}>{t(`status.${props.status}` as SkillsKey)}</Tag>
 }
 
+/** New skill or improvement, the first thing a suggestion says about itself. */
+export function ActionTag(props: { action: 'create' | 'update' }): JSX.Element {
+  const t = useT()
+  return <Tag tone={props.action === 'create' ? 'success' : 'info'}>{t(`action.${props.action}`)}</Tag>
+}
+
 export function RunStatusDot(props: { status: RunStatus }): JSX.Element {
   const state: Record<RunStatus, StateDotState> = { running: 'ongoing', completed: 'done', failed: 'error', interrupted: 'warning' }
   return <StateDot state={state[props.status]} />
 }
 
-/** Confidence as a short bar: the number and how full it is. */
-export function Confidence(props: { value: number }): JSX.Element {
-  const t = useT()
-  const value = Math.round(Math.min(1, Math.max(0, props.value)) * 100)
-  return <span className={css.skConfidence} title={t('evolution.confidence', { value: `${value}%` })}>
-    <i aria-hidden="true"><b style={{ width: `${value}%` }} data-high={value >= 70 ? '' : undefined} /></i>
-    <span>{value}%</span>
-  </span>
+/**
+ * Follows each link the page is given once, as soon as what it points into
+ * has loaded. A link is known by its nonce, so reloading the page's data
+ * leaves whatever the reader chose since alone.
+ */
+export function useLink(nonce: number | undefined, ready: boolean, follow: () => void): void {
+  const followed = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (nonce === undefined || followed.current === nonce || !ready) return
+    followed.current = nonce
+    follow()
+  })
 }
 
 export function Busy(props: { label: string }): JSX.Element {
   return <span className={css.skBusy} role="status"><StateDot state="ongoing" /><TextShimmer active>{props.label}</TextShimmer></span>
 }
 
-export function Empty(props: { glyph: string; title: string; children: string }): JSX.Element {
-  return <div className={css.skEmpty}><EmptyState glyph={props.glyph} title={props.title}>{props.children}</EmptyState></div>
-}
-
-/** A titled block inside a pane, with optional actions on the right. */
-export function Block(props: { title: string; actions?: ReactNode; children: ReactNode; className?: string }): JSX.Element {
-  return <section className={[css.skBlock, props.className].filter(Boolean).join(' ')}>
-    <header><h4>{props.title}</h4>{props.actions !== undefined && <div>{props.actions}</div>}</header>
-    {props.children}
-  </section>
+export function Empty(props: { glyph: string; title: string; children: string; action?: ReactNode }): JSX.Element {
+  return <div className={css.skEmpty}>
+    <EmptyState glyph={props.glyph} title={props.title}>{props.children}</EmptyState>
+    {props.action !== undefined && <div className={css.skEmptyActions}>{props.action}</div>}
+  </div>
 }
 
 export function Confirm(props: { title: string; body: string; confirmLabel: string; busy?: boolean; danger?: boolean; onConfirm: () => void; onClose: () => void }): JSX.Element {
@@ -63,11 +71,91 @@ export function Confirm(props: { title: string; body: string; confirmLabel: stri
   </>}><span /></SidebarModal>
 }
 
+/**
+ * A section that stays closed until asked for: its title and a short summary
+ * on one row, the content below it once open.
+ */
+export function Fold(props: { title: string; meta?: ReactNode; defaultOpen?: boolean; actions?: ReactNode; children: ReactNode }): JSX.Element {
+  const [open, setOpen] = useState(props.defaultOpen === true)
+  const id = useId()
+  return <section className={css.skFold} data-open={open ? '' : undefined}>
+    <header>
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
+        <IconChevronDownOutlineRegular size={12} />
+        <span>{props.title}</span>
+        {props.meta !== undefined && <small>{props.meta}</small>}
+      </button>
+      {open && props.actions !== undefined && <div>{props.actions}</div>}
+    </header>
+    <Reveal>{open ? <div id={id} className={css.skFoldBody}>{props.children}</div> : null}</Reveal>
+  </section>
+}
+
+/** A row among the folds that leads elsewhere instead of opening in place. */
+export function FoldLink(props: { title: string; meta?: ReactNode; onOpen: () => void }): JSX.Element {
+  return <section className={css.skFold} data-link="">
+    <header>
+      <button type="button" onClick={props.onOpen}>
+        <span>{props.title}</span>
+        {props.meta !== undefined && <small>{props.meta}</small>}
+        <b aria-hidden="true">›</b>
+      </button>
+    </header>
+  </section>
+}
+
+/**
+ * A paragraph that shows its first lines and opens to the rest, so a long
+ * reason or note never pushes what follows out of view.
+ */
+export function Clamp(props: { text: string; lines?: number }): JSX.Element {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const lines = props.lines ?? 3
+  // A paragraph short enough to fit needs no toggle.
+  const long = props.text.length > lines * 60 || props.text.split('\n').length > lines
+  return <div className={css.skClamp}>
+    <p className={css.skProse} data-clamped={long && !open ? '' : undefined} style={{ ['--sk-lines' as string]: lines }}>{props.text}</p>
+    {long && <button type="button" className={css.skLink} onClick={() => setOpen(value => !value)}>{open ? t('common.less') : t('common.more')}</button>}
+  </div>
+}
+
+/** A list that shows its first items and opens to the rest. */
+export function MoreList(props: { items: readonly string[]; shown: number }): JSX.Element {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const hidden = props.items.length - props.shown
+  const items = open || hidden <= 0 ? props.items : props.items.slice(0, props.shown)
+  return <div className={css.skClamp}>
+    <ul className={css.skChanges}>{items.map((item, index) => <li key={index}>{item}</li>)}</ul>
+    {hidden > 0 && <button type="button" className={css.skLink} onClick={() => setOpen(value => !value)}>{open ? t('common.less') : t('common.moreCount', { count: hidden })}</button>}
+  </div>
+}
+
+export interface MoreItem {
+  id: string
+  label: string
+  danger?: boolean
+  disabled?: boolean
+}
+
+/** The less frequent actions behind one quiet button. */
+export function MoreMenu(props: { label: string; items: readonly MoreItem[]; disabled?: boolean; onSelect: (id: string) => void }): JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  if (props.items.length === 0) return null
+  return <Menu open={open} onClose={() => setOpen(false)} align="end" portal
+    items={props.items.map(item => ({ id: item.id, label: item.label, ...(item.danger === true ? { danger: true } : {}), ...(item.disabled === true ? { disabled: true } : {}) }))}
+    onSelect={id => { setOpen(false); props.onSelect(id) }}
+    anchor={<button type="button" className={css.skIconButton} aria-label={props.label} title={props.label} aria-haspopup="menu" aria-expanded={open} disabled={props.disabled} onClick={() => setOpen(value => !value)}>
+      <IconEllipsisOutlineRegular size={16} />
+    </button>} />
+}
+
 const STEP_GLYPH: Record<TrajectoryStep['kind'], string> = { user: '›', assistant: '‹', tool: '⚙', skill: '✦' }
 
 /**
- * A trajectory as a numbered timeline. Annotated steps carry their signal and
- * note; selectable steps get a checkbox, for turning them into eval cases.
+ * A conversation's steps as a numbered timeline. Annotated steps carry their
+ * signal and note; selectable steps get a checkbox, for making test cases.
  */
 export function StepTimeline(props: {
   steps: readonly TrajectoryStep[]
@@ -84,7 +172,7 @@ export function StepTimeline(props: {
   return <ol className={css.skTimeline} data-compact={props.compact === true ? '' : undefined}>
     {props.steps.map(step => {
       const annotated = notes.get(step.index) ?? []
-      const turnLabel = step.turn !== lastTurn ? t('evidence.turn', { turn: step.turn }) : undefined
+      const turnLabel = step.turn !== lastTurn ? t('timeline.turn', { turn: step.turn }) : undefined
       lastTurn = step.turn
       const failed = step.kind === 'tool' && step.tool?.ok === false
       return <li key={step.index} data-kind={step.kind} data-failed={failed ? '' : undefined} data-annotated={annotated.length > 0 ? '' : undefined} data-highlight={props.highlight?.has(step.index) === true ? '' : undefined}>
@@ -96,10 +184,10 @@ export function StepTimeline(props: {
           <span className={css.skStepGlyph} aria-hidden="true">{STEP_GLYPH[step.kind]}</span>
           <div className={css.skStepBody}>
             <div className={css.skStepHead}>
-              <strong>{step.kind === 'tool' ? step.tool?.name ?? t('evidence.step.tool') : t(`evidence.step.${step.kind}` as SkillsKey)}</strong>
-              {step.kind === 'skill' && step.skill !== undefined && <code>{step.skill.by === 'user' ? t('evidence.step.byUser', { name: step.skill.name }) : `${step.skill.name} · ${t('evidence.step.byModel')}`}</code>}
+              <strong>{step.kind === 'tool' ? step.tool?.name ?? t('timeline.tool') : t(`timeline.${step.kind}` as SkillsKey)}</strong>
+              {step.kind === 'skill' && step.skill !== undefined && <code>{step.skill.by === 'user' ? `/${step.skill.name}` : step.skill.name}</code>}
               {step.kind === 'tool' && step.tool?.input !== undefined && <code title={step.tool.input}>{step.tool.input}</code>}
-              {failed && <Tag tone="danger">{t('run.verdict.error')}</Tag>}
+              {failed && <Tag tone="danger">{t('timeline.failed')}</Tag>}
             </div>
             {step.kind !== 'skill' && step.text !== '' && <p>{step.text}</p>}
             {annotated.map((annotation, index) => <div key={index} className={css.skAnnotation}><SignalTag signal={annotation.signal} /><span>{annotation.note}</span></div>)}
@@ -123,16 +211,16 @@ export function Field(props: { label: string; hint?: string; children: (control:
 
 export function diffLabels(t: SkillsTranslate) {
   return {
-    codeLabel: t('draft.labels.code'), wrapLabel: t('draft.labels.wrap'), unwrapLabel: t('draft.labels.unwrap'),
-    copy: t('draft.labels.copy'), copied: t('draft.labels.copied'), collapseAria: t('draft.labels.collapse'),
-    expandAria: (hidden: number) => t('draft.labels.expand', { count: hidden }), collapse: t('draft.labels.collapse'),
-    expand: (hidden: number) => t('draft.labels.expand', { count: hidden }),
+    codeLabel: t('diff.code'), wrapLabel: t('diff.wrap'), unwrapLabel: t('diff.unwrap'),
+    copy: t('diff.copy'), copied: t('diff.copied'), collapseAria: t('diff.collapse'),
+    expandAria: (hidden: number) => t('diff.expand', { count: hidden }), collapse: t('diff.collapse'),
+    expand: (hidden: number) => t('diff.expand', { count: hidden }),
   }
 }
 
 /** The SKILL.md body as Markdown, without its frontmatter. */
 export function SkillMarkdown(props: { body: string }): JSX.Element {
-  return <div className={css.markdownBody}><Markdown options={{ disableParsingRawHTML: true, forceBlock: true }}>{props.body}</Markdown></div>
+  return <div className={css.skDoc}><Markdown options={{ disableParsingRawHTML: true, forceBlock: true }}>{props.body}</Markdown></div>
 }
 
 const CATEGORY_GLYPH: Record<string, string> = {

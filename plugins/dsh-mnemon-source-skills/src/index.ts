@@ -10,8 +10,8 @@ export const memoryPlugin = defineMemoryPlugin({
   packageName: name,
   label: { en: 'Skills', 'zh-CN': '技能管理' },
   description: {
-    en: 'DSH skills in one place, with versions, evolution suggestions from real use, evidence trajectories and eval sets.',
-    'zh-CN': '集中管理 DSH 技能：版本、来自实际使用的进化建议、证据轨迹与评测集。',
+    en: 'Manage DSH skills, and let them improve from your conversations.',
+    'zh-CN': '管理 DSH 技能，并让它们从对话中持续改进。',
   },
   roles: ['source'],
   provides: [{ id: 'source.procedural' }],

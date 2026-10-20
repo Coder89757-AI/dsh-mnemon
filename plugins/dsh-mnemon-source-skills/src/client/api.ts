@@ -2,7 +2,7 @@ import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
 import type { MnemonSourceManagementClient } from 'dsh-mnemon/client'
 import type {
   BacktestRun, CatalogView, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketView, EvidencePack, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
-  SkillVersion, SkillsOverview, SkillsSettings, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary,
+  SkillVersion, SkillsOverview, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary,
 } from '../contracts.ts'
 
 export interface CaseDraft {
@@ -29,10 +29,9 @@ export interface SkillsPageClient {
   runs(skill?: string): Promise<BacktestRun[]>
   run(id: string): Promise<BacktestRun>
   draft(id: string): Promise<DraftView>
-  reviews(limit?: number): Promise<ReviewLogEntry[]>
+  reviews(filter?: { sessionId?: string; limit?: number }): Promise<ReviewLogEntry[]>
   evidencePack(input: { suggestionId?: string; skill?: string }): Promise<EvidencePack>
 
-  updateSettings(patch: Partial<SkillsSettings>): Promise<SkillsSettings>
   createSkill(input: { name: string; description: string; root?: SkillRootKind }): Promise<SkillSummary>
   saveSkill(key: string, content: string, expectedHash: string): Promise<SkillSummary>
   setInvocation(key: string, invocation: { modelInvocable: boolean; userInvocable: boolean }, expectedHash: string): Promise<SkillSummary>
@@ -44,7 +43,8 @@ export interface SkillsPageClient {
   saveCase(input: CaseDraft): Promise<EvalCase>
   deleteCase(id: string): Promise<{ deleted: string }>
   updateDraft(id: string, content: string): Promise<SkillDraft>
-  adoptDraft(id: string): Promise<{ skill: SkillSummary; version: SkillVersion }>
+  /** Adopt a draft; a new skill goes to `root` when given. */
+  adoptDraft(id: string, root?: SkillRootKind): Promise<{ skill: SkillSummary; version: SkillVersion }>
   discardDraft(id: string): Promise<SkillDraft>
   /** Attach a baseline run to the draft it is compared with. */
   linkRun(draftId: string, runId: string): Promise<void>
@@ -105,10 +105,9 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
     runs: skill => read('runs', skill === undefined ? {} : { skill }),
     run: id => read('run', { id }),
     draft: id => read('draft', { id }),
-    reviews: limit => read('reviews', limit === undefined ? {} : { limit }),
+    reviews: filter => read('reviews', filter ?? {}),
     evidencePack: input => read('evidence-pack', input),
 
-    updateSettings: patch => mutate('settings-update', { patch }),
     createSkill: input => mutate('skill-create', input),
     saveSkill: (key, content, expectedHash) => mutate('skill-save', { key, content, expectedHash }),
     setInvocation: (key, invocation, expectedHash) => mutate('skill-invocation', { key, ...invocation, expectedHash }),
@@ -120,7 +119,7 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
     saveCase: input => mutate('case-save', { case: input }),
     deleteCase: id => mutate('case-delete', { id }),
     updateDraft: (id, content) => mutate('draft-update', { id, content }),
-    adoptDraft: id => mutate('draft-adopt', { id }),
+    adoptDraft: (id, root) => mutate('draft-adopt', root === undefined ? { id } : { id, root }),
     discardDraft: id => mutate('draft-discard', { id }),
     linkRun: (draftId, runId) => mutate('run-link', { draftId, runId }),
 

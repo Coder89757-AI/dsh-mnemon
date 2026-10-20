@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { COMPOSABLE_MEMORY_API_VERSION, type MemoryJsonValue, type MemorySourceDefinition, type MemorySourceFacts } from 'dsh-mnemon/contracts'
 import { defineMemorySource, memoryInputRecord as record, memoryInputStringArray as stringArray, memoryInputText as text } from 'dsh-mnemon/extension-sdk'
-import { EVOLUTION_SIGNALS, SKILL_ROOT_KINDS, type CaseResult, type EvolutionSignal, type ReviewRecordInput, type RunTarget, type SkillRootKind, type TrajectoryStep } from './contracts.ts'
+import { EVOLUTION_SIGNALS, SKILL_ROOT_KINDS, type CaseResult, type EvolutionSignal, type ReviewRecordInput, type RunTarget, type SkillRootKind, type SkillsPolicy, type TrajectoryStep } from './contracts.ts'
 import { SkillsService, type CaseInput } from './service.ts'
 
 export const SKILLS_SOURCE_TYPE_ID = 'skills'
@@ -116,6 +116,13 @@ function step(value: MemoryJsonValue): TrajectoryStep {
   }
 }
 
+/** The admission rules the Host sends; each is checked again by the policy. */
+function policyInput(value: MemoryJsonValue): Partial<SkillsPolicy> {
+  const input = record(value, 'policy')
+  const number = (key: keyof SkillsPolicy) => typeof input[key] === 'number' && Number.isFinite(input[key]) ? { [key]: input[key] as number } : {}
+  return { ...number('minConfidence'), ...number('expiryDays'), ...number('maxPendingPerSession') }
+}
+
 /** The Host's record of one review; bounded here as well as there. */
 function reviewRecord(value: MemoryJsonValue): ReviewRecordInput {
   const input = record(value, 'review record')
@@ -142,7 +149,9 @@ function reviewRecord(value: MemoryJsonValue): ReviewRecordInput {
       outcome,
       ...(optionalText(review.summary, 'summary', 2_000) === undefined ? {} : { summary: optionalText(review.summary, 'summary', 2_000)! }),
       ...(optionalText(review.error, 'error', 2_000) === undefined ? {} : { error: optionalText(review.error, 'error', 2_000)! }),
+      ...(Number.isInteger(review.turn) && Number(review.turn) >= 0 ? { turn: Number(review.turn) } : {}),
     },
+    ...(input.policy === undefined ? {} : { policy: policyInput(input.policy) }),
     trajectory: {
       sessionId: text(trajectory.sessionId, 'sessionId', 300)!,
       ...(optionalText(trajectory.sessionTitle, 'sessionTitle', 300) === undefined ? {} : { sessionTitle: optionalText(trajectory.sessionTitle, 'sessionTitle', 300)! }),
@@ -236,7 +245,6 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
               switch (request.operation) {
                 case 'revision': return { revision: revision() }
                 case 'overview': return service.overview(root)
-                case 'settings': return service.settings()
                 case 'catalog': return service.catalogView(root)
                 case 'skill': return service.skill(root, text(fields.key, 'key', 200)!)
                 case 'versions': return service.versions(text(fields.key, 'key', 200)!)
@@ -257,7 +265,7 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
                   ...(optionalText(fields.skill, 'skill', 64) === undefined ? {} : { skill: optionalText(fields.skill, 'skill', 64)! }),
                 })
                 case 'draft': return service.draft(root, text(fields.id, 'id', 100)!)
-                case 'reviews': return service.reviews(typeof fields.limit === 'number' ? fields.limit : 50)
+                case 'reviews': return service.reviews({ ...(typeof fields.sessionId === 'string' ? { sessionId: fields.sessionId } : {}), ...(typeof fields.limit === 'number' ? { limit: fields.limit } : {}) })
                 case 'evidence-pack': return service.evidencePack(root, {
                   ...(optionalText(fields.suggestionId, 'suggestionId', 100) === undefined ? {} : { suggestionId: optionalText(fields.suggestionId, 'suggestionId', 100)! }),
                   ...(optionalText(fields.skill, 'skill', 64) === undefined ? {} : { skill: optionalText(fields.skill, 'skill', 64)! }),
@@ -276,7 +284,6 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
           if (request.expectedRevision !== undefined && request.expectedRevision !== revision()) throw new Error('Skills Source changed since it was read; reload and try again')
           let value: unknown
           switch (request.operation) {
-            case 'settings-update': value = await service.updateSettings(record(fields.patch ?? fields, 'settings patch')); break
             case 'skill-create': value = await service.createSkill(root, {
               name: text(fields.name, 'name', 64)!, description: text(fields.description, 'description', 1_000)!,
               ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }),
@@ -317,7 +324,7 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
               ...(rootKind(fields.targetRoot) === undefined ? {} : { targetRoot: rootKind(fields.targetRoot)! }),
             }); break
             case 'draft-update': value = await service.updateDraft({ id: text(fields.id, 'id', 100)!, content: typeof fields.content === 'string' ? fields.content : '' }); break
-            case 'draft-adopt': value = await service.adoptDraft(root, text(fields.id, 'id', 100)!); break
+            case 'draft-adopt': value = await service.adoptDraft(root, text(fields.id, 'id', 100)!, { ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }) }); break
             case 'draft-discard': value = await service.discardDraft(text(fields.id, 'id', 100)!); break
             case 'run-start': value = await service.startRun({ skillName: text(fields.skillName, 'skillName', 64)!, target: runTarget(fields.target!), caseIds: stringArray(fields.caseIds, 'caseIds', 20) ?? [] }); break
             case 'run-link': value = await service.linkRun(text(fields.draftId, 'draftId', 100)!, text(fields.runId, 'runId', 100)!); break

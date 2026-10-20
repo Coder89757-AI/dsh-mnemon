@@ -39,21 +39,25 @@ export function dispatchMnemonAnchor(anchor: MnemonAnchor): void {
   window.dispatchEvent(new CustomEvent<MnemonAnchor>(MNEMON_ANCHOR_EVENT, { detail: anchor }))
 }
 
+/** Which pages a view opens; a view that shows only some pages leaves the others to theirs. */
+export type MnemonAnchorFilter = (page: MnemonAnchorPage) => boolean
+const EVERY_PAGE: MnemonAnchorFilter = () => true
+
 /** Take the anchor held for this session (usually at mount time), or null. */
-export function consumeMnemonAnchor(sessionId?: string): MnemonAnchor | null {
+export function consumeMnemonAnchor(sessionId?: string, accepts: MnemonAnchorFilter = EVERY_PAGE): MnemonAnchor | null {
   const key = keyOf(sessionId)
   const anchor = pendingBySession.get(key)
-  if (anchor === undefined) return null
+  if (anchor === undefined || !accepts(anchor.page)) return null
   pendingBySession.delete(key)
   return anchor
 }
 
 /** Subscribe to anchors addressed to this session; returns an unsubscribe. */
-export function subscribeMnemonAnchor(sessionId: string | undefined, onAnchor: (anchor: MnemonAnchor) => void): () => void {
+export function subscribeMnemonAnchor(sessionId: string | undefined, onAnchor: (anchor: MnemonAnchor) => void, accepts: MnemonAnchorFilter = EVERY_PAGE): () => void {
   const key = keyOf(sessionId)
   const handler = (event: Event): void => {
     const anchor = (event as CustomEvent<MnemonAnchor>).detail
-    if (anchor !== undefined && keyOf(anchor.sessionId) === key) {
+    if (anchor !== undefined && keyOf(anchor.sessionId) === key && accepts(anchor.page)) {
       // A mounted view consumes the event immediately. Clear only this exact
       // dispatch so a newer anchor cannot be lost if listeners navigate again.
       if (pendingBySession.get(key) === anchor) pendingBySession.delete(key)

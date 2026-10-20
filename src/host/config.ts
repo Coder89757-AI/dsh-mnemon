@@ -1,5 +1,5 @@
 import z from '@deepseek-ai/schemastery'
-import { DEFAULT_IDLE_REVIEW } from './protocol.ts'
+import { DEFAULT_IDLE_REVIEW, DEFAULT_SKILLS_CONFIG } from './protocol.ts'
 import { isAbsolute } from 'node:path'
 import { normalizeDisplayMode } from './display-mode.ts'
 import { schema as MemoryViewConfig, preferences as validateMemoryViewPreferences } from './view-preferences.ts'
@@ -37,6 +37,7 @@ import type {
   RecallQualityConfig,
   ResolvedConfig as SharedResolvedConfig,
   ResolvedInteractionConfig as SharedResolvedInteractionConfig,
+  ResolvedSkillsConfig,
   RuntimeMemoryConfig,
   ResolvedTaskAgentModelConfig,
   TaskAgentModelConfig,
@@ -71,6 +72,25 @@ export const InteractionConfig: z<InteractionConfig> = z.object({
   turnBar: z.boolean().default(true),
   saveAction: z.boolean().default(true),
 })
+
+/** 技能管理's settings, with the ranges its page accepts. */
+export const SkillsConfig: z<Partial<ResolvedSkillsConfig>, ResolvedSkillsConfig> = z.object({
+  evolution: z.boolean().default(DEFAULT_SKILLS_CONFIG.evolution),
+  autoBacktest: z.boolean().default(DEFAULT_SKILLS_CONFIG.autoBacktest),
+  hints: z.boolean().default(DEFAULT_SKILLS_CONFIG.hints),
+  sidebar: z.boolean().default(DEFAULT_SKILLS_CONFIG.sidebar),
+  reviewThreshold: z.number().step(1).min(1).max(50).default(DEFAULT_SKILLS_CONFIG.reviewThreshold),
+  idleSeconds: z.number().step(1).min(0).max(3_600).default(DEFAULT_SKILLS_CONFIG.idleSeconds),
+  cooldownSeconds: z.number().step(1).min(0).max(86_400).default(DEFAULT_SKILLS_CONFIG.cooldownSeconds),
+  minConfidence: z.number().min(0).max(1).default(DEFAULT_SKILLS_CONFIG.minConfidence),
+  expiryDays: z.number().step(1).min(1).max(90).default(DEFAULT_SKILLS_CONFIG.expiryDays),
+  maxPendingPerSession: z.number().step(1).min(1).max(20).default(DEFAULT_SKILLS_CONFIG.maxPendingPerSession),
+  casesPerRun: z.number().step(1).min(1).max(20).default(DEFAULT_SKILLS_CONFIG.casesPerRun),
+}) as unknown as z<Partial<ResolvedSkillsConfig>, ResolvedSkillsConfig>
+
+export function resolveSkillsConfig(config: Partial<ResolvedSkillsConfig> | undefined = {}): ResolvedSkillsConfig {
+  return SkillsConfig(config ?? {})
+}
 
 const MemoryProviderConnectionSchema: z<MemoryProviderConnection> = z.dict(z.union([z.string(), z.number(), z.boolean()]))
 const MemoryPersistenceStrategySchema = z.object({
@@ -211,6 +231,8 @@ export const Config: z<Config> = z.object({
     turnBar: z.boolean().default(true),
     saveAction: z.boolean().default(true),
   }).default({ toolviews: false, turnBar: true, saveAction: true }),
+  // Declared so DSH applies a change live, as it does every other key here.
+  skills: SkillsConfig.default({ ...DEFAULT_SKILLS_CONFIG }),
   persistenceStrategy: MemoryPersistenceStrategySchema,
   taskAgentModel: TaskAgentModelSchema,
   // Git sync is off until a user switches it on: the block stays a title and a
