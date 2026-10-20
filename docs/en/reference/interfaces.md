@@ -135,11 +135,13 @@ Everything Mnemon shows inside DSH is registered into DSH's own UI regions. The 
 | DSH region | Registration | Behavior |
 |---|---|---|
 | `conversation.chat.turnTail` | list, `id=dsh-mnemon/turn-tail` | `turn-activity` summarizes `mnemon_*` calls from completed turns, with the items each call read or wrote from the tools' activity metadata; open turns and turns without activity render nothing |
+| `conversation.chat.turnTail` | list, `id=dsh-mnemon/skill-tail` | While `skills.hints` is on: `skill-activity` names the skills each completed turn used and the state of the review that followed, with its waiting suggestions; a turn with nothing to say renders nothing |
 | `conversation.chat.assistant-actions` | list, `id=mnemon-save` | `assistant-message` reads finalized text; `supervise` runs only after confirmation |
 | `conversation.session.header.lineage` | lower-priority copy of DSH's own entry | A task Agent's session header counts that Agent's own tokens, not the log it was forked from |
 | `plugins.bundle.config` | keyed, `dsh-mnemon` | The whole configuration on dsh-mnemon's page under Plugins |
 | `plugins.row.config` | keyed, `dsh-mnemon#<row>` | The page each shipped component's row opens, with the settings that component contributed |
 | `plugins.detail.actions` | list, `id=dsh-mnemon/open-workspace` | Opens the Memory System from the plugin's detail page |
+| `sidebar.panellist` and `main` | `id=mnemon-skills` | While `skills.sidebar` is on: Skills' own sidebar entry and page, after the Memory System, which then leaves the Skills page out |
 
 Mnemon declares two keyed regions of its own, both keyed by a component's package name: `mnemon.component.settings`, rendered on that component's page, and `mnemon.component.status`, its card on the Status page. Official and third-party components contribute through the same regions; see [Plugin development](../development/extensions.md).
 
@@ -193,6 +195,7 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `list` / `entities` | Durable content list and entity aggregation |
 | `search` / `agent-search` / `related` | Direct retrieval, evidence answer, and relation traversal |
 | `turn-activities` / `turn-activity` | Session-wide or single-turn memory-tool activity |
+| `skill-activity` | One conversation's skills by turn and the state of each review that followed (scheduled, reviewing, suggested, nothing, error), with the suggestions still waiting; answered from the live Agent, or from the stored session for a conversation reopened from history |
 | `assistant-message` | Finalized assistant text by messageId |
 | `source-management-catalog` / `source-management-read` / `source-assistance` | Generic Source management: instance catalog, declared read operations, and a read-only assisted search |
 
@@ -212,7 +215,7 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `body-metadata-maintain` | Let a task Agent refresh names and descriptions of 1 to 20 active Memory Spaces |
 | `provider-service-update` | Update one Provider service; credentials remain on the Host and the response is redacted |
 | `embedding-fill` | Fill in the vectors one Mnemon Native space lacks, through the Host's storage root and embedding settings; runs for at most a minute, in steps of at most ten seconds, and returns how many it filled in and how many remain |
-| `source-management-mutate` / `source-assistance` | Generic Source management mutation, and Host-assisted operations confirmed against the Source's current revision |
+| `source-management-mutate` / `source-assistance` | Generic Source management mutation, and Host-assisted operations confirmed against the Source's current revision; Skills' are `skill-draft`, `skill-backtest`, `skill-derive-cases` and `skill-review-now`, each run by a task Agent |
 | `version-update` | Update a named component with Host-fixed commands and arguments |
 
 `provider-services` returns a redacted catalog through the read channel. The settings editor knows which credential fields are configured; it can replace or explicitly clear them without reading saved values back.
@@ -276,7 +279,7 @@ A reconciliation never writes memory by itself: the model returns a plan, the pl
 
 ### Settings channel
 
-`/dsh-mnemon-settings` offers `get` and `mutate` for two namespaces: `mnemon` owns Host and storage settings, and `mnemon-ui` owns `turnBar` and `saveAction`, saved as `conversationInteraction`. Mutations carry settings revisions so concurrent edits are not overwritten. dsh-mnemon's page under Plugins (`plugins.bundle.config`) reads and writes through this channel on loopback and remote pages alike. On loopback pages it also follows DSH's `ctx.configForms` revision of the `mnemon` entry and re-reads the channel when another page or a profile reload changes it.
+`/dsh-mnemon-settings` offers `get` and `mutate` for three namespaces: `mnemon` owns Host and storage settings, `mnemon-ui` owns `turnBar` and `saveAction`, saved as `conversationInteraction`, and `mnemon-skills` owns Skills' settings, saved as `skills` (see [Skills settings](./configuration.md#skills-settings)); a `mnemon-skills` change applies without rebuilding the memory runtime. Mutations carry settings revisions so concurrent edits are not overwritten. dsh-mnemon's page under Plugins (`plugins.bundle.config`) reads and writes through this channel on loopback and remote pages alike. On loopback pages it also follows DSH's `ctx.configForms` revision of the `mnemon` entry and re-reads the channel when another page or a profile reload changes it.
 
 ### Memory composition channels
 

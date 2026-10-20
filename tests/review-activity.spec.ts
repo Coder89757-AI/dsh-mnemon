@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { QODERWORK_REVIEW_POLICY, scoreReviewActivity } from "../src/host/review-activity.ts"
+import { POST_TURN_REVIEW_POLICY, scoreReviewActivity } from "../src/host/review-activity.ts"
 
-describe('QoderWork-compatible background review score', () => {
+describe('post-turn background review score', () => {
   it('uses the original constants without provider token accounting', () => {
-    expect(QODERWORK_REVIEW_POLICY).toEqual({
+    expect(POST_TURN_REVIEW_POLICY).toEqual({
       reviewThreshold: 5,
       textLengthScoreUnit: 50,
       textLengthScoreCap: 3,
@@ -32,7 +32,7 @@ describe('QoderWork-compatible background review score', () => {
     })
   })
 
-  it('matches QoderWork threshold examples exactly', () => {
+  it('matches the threshold examples exactly', () => {
     expect(scoreReviewActivity({ totalUserTextLength: 150, turnCount: 1, toolCallCount: 0, uniqueToolCount: 0 }).score).toBe(4)
     expect(scoreReviewActivity({ totalUserTextLength: 150, turnCount: 2, toolCallCount: 0, uniqueToolCount: 0 }).score).toBe(5)
     expect(scoreReviewActivity({ totalUserTextLength: 100, turnCount: 1, toolCallCount: 5, uniqueToolCount: 3 }).score).toBe(5)

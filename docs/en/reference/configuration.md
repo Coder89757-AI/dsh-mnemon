@@ -24,6 +24,7 @@ As DSH does for every plugin that carries its own configuration, the Web interfa
 | Runtime memory's page | User profile scope | `runtimeUserScope` |
 | Memory Spaces' page | Memory providers; Mnemon Native embedding (auto, Ollama or OpenAI-compatible) | The Provider registry in `state/memory-providers.json`; `embedding` |
 | Layered strategy's page | Task Agent model; idle review | `taskAgentModel`; `idleReview` |
+| Skills' page | Self-evolution, backtest drafts, review parameters, the conversation line, the sidebar entry | `skills`; see [Skills settings](#skills-settings) |
 
 Switches and selectors apply at once; typed values such as the storage directory, the embedding connection, review limits and component options wait for **Apply**. A Provider's reusable service fields (endpoints, credentials, executables) live in the Provider registry, not in Mnemon's YAML; enabling or saving a Provider discovers its namespaces into **Memory Spaces → Overview**, and turning it off removes only those local mappings. Other advanced settings are edited in YAML.
 
@@ -133,8 +134,9 @@ mnemon:
 | `remoteAccess` | `read-only` | `read-only` / `trusted-host` | Startup-only grant for non-loopback Mnemon management, enforced by the API Gateway projection |
 | `conversationInteraction.turnBar` | `true` | boolean | The turn memory bar under replies; applies at once |
 | `conversationInteraction.saveAction` | `true` | boolean | The **Save to memory** action and confirmation on finished replies; applies at once |
+| `skills` | see [Skills settings](#skills-settings) | the keys listed there | Skills' self-evolution, its review parameters, the conversation line and the sidebar entry; applies at once without rebuilding the memory runtime |
 
-Every value is saved under the `mnemon` entry and applies live. The UI's `mnemon-ui` settings scope is stored as `conversationInteraction`, and its `mnemon-view` scope as `memoryView`. The storage root switches atomically only after the new runtime graph initializes successfully.
+Every value is saved under the `mnemon` entry and applies live. The UI's `mnemon-ui` settings scope is stored as `conversationInteraction`, its `mnemon-view` scope as `memoryView`, and its `mnemon-skills` scope as `skills`. The storage root switches atomically only after the new runtime graph initializes successfully.
 
 ### Runtime Memory budgets
 
@@ -331,6 +333,33 @@ mnemon:
 ```
 
 DSH's live catalog reports each model's input modalities, and the picker labels image-capable models **Image input**. Choosing one does not make Mnemon background jobs ingest images: Tidy names and descriptions, Ask Agent, Save to memory, smart selection and document archiving still submit text and bounded evidence. In the main conversation, DSH-owned image blocks keep their attachment references when dsh-mnemon adds lifecycle guidance, while activity thresholds count text blocks only. Raw image bytes are never copied into runtime memory, documents or memory spaces.
+
+## Skills settings
+
+Skills keeps its settings under `skills` in the `mnemon` entry, edited on its own page under **Plugins → dsh-mnemon** through the `mnemon-skills` settings scope. Each key applies at once: a change reaches the running self-evolution and the client without rebuilding the memory runtime. The [Skills guide](../guides/skills.md#self-evolution) explains what each does.
+
+| Key | Default | Range | Meaning |
+|---|---:|---|---|
+| `skills.evolution` | `false` | boolean | **Self-evolution**: review finished conversations in the background and suggest new or better skills |
+| `skills.autoBacktest` | `true` | boolean | **Backtest drafts**: compare each new draft with the current version on its test cases |
+| `skills.hints` | `true` | boolean | **In the conversation**: the **Turn skills** line under each turn |
+| `skills.sidebar` | `false` | boolean | **Sidebar entry**: Skills as its own sidebar entry, out of the Memory System |
+| `skills.reviewThreshold` | `5` | 1–50 | **Review threshold**: the activity score a conversation's window must reach before a review |
+| `skills.idleSeconds` | `20` | 0–3600 s | **Idle wait**: how long the conversation must be idle before the review runs |
+| `skills.cooldownSeconds` | `150` | 0–86400 s | **Review interval**: the least time between two reviews of one conversation |
+| `skills.minConfidence` | `0.6` | 0–1 | **Minimum confidence**: suggestions below it are dropped |
+| `skills.expiryDays` | `7` | 1–90 days | **Suggestion expiry**: an untouched suggestion expires after this long |
+| `skills.maxPendingPerSession` | `5` | 1–20 | **Pending per conversation**: past this, the least confident pending suggestions of a conversation expire |
+| `skills.casesPerRun` | `8` | 1–20 | **Cases per backtest**: the most cases one automatic backtest runs |
+
+```yaml
+mnemon:
+  skills:
+    evolution: true
+    idleSeconds: 30
+```
+
+The Skills Source's own data (suggestions, cases, recorded conversations, versions, market sources) is not configuration; it lives in the storage root's `skills/` folder, see the [storage model](./storage-model.md#skills).
 
 ## Provider Requirements
 

@@ -10,6 +10,7 @@ import {
   type MemoryViewDashboard,
   type MemoryViewConfigurationRequest,
   type AssistantMessageText,
+  type SkillActivitySnapshot,
   type ClientConnectionHandle,
   type JsonValue,
   type MemoryCompositionStatus,
@@ -170,6 +171,11 @@ export class MnemonClient {
   async turnActivity(turn: number, cursor = 0): Promise<TurnMemoryActivity | null> {
     const snapshot = await loadTurnActivities(this.connection, this.sessionId, cursor)
     return snapshot.activities.find(activity => activity.turn === turn) ?? null
+  }
+
+  /** What this conversation did with skills: each turn's uses and each review, for the turn bars. */
+  skillActivity(): Promise<SkillActivitySnapshot> {
+    return this.call(MNEMON_READ_CHANNEL, 'skill-activity', { sessionId: this.sessionId })
   }
 
   /** Plain text of one finalized assistant message; null when absent or empty. */

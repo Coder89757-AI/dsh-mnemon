@@ -46,7 +46,7 @@ for (const filename of await readdir(artifacts)) {
   const integrity = `sha512-${createHash('sha512').update(await readFile(path)).digest('base64')}`
   packages.set(manifest.name, { manifest, path, integrity })
 }
-assert.equal(packages.size, 17, 'Use all seventeen packed artifacts')
+assert.equal(packages.size, 18, 'Use all eighteen packed artifacts')
 let registryUrl
 const registry = createServer((request, response) => {
   const name = decodeURIComponent(new URL(request.url, 'http://localhost').pathname).slice(1)

@@ -35,7 +35,7 @@ try {
   await mkdir(profileDir, { recursive: true })
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const names = ['dsh-mnemon', ...Object.keys(manifest.dependencies).filter(name => name.startsWith('dsh-mnemon-'))]
-  assert.equal(names.length, 18)
+  assert.equal(names.length, 19)
   for (const name of names) {
     const directory = join(modules, name)
     await mkdir(directory, { recursive: true })
@@ -162,7 +162,7 @@ export async function apply(ctx, config) {
     // without making that upstream defect an accepted lifecycle contract.
     const groups = new Set([...ctx.loader.entries()].filter(entry => entry.options.group).map(entry => entry.options.id))
     const pluginComponents = components.filter(row => !groups.has(row.rowId))
-    assert.equal(pluginComponents.length, 9)
+    assert.equal(pluginComponents.length, 10)
     assert(pluginComponents.every(row => plugins.some(plugin => plugin.entryId === row.entryId)))
     if (process.argv.includes('--check-declared-rows')) {
       assert.deepEqual(components.filter(row => !plugins.some(plugin => plugin.entryId === row.entryId)), [],

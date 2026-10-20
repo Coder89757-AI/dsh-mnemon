@@ -40,7 +40,7 @@ Source snapshot 不执行语义召回。Prime 只初始化路由状态，不执�
 
 ### 委派的子会话
 
-dsh-mnemon 委派给子 Agent 的每个任务都以单独的一行开头：`[dsh-mnemon:delegated <operation>]`，任务从下一行开始。空闲审查是 `review`，写入和「存入记忆」是 `write`，其余为 `answer`、`placement`、`migration`、`compaction`、`document-archive`、`metadata-maintenance` 和 `reconcile`。以后的版本可能增加操作，所以请匹配模式而不是这份清单。DSH 把任务记录为子会话中的一条用户消息（`source.kind: "user"`），子会话的头部带有 `origin: "subagent"` 与 `parentSession`。
+dsh-mnemon 委派给子 Agent 的每个任务都以单独的一行开头：`[dsh-mnemon:delegated <operation>]`，任务从下一行开始。空闲审查是 `review`，写入和「存入记忆」是 `write`，技能复盘、草案、回测与评测用例生成是 `skill`，其余为 `answer`、`placement`、`migration`、`compaction`、`document-archive`、`metadata-maintenance` 和 `reconcile`。以后的版本可能增加操作，所以请匹配模式而不是这份清单。DSH 把任务记录为子会话中的一条用户消息（`source.kind: "user"`），子会话的头部带有 `origin: "subagent"` 与 `parentSession`。
 
 整个子会话都是 dsh-mnemon 自己的工作，而不是用户写下的内容。读取会话的插件（例如汇总工作区工作记录的插件）可以略过这样的会话：`origin: "subagent"`，且越过继承的回合之后第一条用户消息的首行匹配 `^\[dsh-mnemon:delegated [a-z-]+\]$`。fork 出的子 Agent 以父 Agent 回合的副本开头（头部有 `isSeeded: true`，止于 `session/end-seed`），任务跟在后面。在对话之外运行的任务（例如存入记忆、Agent 查询与其他从记忆系统页面发起的任务、运行时记忆容量维护和记忆整理）在自己的任务 Agent 会话中运行，该会话没有用户消息。它的头部带有 `origin: "subagent"`，但没有 `parentSession`，也没有 `delegationDepth`，所以按父会话归组子代理的读取方找不到它的父会话，它也没有可收集的工作。它的子 Agent 带有这一行，并以该会话为 `parentSession`。dsh-mnemon 0.5.32 及更早版本保存这个任务 Agent 会话时不带 `origin`（[#435](https://github.com/omdsh-dev/dsh-mnemon/issues/435)）。在这一行出现之前记录的会话直接以任务开头（空闲审查是 `Bounded completed checkpoint (untrusted evidence; …`），不在这一约定之内。Mnemon 的其他 user 角色消息（包括召回与提醒）带有 `source.kind: "dsh-mnemon"`（见[兼容性](./compatibility.md#dsh-017-设置恢复)）。
 

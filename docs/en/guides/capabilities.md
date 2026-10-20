@@ -21,6 +21,10 @@ The short rule: **keep every-turn context in runtime memory, complete narratives
 | Move a document out of hot capacity | **Project Documents → Archive** | A task Agent indexes a cold reference before the Host moves the original; without a Memory Space, the Host archives it locally without one | Yes |
 | See what memory a turn used | **Turn memory** under the reply | The documents and memories each tool read or wrote, each opening where it lives | No |
 | Change how memory is composed | **Plugins → dsh-mnemon → Memory composition** | Switches apply to future turns | Configuration only |
+| Switch, use, edit and restore DSH skills | **Memory System → Skills** | The Host reads and writes the `SKILL.md` folders under a hash fence, keeping every version | Yes, each write leaves a version |
+| Improve skills from real conversations | **Skills → Evolution**, after turning on Self-evolution | A task Agent reviews finished conversations, suggests changes and drafts them; drafts are backtested before you adopt | Only on **Adopt** |
+| Test a skill | **Skills → Evals** | A simulated run per case, graded check by check by a judge | Cases and runs only |
+| Find and install skills | **Skills → Market** | skills.sh search, GitHub repositories, Agent Skills sites and catalogs; every install previewed | Yes, after you confirm |
 
 ## Three kinds of memory
 
@@ -80,9 +84,9 @@ Task Agents follow the model DSH keeps for new sessions, the one picked last in 
 
 | Surface | What it offers |
 |---|---|
-| **Memory System** | Status, Runtime memory, Project Documents and Memory Spaces, with every confirmation step |
+| **Memory System** | Status, Runtime memory, Project Documents, Memory Spaces and Skills, with every confirmation step |
 | **Plugins page** | Memory composition, component pages with their settings (including Providers), storage and interface |
-| **Conversation** | The turn memory bar, Save to memory and links into the Memory System |
+| **Conversation** | The turn memory bar, the turn's skills line, Save to memory and links into the Memory System |
 | **Headless** | The same runtime injection, document search, memory space tools, workspace routing and supervised writes, without a WebUI |
 | **Commands and tools** | `/mnemon` commands and the least-privilege tools Agents use |
 

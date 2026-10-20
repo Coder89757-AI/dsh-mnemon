@@ -116,10 +116,12 @@ const fixture = await mkdtemp(join(tmpdir(), 'mnemon-web-e2e-'))
 const dshHome = join(fixture, 'dsh-home')
 const dataDir = join(fixture, 'data')
 const workspace = join(fixture, 'workspace')
+// DSH and the Skills Source read user skills from ~/.agents unless told otherwise; keep it inside the fixture.
+const agentsHome = join(fixture, 'agents-home')
 // DSH creates its first-use workspace under the system Documents folder, which on
 // macOS it asks the OS for, whatever HOME is; keep that inside the fixture too.
 const documents = join(fixture, 'documents')
-await Promise.all([dshHome, dataDir, workspace, documents].map(path => mkdir(path)))
+await Promise.all([dshHome, dataDir, workspace, documents, agentsHome].map(path => mkdir(path)))
 let modelRequests = 0
 let archiveWrites = 0
 const archiveProvider = runtimeArchive ? createServer(async (request, response) => {
@@ -231,6 +233,7 @@ await new Promise((resolveListen, reject) => {
 const env = {
   ...process.env,
   DSH_HOME: dshHome,
+  DSH_AGENTS_HOME: agentsHome,
   DSH_TELEMETRY_DISABLED: '1',
   // A live run keeps the caller's key and endpoint; otherwise the loopback stub answers.
   ...(liveModel ? {} : { DEEPSEEK_API_KEY: 'isolated-test-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${model.address().port}` }),
@@ -307,6 +310,8 @@ try {
   const assistant = docsDemo === undefined
     ? { name: 'Mnemon E2E', description: 'Isolated memory UI test (no Shell).', persona: 'You are testing the Mnemon memory UI.' }
     : docsDemoAssistant(docsDemo)
+  // The docs demo's assistant reads files and loads skills, as DSH's standard preset does.
+  const docsDemoTools = ['tool-fs', 'skill-filesystem', 'tool-skill'].map(id => `          - id: ${id}\n            name: '@deepseek-ai/dsh-${id}'\n`).join('')
   const browsePicker = `- id: agent-preset-registry
   config:
     default: mnemon-e2e
@@ -323,7 +328,7 @@ try {
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: ${JSON.stringify(assistant.persona)}
-    - id: e2e-directory-picker
+${docsDemo === undefined ? '' : docsDemoTools}    - id: e2e-directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-browse'
     - id: e2e-directory-picker-ui
       name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
@@ -348,7 +353,9 @@ try {
       + JSON.stringify(join(fixture, 'global-runtime')) + '\n        userDataDir: ' + JSON.stringify(join(fixture, 'global-runtime')) + '\n' : '')
     + (flags.has('--runtime-write-scope') ? '- id: mnemon\n  config:\n    persistenceStrategy:\n      mode: manual\n      providerId: mnemon-native\n    runtimeMemory:\n      memoryLimitBytes: 512\n' : '')
     + (reviewModel === undefined ? '' : '- insert:\n    - id: review-evidence-fixture\n      name: ' + JSON.stringify(reviewFixture) + '\n')
-    + (extensionsEnabled ? extensionNames.map(name => `- id: ${name.slice(4)}\n  disabled: false\n`).join('') : ''))
+    + (extensionsEnabled ? extensionNames.map(name => `- id: ${name.slice(4)}\n  disabled: false\n`).join('') : '')
+    // The docs demo shows Skills with self-evolution on, as a user who turned it on sees it.
+    + (docsDemo === undefined ? '' : '- id: mnemon\n  config:\n    skills:\n      evolution: true\n'))
   await writeFile(join(workspace, 'README.md'), '# Mnemon isolated browser test\n\nNo production memory or credentials are used.\n')
   if (slowEmbedder !== undefined) {
     const memoryBodyId = await seedArchiveCopies({ dataDir, workspace })
@@ -361,8 +368,11 @@ try {
     console.log('Remember target seeded; send remember-target-check.')
   }
   if (docsDemo !== undefined) {
-    await seedDocsDemo({ dataDir, workspace, language: docsDemo })
-    console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target.'))
+    // DSH opens conversations in its first-use workspace, a fixed folder under Documents; the project's skills go there.
+    const defaultWorkspace = join(documents, 'deepseek-harness', 'default-workspace')
+    await mkdir(defaultWorkspace, { recursive: true })
+    await seedDocsDemo({ dataDir, workspace, language: docsDemo, skills: { workspace: defaultWorkspace, dshHome, agentsHome, catalogDir: join(fixture, 'team-skills') } })
+    console.log('Docs demo seeded (' + docsDemo + ')' + (liveModel ? '.' : '; ask about checkout, then ask to remember a new target, or ask for the 2.4 release notes and then correct them.'))
   }
   // The docs demo's memory, read by a model that asks three different Recall questions in one turn (#389).
   if (flags.has('--recall-budget') && docsDemo === undefined) {

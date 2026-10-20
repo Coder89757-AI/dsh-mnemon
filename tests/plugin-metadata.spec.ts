@@ -4,6 +4,7 @@ import { memoryPlugin as documents } from 'dsh-mnemon-source-documents'
 import { memoryPlugin as spaces } from 'dsh-mnemon-source-memory-spaces'
 import { NATIVE_PROVIDER_ID } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { memoryPlugin as runtime } from 'dsh-mnemon-source-runtime'
+import { memoryPlugin as skills } from 'dsh-mnemon-source-skills'
 import { memoryPlugin as capture } from 'dsh-mnemon-strategy-auto-capture'
 import { memoryPlugin as threeTier } from 'dsh-mnemon-strategy-default-three-tier'
 import { memoryPlugin as general } from 'dsh-mnemon-strategy-general'
@@ -13,7 +14,7 @@ import { STARTER_COMPONENT_ROWS, STARTER_ENHANCEMENT_PACKAGES, STARTER_SELF_REGI
 import type { MemoryPluginEntryView } from '../src/host/view-protocol.ts'
 import { isShipped } from '../src/client/component-copy.ts'
 
-const components = [runtime, documents, spaces, threeTier, general, capture, light, scoped]
+const components = [runtime, documents, spaces, skills, threeTier, general, capture, light, scoped]
 const read = (path: string): Record<string, unknown> => JSON.parse(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')) as Record<string, unknown>
 
 describe('component package metadata', () => {

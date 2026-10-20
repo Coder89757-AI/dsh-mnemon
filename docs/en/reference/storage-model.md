@@ -52,6 +52,13 @@ Sharing does not broadcast conversations or files. Mnemon-enabled agents can sha
 |   +-- index.json
 |   +-- active/
 |   +-- archived/
++-- skills/                        # Skills; never a Mnemon Pack component
+|   +-- ledger.json
+|   +-- evals.json
+|   +-- trajectories/
+|   +-- versions/
+|   +-- market/
+|   +-- trash/
 +-- data/
 |   +-- .dsh-memory-bodies.json
 |   +-- <memory-space-id>/
@@ -224,6 +231,21 @@ location      local store/CLI scope, or remote endpoint + provider scope
 
 Third-party visibility is determined by its provider scope, such as service plus URI, workspace/peers, bank, project/user, knowledge directory, or container. No provider extends sharing to `runtime/` or `documents/`; “shared third-tier memory” must not be presented as automatic sharing of the complete DSH context.
 
+## Skills
+
+Skills manages files DSH already reads; it never joins a turn's View. The skills themselves stay in DSH's skill roots — `<project>/.dsh/skills`, `<project>/.agents/skills`, `$DSH_HOME/skills` (`~/.dsh/skills`) and `$DSH_AGENTS_HOME/skills` (`~/.agents/skills`) — and every write to them is fenced by the file's SHA-256. What Skills keeps about them lives in the storage root's `skills/` folder:
+
+| Path | Holds | Kept |
+|---|---|---|
+| `ledger.json` | Suggestions, drafts, the review log, the summaries of recorded conversations, the version index and market installs | The newest 200 reviews and 60 drafts |
+| `evals.json` | Test cases and backtest runs | 40 cases and 20 runs per skill |
+| `trajectories/<id>.json` | One recorded conversation: its numbered steps and the review's notes on them, with secrets redacted | The newest 100; pinned records and those a suggestion or case cites go last |
+| `versions/<skill>/<id>.md` | Each earlier `SKILL.md`, for comparing and restoring | 30 per skill |
+| `market/registries.json`, `market/cache/<id>.json` | The sources added in the market and the last list each published | Until removed; refreshed after six hours |
+| `trash/` | Skill folders that were deleted, or replaced by an update or a restore | Until you delete them by hand |
+
+The folder is written under the storage lock with atomic replacement, and it follows the storage scope like the other Sources. It is not part of a Mnemon Pack, so neither ZIP backup nor Git sync carries it; the skills themselves are ordinary files in their roots. Its settings are configuration, under `skills` in the `mnemon` entry; see [Skills settings](./configuration.md#skills-settings).
+
 ## Four Relationship Types
 
 Mnemon Native preserves `temporal`, `semantic`, `causal`, and `entity` relationships. Hindsight projects its provider graph, and Holographic derives local entity/semantic relationships. Providers without graph edges contribute bounded disconnected nodes; adapters never invent unsupported relationships. The UI hides Related, Link, Browse, and Forget where the selected provider does not support them.
@@ -241,4 +263,6 @@ Mnemon Native preserves `temporal`, `semantic`, `causal`, and `entity` relations
 | Cross-machine deletions | `state/tombstones.json` | `state/runtime-index.json`, which is what a later export diffs against |
 | Reconciliation proposals | `state/review-ledger.json` | the review card; an accepted proposal is applied to the Sources, never to the ledger |
 | Long-term memory | Mnemon `mnemon.db` or remote provider | graph projection and cross-provider rank fusion |
+| Skills | The `SKILL.md` folders in DSH's skill roots | the catalog the Skills page shows; `skills/` versions, installs and market caches |
+| Skill evolution | `skills/ledger.json`, `skills/evals.json`, `skills/trajectories/` | the Evolution count, the Status card and the line under each turn |
 | Review watermark | Host process memory | status-page snapshot; not yet persisted |

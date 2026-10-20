@@ -10,7 +10,7 @@ import type { MemoryCapability, MemoryJsonValue, MemoryOperationScope, MemorySou
 import type { CreateMemorySpaceRequest, Insight, MemorySpaceCatalog, PreparedMemoryPlacement, RememberRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { RuntimeMemoryMutation } from 'dsh-mnemon-source-runtime/contracts'
 import type { DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
-import { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL, type MemoryCompositionStatus, type MnemonPackComponent, type MnemonPackImportMode } from './protocol.ts'
+import { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL, type MemoryCompositionStatus, type MnemonPackComponent, type MnemonPackImportMode, type SkillsStatusSummary } from './protocol.ts'
 import { MNEMON_PACK_COMPONENTS } from './protocol.ts'
 import { applyReconcileOperations, selectReconcileOperations, sourceApplier, type MnemonReconcileSessions } from './reconcile.ts'
 export { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL } from './protocol.ts'
@@ -109,6 +109,7 @@ const ASSISTANCE: Record<string, readonly string[]> = {
   'runtime': ['mutate'],
   'documents': ['mutate', 'archive'],
   'memory-spaces': ['agent-search', 'supervise', 'body-create', 'body-metadata-maintain'],
+  'skills': ['skill-draft', 'skill-backtest', 'skill-derive-cases', 'skill-review-now'],
 }
 function assistance(source: MemorySourceManagementInstance, lifecycle?: MnemonLifecycle, runtime?: ScopedRuntime): readonly string[] {
   const controls = source.sourceTypeId === 'memory-spaces' ? ['activation'] : []
@@ -171,6 +172,7 @@ async function assisted(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, type
       }
     }
   }
+  if (typeId === 'skills') return skillAssistance(runtime, lifecycle, operation, input, signal)
   if (typeId !== 'memory-spaces') throw new Error('unsupported Source assistance operation')
   const source = runtime.source(typeId)
   switch (operation) {
@@ -209,6 +211,58 @@ async function assisted(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, type
       const maintained = await lifecycle.maintainMetadata(sessionId, ids, workspaceRoot, signal)
       if (maintained.updates.length > 0) await source.mutate('body-metadata-update', { updates: maintained.updates }, signal)
       return maintained
+    }
+    default: throw new Error('unsupported Source assistance operation: ' + operation)
+  }
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw new Error(label + ' must be a string')
+  return value.trim() === '' ? undefined : value.trim()
+}
+
+/** Skill evolution's model work: drafts and backtests run in the background, cases and reviews answer here. */
+async function skillAssistance(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, operation: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  const skills = lifecycle.skills
+  if (skills === undefined) throw new Error('skill evolution is unavailable')
+  const source = runtime.source('skills')
+  const workspaceRoot = runtime.scope.workspaceId
+  switch (operation) {
+    case 'skill-draft': {
+      const root = optionalString(input.targetRoot, 'targetRoot')
+      if (root !== undefined && !['project-dsh', 'project-agents', 'user-dsh', 'user-agents'].includes(root)) throw new Error('unknown skill root: ' + root)
+      const suggestionId = optionalString(input.suggestionId, 'suggestionId')
+      const skill = optionalString(input.skill, 'skill')
+      if (suggestionId === undefined && skill === undefined) throw new Error('a draft needs a suggestion or a skill')
+      const guidance = optionalString(input.guidance, 'guidance')
+      if (guidance !== undefined && guidance.length > 4_000) throw new Error('guidance is too long (max 4000 characters)')
+      return skills.draft(source, workspaceRoot, {
+        ...(suggestionId === undefined ? {} : { suggestionId }), ...(skill === undefined ? {} : { skill }),
+        ...(guidance === undefined ? {} : { guidance }), ...(root === undefined ? {} : { targetRoot: root as never }),
+      })
+    }
+    case 'skill-backtest': {
+      const skillName = optionalString(input.skillName, 'skillName')
+      if (skillName === undefined) throw new Error('skillName is required')
+      const target = object(input.target)
+      if (!['current', 'draft', 'version', 'none'].includes(String(target.kind))) throw new Error('target kind must be current, draft, version or none')
+      const caseIds = input.caseIds === undefined ? undefined : input.caseIds
+      if (caseIds !== undefined && (!Array.isArray(caseIds) || caseIds.some(id => typeof id !== 'string'))) throw new Error('caseIds must be a string array')
+      return skills.backtest(source, workspaceRoot, { skillName, target: target as never, ...(caseIds === undefined ? {} : { caseIds: caseIds as string[] }) })
+    }
+    case 'skill-derive-cases': {
+      const trajectoryId = optionalString(input.trajectoryId, 'trajectoryId')
+      const skillName = optionalString(input.skillName, 'skillName')
+      if (trajectoryId === undefined || skillName === undefined) throw new Error('trajectoryId and skillName are required')
+      const steps = input.steps
+      if (steps !== undefined && (!Array.isArray(steps) || steps.some(step => !Number.isInteger(step)))) throw new Error('steps must be an integer array')
+      return skills.deriveCases(source, workspaceRoot, { trajectoryId, skillName, ...(steps === undefined ? {} : { steps: steps as number[] }) }, signal ?? new AbortController().signal)
+    }
+    case 'skill-review-now': {
+      const sessionId = runtime.scope.sessionId
+      if (sessionId === undefined || !runtime.liveSession) throw new Error('open the conversation to review, and run it once, before reviewing its skills')
+      return lifecycle.reviewSkills(sessionId)
     }
     default: throw new Error('unsupported Source assistance operation: ' + operation)
   }
@@ -273,6 +327,14 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
           // Every Memory System page reads this status, so each one can say what a restart would load.
           let restartPending
           try { restartPending = versions?.restartStatus() } catch { /* The reminder is optional; the status is not. */ }
+          // 技能管理's card: how many skills there are and what waits for the user.
+          let skills: SkillsStatusSummary | undefined
+          if (composition.sources.some(source => source.sourceTypeId === 'skills')) {
+            try {
+              const overview = await runtime.source('skills').read<{ counts: { skills: number; pending: number; drafts: number } }>('overview', null, signal)
+              skills = { evolution: lifecycle?.skills?.config().evolution ?? false, skills: overview.counts.skills, waiting: overview.counts.pending + overview.counts.drafts }
+            } catch { /* The card falls back to its own note. */ }
+          }
           const hasSpaces = composition.sources.some(source => source.sourceTypeId === 'memory-spaces')
           const status = hasSpaces ? await runtime.source('memory-spaces').read<Record<string, unknown>>(endpoint, payload, signal) : {
             healthy: composition.evaluation.state === 'ready', commandFound: false, cliPath: runtime.graph.config.cliPath ?? '',
@@ -285,6 +347,7 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
             ...(restartPending === undefined ? {} : { restartPending }),
             ...(lifecycle === undefined ? {} : { lifecycle: lifecycle.snapshot(runtime.scope.sessionId, isWorkspaceStorageScope(runtime.graph.config.storageScope) ? runtime.scope.workspaceId : undefined) }),
             ...(documents === undefined ? {} : { documents }),
+            ...(skills === undefined ? {} : { skills }),
             memorySystem: composition,
             storage: runtime.graph.storage.catalog(runtime.scope.workspaceId),
             workspaceContext: {
@@ -303,6 +366,9 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
           const snapshot = lifecycle.turnActivities(String(payload.sessionId ?? ''))
           return success(endpoint === 'turn-activities' ? snapshot : snapshot.activities.find(activity => activity.turn === Number(payload.turn)) ?? null)
         }
+        case 'skill-activity':
+          if (lifecycle === undefined) throw new Error('Mnemon skill activity is unavailable')
+          return success(await lifecycle.skillActivity(String(payload.sessionId ?? '')))
         case 'assistant-message':
           if (lifecycle === undefined) throw new Error('Mnemon assistant message is unavailable')
           return success(lifecycle.assistantMessage(String(payload.sessionId ?? ''), String(payload.messageId ?? '')))

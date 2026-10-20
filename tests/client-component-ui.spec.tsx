@@ -4,6 +4,7 @@ import { createComponentRegionDirectory, createComponentSettingsDirectory, insta
 import { DOCUMENTS_PACKAGE, installShippedComponentStatus } from '../src/client/component-status.tsx'
 import { installShippedComponentSettings, MEMORY_SPACES_PACKAGE, RUNTIME_PACKAGE, THREE_TIER_PACKAGE } from '../src/client/component-settings.tsx'
 import { translateZh } from '../src/client/locales.ts'
+import { SKILLS_PACKAGE } from '../src/client/skills-settings.tsx'
 import { settingsScope } from './helpers/settings-scope.ts'
 import type { Config } from '../src/host/config.ts'
 
@@ -81,6 +82,7 @@ describe('component regions', () => {
     const dispose = installShippedComponentStatus(context)
     expect(registered.map(entry => [entry.options.name, entry.options.key])).toEqual([
       [MNEMON_COMPONENT_STATUS_SLOT, RUNTIME_PACKAGE], [MNEMON_COMPONENT_STATUS_SLOT, DOCUMENTS_PACKAGE], [MNEMON_COMPONENT_STATUS_SLOT, MEMORY_SPACES_PACKAGE],
+      [MNEMON_COMPONENT_STATUS_SLOT, SKILLS_PACKAGE],
     ])
     dispose()
     expect(registered).toEqual([])
@@ -99,6 +101,15 @@ describe('component regions', () => {
     const dispose = installShippedComponentSettings(context, { scope: settingsScope<Config>({ status: 'ready', value: {}, writable: true, mode: 'host' }), t: translateZh })
     expect(registered.map(entry => entry.options.key)).toEqual([RUNTIME_PACKAGE, MEMORY_SPACES_PACKAGE, THREE_TIER_PACKAGE])
     dispose()
+    expect(registered).toEqual([])
+    // 技能管理's page carries its settings once the client reads them.
+    const withSkills = installShippedComponentSettings(context, {
+      scope: settingsScope<Config>({ status: 'ready', value: {}, writable: true, mode: 'host' }),
+      skillsScope: settingsScope({ status: 'ready', value: {}, writable: true, mode: 'host' }),
+      t: translateZh,
+    })
+    expect(registered.map(entry => entry.options.key)).toContain(SKILLS_PACKAGE)
+    withSkills()
     expect(registered).toEqual([])
   })
 })

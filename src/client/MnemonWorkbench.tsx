@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExtern
 import { IconChevronLeftOutline14, IconRefreshOutlineRegular, IconSettingsOutlineRegular } from './ui-icons.ts'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 
-import { type ClientConnectionHandle, type ClientSettingsScope, type Config, type JsonValue, type MemorySourceManagementInstance, type StorageAreaInventory, type StorageScopeKind, type VersionRestartStatus } from "../host/protocol.ts"
+import { DEFAULT_SKILLS_CONFIG, type ClientConnectionHandle, type ClientSettingsScope, type ClientSettingsSnapshot, type Config, type JsonValue, type MemorySourceManagementInstance, type SkillsConfig, type StorageAreaInventory, type StorageScopeKind, type VersionRestartStatus } from "../host/protocol.ts"
 import type { MemoryPluginEntryView, MemoryViewDashboard } from '../host/view-protocol.ts'
 import { MnemonClient } from "./api.ts"
 import { isRemoteConnection } from "./remote-rpc.ts"
@@ -13,6 +13,7 @@ import { SourceManagementPage } from './SourceManagementPage.tsx'
 import { useWorkspaceStatus } from './use-workspace-status.ts'
 import { useSourceCatalog } from './use-source-catalog.ts'
 import { managedSourceTypeId, sourcePageEntryId, stoppedSourceTypeId, useWorkspaceNavigation, type Page, type SourceNavigationEntry } from './use-workspace-navigation.ts'
+import { requestComponentPage } from './component-page-request.ts'
 import { translateZh, type MnemonTranslate } from "./locales.ts"
 
 import { MNEMON_SOURCE_PAGE_SLOT, type MemorySourcePageDirectory, type MemorySourcePageEntry } from "./source-pages.tsx"
@@ -58,7 +59,21 @@ interface MnemonWorkbenchProps {
   componentChanges?: MnemonChangeSignal
   sourcePageDirectory?: MemorySourcePageDirectory
   renderSlot?: PropsRenderSlots<typeof MNEMON_SOURCE_PAGE_SLOT | typeof MNEMON_COMPONENT_STATUS_SLOT>['renderSlot']
+  /**
+   * Show one Source's pages alone, as its own sidebar entry does: the header
+   * carries its title, refresh and settings, with no tabs and no Status.
+   */
+  focus?: { sourceTypeId: string; title: string }
+  /** Source types whose pages live in an entry of their own, such as 技能管理's. */
+  hiddenSourceTypes?: readonly string[]
+  /** 技能管理's settings, so its page can show and switch evolution. */
+  skillsScope?: ClientSettingsScope<SkillsConfig>
 }
+
+/** 技能管理's Source type. */
+const SKILLS_SOURCE_TYPE = 'skills'
+const NO_SKILLS_SNAPSHOT: ClientSettingsSnapshot<SkillsConfig> = { status: 'unavailable', writable: false, mode: 'host' }
+const NO_SKILLS_SCOPE: Pick<ClientSettingsScope<SkillsConfig>, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => NO_SKILLS_SNAPSHOT }
 
 const NO_ACTION_SEAT: Pick<MnemonActionSeat, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => undefined }
 const NO_CHANGE_SIGNAL: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => 0 }
@@ -176,7 +191,7 @@ export function MnemonWorkbench(props: MnemonWorkbenchProps): JSX.Element {
   return <I18nContext.Provider value={t}><LocaleContext.Provider value={props.locale ?? 'zh'}><MnemonWorkspace {...props} /></LocaleContext.Provider></I18nContext.Provider>
 }
 
-function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, workspaceSelection, surface = 'sidebar', active = true, titleBar = false, onClose, configuration, componentChanges, sourcePageDirectory = EMPTY_SOURCE_PAGE_DIRECTORY, renderSlot }: MnemonWorkbenchProps): JSX.Element {
+function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, workspaceSelection, surface = 'sidebar', active = true, titleBar = false, onClose, configuration, componentChanges, sourcePageDirectory = EMPTY_SOURCE_PAGE_DIRECTORY, renderSlot, focus, hiddenSourceTypes, skillsScope }: MnemonWorkbenchProps): JSX.Element {
   const t = useT()
   const locale = useLocale()
   const configurationSeat = configuration ?? NO_ACTION_SEAT
@@ -188,7 +203,16 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   const settingsSnapshot = useSyncExternalStore(subscribeSettings, getSettingsSnapshot, getSettingsSnapshot)
   const subscribeSourcePages = useCallback((listener: () => void) => sourcePageDirectory.subscribe(listener), [sourcePageDirectory])
   const getSourcePages = useCallback(() => sourcePageDirectory.getSnapshot(), [sourcePageDirectory])
-  const sourcePageEntries = useSyncExternalStore(subscribeSourcePages, getSourcePages, getSourcePages)
+  const allSourcePageEntries = useSyncExternalStore(subscribeSourcePages, getSourcePages, getSourcePages)
+  const skillsSeat = skillsScope ?? NO_SKILLS_SCOPE
+  const subscribeSkills = useCallback((listener: () => void) => skillsSeat.subscribe(listener), [skillsSeat])
+  const getSkillsSnapshot = useCallback(() => skillsSeat.getSnapshot(), [skillsSeat])
+  const skillsSnapshot = useSyncExternalStore(subscribeSkills, getSkillsSnapshot, getSkillsSnapshot)
+  // The Source types this view shows: the focused one alone, or all but those with an entry of their own.
+  const focusType = focus?.sourceTypeId
+  const hiddenKey = hiddenSourceTypes?.join('\u0000') ?? ''
+  const shows = useCallback((sourceTypeId: string): boolean => focusType !== undefined ? sourceTypeId === focusType : !hiddenKey.split('\u0000').includes(sourceTypeId), [focusType, hiddenKey])
+  const sourcePageEntries = useMemo(() => allSourcePageEntries.filter(entry => shows(entry.sourceTypeId)), [allSourcePageEntries, shows])
   const client = useMemo(() => new MnemonClient(connection, sessionId, workspaceId), [connection, sessionId, workspaceId])
   const taskClient = useMemo(() => surface === 'builtin' ? client : new MnemonClient(connection, undefined, workspaceId), [client, connection, surface, workspaceId])
   const clientContextKey = `${sessionId ?? ''}\u0000${workspaceId ?? ''}`
@@ -217,7 +241,8 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
 
   const { status, statusLoading, statusError, loadStatus } = useWorkspaceStatus(client, viewContextKey)
   const [revision, setRevision] = useState(0)
-  const { sourceCatalogState, sourceCatalog, sourceInstances, sourceManagementClients, visibleSourcePages, managedSourceTypes } = useSourceCatalog(client, taskClient, revision, viewContextKey, sourcePageEntries)
+  const { sourceCatalogState, sourceCatalog, sourceInstances, sourceManagementClients, visibleSourcePages, managedSourceTypes: allManagedSourceTypes } = useSourceCatalog(client, taskClient, revision, viewContextKey, sourcePageEntries)
+  const managedSourceTypes = useMemo(() => allManagedSourceTypes.filter(([sourceTypeId]) => shows(sourceTypeId)), [allManagedSourceTypes, shows])
   const [selectedSourceInstances, setSelectedSourceInstances] = useState<Record<string, string>>({})
   // Configured layers whose Source is not running: its component is off, or
   // nothing is composed. They keep a tab that says so instead of vanishing.
@@ -225,8 +250,8 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   const stoppedTypes = useMemo(() => {
     if (sourceCatalog === null || stoppedLayers === undefined) return new Set<string>()
     const running = new Set(sourceInstances.map(source => source.sourceTypeId))
-    return new Set(Object.keys(stoppedLayers).filter(id => !running.has(id)))
-  }, [sourceCatalog, sourceInstances, stoppedLayers])
+    return new Set(Object.keys(stoppedLayers).filter(id => !running.has(id) && shows(id)))
+  }, [sourceCatalog, sourceInstances, stoppedLayers, shows])
   // The installed components name themselves: every name here comes from a
   // component's own declaration, the way the configuration shows it.
   const [dashboard, setDashboard] = useState<MemoryViewDashboard | null>(null)
@@ -247,8 +272,12 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
   // A stopped layer whose Source component is switched off is off: the
   // configuration shows that component as the layer's own switch.
   const switchedOff = useMemo(() => new Set(dashboard === null ? [] : [...stoppedTypes].filter(id => sourceOf(dashboard, id)?.enabled === false)), [dashboard, stoppedTypes])
+  // A focused view opens its Source's first page and stays there; anchors for other pages are another view's.
+  const focusPage = focusType === undefined ? undefined : sourcePageEntries.find(entry => entry.navigation?.primary ?? true)
+  const home: Page = focusPage === undefined ? 'status' : `source:${focusPage.id}`
+  const accepts = useCallback((target: string): boolean => target === 'status' ? focusType === undefined : shows(target.split('/')[0]!), [focusType, shows])
   const { page, navigationInput, openTab, sourceNavigationEntries } = useWorkspaceNavigation({
-    sessionId, viewContextKey, resetViewportScroll, sourceCatalog, sourcePageEntries, visibleSourcePages, managedSourceTypes, stoppedTypes, dashboard, sourceName, showWorkspaceToast,
+    sessionId, viewContextKey, resetViewportScroll, sourceCatalog, sourcePageEntries, visibleSourcePages, managedSourceTypes, stoppedTypes, dashboard, sourceName, showWorkspaceToast, accepts, home,
   })
   // Runs after the catalog and component-name reads, so the three requests keep their order.
   useEffect(() => { void loadStatus() }, [loadStatus])
@@ -326,7 +355,17 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
     if (selected === undefined || renderSlot === undefined) return null
     if (disabledTypes.has(sourceTypeId)) return <SourceDisabledPage title={sourceName(sourceTypeId, selected.management.label)} onOpenConfiguration={openConfiguration} />
     const management = sourceManagementClients.get(selected.sourceInstanceKey)
-    const preferences = !isDefaultSourceInstance(selected.sourceInstanceKey, 'memory-spaces') ? undefined : {
+    const skillsPreferences = sourceTypeId !== SKILLS_SOURCE_TYPE || skillsScope === undefined || skillsSnapshot.status !== 'ready' ? undefined : {
+      value: { evolution: skillsSnapshot.value?.evolution ?? DEFAULT_SKILLS_CONFIG.evolution } as JsonValue,
+      writable: skillsSnapshot.writable,
+      replace: async (value: JsonValue) => {
+        const evolution = jsonRecord(value)?.evolution
+        if (typeof evolution !== 'boolean') throw new Error('Skills preferences take evolution as a boolean')
+        await skillsScope.mutate([{ op: 'set', path: ['evolution'], value: evolution }])
+      },
+    }
+    const openSettings = openConfiguration === undefined ? undefined : () => { requestComponentPage(selected.packageName); openConfiguration() }
+    const preferences = skillsPreferences ?? (!isDefaultSourceInstance(selected.sourceInstanceKey, 'memory-spaces') ? undefined : {
       value: JSON.parse(JSON.stringify({ persistenceStrategy: { ...settingsSnapshot.value?.persistenceStrategy, providerConnections: {} } })) as JsonValue,
       writable: settingsSnapshot.writable,
       replace: async (value: JsonValue) => {
@@ -338,13 +377,16 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
         for (const [id, fields] of Object.entries(connections)) merged[id] = { ...merged[id], ...jsonRecord(fields) } as NonNullable<typeof merged[string]>
         await settingsScope.mutate([{ op: 'set', path: ['persistenceStrategy'], value: { ...strategy, providerConnections: merged } }])
       },
-    }
+    })
     return renderSlot(MNEMON_SOURCE_PAGE_SLOT, {
       sourceTypeId, sourceInstanceKey: selected.sourceInstanceKey, sourceInstances: instances, writable: writeEnabled, locale,
       ...(management === undefined ? {} : { management }),
       ...(sessionId === undefined ? {} : { sessionId }), ...(workspaceId === undefined ? {} : { workspaceId }),
       ...(navigationInput?.page === entryId ? { navigationInput: navigationInput.value } : {}),
       ...(preferences === undefined ? {} : { preferences }), onRefresh: mutate, refreshKey, onResetScroll: resetViewportScroll, onRevealElement: revealElement,
+      ...(onClose === undefined ? {} : { onReturnToConversation: onClose }),
+      ...(openSettings === undefined ? {} : { onOpenSettings: openSettings }),
+      ...(focusType === undefined ? {} : { standalone: true }),
     }, { only: entryId })
   }
   const activeStoppedType = stoppedSourceTypeId(page)
@@ -394,31 +436,37 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
     onMutate={mutate}
   />
 
+  // A focused view's gear opens its own component's settings rather than the whole configuration.
+  const focusPackage = focusType === undefined ? undefined : sourceInstances.find(source => source.sourceTypeId === focusType)?.packageName
+  const openSettings = openConfiguration === undefined ? undefined
+    : focusPackage === undefined ? (focusType === undefined ? openConfiguration : undefined)
+      : () => { requestComponentPage(focusPackage); openConfiguration() }
+  const focused = focusType !== undefined
   return (
-    <main className={appearanceClass(css.shell, sidebarCss.shell)} data-dsh-plugin="dsh-mnemon" data-dsh-part="mnemon-view" data-mnemon-surface={surface}>
+    <main className={appearanceClass(css.shell, sidebarCss.shell)} data-dsh-plugin="dsh-mnemon" data-dsh-part="mnemon-view" data-mnemon-surface={surface} data-mnemon-focus={focusType}>
       <header className={appearanceClass(css.masthead, sidebarCss.masthead)} data-window-drag={titleBar || undefined}>
         {onClose !== undefined && <button type="button" className={appearanceClass(css.ghostButton, css.backButton)} onClick={onClose} aria-label={t('header.backToConversation')}><IconChevronLeftOutline14 size={14} /><span>{t('header.backToConversation')}</span></button>}
         <div className={appearanceClass(css.brand, sidebarCss.brand)}>
-          <h1>{t('tab.label')}</h1>
+          <h1>{focus?.title ?? t('tab.label')}</h1>
           {surface === 'sidebar' && <>
             <span className={css.storageMode} aria-label={t('workspace.storageModeAria', { mode: storageModeText })}><span>{t('workspace.storageMode')}</span><strong>{storageModeText}</strong></span>
             {workspacePicker}
             {canAlignWorkspace && <div className={appearanceClass(css.workspaceMismatch, sidebarCss.workspaceMismatch)} role="status" aria-label={`${t('workspace.mismatchTitle')}. ${workspaceDifference}`} title={workspaceDifference}><span>{t('workspace.mismatchShort')}</span><button type="button" onClick={workspaceSelection.onAlign}>{t('workspace.align')}</button></div>}
           </>}
         </div>
-        <div className={appearanceClass(css.headerActions, sidebarCss.headerActions)}><div className={appearanceClass(css.statusCluster, sidebarCss.statusCluster)}><CompositionStatus tone={statusTone} label={connectionLabel} strategy={composingLabel} layers={headerLayers} onOpen={openConfiguration} /><button type="button" className={css.iconButton} disabled={statusLoading} onClick={refreshPage} aria-label={t('common.refresh')} title={t('common.refresh')}><IconRefreshOutlineRegular size={16} /></button></div>{openConfiguration !== undefined && <button type="button" className={css.iconButton} onClick={openConfiguration} aria-label={t('header.configure')} title={t('header.configure')}><IconSettingsOutlineRegular size={16} /></button>}</div>
+        <div className={appearanceClass(css.headerActions, sidebarCss.headerActions)}><div className={appearanceClass(css.statusCluster, sidebarCss.statusCluster)}>{!focused && <CompositionStatus tone={statusTone} label={connectionLabel} strategy={composingLabel} layers={headerLayers} onOpen={openConfiguration} />}<button type="button" className={css.iconButton} disabled={statusLoading} onClick={refreshPage} aria-label={t('common.refresh')} title={t('common.refresh')}><IconRefreshOutlineRegular size={16} /></button></div>{openSettings !== undefined && <button type="button" className={css.iconButton} onClick={openSettings} aria-label={t('header.configure')} title={t('header.configure')}><IconSettingsOutlineRegular size={16} /></button>}</div>
       </header>
       {sourceCatalogState.contextKey === viewContextKey && sourceCatalogState.error !== null && <div className={css.alert} role="alert">{sourceCatalogState.error}</div>}
       {(statusError !== null || status?.healthy === false && notice === undefined) && <div className={css.alert} role="alert"><strong>{t('header.notReady')}</strong><span>{statusError ?? status?.error}</span></div>}
-      <Reveal className={css.notice}>{statusError === null && notice !== undefined && <Callout tone={notice.tone === 'error' ? 'error' : 'warning'} title={notice.title}
+      <Reveal className={css.notice}>{!focused && statusError === null && notice !== undefined && <Callout tone={notice.tone === 'error' ? 'error' : 'warning'} title={notice.title}
         actions={openConfiguration === undefined ? undefined : <Button variant="outline" size="sm" onClick={openConfiguration}>{t('common.openConfiguration')}</Button>}>
         {notice.detail}
       </Callout>}</Reveal>
       <Reveal className={css.notice}>{status?.restartPending !== undefined && <RestartReminder pending={status.restartPending} />}</Reveal>
       {workspaceToast.element}
       {remoteReadOnly && <div className={css.alert} role="status">{t('workspace.remoteReadOnly')}</div>}
-      {status?.lifecycle?.current?.idleReviewBlocked === 'agent-team' && <div className={css.alert} role="status">{t('status.reviewTeamPaused')}</div>}
-      {status?.lifecycle?.current?.lastError !== undefined && <div className={css.alert} role="alert" aria-label={t('status.reviewFailed')}>
+      {!focused && status?.lifecycle?.current?.idleReviewBlocked === 'agent-team' && <div className={css.alert} role="status">{t('status.reviewTeamPaused')}</div>}
+      {!focused && status?.lifecycle?.current?.lastError !== undefined && <div className={css.alert} role="alert" aria-label={t('status.reviewFailed')}>
         <strong>{t('status.reviewFailed')}</strong>
         <span>{status.lifecycle.current.lastError}</span>
         <span>{t('status.reviewFailedDetail')}</span>
@@ -430,9 +478,9 @@ function MnemonWorkspace({ connection, settingsScope, sessionId, workspaceId, wo
         {/CONTEXT_WINDOW_EXCEEDED|exceed(?:s|ed)? (?:the )?(?:available )?context (?:size|window)/iu.test(status.lifecycle.current.lastError) && <span>{t('status.reviewContextWindow')}</span>}
       </div>}
       <div className={css.workspace}>
-        <WorkspaceNavigation page={page} onSelect={openTab} sourcePages={sourceNavigationEntries} disabledTypes={disabledTypes} memoryOff={memoryOff} />
+        {!focused && <WorkspaceNavigation page={page} onSelect={openTab} sourcePages={sourceNavigationEntries} disabledTypes={disabledTypes} memoryOff={memoryOff} />}
         <section key={viewContextKey} className={appearanceClass(css.canvas, sidebarCss.canvas)} ref={canvasRef} data-testid="mnemon-canvas" data-lock-page-header={(activeSourcePage?.navigation?.stickyHeader !== false) ? '' : undefined}>
-          {page === 'status' && <WorkbenchStatusContext.Provider value={status}>
+          {page === 'status' && !focused && <WorkbenchStatusContext.Provider value={status}>
             <StatusPage client={client} status={status} loading={statusLoading} writeEnabled={writeEnabled} attention={notice !== undefined}
               components={componentCards} renderCard={renderCard} areaName={areaName} onRefresh={() => void loadStatus()} onOpenConfiguration={openConfiguration} />
           </WorkbenchStatusContext.Provider>}

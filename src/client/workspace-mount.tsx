@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientSettingsScope, Config } from "../host/protocol.ts"
+import type { ClientSettingsScope, Config, SkillsConfig } from "../host/protocol.ts"
 import type { MnemonClientContext } from "./dsh-context.ts"
 import type { MnemonTranslate } from './locales.ts'
 import { MnemonWorkbench, type MnemonWorkspaceSelection } from './MnemonWorkbench.tsx'
@@ -58,10 +58,28 @@ interface MnemonWorkspaceHostProps {
   /** The page fills DSH's main column, so its header is the window's top edge. */
   titleBar?: boolean
   renderSlot?: PropsRenderSlots<typeof MNEMON_SOURCE_PAGE_SLOT | typeof MNEMON_COMPONENT_STATUS_SLOT>['renderSlot']
+  /** One Source's pages alone, as 技能管理's own sidebar entry shows them. */
+  focus?: { sourceTypeId: string; title: string }
+  /** 技能管理's settings, for its page. */
+  skillsScope?: ClientSettingsScope<SkillsConfig>
+  /** Whether 技能管理 has an entry of its own, so the Memory System leaves its page out. */
+  skillsPanel?: { subscribe(listener: () => void): () => void; getSnapshot(): boolean }
+}
+
+const NO_SKILLS_PANEL = { subscribe: () => () => {}, getSnapshot: () => false }
+const SKILLS_APART = ['skills'] as const
+
+/** The Source types the Memory System leaves to an entry of their own. */
+function useHiddenSourceTypes(panel: MnemonWorkspaceHostProps['skillsPanel']): readonly string[] | undefined {
+  const seat = panel ?? NO_SKILLS_PANEL
+  const subscribe = useCallback((listener: () => void) => seat.subscribe(listener), [seat])
+  const getSnapshot = useCallback(() => seat.getSnapshot(), [seat])
+  const apart = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  return apart ? SKILLS_APART : undefined
 }
 
 interface MnemonBuiltinWorkspaceHostProps extends Pick<MnemonWorkspaceHostProps,
-  'connection' | 'settingsScope' | 'localeRuntime' | 'sourcePageDirectory' | 'configuration' | 'componentChanges' | 'renderSlot' | 't'> {
+  'connection' | 'settingsScope' | 'localeRuntime' | 'sourcePageDirectory' | 'configuration' | 'componentChanges' | 'renderSlot' | 't' | 'skillsScope' | 'skillsPanel'> {
   sessionId: string
 }
 
@@ -70,10 +88,13 @@ export function MnemonBuiltinWorkspaceHost(props: MnemonBuiltinWorkspaceHostProp
   const subscribeLocale = useCallback((listener: () => void) => props.localeRuntime.subscribe(listener), [props.localeRuntime])
   const getLocale = useCallback(() => props.localeRuntime.getSnapshot(), [props.localeRuntime])
   const locale = useSyncExternalStore(subscribeLocale, getLocale, getLocale)
+  const hiddenSourceTypes = useHiddenSourceTypes(props.skillsPanel)
   return <MnemonWorkbench
     connection={props.connection}
     settingsScope={props.settingsScope}
     sessionId={props.sessionId}
+    {...(hiddenSourceTypes === undefined ? {} : { hiddenSourceTypes })}
+    {...(props.skillsScope === undefined ? {} : { skillsScope: props.skillsScope })}
     surface="builtin"
     t={props.t}
     locale={locale.active}
@@ -96,6 +117,8 @@ export function MnemonWorkspaceHost(props: MnemonWorkspaceHostProps): JSX.Elemen
   const sessions = useSyncExternalStore(subscribeSessions, getSessions, getSessions)
   const workspaces = useSyncExternalStore(subscribeWorkspaces, getWorkspaces, getWorkspaces)
   const mainSessionId = useMnemonSessionId(props.currentSession)
+  const hidden = useHiddenSourceTypes(props.skillsPanel)
+  const hiddenSourceTypes = props.focus === undefined ? hidden : undefined
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>()
   const sessionId = Object.hasOwn(props, 'sessionId') ? props.sessionId : mainSessionId
   const currentCwd = props.cwd ?? (sessionId === undefined ? undefined : Object.entries(sessions.byId).find(([id]) => id === sessionId)?.[1]?.cwd)
@@ -135,6 +158,9 @@ export function MnemonWorkspaceHost(props: MnemonWorkspaceHostProps): JSX.Elemen
     {...(props.componentChanges === undefined ? {} : { componentChanges: props.componentChanges })}
     {...(props.renderSlot === undefined ? {} : { renderSlot: props.renderSlot })}
     {...(props.navigation === undefined ? {} : { onClose: props.navigation.close })}
+    {...(props.focus === undefined ? {} : { focus: props.focus })}
+    {...(hiddenSourceTypes === undefined ? {} : { hiddenSourceTypes })}
+    {...(props.skillsScope === undefined ? {} : { skillsScope: props.skillsScope })}
   />
 }
 
@@ -210,6 +236,8 @@ export function MnemonSidebarWorkspaceHost(props: MnemonWorkspaceHostProps & { c
     sourcePageDirectory={props.sourcePageDirectory}
     {...(props.configuration === undefined ? {} : { configuration: props.configuration })}
     {...(props.componentChanges === undefined ? {} : { componentChanges: props.componentChanges })}
+    {...(props.skillsScope === undefined ? {} : { skillsScope: props.skillsScope })}
+    {...(props.skillsPanel === undefined ? {} : { skillsPanel: props.skillsPanel })}
     sessionId={betterSidebar.scope.sessionId}
     {...(betterSidebar.scope.cwd === undefined ? {} : { cwd: betterSidebar.scope.cwd })}
     active={betterSidebar.visible}

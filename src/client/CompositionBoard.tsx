@@ -1,8 +1,8 @@
 import { useId, useMemo, useState, type JSX, type ReactNode } from 'react'
-import { IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconSearchOutlineRegular, IconSettingsOutlineRegular, StateDot, Switch, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, IconLinkOutlineRegular, IconSearchOutlineRegular, IconSettingsOutlineRegular, StateDot, Switch, Tag, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MemoryCompositionStatus } from '../host/protocol.ts'
 import type { MemoryPluginEntryView, MemoryPluginPreference, MemoryViewDashboard } from '../host/view-protocol.ts'
-import { componentCopy, nameList } from './component-copy.ts'
+import { componentCopy, isExperimental, nameList } from './component-copy.ts'
 import { ComponentDetails, ComponentPage, MainChoice, type ComponentDetailsProps, type ComponentState } from './component-details.tsx'
 import { componentModel, enhancementApplies, layerOf, mainPlan, relationsOf, sourceOf, switchPlan, unmetRequirements, type MemoryComponentModel, type SwitchPlan } from './component-model.ts'
 import { ActionButton, Callout, Reveal, TARGET } from './feedback.tsx'
@@ -155,7 +155,10 @@ function BoardRow(props: { item: BoardItem; configurable: boolean; t: MnemonTran
   return <div className={css.boardRow} {...{ [TARGET]: item.target }}>
     <div className={css.boardRowLine}>
       <div className={css.settingCopy}>
-        {props.onOpen === undefined ? <strong>{item.label}</strong> : <PageLink label={item.label} onOpen={props.onOpen} />}
+        <span className={css.boardRowTitle}>
+          {props.onOpen === undefined ? <strong>{item.label}</strong> : <PageLink label={item.label} onOpen={props.onOpen} />}
+          {item.entry !== undefined && isExperimental(item.entry) && <Tag tone="info">{t('board.experimental')}</Tag>}
+        </span>
         {item.hint !== '' && <small>{item.hint}</small>}
         <ComponentChips chips={item.relations} />
       </div>

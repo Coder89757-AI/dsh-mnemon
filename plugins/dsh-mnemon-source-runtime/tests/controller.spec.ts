@@ -328,7 +328,7 @@ describe('RuntimeMemoryController', () => {
     expect(readFileSync(controller.memoryPath, 'utf8')).toBe('source-owned value\n')
   })
 
-  it('renders a bounded QoderWork-style runtime context from the committed source', async () => {
+  it('renders a bounded runtime context from the committed source', async () => {
     const { controller } = fixture()
     await controller.mutate({ action: 'add', target: 'user', content: 'User prefers concise Chinese replies', importance: 'critical' })
     const context = controller.contextProjection().text

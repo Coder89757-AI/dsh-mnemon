@@ -139,6 +139,7 @@ async function clientCalls(): Promise<Array<readonly [string, string]>> {
     updateVersion: () => client.updateVersion('mnemon'),
     turnActivity: () => client.turnActivity(1),
     assistantMessageText: () => client.assistantMessageText('message-1'),
+    skillActivity: () => client.skillActivity(),
     supervise: () => client.supervise('A durable fact'),
     packTarget: () => client.packTarget(),
     exportPack: () => client.exportPack(),

@@ -787,7 +787,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     })
   })
 
-  it('waits for the QoderWork score threshold, then debounces a full-checkpoint review', async () => {
+  it('waits for the review score threshold, then debounces a full-checkpoint review', async () => {
     vi.useFakeTimers()
     const value = fixture(resolveConfig({ idleReviewMs: 5_000 }))
     await value.preStep([durableCandidate()], 1)
@@ -1084,7 +1084,7 @@ describe('Mnemon DSH lifecycle integration', () => {
     expect(value.lifecycle.snapshot('session-1').activeAgents).toBe(0)
   })
 
-  it('counts completed tool results and unique tool names with QoderWork weights', async () => {
+  it('counts completed tool results and unique tool names with the review score weights', async () => {
     vi.useFakeTimers()
     const value = fixture(resolveConfig({ idleReviewMs: 5_000 }))
     await value.preStep([userMessage('x'.repeat(100))], 1)

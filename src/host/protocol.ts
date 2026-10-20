@@ -80,6 +80,8 @@ export const MNEMON_REMOTE_VIEW_WRITE_ENDPOINT = `${MNEMON_REMOTE_NAMESPACE}/vie
 export const MNEMON_REMOTE_REVIEW_ENDPOINT = `${MNEMON_REMOTE_NAMESPACE}/review`
 export const MNEMON_SETTINGS_NAMESPACE = 'mnemon'
 export const MNEMON_UI_SETTINGS_NAMESPACE = 'mnemon-ui'
+/** 技能管理's settings: one live group of the dsh-mnemon entry, drawn on that component's page. */
+export const MNEMON_SKILLS_SETTINGS_NAMESPACE = 'mnemon-skills'
 export * from './view-protocol.ts'
 export * from './memory-tools.ts'
 export * from './sync-rules.ts'
@@ -93,7 +95,7 @@ export const MNEMON_RPC_ENDPOINTS = {
   [MNEMON_READ_CHANNEL]: [
     'status', 'status-summary', 'memory-system', 'versions', 'task-agent-models', 'runtime-memory', 'documents', 'document', 'document-search',
     'graph', 'bodies', 'body-directory', 'body-reconnect', 'provider-services', 'embedding-status', 'list', 'entities', 'search', 'agent-search', 'related',
-    'turn-activities', 'turn-activity', 'assistant-message', 'source-management-catalog', 'source-management-read', 'source-assistance',
+    'turn-activities', 'turn-activity', 'skill-activity', 'assistant-message', 'source-management-catalog', 'source-management-read', 'source-assistance',
   ],
   [MNEMON_ACTIVATION_CHANNEL]: ['body', 'source-assistance'],
   [MNEMON_WRITE_CHANNEL]: [
@@ -308,6 +310,8 @@ export interface Config {
     turnBar?: boolean
     saveAction?: boolean
   }
+  /** 技能管理: skill evolution and where the page shows. */
+  skills?: SkillsConfig
   /** Provider policy used when an Agent must create a new Memory Space while distilling memory. */
   persistenceStrategy?: MemoryPersistenceStrategy
   /** Model route used by clean, session-independent maintenance Agents. */
@@ -420,6 +424,80 @@ export interface ResolvedConfig {
 export interface ResolvedInteractionConfig {
   turnBar: boolean
   saveAction: boolean
+}
+
+/** 技能管理's settings, as stored; every key is optional and falls back to its default. */
+export type SkillsConfig = Partial<ResolvedSkillsConfig>
+
+export interface ResolvedSkillsConfig {
+  /** Review finished conversations in the background and suggest new or better skills. */
+  evolution: boolean
+  /** Backtest a draft against the current version as soon as it is written. */
+  autoBacktest: boolean
+  /** The one-line skills bar under a finished turn. */
+  hints: boolean
+  /** 技能管理 as a sidebar entry of its own instead of a Memory System page. */
+  sidebar: boolean
+  /** The post-turn score a conversation's window needs before it is reviewed. */
+  reviewThreshold: number
+  /** How long a conversation sits idle before its review runs. */
+  idleSeconds: number
+  /** The least time between two reviews of one conversation. */
+  cooldownSeconds: number
+  /** Suggestions below this confidence are dropped. */
+  minConfidence: number
+  /** A pending suggestion expires after this many days. */
+  expiryDays: number
+  /** At most this many pending suggestions from one conversation. */
+  maxPendingPerSession: number
+  /** At most this many cases in one backtest. */
+  casesPerRun: number
+}
+
+export const DEFAULT_SKILLS_CONFIG: Readonly<ResolvedSkillsConfig> = Object.freeze({
+  evolution: false,
+  autoBacktest: true,
+  hints: true,
+  sidebar: false,
+  reviewThreshold: 5,
+  idleSeconds: 20,
+  cooldownSeconds: 150,
+  minConfidence: 0.6,
+  expiryDays: 7,
+  maxPendingPerSession: 5,
+  casesPerRun: 8,
+})
+
+/** One skill a turn used: the model loaded it, or the user asked for it with `/name`. */
+export interface TurnSkillUse {
+  name: string
+  by: 'model' | 'user'
+}
+
+/** A skill review of a conversation, placed under the turn its window ended with. */
+export interface TurnSkillReview {
+  turn: number
+  /** `scheduled` waits for the conversation to sit idle; the others say how it went. */
+  state: 'scheduled' | 'reviewing' | 'suggested' | 'nothing' | 'error'
+  /** The suggestions it left that still exist, newest first. */
+  suggestions: Array<{ id: string; skillName: string; action: 'create' | 'update'; status: string }>
+  error?: string
+}
+
+/** What one conversation did with skills: each turn's uses and each review, for the turn bars. */
+export interface SkillActivitySnapshot {
+  /** Whether a skills bar has anything to read: the Skills Source runs for this conversation. */
+  available: boolean
+  turns: Array<{ turn: number; skills: TurnSkillUse[] }>
+  reviews: TurnSkillReview[]
+}
+
+/** What the Status page says about 技能管理. */
+export interface SkillsStatusSummary {
+  evolution: boolean
+  skills: number
+  /** Suggestions and drafts waiting for the user. */
+  waiting: number
 }
 
 /**
@@ -539,9 +617,11 @@ export interface SubagentCounters {
   documentArchives: number
   metadataMaintenances: number
   reconciliations: number
+  /** Skill reviews, drafts, backtest runs and case derivations. */
+  skills?: number
   failures: number
   lastRunId?: string
-  lastOperation?: 'recall' | 'write' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile'
+  lastOperation?: 'recall' | 'write' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile' | 'skill'
   lastAt?: string
 }
 
@@ -665,6 +745,8 @@ export interface StatusView {
   memorySystem?: MemoryCompositionStatus
   lifecycle?: LifecycleSnapshot
   documents?: DocumentSnapshot
+  /** 技能管理, when its Source runs for this scope. */
+  skills?: SkillsStatusSummary
   storage?: StorageScopeCatalog
   workspaceContext?: {
     mode: StorageScopeKind

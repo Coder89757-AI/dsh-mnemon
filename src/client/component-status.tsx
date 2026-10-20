@@ -2,6 +2,7 @@ import { createContext, useContext, type JSX } from 'react'
 import type { StatusView } from '../host/protocol.ts'
 import { installMemoryComponentUI, type MemoryComponentUIContext } from './component-ui.tsx'
 import { MEMORY_SPACES_PACKAGE, RUNTIME_PACKAGE } from './component-settings.tsx'
+import { SKILLS_PACKAGE } from './skills-settings.tsx'
 import { humanBytes, useT } from './page-kit.tsx'
 
 export const DOCUMENTS_PACKAGE = 'dsh-mnemon-source-documents'
@@ -22,6 +23,7 @@ export function installShippedComponentStatus(ctx: MemoryComponentUIContext): ()
     installMemoryComponentUI(ctx, { packageName: RUNTIME_PACKAGE, status: () => <RuntimeStatus /> }),
     installMemoryComponentUI(ctx, { packageName: DOCUMENTS_PACKAGE, status: () => <DocumentsStatus /> }),
     installMemoryComponentUI(ctx, { packageName: MEMORY_SPACES_PACKAGE, status: () => <SpacesStatus /> }),
+    installMemoryComponentUI(ctx, { packageName: SKILLS_PACKAGE, status: () => <SkillsStatus /> }),
   ]
   return () => { for (const dispose of disposers.reverse()) dispose() }
 }
@@ -56,4 +58,13 @@ function SpacesStatus(): JSX.Element {
   if (spaces === undefined) return <Figure headline={t('status.directoryUnsynced')} detail={t('status.activeMemories', { count: status?.stats?.totalInsights ?? 0 })} />
   return <Figure headline={t('status.activeRatio', { active: spaces.filter(space => space.active).length, total: spaces.length })}
     detail={t('status.activeMemories', { count: status?.stats?.totalInsights ?? 0 })} />
+}
+
+/** 技能管理: how many skills, and what evolution has waiting for the user. */
+function SkillsStatus(): JSX.Element {
+  const t = useT()
+  const skills = useContext(WorkbenchStatusContext)?.skills
+  if (skills === undefined) return <Figure headline={t('board.running')} detail={t('skills.statusOff')} />
+  return <Figure headline={t('skills.statusCount', { count: skills.skills })}
+    detail={!skills.evolution ? t('skills.statusOff') : skills.waiting > 0 ? t('skills.statusOn', { waiting: skills.waiting }) : t('skills.statusIdle')} />
 }
