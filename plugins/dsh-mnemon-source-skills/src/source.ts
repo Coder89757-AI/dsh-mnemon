@@ -272,7 +272,9 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
                 })
                 case 'target-content': return service.targetContent(root, text(fields.skillName, 'skillName', 64)!, runTarget(fields.target!))
                 case 'market': return service.marketView(root)
-                case 'market-preview': return service.marketPreview(text(fields.registryId, 'registryId', 80)!, text(fields.name, 'name', 64)!, request.signal)
+                // A skill the search index found is named by its index id, `owner/repo/skill`.
+                case 'market-preview': return service.marketPreview(text(fields.registryId, 'registryId', 80)!, text(fields.name, 'name', 300)!, request.signal)
+                case 'market-search': return service.searchMarket(root, text(fields.query, 'query', 200)!, request.signal)
                 case 'installs': return service.installs()
                 default: throw new Error('unsupported Skills read operation: ' + request.operation)
               }
@@ -337,7 +339,7 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
             case 'review-record': value = await service.recordReview(root, reviewRecord(fields)); break
             case 'market-refresh': value = await service.refreshMarket(stringArray(fields.ids, 'ids', 50), request.signal); break
             case 'market-install': value = await service.installMarket(root, {
-              registryId: text(fields.registryId, 'registryId', 80)!, name: text(fields.name, 'name', 64)!,
+              registryId: text(fields.registryId, 'registryId', 80)!, name: text(fields.name, 'name', 300)!,
               ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }), ...(fields.overwrite === true ? { overwrite: true } : {}),
             }, request.signal); break
             case 'registry-add': value = await service.addRegistry(text(fields.location, 'location', 2_000)!, request.signal); break

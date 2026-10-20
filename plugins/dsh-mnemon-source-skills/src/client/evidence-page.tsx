@@ -38,7 +38,7 @@ export function EvidenceView(props: { context: SkillsPageContext; location: Skil
           options={[{ value: '', label: t('evidence.allSkills') }, ...skills.map(name => ({ value: name, label: name }))]} />
       </div>}
       {shown.map(record => <button key={record.id} type="button" className={css.skListItem} data-selected={current?.id === record.id ? '' : undefined} onClick={() => setSelected(record.id)}>
-        <div><strong>{record.sessionTitle ?? record.sessionId.slice(0, 8)}</strong>{record.pinned && <Tag tone="solid">{t('records.pinned')}</Tag>}</div>
+        <div><strong>{record.sessionTitle ?? record.sessionId.slice(0, 8)}</strong>{record.pinned && <Tag tone="neutral">{t('records.pinned')}</Tag>}</div>
         <p>{t('records.stats', { turns: record.stats.turns, tools: record.stats.toolCalls })}{record.stats.skills.length > 0 ? ` · ${record.stats.skills.join(', ')}` : ''}</p>
         <footer><time>{relative(t, record.createdAt)}</time>{record.suggestionIds.length > 0 && <span>{t('records.suggested', { count: record.suggestionIds.length })}</span>}</footer>
       </button>)}

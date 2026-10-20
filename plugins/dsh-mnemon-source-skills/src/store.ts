@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
-  BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, ReviewLogEntry, SkillDraft, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary,
+  BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, MarketSourceKind, ReviewLogEntry, SkillDraft, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary,
 } from './contracts.ts'
 
 export const MAX_TRAJECTORIES = 100
@@ -27,6 +27,8 @@ export interface LedgerFile {
 
 export interface RegistryRecord {
   id: string
+  /** How the source publishes; records written before kinds existed are catalogs. */
+  kind?: MarketSourceKind
   location: string
   enabled: boolean
   builtin: boolean

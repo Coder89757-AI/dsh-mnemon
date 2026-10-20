@@ -2,8 +2,8 @@
   "version": 1,
   "id": "official",
   "name": {
-    "en": "dsh-mnemon picks",
-    "zh-CN": "dsh-mnemon 精选"
+    "en": "Featured",
+    "zh-CN": "精选"
   },
   "description": {
     "en": "Open-source skills from their original repositories. Each installs from its upstream source; check its license there.",

@@ -1,7 +1,7 @@
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
 import type { MnemonSourceManagementClient } from 'dsh-mnemon/client'
 import type {
-  BacktestRun, CatalogView, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketView, EvidencePack, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
+  BacktestRun, CatalogView, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketSearchResult, MarketView, EvidencePack, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
   SkillVersion, SkillsOverview, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary,
 } from '../contracts.ts'
 
@@ -51,6 +51,8 @@ export interface SkillsPageClient {
 
   market(): Promise<MarketView>
   marketPreview(registryId: string, name: string): Promise<MarketPreview>
+  /** Search the search sources; the page filters the listed ones itself. */
+  searchMarket(query: string): Promise<MarketSearchResult>
   refreshMarket(ids?: string[]): Promise<MarketRegistry[]>
   installMarket(input: { registryId: string; name: string; root?: SkillRootKind; overwrite?: boolean }): Promise<{ skill: SkillSummary; updated: boolean }>
   addRegistry(location: string): Promise<MarketRegistry>
@@ -125,6 +127,7 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
 
     market: () => read('market'),
     marketPreview: (registryId, name) => read('market-preview', { registryId, name }),
+    searchMarket: query => read('market-search', { query }),
     refreshMarket: ids => mutate('market-refresh', ids === undefined ? {} : { ids }),
     installMarket: input => mutate('market-install', input),
     addRegistry: location => mutate('registry-add', { location }),

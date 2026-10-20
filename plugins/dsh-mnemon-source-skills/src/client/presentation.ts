@@ -26,6 +26,11 @@ export function percent(value: number | undefined): string {
   return value === undefined ? '—' : `${Math.round(value * 100)}%`
 }
 
+/** A large count the way the language says it short: 21.4万, 214K. */
+export function compactCount(count: number, language: string): string {
+  return new Intl.NumberFormat(language.startsWith('zh') ? 'zh-CN' : 'en', { notation: 'compact', maximumSignificantDigits: 3 }).format(count)
+}
+
 export function points(value: number | undefined): string {
   return value === undefined ? '—' : String(Math.round(value * 100))
 }

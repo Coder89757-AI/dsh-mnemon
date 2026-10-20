@@ -63,7 +63,7 @@ export function SkillTests(props: { context: SkillsPageContext; skillName: strin
           <details>
             <summary><strong>{entry.title}</strong><small>{t('tests.checks', { count: entry.checks.length })}</small></summary>
             <p>{entry.prompt}</p>
-            <ul>{entry.checks.map(check => <li key={check.id}><Tag tone={check.must ? 'solid' : 'outline'}>{check.must ? t('tests.must') : t('tests.should')}</Tag><span>{check.text}</span></li>)}</ul>
+            <ul>{entry.checks.map(check => <li key={check.id}><Tag tone={check.must ? 'neutral' : 'quiet'}>{check.must ? t('tests.must') : t('tests.should')}</Tag><span>{check.text}</span></li>)}</ul>
             {entry.origin.trajectoryId !== undefined && <button type="button" className={css.skLink}
               onClick={() => context.navigate({ tab: 'evolution', filter: 'evidence', trajectoryId: entry.origin.trajectoryId!, ...(entry.origin.steps === undefined ? {} : { steps: entry.origin.steps }) })}>{t('tests.origin')} ›</button>}
           </details>
@@ -131,8 +131,7 @@ function CaseEditor(props: { initial: CaseDraft; busy: boolean; onClose: () => v
       <fieldset className={css.skChecks}>
         <legend>{t('tests.checksLabel')}</legend>
         {value.checks.map((check, index) => <div key={index}>
-          <Checkbox checked={check.must} label={t('tests.must')} onChange={must => setCheck(index, { must })} />
-          <span>{t('tests.must')}</span>
+          <Checkbox className={css.skMust} checked={check.must} label={t('tests.must')} onChange={must => setCheck(index, { must })} />
           <input value={check.text} placeholder={t('tests.checkPlaceholder')} onChange={event => setCheck(index, { text: event.target.value })} />
           <button type="button" className={css.skDismiss} aria-label={t('common.delete')} onClick={() => setValue(current => ({ ...current, checks: current.checks.filter((_, position) => position !== index) }))}>×</button>
         </div>)}

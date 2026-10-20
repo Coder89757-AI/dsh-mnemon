@@ -172,7 +172,7 @@ function SkillDetail(props: { context: SkillsPageContext; skillKey: string; stat
         {skill.versions.length === 0 ? <p className={css.skMuted}>{t('versions.empty')}</p> : <ul className={css.skVersions}>{skill.versions.map(version => <li key={version.id}>
           <Tag tone={version.reason === 'evolution' ? 'success' : 'outline'}>{t(`versions.reason.${version.reason}`)}</Tag>
           <time title={version.createdAt}>{stamp(version.createdAt)}</time>
-          {version.hash === skill.hash && <Tag tone="solid">{t('versions.current')}</Tag>}
+          {version.hash === skill.hash && <Tag tone="neutral">{t('versions.current')}</Tag>}
           <span />
           {version.hash !== skill.hash && <>
             <Button variant="ghost" size="sm" onClick={() => void context.client.version(skill.key, version.id).then(setComparing).catch(context.fail)}>{t('versions.compare')}</Button>

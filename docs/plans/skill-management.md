@@ -234,7 +234,19 @@ hover or focus, and a switch.
 
 ## Market
 
-A registry is one JSON file anyone can host:
+The market reads skills from **sources**, each one way skills are already published; JSON is only one of them.
+
+| Kind | Added as | What it lists |
+| --- | --- | --- |
+| Featured (built-in catalog) | — | Our curated list in both languages (`market/official.json`, refreshed from the repository's main branch); each entry installs from its upstream repository under the upstream license. It can be switched off, not removed. |
+| skills.sh (built-in search) | — | Nothing up front: as the user types two or more characters, the open index the `skills` CLI uses is searched (hundreds of thousands of skills, by installs). It can be switched off. |
+| GitHub repository | `owner/repo`, a github.com URL (a folder too), a skills.sh page of one, or a plugin marketplace's `marketplace.json` | Every `SKILL.md` in the repository: one API call for its tree, each `SKILL.md` read raw for its name and description; dependencies, build output and test fixtures are skipped. A Claude Code plugin marketplace lends the list its name. |
+| Website | a host or URL | The site's Agent Skills discovery index (`/.well-known/agent-skills/index.json`, schema 0.2.0, path-scoped first, then the root; the older `/.well-known/skills/` form too). Each artifact is a `SKILL.md` or a `.tar.gz`/`.zip`, checked against its SHA-256 digest before use. |
+| Catalog | a JSON URL or absolute path | This market's own format (below), for a team's curated list. |
+
+The add field says what it read before anything is fetched (`GitHub 仓库 · owner/repo`, `网站 · host`, `JSON 文件`); pasting the same into the market's search box offers to add it in one click. A JSON file is read by its shape: a catalog, a discovery index, or a plugin marketplace (read as its repository).
+
+A catalog is one JSON file anyone can host:
 
 ```json
 {
@@ -252,27 +264,27 @@ A registry is one JSON file anyone can host:
 }
 ```
 
-A source is a GitHub folder (listed with one tree request, files read from raw.githubusercontent.com;
-`GITHUB_TOKEN` or `GH_TOKEN` is used when set), a URL to one `SKILL.md`, or a folder relative to a
-local registry file. Entries that cannot be installed — a name DSH would reject, a path leaving its
-folder, a duplicate — are dropped when the registry is read.
+A catalog source is a GitHub folder, a URL to one `SKILL.md`, or a folder relative to a local catalog file.
 
-- **The official registry** ships inside the package (`market/official.json`) and refreshes from the
-  same file on the repository's main branch. It lists open-source skills by their original
-  repositories (Anthropic, OpenAI, Composio's community collection, Jim Liu's baoyu skills, Corey
-  Haines' marketing skills) with our own bilingual descriptions; each installs from upstream, and its
-  license is the upstream one. Skills whose upstream license forbids redistribution are not listed.
-  It can be switched off, not removed.
-- **Other registries** are added by URL or absolute path, switched and removed under **Registries**.
-  A copy older than six hours is refreshed when the Market opens; a failed refresh keeps the copy it
-  had and says why.
+- **Search results** show the skill's name, its repository and its install count. The preview reads the
+  skill from its repository (or skills.sh's text copy while GitHub declines, saying so), with the
+  reviews skills.sh publishes (Snyk, Socket and others: pass, warning or fail, worst first). Install
+  always fetches the complete folder from the repository, under the name its own `SKILL.md` gives;
+  a skill installed from the featured catalog out of the same repository counts as installed.
+- **Requests** are bounded: GitHub's unauthenticated limit (60 an hour) is spent once per repository
+  per ten minutes, and `GITHUB_TOKEN` or `GH_TOKEN` is used when set; a refusal says so instead of
+  failing quietly. Sources older than six hours refresh when the market opens; a failed refresh keeps
+  the copy it had and says why.
 - **Install** previews the `SKILL.md` and file list first and says plainly that an Agent follows a
-  skill as written. Files are fetched outside the storage lock, bounded (300 files, 12 MiB), staged,
-  checked against DSH's rules (the `SKILL.md` must name the entry), then moved into the chosen root.
-  The install is recorded with the hash it wrote and leaves an `install` version.
-- **State** per entry: available, installed, update (the registry's version moved), edited locally
+  skill as written. Files are fetched outside the storage lock, bounded (300 files, 12 MiB; archives
+  refuse links, paths outside the skill and decompression past the limit), staged, checked against
+  DSH's rules (the `SKILL.md` must name the skill), then moved into the chosen root. The install is
+  recorded with the hash it wrote and leaves an `install` version.
+- **State** per entry: available, installed, update (the source's version moved), edited locally
   (the hash moved; updating replaces the edits only after confirmation, the old folder going to the
   trash), or a name already taken by a skill that did not come from this entry.
+- **Sources** are managed in one panel: each with its kind, skill count and freshness or its error, a
+  switch, and refresh or remove in its menu; the built-in ones can be switched off, not removed.
 
 ## Out of scope
 

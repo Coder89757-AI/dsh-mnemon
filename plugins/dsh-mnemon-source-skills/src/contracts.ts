@@ -3,6 +3,8 @@
  * them; nothing here is executable.
  */
 
+import type { MarketSourceKind } from './source-kind.ts'
+
 /** The DSH skill roots this Source reads and writes, in DSH's precedence order. */
 export type SkillRootKind = 'project-dsh' | 'project-agents' | 'user-dsh' | 'user-agents'
 export const SKILL_ROOT_KINDS: readonly SkillRootKind[] = ['project-dsh', 'project-agents', 'user-dsh', 'user-agents']
@@ -394,6 +396,8 @@ export interface DraftView {
 
 // ---- skill market -------------------------------------------------------------
 
+export type { DetectedSource, MarketSourceKind } from './source-kind.ts'
+
 /** A string, or the same text per language. */
 export type LocalizedText = string | { en?: string; 'zh-CN'?: string }
 
@@ -402,6 +406,12 @@ export type MarketSource =
   | { type: 'github'; repo: string; path: string; ref?: string }
   | { type: 'url'; url: string }
   | { type: 'path'; path: string }
+  /** One artifact an Agent Skills discovery index publishes, checked against its digest. */
+  | { type: 'artifact'; url: string; format: 'skill-md' | 'archive'; digest: string }
+  /** An entry of a discovery index older than 0.2.0: its files, under `base`. */
+  | { type: 'files'; base: string; files: string[] }
+  /** A skill a search index found, by the index's own id (`owner/repo/skill`). */
+  | { type: 'indexed'; id: string }
 
 export interface MarketEntry {
   /** The SKILL.md name it installs as; unique within its registry. */
@@ -415,6 +425,10 @@ export interface MarketEntry {
   version?: string
   homepage?: string
   source: MarketSource
+  /** How often the index that found it counts it installed. */
+  installs?: number
+  /** The repository or site it lives in, as the index names it. */
+  origin?: string
 }
 
 /** A skill registry as published: one JSON file anyone can host. */
@@ -428,10 +442,15 @@ export interface MarketRegistryFile {
   skills: MarketEntry[]
 }
 
-/** A registry this Source knows: the official one, or one the user added by URL or path. */
+/**
+ * A source this Source knows: the built-in catalog and search index, or one
+ * the user added — a GitHub repository, a site publishing a discovery index,
+ * or a catalog by URL or path.
+ */
 export interface MarketRegistry {
   id: string
-  /** http(s) URL or absolute file path; the official registry also ships inside the package. */
+  kind: MarketSourceKind
+  /** A canonical GitHub URL, an http(s) URL or an absolute file path. */
   location: string
   builtin: boolean
   enabled: boolean
@@ -461,12 +480,34 @@ export interface MarketView {
   stale: string[]
 }
 
+/** What a security reviewer said about a skill, as its index reports it. */
+export interface MarketAudit {
+  provider: string
+  status: 'pass' | 'warn' | 'fail'
+  summary?: string
+  risk?: string
+}
+
 export interface MarketPreview {
   registryId: string
   name: string
   content: string
   files: Array<{ path: string; bytes: number }>
   totalBytes: number
+  /** Reviews of the skill, when its index has them. */
+  audits?: MarketAudit[]
+  /** Where its files live, to read them there. */
+  homepage?: string
+  /** The file list is the index's text snapshot; the install fetches every file. */
+  partial?: boolean
+}
+
+/** One search of the search sources, newest first by installs. */
+export interface MarketSearchResult {
+  query: string
+  items: MarketItem[]
+  /** Why a search source could not answer; the local sources still did. */
+  error?: string
 }
 
 /** Where an installed skill came from, so an update can be offered. */

@@ -463,9 +463,10 @@
 .skForm { display: grid; gap: 14px; }
 .skField { display: grid; gap: 6px; }
 .skField > label { color: var(--mn-muted); font-size: 12px; font-weight: 500; line-height: 18px; }
-.skForm input,
+/* Text fields only: a checkbox keeps its own size. */
+.skForm input:not([type='checkbox']):not([type='radio']),
 .skForm textarea { width: 100%; border: .5px solid var(--mn-field-line); border-radius: var(--dsw-radius-md); outline: 0; padding: 7px 10px; color: var(--mn-text); background: var(--mn-input); font: inherit; font-size: 13px; line-height: 20px; transition: border-color 120ms ease; }
-.skForm input:focus,
+.skForm input:not([type='checkbox']):not([type='radio']):focus,
 .skForm textarea:focus { border-color: var(--mn-accent); }
 .skForm textarea { resize: vertical; }
 .skForm small { color: var(--mn-faint); font-size: 11px; line-height: 16px; }
@@ -473,9 +474,11 @@
 .skFormError { margin-right: auto; color: var(--mn-danger); font-size: 12px; }
 .skChecks { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
 .skChecks legend { margin-bottom: 6px; color: var(--mn-muted); font-size: 12px; font-weight: 500; }
-.skChecks > div { display: flex; align-items: center; gap: 8px; }
-.skChecks > div > span { flex: none; color: var(--mn-faint); font-size: 11px; }
+.skChecks > div { display: flex; align-items: center; gap: 10px; }
 .skChecks > div > input { min-width: 0; flex: 1; }
+/* "Must" beside each check, on one line whatever the field beside it takes. */
+.skMust { flex: none; color: var(--mn-muted); font-size: 12px; white-space: nowrap; }
+.skChecks > button { justify-self: start; }
 
 /* ---- market --------------------------------------------------------------- */
 
@@ -505,17 +508,61 @@
 .skMarketCard > footer { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px 10px 14px; }
 .skMarketCard > footer > span { min-width: 0; overflow: hidden; color: var(--mn-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .skMarketDetail { display: grid; gap: 12px; }
-.skRegistries { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.skRegistries > li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--dsw-radius-md); background: var(--mn-fill); }
-.skRegistries > li > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
-.skRegistries > li > div > strong { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
-.skRegistries small { color: var(--mn-faint); font-size: 11px; }
-.skRegistries code { overflow: hidden; color: var(--mn-faint); font: 11px/16px var(--mn-code); text-overflow: ellipsis; white-space: nowrap; }
-.skRegistries em { color: var(--mn-danger); font-size: 11px; font-style: normal; }
 .skInline { display: flex; align-items: center; gap: 8px; }
-.skInline > input { min-width: 0; flex: 1; }
-.skFormat summary { width: fit-content; color: var(--mn-muted); font-size: 12px; cursor: pointer; }
-.skFormat pre { max-height: 220px; margin: 8px 0 0; overflow: auto; padding: 8px 10px; border-radius: var(--dsw-radius-md); color: var(--mn-text); background: var(--mn-fill); font: 11px/1.55 var(--mn-code); }
+.skInline > :first-child { min-width: 0; flex: 1; }
+
+/* A section of results: what the sources list, then what the search index found. */
+.skMarketSection { display: grid; gap: 8px; animation: sk-arrive 200ms cubic-bezier(.2, 0, 0, 1); }
+.skMarketGrid { transition: opacity 160ms ease; }
+.skMarketGrid[data-busy] { opacity: .55; }
+/* A pasted repository or URL, one step from becoming a source. */
+.skMarketAdd { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 6px 6px 6px 8px; border-radius: var(--dsw-radius-md); background: color-mix(in srgb, var(--mn-accent) 7%, transparent); font-size: 12px; line-height: 18px; animation: sk-arrive 200ms cubic-bezier(.2, 0, 0, 1); }
+.skMarketAdd > span:nth-child(2) { min-width: 0; flex: 1; overflow: hidden; color: var(--mn-text); text-overflow: ellipsis; white-space: nowrap; }
+.skMarketAdd .skSourceIcon { width: 26px; height: 26px; background: var(--mn-layer-1, var(--mn-fill)); }
+.skMarketStat { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.skMarketCard[data-indexed] .skMarketOpen { padding-bottom: 4px; }
+.skMarketMeta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+
+/* Reviewers' verdicts: a dot in the verdict's colour, the verdict, the reviewer. */
+.skAudits { display: grid; gap: 6px; }
+.skAudits > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.skAuditsLabel { margin-right: 2px; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
+.skAudit { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 8px; border-radius: 999px; color: var(--mn-text); background: var(--mn-fill); font-size: 12px; line-height: 18px; animation: sk-pop 260ms cubic-bezier(.2, 0, 0, 1); }
+.skAudit::before { content: ''; width: 6px; height: 6px; flex: none; border-radius: 999px; background: var(--mn-success); }
+.skAudit[data-status='warn']::before { background: var(--mn-warn); }
+.skAudit[data-status='fail']::before { background: var(--mn-danger); }
+.skAudit small { color: var(--mn-faint); font-size: 11px; }
+
+/* ---- sources ----------------------------------------------------------------- */
+
+.skSources { display: grid; gap: 18px; }
+.skSourceList { display: grid; gap: 2px; margin: 0 -6px; padding: 0; list-style: none; }
+.skSourceList > li { display: flex; min-width: 0; align-items: center; gap: 12px; padding: 8px 8px 8px 6px; border-radius: var(--dsw-radius-md); transition: background-color 140ms ease; animation: sk-arrive 200ms cubic-bezier(.2, 0, 0, 1); }
+.skSourceList > li:hover { background: var(--mn-hover); }
+.skSourceIcon { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-fill); transition: opacity 140ms ease; }
+.skSourceText { display: grid; min-width: 0; flex: 1; gap: 1px; transition: opacity 140ms ease; }
+.skSourceText > strong { display: flex; min-width: 0; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; line-height: 20px; }
+.skSourceText > strong > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skSourceText > small,
+.skSourceText > em { overflow: hidden; font-size: 12px; font-style: normal; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.skSourceText > small { color: var(--mn-faint); }
+.skSourceText > em { color: var(--mn-danger); }
+.skSourceList > li[data-off] .skSourceText,
+.skSourceList > li[data-off] .skSourceIcon { opacity: .5; }
+.skSourceActions { display: flex; flex: none; align-items: center; gap: 6px; }
+.skSourceAdd { display: grid; gap: 6px; padding-top: 16px; border-top: .5px solid var(--mn-line); }
+.skSourceAdd > label { font-size: 13px; font-weight: 500; line-height: 20px; }
+.skSourceHint { min-height: 18px; margin: 0; overflow: hidden; color: var(--mn-faint); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; transition: color 140ms ease; }
+.skSourceHint[data-state='ok'] { color: var(--mn-muted); }
+.skSourceHint[data-state='warn'] { color: var(--mn-warn); }
+.skFormat summary { width: fit-content; border-radius: var(--dsw-radius-xs, 4px); padding: 0 2px; color: var(--mn-muted); font-size: 12px; line-height: 18px; cursor: pointer; }
+.skFormat summary:hover { color: var(--mn-text); }
+.skFormat ul { display: grid; gap: 12px; margin: 12px 0 0; padding: 0; list-style: none; }
+.skFormat li { display: flex; align-items: flex-start; gap: 10px; }
+.skFormat li .skSourceIcon { width: 26px; height: 26px; }
+.skFormat li > div { display: grid; gap: 1px; font-size: 12px; line-height: 18px; }
+.skFormat li strong { font-weight: 500; }
+.skFormat li span { color: var(--mn-muted); }
 
 /* ---- narrow widths -------------------------------------------------------- */
 
@@ -530,7 +577,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skPage, .skDetail, .skEmpty, .skTable, .skComposer, .skRunDetail, .skMarketCard, .skTabBadge, .skDot, .skScore { animation: none; }
+  .skPage, .skDetail, .skEmpty, .skTable, .skComposer, .skRunDetail, .skMarketCard, .skMarketSection, .skMarketAdd, .skAudit, .skSourceList > li, .skTabBadge, .skDot, .skScore { animation: none; }
   .skUse, .skFold > header > button > svg, .skFold[data-link] > header > button > b, .skCallout > b, .skMarketCard { transition: none; }
   .skIconButton[data-busy] > svg, .skIconButton[data-pulse] > svg { animation: none; }
 }

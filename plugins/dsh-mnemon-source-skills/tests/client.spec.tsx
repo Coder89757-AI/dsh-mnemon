@@ -224,7 +224,7 @@ describe('Skills page', () => {
     expect(draftWithSkill('  ', 'pdf')).toBe('/pdf ')
   })
 
-  it('installs a skill from a registry added by path, without the network', async () => {
+  it('installs a skill from a catalog added by path, without the network', async () => {
     const team = join(directory, 'team')
     mkdirSync(join(team, 'weekly-report'), { recursive: true })
     writeFileSync(join(team, 'weekly-report', 'SKILL.md'), '---\nname: weekly-report\ndescription: Write the weekly report.\n---\n\n# Weekly report\n\n1. Collect merged PRs\n')
@@ -234,12 +234,15 @@ describe('Skills page', () => {
     await mutate('registry-toggle', { id: 'official', enabled: false })
     page()
     fireEvent.click(await screen.findByRole('tab', { name: t('tab.market') }))
-    fireEvent.click(await screen.findByRole('button', { name: t('market.registries', { count: 0 }) }))
-    const registries = await screen.findByRole('dialog')
-    fireEvent.change(within(registries).getByLabelText(t('registry.add')), { target: { value: join(team, 'registry.json') } })
-    fireEvent.click(within(registries).getByRole('button', { name: t('registry.add') }))
-    expect(await within(registries).findByText('Team skills')).not.toBeNull()
-    fireEvent.click(within(registries).getAllByRole('button', { name: t('common.close') }).at(-1)!)
+    // skills.sh stays on; the official catalog was switched off.
+    fireEvent.click(await screen.findByRole('button', { name: t('market.sources', { count: 1 }) }))
+    const sources = await screen.findByRole('dialog')
+    fireEvent.change(within(sources).getByLabelText(t('sources.addTitle')), { target: { value: join(team, 'registry.json') } })
+    expect(within(sources).getByText(`${t('sources.detected.catalog')} · registry.json`)).not.toBeNull()
+    fireEvent.click(within(sources).getByRole('button', { name: t('sources.add') }))
+    expect(await within(sources).findByText('Team skills')).not.toBeNull()
+    expect(within(sources).getByText(`${t('sources.kind.catalog')} · ${t('sources.entries', { count: 1 })}`, { exact: false })).not.toBeNull()
+    fireEvent.click(within(sources).getByRole('button', { name: t('sources.done') }))
     fireEvent.click(await screen.findByRole('button', { name: t('market.install') }))
     const detail = await screen.findByRole('dialog')
     expect(await within(detail).findByText('Collect merged PRs')).not.toBeNull()
@@ -248,6 +251,39 @@ describe('Skills page', () => {
     await waitFor(() => expect(readFileSync(join(directory, 'dsh', 'skills', 'weekly-report', 'SKILL.md'), 'utf8')).toContain('Collect merged PRs'))
     expect(await screen.findByText(t('market.installed', { name: 'weekly-report' }))).not.toBeNull()
     expect(await screen.findByText(t('market.state.installed'))).not.toBeNull()
+  })
+
+  it('searches skills.sh as the user types, and installs a find from its repository', async () => {
+    const document = '---\nname: pdf\ndescription: Work with PDF files.\nlicense: MIT\n---\n\n# PDF\n\nExtract the text first.\n'
+    const reply = (status: number, body = '') => ({ ok: status < 400, status, text: async () => body, arrayBuffer: async () => new TextEncoder().encode(body).buffer })
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url.startsWith('https://skills.sh/api/search?')) return reply(200, JSON.stringify({ skills: [{ id: 'acme/skills/pdf', source: 'acme/skills', skillId: 'pdf', name: 'pdf', installs: 213790 }] }))
+      if (url === 'https://skills.sh/api/v1/skills/audit/acme/skills/pdf') return reply(200, JSON.stringify({ audits: [{ provider: 'Trust Hub', status: 'pass', summary: 'Fine' }] }))
+      if (url.startsWith('https://api.github.com/repos/acme/skills/git/trees/HEAD')) return reply(200, JSON.stringify({ truncated: false, tree: [{ path: 'skills/pdf/SKILL.md', type: 'blob', size: document.length }] }))
+      if (url === 'https://raw.githubusercontent.com/acme/skills/HEAD/skills/pdf/SKILL.md') return reply(200, document)
+      return reply(404)
+    }))
+    try {
+      await mutate('registry-toggle', { id: 'official', enabled: false })
+      page()
+      fireEvent.click(await screen.findByRole('tab', { name: t('tab.market') }))
+      fireEvent.change(await screen.findByRole('textbox', { name: t('market.search') }), { target: { value: 'pdf' } })
+      expect(await screen.findByText(t('market.indexed', { count: 1 }))).not.toBeNull()
+      expect(screen.getByText(t('market.installs', { count: '214K' }))).not.toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: t('market.preview', { name: 'pdf' }) }))
+      const detail = await screen.findByRole('dialog')
+      expect(await within(detail).findByText('Extract the text first.')).not.toBeNull()
+      expect(within(detail).getByText('Work with PDF files.')).not.toBeNull()
+      expect(within(detail).getByText('Trust Hub')).not.toBeNull()
+      expect(within(detail).getByText('MIT')).not.toBeNull()
+      fireEvent.click(within(detail).getByRole('button', { name: t('market.install') }))
+      await waitFor(() => expect(readFileSync(join(directory, 'dsh', 'skills', 'pdf', 'SKILL.md'), 'utf8')).toBe(document))
+      expect(await screen.findByText(t('market.installed', { name: 'pdf' }))).not.toBeNull()
+      expect(await screen.findByText(t('market.state.installed'))).not.toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('compares the latest backtest of a draft, not the first one linked to it', async () => {

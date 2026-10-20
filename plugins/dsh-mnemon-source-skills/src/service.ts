@@ -5,7 +5,8 @@ import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import {
   SKILL_ROOT_KINDS,
   type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView,
-  type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
+  type MarketEntry, type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketSearchResult,
+  type MarketSourceKind, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
   type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary,
 } from './contracts.ts'
 import { activeSkill, catalogFingerprint, findSkill, readCatalog, readSkillDocument, rootPath, sha256, type SkillRootOptions } from './catalog.ts'
@@ -13,9 +14,11 @@ import { isSkillName, skillTemplate, validateSkillContent, withInvocation } from
 import { admitReview, expireSuggestions, OPEN_STATUSES, policyFrom, similarCase, trajectorySummary } from './policy.ts'
 import { MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, SkillsStore, type EvalsFile, type LedgerFile, type RegistryRecord } from './store.ts'
 import {
-  bundledOfficialRegistry, defaultFetcher, fetchSkillDocument, fetchSkillFiles, listSkillFiles, loadRegistry, OFFICIAL_REGISTRY_ID, OFFICIAL_REGISTRY_URL,
-  REGISTRY_REFRESH_MS, registryId, type Fetcher, type SkillFile,
+  bundledOfficialRegistry, defaultFetcher, fetchSkillDocument, fetchSkillFiles, indexedParts, isDiscoveryIndex, isPluginMarketplace, listSkillFiles, loadDiscovery,
+  loadJson, loadRegistry, loadRepository, marketplaceRepository, OFFICIAL_REGISTRY_ID, OFFICIAL_REGISTRY_URL, parseDiscovery, parseRegistry, REGISTRY_REFRESH_MS,
+  registryId, resolveIndexed, searchSkillsSh, skillMeta, SKILLS_SH_ID, SKILLS_SH_URL, skillsShAudits, skillsShSnapshot, type Fetcher, type SkillFile,
 } from './market.ts'
+import { detectSource, parseGithub } from './source-kind.ts'
 
 /** A run still `running` after this long outlived the Host that started it. */
 const RUN_STALE_MS = 45 * 60 * 1000
@@ -739,13 +742,14 @@ export class SkillsService {
 
   // ---- market --------------------------------------------------------------
 
-  /** The registries this Source knows; the official one is always there. */
-  private registryRecords(): RegistryRecord[] {
+  /** The sources this Source knows: the built-in catalog and search index first, then the ones added. */
+  private registryRecords(): Array<RegistryRecord & { kind: MarketSourceKind }> {
     const stored = this.store.registries()
-    const official = stored.find(record => record.id === OFFICIAL_REGISTRY_ID)
+    const enabled = (id: string) => stored.find(record => record.id === id)?.enabled ?? true
     return [
-      { id: OFFICIAL_REGISTRY_ID, location: OFFICIAL_REGISTRY_URL, builtin: true, enabled: official?.enabled ?? true },
-      ...stored.filter(record => record.id !== OFFICIAL_REGISTRY_ID).map(record => ({ ...record, builtin: false })),
+      { id: OFFICIAL_REGISTRY_ID, kind: 'catalog', location: OFFICIAL_REGISTRY_URL, builtin: true, enabled: enabled(OFFICIAL_REGISTRY_ID) },
+      { id: SKILLS_SH_ID, kind: 'search', location: SKILLS_SH_URL, builtin: true, enabled: enabled(SKILLS_SH_ID) },
+      ...stored.filter(record => record.id !== OFFICIAL_REGISTRY_ID && record.id !== SKILLS_SH_ID).map(record => ({ ...record, kind: record.kind ?? 'catalog', builtin: false })),
     ]
   }
 
@@ -753,8 +757,31 @@ export class SkillsService {
   private registryFile(record: RegistryRecord): { registry?: MarketRegistryFile; fetchedAt?: string; error?: string } {
     const cache = this.store.registryCache(record.id)
     if (cache?.registry !== undefined) return cache
-    if (record.builtin) return { registry: bundledOfficialRegistry(), ...(cache?.error === undefined ? {} : { error: cache.error }) }
+    if (record.id === OFFICIAL_REGISTRY_ID) return { registry: bundledOfficialRegistry(), ...(cache?.error === undefined ? {} : { error: cache.error }) }
     return cache ?? {}
+  }
+
+  /** A listed source's skills as it publishes them now. */
+  private loadSource(kind: MarketSourceKind, location: string, signal?: AbortSignal): Promise<MarketRegistryFile> {
+    switch (kind) {
+      case 'catalog': return loadRegistry(location, this.fetcher, signal)
+      case 'well-known': return loadDiscovery(location, this.fetcher, signal)
+      case 'github': return loadRepository(location, this.fetcher, signal)
+      case 'search': return Promise.reject(new Error('a search source is searched, not listed'))
+    }
+  }
+
+  /** The state of a market skill against what is loaded now and where it was installed from. */
+  private installState(catalog: SkillCatalog, installs: readonly MarketInstall[], registry: string, name: string, version: string | undefined, sameOrigin?: (install: MarketInstall) => boolean): { state: MarketInstallState; skillKey?: string; installedVersion?: string } {
+    const skill = activeSkill(catalog, name)
+    if (skill === undefined) return { state: 'available' }
+    const install = installs.find(candidate => candidate.skillKey === skill.key)
+    const fromHere = install !== undefined && install.name === name && (install.registryId === registry || sameOrigin?.(install) === true)
+    const state: MarketInstallState = !fromHere ? 'conflict'
+      : skill.hash !== install!.hash ? 'modified'
+      : version !== undefined && install!.version !== undefined && version !== install!.version ? 'update'
+      : 'installed'
+    return { state, skillKey: skill.key, ...(fromHere && install!.version !== undefined ? { installedVersion: install!.version } : {}) }
   }
 
   marketView(workspace: string | undefined): MarketView {
@@ -766,31 +793,46 @@ export class SkillsService {
     const categories = new Map<string, MarketView['categories'][number]>()
     const stale: string[] = []
     for (const record of this.registryRecords()) {
-      const file = this.registryFile(record)
+      const file = record.kind === 'search' ? {} : this.registryFile(record)
       registries.push({
-        id: record.id, location: record.location, builtin: record.builtin, enabled: record.enabled, entries: file.registry?.skills.length ?? 0,
+        id: record.id, kind: record.kind, location: record.location, builtin: record.builtin, enabled: record.enabled, entries: file.registry?.skills.length ?? 0,
         ...(file.registry?.name === undefined ? {} : { name: file.registry.name }),
         ...(file.registry?.description === undefined ? {} : { description: file.registry.description }),
         ...(file.registry?.homepage === undefined ? {} : { homepage: file.registry.homepage }),
         ...(file.fetchedAt === undefined ? {} : { fetchedAt: file.fetchedAt }),
         ...(file.error === undefined || record.builtin && file.fetchedAt === undefined ? {} : { error: file.error }),
       })
-      if (!record.enabled) continue
+      if (!record.enabled || record.kind === 'search') continue
       if (file.fetchedAt === undefined || now - Date.parse(file.fetchedAt) > REGISTRY_REFRESH_MS) stale.push(record.id)
       for (const category of file.registry?.categories ?? []) if (!categories.has(category.id)) categories.set(category.id, category)
-      for (const entry of file.registry?.skills ?? []) {
-        const skill = activeSkill(catalog, entry.name)
-        const install = skill === undefined ? undefined : installs.find(candidate => candidate.skillKey === skill.key)
-        const fromHere = install !== undefined && install.registryId === record.id && install.name === entry.name
-        const state: MarketInstallState = skill === undefined ? 'available'
-          : !fromHere ? 'conflict'
-          : skill.hash !== install!.hash ? 'modified'
-          : entry.version !== undefined && install!.version !== undefined && entry.version !== install!.version ? 'update'
-          : 'installed'
-        items.push({ ...entry, registryId: record.id, state, ...(skill === undefined ? {} : { skillKey: skill.key }), ...(fromHere && install!.version !== undefined ? { installedVersion: install!.version } : {}) })
-      }
+      for (const entry of file.registry?.skills ?? []) items.push({ ...entry, registryId: record.id, ...this.installState(catalog, installs, record.id, entry.name, entry.version) })
     }
     return { registries, categories: [...categories.values()], items, stale }
+  }
+
+  /**
+   * Search the search sources. Each result says whether it is installed; one
+   * installed from a catalog out of the same repository counts as installed.
+   */
+  async searchMarket(workspace: string | undefined, query: string, signal?: AbortSignal): Promise<MarketSearchResult> {
+    const text = query.trim().slice(0, 200)
+    const index = this.registryRecords().find(record => record.id === SKILLS_SH_ID)!
+    if (text.length < 2 || !index.enabled) return { query: text, items: [] }
+    let found: Awaited<ReturnType<typeof searchSkillsSh>>
+    try { found = await searchSkillsSh(text, this.fetcher, signal) } catch (error) {
+      if (signal?.aborted === true) throw error
+      return { query: text, items: [], error: error instanceof Error ? error.message : String(error) }
+    }
+    const catalog = this.catalog(workspace)
+    const installs = this.store.ledger().installs
+    return {
+      query: text,
+      items: found.map(skill => ({
+        name: skill.name, description: '', source: { type: 'indexed', id: skill.id }, origin: skill.origin, installs: skill.installs, author: skill.origin.split('/')[0]!,
+        registryId: SKILLS_SH_ID,
+        ...this.installState(catalog, installs, SKILLS_SH_ID, skill.name, undefined, install => install.source.type === 'github' && install.source.repo === skill.origin),
+      })),
+    }
   }
 
   private entry(registry: string, name: string): { record: RegistryRecord; entry: MarketRegistryFile['skills'][number] } {
@@ -801,17 +843,41 @@ export class SkillsService {
     return { record, entry }
   }
 
-  async marketPreview(registry: string, name: string, signal?: AbortSignal): Promise<MarketPreview> {
-    const { record, entry } = this.entry(registry, name)
-    const [content, files] = await Promise.all([fetchSkillDocument(entry, record.location, this.fetcher, signal), listSkillFiles(entry, record.location, this.fetcher, signal)])
-    return { registryId: registry, name, content, files: files.slice(0, 200), totalBytes: files.reduce((sum, file) => sum + file.bytes, 0) }
+  /** Where a skill the search index found lives: its repository folder, or its site's index entry. */
+  private indexedEntry(id: string, signal?: AbortSignal): Promise<MarketEntry> {
+    const parts = indexedParts(id)
+    if (parts === undefined) throw new Error('not a skill id of skills.sh: ' + id)
+    return resolveIndexed({ origin: parts.origin, skill: parts.skill, name: parts.skill }, this.fetcher, signal)
   }
 
-  /** Fetch the named registries (all enabled ones by default) and keep what each answered. */
+  async marketPreview(registry: string, name: string, signal?: AbortSignal): Promise<MarketPreview> {
+    if (registry === SKILLS_SH_ID) {
+      const audits = skillsShAudits(name, this.fetcher, signal)
+      try {
+        const entry = await this.indexedEntry(name, signal)
+        const [content, files] = await Promise.all([fetchSkillDocument(entry, '', this.fetcher, signal), listSkillFiles(entry, '', this.fetcher, signal)])
+        return { registryId: registry, name, content, files: files.slice(0, 200), totalBytes: files.reduce((sum, file) => sum + file.bytes, 0), audits: await audits, ...(entry.homepage === undefined ? {} : { homepage: entry.homepage }) }
+      } catch (error) {
+        // GitHub may decline to list a repository for a while; the index's own copy still shows the skill.
+        if (signal?.aborted === true) throw error
+        const snapshot = await skillsShSnapshot(name, this.fetcher, signal).catch(() => { throw error })
+        return {
+          registryId: registry, name, content: snapshot.find(file => file.path === 'SKILL.md')!.data.toString('utf8'),
+          files: snapshot.map(file => ({ path: file.path, bytes: file.data.byteLength })).slice(0, 200), totalBytes: snapshot.reduce((sum, file) => sum + file.data.byteLength, 0),
+          audits: await audits, partial: true, homepage: `${SKILLS_SH_URL}/${name}`,
+        }
+      }
+    }
+    const { record, entry } = this.entry(registry, name)
+    const [content, files] = await Promise.all([fetchSkillDocument(entry, record.location, this.fetcher, signal), listSkillFiles(entry, record.location, this.fetcher, signal)])
+    return { registryId: registry, name, content, files: files.slice(0, 200), totalBytes: files.reduce((sum, file) => sum + file.bytes, 0), ...(entry.homepage === undefined ? {} : { homepage: entry.homepage }) }
+  }
+
+  /** Fetch the named sources (all enabled ones by default) and keep what each answered. */
   async refreshMarket(ids?: readonly string[], signal?: AbortSignal): Promise<MarketView['registries']> {
-    const records = this.registryRecords().filter(record => record.enabled && (ids === undefined || ids.includes(record.id)))
+    const records = this.registryRecords().filter(record => record.enabled && record.kind !== 'search' && (ids === undefined || ids.includes(record.id)))
     const results = await Promise.all(records.map(async record => {
-      try { return { record, registry: await loadRegistry(record.location, this.fetcher, signal) } } catch (error) { return { record, error: error instanceof Error ? error.message : String(error) } }
+      try { return { record, registry: await this.loadSource(record.kind, record.location, signal) } } catch (error) { return { record, error: error instanceof Error ? error.message : String(error) } }
     }))
     await this.write(() => {
       const at = this.clock().toISOString()
@@ -827,15 +893,49 @@ export class SkillsService {
     return this.marketView(undefined).registries
   }
 
-  async addRegistry(location: string, signal?: AbortSignal): Promise<MarketRegistry> {
-    const trimmed = location.trim()
-    if (!/^https?:\/\//u.test(trimmed) && !trimmed.startsWith('file://') && !isAbsoluteLocation(trimmed)) throw new Error('a registry is an http(s) URL or an absolute path to a JSON file')
-    if (this.registryRecords().some(record => record.location === trimmed)) throw new Error('this registry is already added')
-    const registry = await loadRegistry(trimmed, this.fetcher, signal)
+  /**
+   * Add a source from what the user pasted: a GitHub repository, a site
+   * publishing an Agent Skills index, or a JSON file by URL or path — a
+   * catalog, a discovery index, or a plugin marketplace on GitHub.
+   */
+  async addRegistry(input: string, signal?: AbortSignal): Promise<MarketRegistry> {
+    const detected = detectSource(input)
+    if (detected === undefined) throw new Error('add a GitHub repository (owner/repo), a website, or a JSON file by URL or absolute path')
+    const taken = () => this.registryRecords().some(record => record.location === detected.location)
+    if (taken()) throw new Error('this source is already added')
+    let kind: MarketSourceKind
+    let location = detected.location
+    let registry: MarketRegistryFile
+    if (detected.kind === 'json' || detected.kind === 'catalog') {
+      const value = await loadJson(location, this.fetcher, signal)
+      if (isPluginMarketplace(value)) {
+        const repository = /^https?:\/\//u.test(location) ? marketplaceRepository(location) : undefined
+        if (repository === undefined) throw new Error('a plugin marketplace is read from its GitHub repository; add the repository instead')
+        kind = 'github'
+        location = repository
+        if (this.registryRecords().some(record => record.location === location)) throw new Error('this source is already added')
+        registry = await loadRepository(location, this.fetcher, signal)
+      } else if (isDiscoveryIndex(value)) {
+        if (!/^https?:\/\//u.test(location)) throw new Error('an Agent Skills index is read from the site that publishes it')
+        kind = 'well-known'
+        registry = parseDiscovery(value, location)
+      } else {
+        kind = 'catalog'
+        registry = parseRegistry(value).registry
+      }
+    } else {
+      kind = detected.kind
+      registry = await this.loadSource(kind, location, signal)
+    }
+    if (kind !== 'catalog' && registry.skills.length === 0) throw new Error('this source publishes no skill DSH can load')
     const id = await this.write(() => {
-      const records = this.store.registries().filter(record => record.id !== OFFICIAL_REGISTRY_ID)
-      const id = registryId(trimmed, registry.id, new Set(records.map(record => record.id)))
-      this.store.saveRegistries([...this.store.registries().filter(record => record.id === OFFICIAL_REGISTRY_ID), ...records, { id, location: trimmed, enabled: true, builtin: false }])
+      const stored = this.store.registries()
+      const added = stored.filter(record => record.id !== OFFICIAL_REGISTRY_ID && record.id !== SKILLS_SH_ID)
+      if (added.some(record => record.location === location)) throw new Error('this source is already added')
+      const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 56)
+      const declared = kind === 'catalog' ? registry.id : kind === 'github' ? slug(parseGithub(location)!.repo) : slug(new URL(location).host)
+      const id = registryId(location, declared === '' ? undefined : declared, new Set(added.map(record => record.id)))
+      this.store.saveRegistries([...stored.filter(record => record.id === OFFICIAL_REGISTRY_ID || record.id === SKILLS_SH_ID), ...added, { id, kind, location, enabled: true, builtin: false }])
       this.store.saveRegistryCache(id, { fetchedAt: this.clock().toISOString(), registry })
       this.touch()
       return id
@@ -845,7 +945,7 @@ export class SkillsService {
 
   removeRegistry(id: string): Promise<{ removed: string }> {
     return this.write(() => {
-      if (id === OFFICIAL_REGISTRY_ID) throw new Error('the official registry can be switched off, not removed')
+      if (id === OFFICIAL_REGISTRY_ID || id === SKILLS_SH_ID) throw new Error('a built-in source can be switched off, not removed')
       const records = this.store.registries()
       if (!records.some(record => record.id === id)) throw new Error('unknown skill registry: ' + id)
       this.store.saveRegistries(records.filter(record => record.id !== id))
@@ -869,47 +969,53 @@ export class SkillsService {
   /**
    * Install a market skill, or update one installed from the same entry. The
    * files are fetched before the lock, staged, checked against DSH's rules,
-   * then moved into place; a replaced folder goes to the trash first.
+   * then moved into place; a replaced folder goes to the trash first. A
+   * skill the search index found installs from its repository or site, under
+   * the name its own `SKILL.md` gives.
    */
   async installMarket(workspace: string | undefined, input: { registryId: string; name: string; root?: SkillRootKind; overwrite?: boolean }, signal?: AbortSignal): Promise<{ skill: SkillSummary; updated: boolean }> {
-    const { record, entry } = this.entry(input.registryId, input.name)
+    const indexed = input.registryId === SKILLS_SH_ID
+    const { record, entry } = indexed
+      ? { record: this.registryRecords().find(candidate => candidate.id === SKILLS_SH_ID)!, entry: await this.indexedEntry(input.name, signal) }
+      : this.entry(input.registryId, input.name)
     const files = await fetchSkillFiles(entry, record.location, this.fetcher, signal)
     const document = files.find(file => file.path === 'SKILL.md')!.data.toString('utf8')
-    validateSkillContent(document, entry.name)
+    const name = indexed ? skillMeta(document)?.name ?? entry.name : entry.name
+    validateSkillContent(document, name)
     return this.write(() => {
       const catalog = this.catalog(workspace)
       const ledger = this.store.ledger()
-      const existing = activeSkill(catalog, entry.name)
+      const existing = activeSkill(catalog, name)
       const install = existing === undefined ? undefined : ledger.installs.find(candidate => candidate.skillKey === existing.key)
-      if (existing !== undefined && (install === undefined || install.registryId !== record.id || install.name !== entry.name)) {
-        throw new Error(`a skill named ${entry.name} already exists in ${existing.root}; it did not come from this market entry`)
+      if (existing !== undefined && (install === undefined || install.registryId !== record.id || install.name !== name)) {
+        throw new Error(`a skill named ${name} already exists in ${existing.root}; it did not come from this market entry`)
       }
       if (existing !== undefined && existing.hash !== install!.hash && input.overwrite !== true) {
-        throw new Error(`${entry.name} was edited after it was installed; confirm to replace your changes`)
+        throw new Error(`${name} was edited after it was installed; confirm to replace your changes`)
       }
       const root = existing?.root ?? input.root ?? DEFAULT_ROOT
-      const target = existing === undefined ? join(rootPath(catalog, root), entry.name) : existing.layout === 'bundle' ? dirname(existing.path) : existing.path
-      if (existing === undefined && (existsSync(target) || existsSync(target + '.md'))) throw new Error(`${entry.name} already exists in this root`)
+      const target = existing === undefined ? join(rootPath(catalog, root), name) : existing.layout === 'bundle' ? dirname(existing.path) : existing.path
+      if (existing === undefined && (existsSync(target) || existsSync(target + '.md'))) throw new Error(`${name} already exists in this root`)
       const staged = stageFiles(this.store.stagingDirectory(), files)
       const previous = existing === undefined ? undefined : readFileSync(existing.path, 'utf8')
       let trashed: string | undefined
       try {
-        if (existing !== undefined) trashed = this.store.trash(target, entry.name)
-        const finalTarget = existing?.layout === 'flat' ? join(dirname(target), entry.name) : target
+        if (existing !== undefined) trashed = this.store.trash(target, name)
+        const finalTarget = existing?.layout === 'flat' ? join(dirname(target), name) : target
         moveInto(staged, finalTarget)
       } catch (error) {
         rmSync(staged, { recursive: true, force: true })
         if (trashed !== undefined && !existsSync(target)) try { renameSync(trashed, target) } catch { /* The trash keeps it. */ }
         throw error
       }
-      const key = `${root}:${entry.name}`
+      const key = `${root}:${name}`
       const now = this.clock().toISOString()
       const hash = sha256(document)
       ledger.installs = [
-        { skillKey: key, registryId: record.id, name: entry.name, ...(entry.version === undefined ? {} : { version: entry.version }), source: entry.source, hash, files: files.length, installedAt: now } satisfies MarketInstall,
+        { skillKey: key, registryId: record.id, name, ...(entry.version === undefined ? {} : { version: entry.version }), source: entry.source, hash, files: files.length, installedAt: now } satisfies MarketInstall,
         ...ledger.installs.filter(candidate => candidate.skillKey !== key),
       ]
-      this.recordVersion(ledger, key, document, 'install', previous, { note: `${record.id}/${entry.name}` })
+      this.recordVersion(ledger, key, document, 'install', previous, { note: `${record.id}/${indexed ? input.name : name}` })
       this.store.saveLedger(ledger)
       return { skill: findSkill(this.catalog(workspace), key), updated: existing !== undefined }
     })
@@ -918,10 +1024,6 @@ export class SkillsService {
   installs(): MarketInstall[] {
     return this.store.ledger().installs
   }
-}
-
-function isAbsoluteLocation(location: string): boolean {
-  return location.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(location)
 }
 
 /** Write downloaded files into a fresh staging folder, never outside it. */
