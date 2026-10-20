@@ -93,6 +93,19 @@
 .skPane { padding: clamp(14px, 2vw, 22px); overflow: hidden; }
 
 .skDetail { display: grid; min-width: 0; gap: 12px; }
+/* Single-column grids: a long command or path wraps or scrolls inside its row instead of widening the page. */
+.skRows,
+.skOverview,
+.skDetail,
+.skDraft,
+.skEvals,
+.skEvalsSide,
+.skCases,
+.skRuns,
+.skRunDetail,
+.skVerdicts,
+.skComposer,
+.skVersions { grid-template-columns: minmax(0, 1fr); }
 .skDetailHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: .5px solid var(--mn-line); }
 .skDetailHead > div:first-child { min-width: 0; }
 .skDetailHead > div:first-child > span { display: inline-flex; flex-wrap: wrap; gap: 6px; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
@@ -129,7 +142,8 @@
 .skConfidence > i > b[data-high] { background: var(--mn-success); }
 
 /* Trajectory timeline. */
-.skTimeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.skTimeline { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0; list-style: none; }
+.skTimeline > li { min-width: 0; }
 .skTurn { margin: 10px 0 4px; color: var(--mn-faint); font-size: 11px; font-weight: 500; letter-spacing: .02em; line-height: 16px; }
 .skTimeline > li:first-child > .skTurn { margin-top: 0; }
 .skStep { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-left: 2px solid transparent; border-radius: 0 var(--dsw-radius-sm) var(--dsw-radius-sm) 0; }

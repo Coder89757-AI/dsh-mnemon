@@ -74,13 +74,20 @@ export function SkillUseBridge(props: SkillUseBridgeProps): null {
 }
 
 interface SlotRegistry {
+  inject(name: string, factory: () => () => void): () => void
   register(options: { name: string; id: string; order?: number }, component: (props: SkillUseBridgeProps) => null): () => void
 }
 
-/** Register the bridge in the composer's tool row; a host without that row keeps "Use" disabled. */
+export const SKILL_USE_SLOT = 'conversation.input.left'
+
+/**
+ * Register the bridge in the composer's tool row once the conversation
+ * declares that row; a host without it leaves "Use" untaken.
+ */
 export function installSkillUseBridge(ctx: { slots: unknown }): () => void {
+  const slots = ctx.slots as SlotRegistry
   try {
-    return (ctx.slots as SlotRegistry).register({ name: 'conversation.input.left', id: 'dsh-mnemon-skills/use', order: 1000 }, SkillUseBridge)
+    return slots.inject(SKILL_USE_SLOT, () => slots.register({ name: SKILL_USE_SLOT, id: 'dsh-mnemon-skills/use', order: 1000 }, SkillUseBridge))
   } catch {
     return () => undefined
   }

@@ -262,8 +262,11 @@ export interface BacktestRun {
   progress: { done: number; total: number }
   caseIds: string[]
   results: CaseResult[]
+  /** Over the graded cases; absent when none could be graded. */
   passRate?: number
   score?: number
+  /** Cases that could not run; they are left out of the score. */
+  errors?: number
   error?: string
   startedAt: string
   finishedAt?: string

@@ -239,6 +239,29 @@ describe('skill evolution in the Host', () => {
     expect(readFileSync(join(directory, 'dsh', 'skills', 'release-notes', 'SKILL.md'), 'utf8')).toBe(next)
   })
 
+  it('retries a case whose run fails and leaves a case that never runs out of the score', async () => {
+    await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Flaky', prompt: 'Write notes A', checks: [{ text: 'Has notes', must: true }] } })
+    await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Broken', prompt: 'Write notes B', checks: [{ text: 'Has notes', must: true }] } })
+    const { skills, host } = evolution([])
+    const failures = new Map([['Write notes A', 1], ['Write notes B', 2]])
+    host.skillTask.mockImplementation(async (_parent: HostAgent, label: string, prompt: string) => {
+      if (label.startsWith('Mnemon skill eval')) {
+        const key = prompt.includes('Write notes A') ? 'Write notes A' : 'Write notes B'
+        const left = failures.get(key)!
+        if (left > 0) { failures.set(key, left - 1); throw new Error('memory subagent stopped with max-tokens') }
+        return { structured: { steps: ['read'], answer: 'notes' } }
+      }
+      return { structured: { checks: [{ index: 1, pass: true, note: 'ok' }], summary: 'ok' } }
+    })
+    const { runId } = await skills.backtest(source, join(directory, 'workspace'), { skillName: 'release-notes', target: { kind: 'current' } })
+    await vi.runAllTimersAsync()
+    await vi.waitFor(async () => expect((await source.read<BacktestRun>('run', { id: runId })).status).toBe('completed'))
+    const run = await source.read<BacktestRun>('run', { id: runId })
+    expect(Object.fromEntries(run.results.map(result => [result.title, result.verdict]))).toEqual({ Flaky: 'pass', Broken: 'error' })
+    expect(run.results.find(result => result.title === 'Broken')?.error).toContain('max-tokens')
+    expect(run).toMatchObject({ passRate: 1, score: 1, errors: 1 })
+  })
+
   it('derives cases from a trajectory and reviews a session on request', async () => {
     const { skills } = evolution([
       () => ({ outcome: 'nothing', summary: 'Nothing to keep.', suggestions: [] }),

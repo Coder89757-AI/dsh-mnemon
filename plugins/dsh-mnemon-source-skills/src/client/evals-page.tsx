@@ -120,7 +120,7 @@ function SkillEvals(props: { context: SkillsPageContext; skill: string; focusRun
               <button type="button" data-open={openRun === entry.id ? '' : undefined} onClick={() => setOpenRun(openRun === entry.id ? undefined : entry.id)}>
                 <RunStatusDot status={entry.status} />
                 <Tag tone={entry.target.kind === 'draft' ? 'warning' : entry.target.kind === 'none' ? 'quiet' : 'outline'}>{targetLabel(t, entry.target)}</Tag>
-                <span>{entry.status === 'running' ? t('run.progress', { done: entry.progress.done, total: entry.progress.total }) : entry.status === 'completed' ? `${t('run.passRate', { rate: percent(entry.passRate) })} · ${t('run.score', { score: points(entry.score) })}` : t(`run.status.${entry.status}`)}</span>
+                <span>{entry.status === 'running' ? t('run.progress', { done: entry.progress.done, total: entry.progress.total }) : entry.status === 'completed' ? `${t('run.passRate', { rate: percent(entry.passRate) })} · ${t('run.score', { score: points(entry.score) })}${entry.errors ? ` · ${t('run.errors', { count: entry.errors })}` : ''}` : t(`run.status.${entry.status}`)}</span>
                 <time>{relative(t, entry.startedAt)}</time>
               </button>
               {openRun === entry.id && <RunDetail run={entry} />}

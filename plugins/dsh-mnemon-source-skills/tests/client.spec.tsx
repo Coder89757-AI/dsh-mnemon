@@ -21,9 +21,10 @@ vi.mock('dsh-mnemon/client', async () => {
 
 import * as plugin from '../src/index.ts'
 import { installSkillsMemoryUI, SkillsSourcePage } from '../src/client.ts'
-import { draftWithSkill, SkillUseBridge } from '../src/client/use-skill.tsx'
+import { draftWithSkill, installSkillUseBridge, SKILL_USE_SLOT, SkillUseBridge } from '../src/client/use-skill.tsx'
 import { translate } from '../src/client/presentation.ts'
-import type { ReviewRecordInput } from '../src/contracts.ts'
+import { compareRuns } from '../src/client/evolution-page.tsx'
+import type { BacktestRun, CaseResult, ReviewRecordInput } from '../src/contracts.ts'
 
 const t = translate('en')
 let directory: string
@@ -205,6 +206,37 @@ describe('Skills page', () => {
     expect(await screen.findByText(t('market.installed'))).not.toBeNull()
   })
 
+  it('compares the latest backtest of a draft, not the first one linked to it', async () => {
+    await mutate('review-record', review())
+    const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
+    const [entry] = (await management.read('cases', { skill: 'release-notes' })).value as Array<{ id: string; title: string }>
+    const next = SKILL.replace('1. Read CHANGELOG.md', '1. Read CHANGELOG.md\n2. Group by component')
+    const draft = await mutate('draft-record', { suggestionId: suggestion!.id, skillName: 'release-notes', content: next, notes: 'Groups entries by component.', changes: [], guidance: [] }) as { id: string }
+    const backtest = async (target: Record<string, unknown>, verdict: CaseResult['verdict'], score: number) => {
+      const run = await mutate('run-start', { skillName: 'release-notes', target, caseIds: [entry!.id] }) as { id: string }
+      await mutate('run-progress', { id: run.id, result: { caseId: entry!.id, title: entry!.title, verdict, score, checks: [], steps: [], answer: '' } })
+      await mutate('run-finish', { id: run.id, status: 'completed' })
+      if (target.kind !== 'draft') await mutate('run-link', { draftId: draft.id, runId: run.id })
+    }
+    // The first pair could not run the draft; the second one could.
+    await backtest({ kind: 'draft', draftId: draft.id }, 'error', 0)
+    await backtest({ kind: 'current' }, 'fail', 0.5)
+    await backtest({ kind: 'draft', draftId: draft.id }, 'pass', 1)
+    await backtest({ kind: 'current' }, 'fail', 0.5)
+    page({ seed: `draft:${draft.id}`, nonce: 1 })
+    expect(await screen.findByText(t('draft.improved', { delta: 50 }))).not.toBeNull()
+    expect(screen.queryByText(t('draft.excluded', { count: 1 }))).toBeNull()
+  })
+
+  it('compares a draft with its baseline only on the cases both could grade', () => {
+    const result = (caseId: string, verdict: CaseResult['verdict'], score: number): CaseResult => ({ caseId, title: caseId, verdict, score, checks: [], steps: [], answer: '' })
+    const run = (kind: 'draft' | 'current', results: CaseResult[]): BacktestRun => ({ id: kind, skillName: 'release-notes', target: kind === 'draft' ? { kind, hash: 'h', draftId: 'd' } : { kind, hash: 'h', skillKey: 'k' }, status: 'completed', progress: { done: results.length, total: results.length }, caseIds: results.map(entry => entry.caseId), results, startedAt: '2026-10-21T00:00:00.000Z' })
+    const baseline = run('current', [result('a', 'fail', 0.5), result('b', 'pass', 1)])
+    expect(compareRuns(baseline, run('draft', [result('a', 'pass', 1), result('b', 'error', 0)]))).toEqual({ baseline: 0.5, candidate: 1, excluded: 1 })
+    expect(compareRuns(baseline, run('draft', [result('a', 'error', 0), result('b', 'error', 0)]))).toEqual({ excluded: 2 })
+    expect(compareRuns(baseline, { ...run('draft', []), status: 'running' })).toEqual({ excluded: 0 })
+  })
+
   it('registers one page in the Memory System and releases it', () => {
     const entries: Array<{ id: string }> = []
     const release = installSkillsMemoryUI({ slots: {
@@ -214,5 +246,21 @@ describe('Skills page', () => {
     expect(entries.map(entry => entry.id)).toEqual(['skills/library'])
     release()
     expect(entries).toEqual([])
+  })
+
+  it('joins the composer row only once the conversation declares it', () => {
+    const waiting = new Map<string, () => () => void>()
+    const entries: Array<{ name: string; id: string }> = []
+    const release = installSkillUseBridge({ slots: {
+      inject: (name: string, factory: () => () => void) => { waiting.set(name, factory); return () => waiting.delete(name) },
+      register: (options: { name: string; id: string }) => { entries.push(options); return () => entries.splice(entries.indexOf(options), 1) },
+    } })
+    expect(entries).toEqual([])
+    const stop = waiting.get(SKILL_USE_SLOT)!()
+    expect(entries.map(entry => [entry.name, entry.id])).toEqual([[SKILL_USE_SLOT, 'dsh-mnemon-skills/use']])
+    stop()
+    release()
+    expect(entries).toEqual([])
+    expect(waiting.size).toBe(0)
   })
 })

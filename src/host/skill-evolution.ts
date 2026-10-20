@@ -36,6 +36,8 @@ interface SessionState {
 /** A session stops reviewing after this many failures in a row, until DSH recreates its Agent. */
 const MAX_CONSECUTIVE_FAILURES = 3
 /** Backtest children run this many cases at once. */
+/** One retry for a case whose run failed rather than scored. */
+const CASE_ATTEMPTS = 2
 const BACKTEST_CONCURRENCY = 2
 
 interface PreStepPayload { step: number; signal: AbortSignal }
@@ -341,16 +343,25 @@ export class SkillEvolution {
     return { runId: run.id }
   }
 
+  /**
+   * Execute and grade one case. A run that fails (an output limit, a missing
+   * result) gets one more try; a case that still cannot run is recorded as
+   * an error, which the run's score leaves out.
+   */
   private async runCase(task: HostAgent, entry: EvalCase, skillName: string, content: string | undefined, signal: AbortSignal) {
-    try {
-      const executed = parseExecution((await this.host.skillTask(task, `Mnemon skill eval: ${entry.title}`.slice(0, 120), skillExecutorPrompt(entry, { name: skillName, ...(content === undefined ? {} : { content }) }), SKILL_EXECUTOR_SCHEMA as unknown as Record<string, unknown>, SKILL_EXECUTOR_PERSONA, signal)).structured)
-      const judged = await this.host.skillTask(task, `Mnemon skill judge: ${entry.title}`.slice(0, 120), skillJudgePrompt(entry, executed.steps, executed.answer), SKILL_JUDGE_SCHEMA as unknown as Record<string, unknown>, SKILL_JUDGE_PERSONA, signal)
-      const grade = gradeCase(entry, judged.structured)
-      return { caseId: entry.id, title: entry.title, verdict: grade.verdict, score: grade.score, checks: grade.checks, steps: executed.steps, answer: executed.answer, summary: grade.summary }
-    } catch (error) {
-      if (signal.aborted) throw error
-      return { caseId: entry.id, title: entry.title, verdict: 'error' as const, score: 0, checks: [], steps: [], answer: '', error: message(error) }
+    let failure: unknown
+    for (let attempt = 0; attempt < CASE_ATTEMPTS; attempt++) {
+      try {
+        const executed = parseExecution((await this.host.skillTask(task, `Mnemon skill eval: ${entry.title}`.slice(0, 120), skillExecutorPrompt(entry, { name: skillName, ...(content === undefined ? {} : { content }) }), SKILL_EXECUTOR_SCHEMA as unknown as Record<string, unknown>, SKILL_EXECUTOR_PERSONA, signal)).structured)
+        const judged = await this.host.skillTask(task, `Mnemon skill judge: ${entry.title}`.slice(0, 120), skillJudgePrompt(entry, executed.steps, executed.answer), SKILL_JUDGE_SCHEMA as unknown as Record<string, unknown>, SKILL_JUDGE_PERSONA, signal)
+        const grade = gradeCase(entry, judged.structured)
+        return { caseId: entry.id, title: entry.title, verdict: grade.verdict, score: grade.score, checks: grade.checks, steps: executed.steps, answer: executed.answer, summary: grade.summary }
+      } catch (error) {
+        if (signal.aborted) throw error
+        failure = error
+      }
     }
+    return { caseId: entry.id, title: entry.title, verdict: 'error' as const, score: 0, checks: [], steps: [], answer: '', error: message(failure) }
   }
 
   /** Turn a recorded trajectory into eval cases for one skill. */

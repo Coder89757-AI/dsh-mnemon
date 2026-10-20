@@ -273,7 +273,7 @@ export function parseSkillDraft(value: unknown): { content: string; notes: strin
 
 export const SKILL_EXECUTOR_PERSONA = `You are running one eval case of a DSH skill in a simulation. You have no tools in this run: nothing you write is executed. Follow the skill below as written — it is the playbook under test — and work the task.
 
-Return steps: the exact actions you would take, in order, as you would perform them (commands with their key parameters, tool calls and what you pass, files you would read or write). Return answer: the final output the user would receive, in full, in the format the skill and the task ask for. When something cannot be known in a simulation (a file's content, a command's output), state the assumption in one short step and continue. Do not grade yourself. Never delegate, and finish through the run-specific result tool exactly once.`
+Return steps: the exact actions you would take, in order, as you would perform them (commands with their key parameters, tool calls and what you pass, files you would read or write). Keep steps short: one line each, at most 15. Return answer: the final output the user would receive, in the format the skill and the task ask for, without commentary around it; keep it compact, since only its shape and content are graded. When something cannot be known in a simulation (a file's content, a command's output), state the assumption in one short step and continue. Do not grade yourself. Never delegate, and finish through the run-specific result tool exactly once.`
 
 export const SKILL_EXECUTOR_SCHEMA = {
   type: 'object',

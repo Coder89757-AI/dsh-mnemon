@@ -927,7 +927,7 @@ This is the only completion channel for this run. Do not finish with a plain-tex
         : operation === 'document-archive' ? 8_192
         : operation === 'metadata-maintenance' ? 4_096
         : operation === 'review' ? this.runtimeSource.config.idleReview.maxTokens
-        : operation === 'skill' ? 8_192
+        : operation === 'skill' ? 16_384
         : undefined
       const fixed = this.taskAgentModelResolver?.()
       const baseAgentOptions = perOpMaxTokens === undefined ? undefined : { maxTokens: perOpMaxTokens }

@@ -121,6 +121,6 @@ export function validateSkillContent(content: string, name: string): ParsedSkill
 /** A starting SKILL.md for a new skill, in DSH's format. */
 export function skillTemplate(name: string, description: string, body = ''): string {
   const quoted = JSON.stringify(description.replace(/\s+/gu, ' ').trim())
-  const rest = body.trim() === '' ? `# ${name}\n\n## Steps\n1. \n\n## Pitfalls\n- \n\n## Verification\n- \n` : body.trimStart()
+  const rest = body.trim() === '' ? `# ${name}\n\n## Steps\n1. The first thing to do, with the exact command or tool.\n\n## Pitfalls\n- What tends to go wrong, and how to avoid it.\n\n## Verification\n- How to confirm the result is right.\n` : body.trimStart()
   return `---\nname: ${name}\ndescription: ${quoted}\n---\n\n${rest}${rest.endsWith('\n') ? '' : '\n'}`
 }

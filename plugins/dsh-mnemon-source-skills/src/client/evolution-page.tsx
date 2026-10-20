@@ -158,9 +158,20 @@ function SuggestionDetail(props: { context: SkillsPageContext; id: string }): JS
   </article>
 }
 
-/** Average score of one run, for comparing a draft with its baseline. */
-function runScore(run: BacktestRun | undefined): number | undefined {
-  return run?.status === 'completed' ? run.score : undefined
+/**
+ * Average scores of a draft and its baseline over the cases both graded: a
+ * case that could not run on either side says nothing about the change.
+ */
+export function compareRuns(baseline: BacktestRun | undefined, candidate: BacktestRun | undefined): { baseline?: number; candidate?: number; excluded: number } {
+  if (baseline?.status !== 'completed' || candidate?.status !== 'completed') return { excluded: 0 }
+  const graded = (run: BacktestRun) => new Map(run.results.filter(result => result.verdict !== 'error').map(result => [result.caseId, result.score]))
+  const base = graded(baseline)
+  const next = graded(candidate)
+  const shared = [...next.keys()].filter(id => base.has(id))
+  const excluded = new Set([...baseline.results, ...candidate.results].map(result => result.caseId)).size - shared.length
+  if (shared.length === 0) return { excluded }
+  const mean = (scores: Map<string, number>) => shared.reduce((sum, id) => sum + scores.get(id)!, 0) / shared.length
+  return { baseline: mean(base), candidate: mean(next), excluded }
 }
 
 function DraftReview(props: { context: SkillsPageContext; draftId: string; suggestion?: SkillSuggestion }): JSX.Element {
@@ -183,10 +194,11 @@ function DraftReview(props: { context: SkillsPageContext; draftId: string; sugge
   }, [context.client, props.draftId, context.revision])
   if (view === null) return <Busy label={t('common.loading')} />
   const { draft } = view
-  const candidate = view.runs.find(run => run.target.kind === 'draft' && run.target.draftId === draft.id)
-  const baseline = view.runs.find(run => run.target.kind !== 'draft')
-  const candidateScore = runScore(candidate)
-  const baselineScore = runScore(baseline)
+  // Runs are linked oldest first; the comparison is always the latest pair.
+  const latest = [...view.runs].reverse()
+  const candidate = latest.find(run => run.target.kind === 'draft' && run.target.draftId === draft.id)
+  const baseline = latest.find(run => run.target.kind !== 'draft')
+  const { baseline: baselineScore, candidate: candidateScore, excluded } = compareRuns(baseline, candidate)
   const regressed = candidateScore !== undefined && baselineScore !== undefined && candidateScore < baselineScore
   const act = async (operation: () => Promise<unknown>, after?: () => void) => {
     setBusy(true)
@@ -198,7 +210,8 @@ function DraftReview(props: { context: SkillsPageContext; draftId: string; sugge
   }, () => setConfirmAdopt(false))
   const backtest = () => act(async () => {
     await context.client.backtest({ skillName: draft.skillName, target: { kind: 'draft', draftId: draft.id } })
-    await context.client.backtest({ skillName: draft.skillName, target: { kind: draft.action === 'update' ? 'current' : 'none' } })
+    const baseline = await context.client.backtest({ skillName: draft.skillName, target: { kind: draft.action === 'update' ? 'current' : 'none' } })
+    await context.client.linkRun(draft.id, baseline.runId)
   })
   const results = new Map<string, { title: string; base?: BacktestRun['results'][number]; next?: BacktestRun['results'][number] }>()
   for (const result of baseline?.results ?? []) results.set(result.caseId, { title: result.title, base: result })
@@ -230,6 +243,7 @@ function DraftReview(props: { context: SkillsPageContext; draftId: string; sugge
         {candidateScore !== undefined && baselineScore !== undefined && <p className={regressed ? css.skWarn : css.skSuccess}>
           {regressed ? t('draft.regressed') : candidateScore > baselineScore ? t('draft.improved', { delta: Math.round((candidateScore - baselineScore) * 100) }) : t('draft.equal')}
         </p>}
+        {excluded > 0 && <p className={css.skMuted}>{t('draft.excluded', { count: excluded })}</p>}
         {results.size > 0 && <table className={css.skTable}>
           <thead><tr><th>{t('evals.cases')}</th><th>{baseline?.target.kind === 'none' ? t('draft.baselineNone') : t('draft.baseline')}</th><th>{t('draft.candidate')}</th></tr></thead>
           <tbody>{[...results.entries()].map(([id, row]) => <tr key={id}>

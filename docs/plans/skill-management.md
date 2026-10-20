@@ -110,8 +110,11 @@ delegated runs, the Source management protocol and the Memory System workbench.
    take and the answer it would give — it has no tools, so a backtest never touches the user's files
    or services. A separate judge run receives the case, its checks and the executor's output (not the
    skill) and grades each check. A case passes when every `must` check passes; its score weighs
-   `must` checks twice. Runs execute in the background: the Source records `running` with progress,
-   the page polls, and a run that outlives the Host shows as `interrupted`.
+   `must` checks twice. A case whose executor or judge run fails (an output limit, no recorded
+   result) gets one more try; if it still cannot run it is recorded as an error and left out of the
+   run's score, and a draft is compared with its baseline only on the cases both runs graded, so a
+   failed run never reads as a worse skill. Runs execute in the background: the Source records
+   `running` with progress, the page polls, and a run that outlives the Host shows as `interrupted`.
 
 10. **Model work is Host assistance on the Source's own page.** `skill-draft`, `skill-backtest`,
     `skill-derive-cases` and `skill-review-now` are advertised as assistance for the default `skills`
@@ -163,7 +166,8 @@ Mutations: `settings-update`, `skill-create`, `skill-save`, `skill-invocation`, 
 
 - **Overview** — the evolution switch with one line on what it does, counts (skills, pending
   suggestions, drafts to review, evidence, cases, last review), a *needs you* list (suggestions,
-  drafts, regressions) and the recent review log.
+  drafts, and regressions — the live version scoring below its own previous backtest) and the
+  recent review log.
 - **Skills** — searchable list grouped by root; each row has its icon, **Use** and a switch, with
   pending-suggestion and pass-rate chips; detail with the rendered `SKILL.md`, edit, versions (with score per version and restore), its
   eval summary, and links to its suggestions and evidence. New skill and delete live here.

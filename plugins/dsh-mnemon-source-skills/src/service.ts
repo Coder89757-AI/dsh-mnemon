@@ -48,11 +48,15 @@ function staleRun(run: BacktestRun, now: number): BacktestRun {
   return run.status === 'running' && now - Date.parse(run.startedAt) > RUN_STALE_MS ? { ...run, status: 'interrupted' } : run
 }
 
-function runScore(results: readonly CaseResult[]): { passRate: number; score: number } {
-  if (results.length === 0) return { passRate: 0, score: 0 }
+/** A case that could not run says nothing about the skill, so only graded cases count. */
+function runScore(results: readonly CaseResult[]): { passRate?: number; score?: number; errors: number } {
+  const graded = results.filter(result => result.verdict !== 'error')
+  const errors = results.length - graded.length
+  if (graded.length === 0) return { errors }
   return {
-    passRate: results.filter(result => result.verdict === 'pass').length / results.length,
-    score: results.reduce((sum, result) => sum + result.score, 0) / results.length,
+    passRate: graded.filter(result => result.verdict === 'pass').length / graded.length,
+    score: graded.reduce((sum, result) => sum + result.score, 0) / graded.length,
+    errors,
   }
 }
 
@@ -121,11 +125,11 @@ export class SkillsService {
       ...ledger.suggestions.filter(suggestion => suggestion.status === 'pending').map(suggestion => ({ kind: 'suggestion' as const, id: suggestion.id, skillName: suggestion.skillName, title: suggestion.summary, at: suggestion.updatedAt })),
       ...ledger.drafts.filter(draft => draft.status === 'ready').map(draft => ({ kind: 'draft' as const, id: draft.id, skillName: draft.skillName, title: draft.notes || draft.skillName, at: draft.updatedAt })),
     ]
-    // A finished run that scored below the run before it, on the same skill, is a regression to look at.
-    const finished = evals.runs.filter(run => run.status === 'completed' && run.target.kind !== 'none' && run.score !== undefined)
+    // The live version scoring below its own previous backtest is a regression to look at; draft runs are compared on their own page.
+    const finished = evals.runs.filter(run => run.status === 'completed' && run.target.kind === 'current' && run.score !== undefined)
     for (const name of new Set(finished.map(run => run.skillName))) {
       const [latest, previous] = finished.filter(run => run.skillName === name)
-      if (latest !== undefined && previous !== undefined && latest.score! < previous.score! - 0.05 && latest.target.kind === 'current') {
+      if (latest !== undefined && previous !== undefined && latest.score! < previous.score! - 0.05) {
         attention.push({ kind: 'regression', id: latest.id, skillName: name, title: `${Math.round(previous.score! * 100)} → ${Math.round(latest.score! * 100)}`, at: latest.finishedAt ?? latest.startedAt })
       }
     }
@@ -710,7 +714,12 @@ export class SkillsService {
       run.status = input.status
       run.finishedAt = this.clock().toISOString()
       if (input.error !== undefined) run.error = clip(input.error, 500)
-      if (run.results.length > 0) Object.assign(run, runScore(run.results))
+      if (run.results.length > 0) {
+        const { passRate, score, errors } = runScore(run.results)
+        delete run.passRate
+        delete run.score
+        Object.assign(run, passRate === undefined ? {} : { passRate }, score === undefined ? {} : { score }, errors > 0 ? { errors } : {})
+      }
       this.store.saveEvals(evals)
       this.touch()
       return run

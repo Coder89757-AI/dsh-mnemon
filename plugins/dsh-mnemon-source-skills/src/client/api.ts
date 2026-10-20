@@ -46,6 +46,8 @@ export interface SkillsPageClient {
   updateDraft(id: string, content: string): Promise<SkillDraft>
   adoptDraft(id: string): Promise<{ skill: SkillSummary; version: SkillVersion }>
   discardDraft(id: string): Promise<SkillDraft>
+  /** Attach a baseline run to the draft it is compared with. */
+  linkRun(draftId: string, runId: string): Promise<void>
 
   market(): Promise<MarketView>
   marketPreview(registryId: string, name: string): Promise<MarketPreview>
@@ -120,6 +122,7 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
     updateDraft: (id, content) => mutate('draft-update', { id, content }),
     adoptDraft: id => mutate('draft-adopt', { id }),
     discardDraft: id => mutate('draft-discard', { id }),
+    linkRun: (draftId, runId) => mutate('run-link', { draftId, runId }),
 
     market: () => read('market'),
     marketPreview: (registryId, name) => read('market-preview', { registryId, name }),

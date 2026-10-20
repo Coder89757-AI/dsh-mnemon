@@ -225,4 +225,27 @@ describe('evolution drafts and backtests', () => {
     expect(finished).toMatchObject({ status: 'completed', passRate: 0.5, score: 0.75, progress: { done: 2, total: 2 } })
     expect(store.catalogView(workspace).stats['release-notes']).toMatchObject({ open: 1, cases: 2, lastPassRate: 0.5, lastScore: 0.75 })
   })
+
+  it('flags a regression only when the live version scores below its own last backtest', async () => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const [entry] = store.cases('release-notes')
+    const draft = await store.recordDraft(workspace, { skillName: 'release-notes', content: skill('release-notes', 'Use release-notes, grouped.'), notes: 'Grouped.', changes: [], guidance: [] })
+    const backtest = async (target: Parameters<SkillsService['startRun']>[0]['target'], score: number) => {
+      now = new Date(now.getTime() + 1000)
+      const run = await store.startRun({ skillName: 'release-notes', target, caseIds: [entry!.id] })
+      await store.progressRun({ id: run.id, result: { caseId: entry!.id, title: entry!.title, verdict: score === 1 ? 'pass' : 'fail', score, checks: [], steps: [], answer: '' } })
+      await store.finishRun({ id: run.id, status: 'completed' })
+    }
+    const { target: current } = store.targetContent(workspace, 'release-notes', { kind: 'current' })
+    const regressions = () => store.overview(workspace).attention.filter(item => item.kind === 'regression').map(item => item.title)
+    await backtest(current, 0.8)
+    await backtest({ kind: 'draft', hash: 'h', draftId: draft.id }, 1)
+    await backtest(current, 0.75)
+    // A draft scoring higher than the live version is not a regression of the live version.
+    expect(regressions()).toEqual([])
+    await backtest(current, 0.5)
+    expect(regressions()).toEqual(['75 → 50'])
+  })
 })
