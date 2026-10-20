@@ -8,7 +8,7 @@ they are used. Skills should improve with use: after a conversation that earned 
 reviewer reads what happened and proposes a new skill or a fix to an existing one; the user approves,
 and the skill is written.
 
-This plan adds a **技能管理 (Skills)** tab to the Memory System, owned by a new Source,
+This plan adds a **Skills** tab (技能管理 in the Chinese UI) to the Memory System, owned by a new Source,
 `dsh-mnemon-source-skills`, and a Host workflow that runs that evolution loop on DSH's own skill
 mechanism. Three properties shape it:
 
@@ -29,7 +29,7 @@ mechanism. Three properties shape it:
 
 | Piece | Behaviour |
 |---|---|
-| Gate | One switch on 技能管理's page under Plugins, off until the user turns it on |
+| Gate | One switch on Skills' page under Plugins, off until the user turns it on |
 | Trigger | After every turn: `min(⌊userChars/50⌋,3) + turns + min(⌊toolCalls/5⌋,2) + (unique≥3 ? min(unique−2,2) : 0)` — the post-turn score the idle memory review already uses (`src/host/review-activity.ts`); review at ≥5; skill reviews of one session at least 150 s apart; score reset after a review; paused after 3 consecutive failures |
 | Reviewer | One tool-less structured run with the numbered trajectory, a list of *strong signals* and two three-question audits (one for an invoked skill → update, one for a new procedure → create) |
 | Admission | Confidence < 0.6 dropped; a dismissal blocks the same skill+action from the same session for 24 h; one open suggestion per skill+action (higher confidence replaces); at most 5 pending per session; expiry 7 days; `update` records the `SKILL.md` SHA-256 and is invalidated when the file changes |
@@ -133,7 +133,7 @@ delegated runs, the Source management protocol and the Memory System workbench.
     without rebuilding the memory runtime: `evolution` (default **off**), `autoBacktest` (on), `hints`
     (on), `sidebar` (off), and the review parameters — trigger threshold (5), idle delay (20 s), cooldown
     (150 s), minimum confidence (0.6), expiry (7 days), pending limit per session (5), cases per run (8).
-    dsh-mnemon draws them on 技能管理's page under Plugins, as it draws the Layered strategy's: switches
+    dsh-mnemon draws them on Skills' page under Plugins, as it draws the Layered strategy's: switches
     apply at once, the review parameters sit in a folded group with their own Apply. The Host reads them
     for scheduling and passes the admission parameters with each `review-record`, so the Source holds
     data only. The Skills page carries no settings; where evolution is off it says so and offers to
@@ -167,16 +167,16 @@ Mutations: `skill-create`, `skill-save`, `skill-invocation`, `skill-delete`,
 
 ## Page
 
-`技能管理` sits after Memory Spaces. It has four tabs, each with its own toolbar, and no settings,
+**Skills** sits after Memory Spaces. It has four tabs, each with its own toolbar, and no settings,
 explanations or dashboards of its own: what needs the user shows as a count on its tab.
 
-- **技能 (Skills)** — a searchable list grouped by root with **New** beside the search; each row has
+- **Skills** — a searchable list grouped by root with **New** beside the search; each row has
   its icon, **Use** on hover and a switch, and a dot when an improvement waits for it. The detail shows
   the rendered `SKILL.md` with **Use**, **Edit** and a menu (draft an improvement, delete); a waiting
   improvement shows as one line linking to it. Invocation is one choice (both, `/` only, model only).
   Versions and bundled files are folded sections, closed by default; *Tests* is one row with the case
-  count and last score that leads to the skill under 评测.
-- **进化 (Evolution)** — an inbox filtered as *pending* and *done*. A suggestion shows what it
+  count and last score that leads to the skill under **Evals**.
+- **Evolution** — an inbox filtered as *pending* and *done*. A suggestion shows what it
   proposes and why, with **Draft** and **Dismiss**; its evidence (the cited steps of the conversation)
   is folded. Once drafted, the same view reviews the draft: what changed, the backtest as one line
   (current → draft) that unfolds to per-case results, the diff, and **Adopt**, **Discard** and
@@ -184,11 +184,11 @@ explanations or dashboards of its own: what needs the user shows as a count on i
   *evidence*, lists the conversations reviews read, narrowed by the skills they used, each with its
   timeline, pin, delete and *make test cases*; every suggestion's evidence and every case's origin
   links there.
-- **评测 (Evals)** — every skill's tests: the skills with cases first, each with its last score
+- **Evals** — every skill's tests: the skills with cases first, each with its last score
   against the loaded version, then the rest, and skills a suggestion proposes that do not exist yet.
   The chosen skill shows its cases (each with a switch) and its backtests, newest first, each opening
   to its per-case verdicts.
-- **市场 (Market)** — search, category, registries and refresh in the toolbar; cards open a preview
+- **Market** — search, category, sources and refresh in the toolbar; cards open a preview
   that installs.
 
 Evidence is not a tab of its own: it exists only once self-evolution has run and is read from the
@@ -203,16 +203,16 @@ needs its reason.
 
 ## In the conversation
 
-Like the turn's memory bar, a one-line *本回合技能* bar sits under a finished turn when there is
-something to say: the skills the turn used (each opens it on the Skills tab), *复盘中* while a review of
-the window that ended with this turn is waiting or running, and *N 条建议* once it produced
+Like the turn's memory bar, a one-line *Turn skills* bar sits under a finished turn when there is
+something to say: the skills the turn used (each opens it on the Skills tab), *Reviewing* while a review of
+the window that ended with this turn is waiting or running, and *suggested N* once it produced
 suggestions (one opens that suggestion, several open the inbox). It reads one Host snapshot per
 conversation — the skills each turn used, from the session's own events, and each review with the turn
 it followed — and polls only while a review is pending. The `hints` setting removes it.
 
 ## Its own sidebar entry
 
-With `sidebar` on, 技能管理 is a DSH sidebar panel of its own, after the Memory System, with DSH's skill
+With `sidebar` on, Skills is a DSH sidebar panel of its own, after the Memory System, with DSH's skill
 icon. The panel is the Memory System workbench focused on the Skills Source: its header is the page's
 title, refresh and settings, and links that open a skills page — from the conversation, the Status
 card, anywhere — open this panel instead. Turning it off returns the page to the Memory System.
@@ -244,7 +244,7 @@ The market reads skills from **sources**, each one way skills are already publis
 | Website | a host or URL | The site's Agent Skills discovery index (`/.well-known/agent-skills/index.json`, schema 0.2.0, path-scoped first, then the root; the older `/.well-known/skills/` form too). Each artifact is a `SKILL.md` or a `.tar.gz`/`.zip`, checked against its SHA-256 digest before use. |
 | Catalog | a JSON URL or absolute path | This market's own format (below), for a team's curated list. |
 
-The add field says what it read before anything is fetched (`GitHub 仓库 · owner/repo`, `网站 · host`, `JSON 文件`); pasting the same into the market's search box offers to add it in one click. A JSON file is read by its shape: a catalog, a discovery index, or a plugin marketplace (read as its repository).
+The add field says what it read before anything is fetched (`GitHub repo · owner/repo`, `Website · host`, `JSON file`); pasting the same into the market's search box offers to add it in one click. A JSON file is read by its shape: a catalog, a discovery index, or a plugin marketplace (read as its repository).
 
 A catalog is one JSON file anyone can host:
 

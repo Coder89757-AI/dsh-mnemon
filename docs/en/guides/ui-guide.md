@@ -6,11 +6,11 @@ You meet dsh-mnemon in three places. The conversation shows what each turn read 
 
 | Where | What you do there | How to open it |
 |---|---|---|
-| [In a conversation](#in-a-conversation) | See the memory a reply read and wrote, and open it in one click; save a reply to memory | Under each finished reply |
-| [The Memory System](#the-memory-system) | Check status; browse, search and edit runtime memory, documents and memory spaces | **Memory System** in the sidebar, or a session tab |
-| [On the Plugins page](#on-the-plugins-page) | Choose strategies and enhancements; set up components, storage and the interface | **Plugins → dsh-mnemon** (可组合记忆), or the gear in the Memory System header |
+| [In a conversation](#in-a-conversation) | See the memory and skills a reply used, and open them in one click; save a reply to memory | Under each finished reply |
+| [The Memory System](#the-memory-system) | Check status; browse, search and edit runtime memory, documents and memory spaces; manage skills | **Memory System** in the sidebar, or a session tab |
+| [On the Plugins page](#on-the-plugins-page) | Choose strategies and enhancements; set up components, storage and the interface | **Plugins → dsh-mnemon**, or the gear in the Memory System header |
 
-The recordings and screenshots come from the [v0.5.32 gallery](../../assets/webui-v0.5.32/README.md): a real DSH 0.2.1 WebUI in light appearance with a seeded, fictional project, Lumen. The live DeepSeek model wrote every answer, write and receipt; waits for the model play at 4x or 6x, marked in the lower right corner. A local Ollama served embeddings at Mnemon's default endpoint, with the Mnemon Native embedding settings at their default, so every memory has a vector.
+The recordings and screenshots come from the [v0.5.32 gallery](../../assets/webui-v0.5.32/README.md): a real DSH 0.2.1 WebUI in light appearance with a seeded, fictional project, Lumen. The live DeepSeek model wrote every answer, write and receipt; waits for the model play at 4x or 6x, marked in the lower right corner. A local Ollama served embeddings at Mnemon's default endpoint, with the Mnemon Native embedding settings at their default, so every memory has a vector. The Skills screens come from the [v0.5.34 Skills gallery](../../assets/skills-v0.5.34/README.md), on the same project with a scripted model.
 
 Two rules hold everywhere. **Switches and selectors apply as soon as you change them**; if a write fails, the control shows the saved value again next to the reason. **Typed values wait for their group's Apply**, which appears once something changed, together with a note on what applying will do.
 
@@ -57,6 +57,12 @@ Each finished reply has a brain-shaped **Save to memory** in its action strip, t
 | ![Save to memory with Task Agent ready and the candidate cut down to one fact](../../assets/webui-v0.5.32/en/chat-save.jpg) | ![Save to open: Let the Agent decide, Working memory (MEMORY.md), User profile (USER.md), and the Lumen project and Team conventions Memory Spaces](../../assets/webui-v0.5.32/en/chat-save-target.jpg) | ![Receipt: saved in the Lumen project Memory Space and linked to the earlier note on the synchronous SDK, with View in Memory Spaces](../../assets/webui-v0.5.32/en/chat-save-receipt.jpg) |
 
 **Save to memory** at the top of Memory Spaces opens the Memory Spaces dialog, without the conversation's **Save to** choice. The turn memory bar and the Save to memory button are on by default and can be turned off under [Interface](#interface). In the conversation-tab placement, these entries open the Memory System tab of the conversation they came from; with several eligible tabs in split panes, open the intended one yourself.
+
+### Turn skills line
+
+![A turn that used release-notes, with the Turn skills line: release-notes, suggested 1](../../assets/skills-v0.5.34/en/chat-skills.jpg)
+
+A turn that used a skill, or earned a review, ends with a **Turn skills** line: the skills the turn used, then **Reviewing** while self-evolution reviews the conversation, and **suggested** with a count once the review left suggestions. Each item opens on the [Skills page](#skills). The line is on by default; **In the conversation** on Skills' page under Plugins turns it off. See [Skills in a conversation](./skills.md#in-a-conversation).
 
 ## The Memory System
 
@@ -161,7 +167,9 @@ Each space declares what its Provider can really supply. Mnemon Native gives typ
 
 ### Skills
 
-**Skills** (技能管理, experimental) is the page of the Skills component, with four tabs of its own: **Skills** to switch, use, edit and restore the DSH skills a workspace loads; **Evolution** for what self-evolution suggests, its drafts and their evidence; **Evals** for every skill's test cases and backtests; **Market** to search skills.sh and install from GitHub repositories, Agent Skills sites and catalogs. Under each turn that used a skill, a **Turn skills** line names the skills and what the turn's review suggested, each opening here. With **Sidebar entry** on, the page becomes a sidebar entry of its own and leaves the Memory System. The [Skills guide](./skills.md) walks through each tab.
+![Skills: every skill by where it lives, one shadowed; release-notes with an improvement waiting](../../assets/skills-v0.5.34/en/skills-library.jpg)
+
+**Skills** is the page of the experimental Skills component, with four tabs of its own: **Skills** to switch, use, edit and restore the DSH skills a workspace loads; **Evolution** for what self-evolution suggests, its drafts and their evidence; **Evals** for every skill's test cases and backtests; **Market** to search skills.sh and install from GitHub repositories, Agent Skills sites and catalogs. With **Sidebar entry** on, the page becomes a sidebar entry of its own and leaves the Memory System. The [Skills guide](./skills.md) walks through each tab, with a screen for each.
 
 ### On a phone
 
@@ -216,6 +224,8 @@ The gear on a row, the gear beside **Main strategy**, and a component's name any
 - **Memory Spaces' page**: the **Memory providers**. Mnemon Native comes first and, expanded, holds only its embedding settings. Every third-party Provider has its own switch and is off by default; its endpoint, key and fields appear once it is on. The Global or Workspace tag shows its effective scope. OpenViking's **User key owner (skip admin)** field selects one user namespace for keys without admin access; see [its limits](./memory-providers.md#operational-boundaries).
 - **Skills' page**, tagged **Experimental**: **Self-evolution**, and while it is on, **Backtest drafts** and the folded **Review parameters**; **In the conversation** for the line under each turn; **Sidebar entry**. Switches apply at once, the parameters with **Apply**; see the [Skills guide](./skills.md#settings).
 - **Layered strategy's page**: **Background tasks**. **Task Agent model** chooses the model of the task Agents behind Save to memory, Ask Agent, Tidy names and descriptions, smart selection for new spaces and document archiving, never of the main conversation: **Follow global**, **Follow the conversation** or **Custom**. [Configuration](../reference/configuration.md#background-task-agent-model-route) explains each choice. **Idle review**, **Write runtime memory**, its method and Agent Teams compatibility apply at once; **Review limits** apply with **Apply**. With **Write runtime memory** off, review only creates Documents. Review runs only after turns the Layered strategy composed; see [configuration](../reference/configuration.md#provider-requirements).
+
+![Skills' page under Plugins: Self-evolution, Backtest drafts, Review parameters, In the conversation and Sidebar entry](../../assets/skills-v0.5.34/en/plugin-skills.jpg)
 
 <details>
 <summary>Mnemon Native embedding</summary>

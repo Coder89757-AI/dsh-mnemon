@@ -336,7 +336,7 @@ DSH's live catalog reports each model's input modalities, and the picker labels 
 
 ## Skills settings
 
-Skills (技能管理) keeps its settings under `skills` in the `mnemon` entry, edited on its own page under **Plugins → dsh-mnemon** through the `mnemon-skills` settings scope. Each key applies at once: a change reaches the running self-evolution and the client without rebuilding the memory runtime. The [Skills guide](../guides/skills.md#self-evolution) explains what each does.
+Skills keeps its settings under `skills` in the `mnemon` entry, edited on its own page under **Plugins → dsh-mnemon** through the `mnemon-skills` settings scope. Each key applies at once: a change reaches the running self-evolution and the client without rebuilding the memory runtime. The [Skills guide](../guides/skills.md#self-evolution) explains what each does.
 
 | Key | Default | Range | Meaning |
 |---|---:|---|---|

@@ -12,8 +12,8 @@
   <a href="https://dshfind.com/en/plugins/omdsh-dev/dsh-mnemon?ref=badge"><img alt="dshfind downloads" src="https://dshfind.com/api/badge/omdsh-dev/dsh-mnemon?metric=downloads&amp;lang=en" /></a>
 </p>
 
-<p align="center"><strong>Composable, view-based memory for DeepSeek Harness.</strong></p>
-<p align="center">Pluggable sources and strategies, with layered memory out of the box.</p>
+<p align="center"><strong>Composable, view-based context for DeepSeek Harness.</strong></p>
+<p align="center">Pluggable sources and strategies, with layered memory and self-evolving skills out of the box.</p>
 
 <p align="center">
   <a href="https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/ui-guide.md#in-a-conversation">
@@ -30,12 +30,12 @@
 
 ## Why dsh-mnemon
 
-An Agent that starts every session from scratch keeps asking what it was already told. Putting everything into one memory store is no better: it either floods each turn or misses what matters. dsh-mnemon gives DeepSeek Harness memory that is layered, visible and composable.
+An Agent that starts every session from scratch keeps asking what it was already told. Putting everything into one memory store is no better: it either floods each turn or misses what matters. dsh-mnemon gives DeepSeek Harness memory that is layered, visible and composable, and skills that improve with use.
 
 - **The right memory for each turn.** Preferences and working facts stay in context. Project documents and long-term evidence are searched only when a question needs them.
 - **You can see what a turn used.** Under each reply, the turn memory bar lists the documents and memories the turn read and wrote, and one click opens each in the Memory System. The Memory System shows everything that is stored and lets you edit it.
 - **Save to memory in one click.** When a conversation turns up a fact worth keeping, the brain mark under the reply hands it to a task Agent, which removes duplicates, distils it and writes it to the right Memory Space, or saves it where you choose: working memory, your profile or a Memory Space. The receipt says where it went.
-- **Skills that get better with use.** Skills (技能管理) puts every DSH skill in one place, can improve them from your real conversations with a draft you test before adopting it, and installs more from skills.sh, GitHub repositories and sites that publish Agent Skills.
+- **Skills that improve with use.** Skills keeps every DSH skill in one place. It can review your real conversations, draft a better `SKILL.md` and backtest it before you adopt it, and it installs more skills from skills.sh, GitHub and sites that publish Agent Skills.
 - **Compose it on the Plugins page.** Choose a main strategy and optional enhancements, and switch them without moving any data. Every component has its own page for its settings.
 - **Keep data where you want it.** Local by default with Mnemon Native, or one of eight third-party Providers. Storage can be global, per workspace, centralized or in a directory you choose, with ZIP backup.
 - **Extend it.** Sources and Strategies are ordinary DSH plugins built on public SDKs. An installed component gets the same pages and switches as the shipped ones.
@@ -76,7 +76,11 @@ The default **Layered strategy** keeps runtime memory resident and reads the oth
 
 ## Skills that improve with use
 
-**Skills** (技能管理, experimental) manages the `SKILL.md` skills DSH loads from the project and from your home, on its own page in the Memory System or as a sidebar entry of its own.
+**Skills** is an experimental component for the `SKILL.md` skills DSH loads from your project and your home folder. Its page sits in the Memory System, or in the sidebar on its own.
+
+| A turn's review suggests an improvement | You adopt it after a backtest |
+|---|---|
+| [![The Turn skills line under a reply: release-notes, suggested 1](https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/skills-v0.5.34/en/chat-skills.jpg)](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md#in-a-conversation) | [![A draft of release-notes with its backtest, Current 40 → Draft 93 +53, and the diff](https://raw.githubusercontent.com/omdsh-dev/dsh-mnemon/main/docs/assets/skills-v0.5.34/en/skills-draft.jpg)](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md#evolution) |
 
 - **Manage.** Switch a skill off for the model or the `/` menu, use it in the conversation in one click, edit it, and go back to any earlier version.
 - **Evolve.** With self-evolution on, finished conversations are reviewed in the background for corrections, "from now on" instructions, failed tools and reusable procedures. A suggestion cites the steps it rests on; a task Agent drafts the new `SKILL.md`, which is backtested against the current version before you adopt it. Nothing changes without your **Adopt**.
@@ -84,7 +88,7 @@ The default **Layered strategy** keeps runtime memory resident and reads the oth
 - **Install.** The market searches skills.sh's open index and reads any GitHub repository, any site publishing an Agent Skills discovery index, and curated catalogs; every install is previewed, with security reviews where they exist.
 - **In the conversation.** A line under each turn names the skills it used and what its review suggested, each one click from its page.
 
-Self-evolution is off until you turn it on under **Plugins → dsh-mnemon → Skills**. The [Skills guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md) covers every step.
+Self-evolution stays off until you turn it on under **Plugins → dsh-mnemon → Skills**. The [Skills guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md) walks through every screen.
 
 ## Quick start
 
@@ -145,7 +149,7 @@ Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blo
 
 - Runtime memory and Project Documents are local files; Mnemon Native is local. Third-party Providers use their own services and scopes.
 - Turning a component off does not erase its memory, and changing the storage location does not move data. Use ZIP backup to carry it.
-- Skills' evolution data — suggestions, test cases and the conversations reviews read, with secrets redacted — stays local in the storage root and is not part of a backup. A skill from the market is followed as written by an Agent; preview it first.
+- Skills keeps its evolution data (suggestions, test cases and the conversations reviews read, with secrets redacted) in the local storage root, outside backups. An Agent follows a skill from the market as written, so preview it before installing.
 - Git sync publishes the same Mnemon Pack payload as readable files to a repository you own, so another machine can pull it, with **Sync now**, **Check remote** before anything is written, or **Automatic sync**. When two machines wrote one subject differently, both wordings stay until you accept and apply a **Memory reconciliation** plan; see [Git repository sync](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md#git-repository-sync).
 - Saved Provider credentials stay on the Host and are never exported. Backups still contain private memory; protect them.
 - Sources and Strategies are trusted in-process JavaScript, not sandboxed code. Remembered history never outranks current instructions.

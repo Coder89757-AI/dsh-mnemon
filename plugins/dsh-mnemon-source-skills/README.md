@@ -1,6 +1,6 @@
 # dsh-mnemon-source-skills
 
-The Skills Source of [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) (技能管理, experimental): one place for the DSH skills a workspace can load, the data their self-evolution keeps, their tests, and a market of more skills.
+The Skills Source of [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon), experimental: one place for the DSH skills a workspace can load, the data their self-evolution keeps, their tests, and a market of more skills.
 
 - **Skills.** Every `SKILL.md` in `<project>/.dsh/skills`, `<project>/.agents/skills`, `~/.dsh/skills` and `~/.agents/skills`, read with DSH's own rules and precedence. Switch a skill off for the model or the `/` menu (DSH's `disable-model-invocation` and `user-invocable` keys), use it in the conversation, edit it, restore an earlier version, or move it to the trash. Every write is fenced by the file's hash and leaves a version.
 - **Evolution.** With self-evolution on, the dsh-mnemon Host records each conversation's steps as turns end and reviews it in the background once it has earned it. A suggestion names the steps it rests on; a task Agent drafts the new `SKILL.md`, which is backtested against the current version before you adopt it. This Source admits suggestions by confidence, dismissal, expiry and per-conversation limits, and keeps the ledger.
@@ -8,7 +8,7 @@ The Skills Source of [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) (技�
 - **Evals.** Each skill's cases, from reviews, evidence or by hand, and its backtest runs. A backtest is a simulation: an executor follows the skill without tools, and a judge grades each check.
 - **Market.** Skills from sources: a featured catalog shipped in `market/official.json` and refreshed from the repository; skills.sh, the open index the `skills` CLI searches, queried as the user types; any GitHub repository (every `SKILL.md` in it, plugin marketplaces included); any site publishing an [Agent Skills discovery index](https://github.com/cloudflare/agent-skills-discovery-rfc) at `/.well-known/agent-skills/` (digests checked, `.tar.gz` and `.zip` artifacts unpacked safely); and catalogs in the format below. Installing previews the skill, fetches its whole folder from its upstream, checks it against DSH's rules and records where it came from, so an update can be offered.
 
-The Source never calls a model and never joins a model View; skills reach the model through DSH's own `skill` tool. The Memory System shows it as the **Skills** (技能管理) page, which can also become a sidebar entry of its own. The [Skills guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md) ([中文](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/skills.md)) walks through the page.
+The Source never calls a model and never joins a model View; skills reach the model through DSH's own `skill` tool. The Memory System shows it as the **Skills** page, which can also become a sidebar entry of its own. The [Skills guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md) ([中文](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/skills.md)) walks through the page.
 
 ## Configuration
 

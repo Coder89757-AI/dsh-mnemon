@@ -124,9 +124,9 @@ describe('external consumer of packed artifacts', () => {
     const manifest = JSON.parse(readFileSync(require.resolve('dsh-mnemon/package.json'), 'utf8'))
     expect(english.meta).toEqual({})
     expect(manifest.name).toBe('dsh-mnemon')
-    expect(manifest.description).toMatch(/Composable, view-based memory/)
+    expect(manifest.description).toMatch(/Composable, view-based context/)
     expect(chinese.meta.title).toBe('可组合记忆 (dsh-mnemon)')
-    expect(chinese.meta.description).toMatch(/可组合视图记忆/)
+    expect(chinese.meta.description).toMatch(/可组合视图上下文/)
   })
 
   it('supports a new Source and Strategy, authority checks, exact grants and explicit replacement', async () => {

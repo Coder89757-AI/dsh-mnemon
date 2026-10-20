@@ -52,7 +52,7 @@ Sharing does not broadcast conversations or files. Mnemon-enabled agents can sha
 |   +-- index.json
 |   +-- active/
 |   +-- archived/
-+-- skills/                        # Skills (技能管理); never a Mnemon Pack component
++-- skills/                        # Skills; never a Mnemon Pack component
 |   +-- ledger.json
 |   +-- evals.json
 |   +-- trajectories/
@@ -233,7 +233,7 @@ Third-party visibility is determined by its provider scope, such as service plus
 
 ## Skills
 
-Skills (技能管理) manages files DSH already reads; it never joins a turn's View. The skills themselves stay in DSH's skill roots — `<project>/.dsh/skills`, `<project>/.agents/skills`, `$DSH_HOME/skills` (`~/.dsh/skills`) and `$DSH_AGENTS_HOME/skills` (`~/.agents/skills`) — and every write to them is fenced by the file's SHA-256. What Skills keeps about them lives in the storage root's `skills/` folder:
+Skills manages files DSH already reads; it never joins a turn's View. The skills themselves stay in DSH's skill roots — `<project>/.dsh/skills`, `<project>/.agents/skills`, `$DSH_HOME/skills` (`~/.dsh/skills`) and `$DSH_AGENTS_HOME/skills` (`~/.agents/skills`) — and every write to them is fenced by the file's SHA-256. What Skills keeps about them lives in the storage root's `skills/` folder:
 
 | Path | Holds | Kept |
 |---|---|---|
