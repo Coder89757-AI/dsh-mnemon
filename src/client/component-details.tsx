@@ -88,7 +88,7 @@ export function ComponentPage(props: Omit<ComponentDetailsProps, 'onClose'>): JS
             : <>{props.state.tone !== undefined && <StateDot state={props.state.tone} />}<span>{props.state.text}</span></>}
         </span>}
         <Tag tone={isShipped(entry) ? 'neutral' : 'info'}>{t(isShipped(entry) ? 'details.shipped' : 'details.installed')}</Tag>
-        {isExperimental(entry) && <Tag tone="warning">{t('board.experimental')}</Tag>}
+        {isExperimental(entry) && <Tag tone="info">{t('board.experimental')}</Tag>}
         <span className={css.detailsControl}>{props.control}</span>
       </div>
       {props.headed !== true && <code className={css.detailsPackage}>{entry.packageName}</code>}

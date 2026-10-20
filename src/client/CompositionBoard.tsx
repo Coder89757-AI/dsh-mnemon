@@ -157,7 +157,7 @@ function BoardRow(props: { item: BoardItem; configurable: boolean; t: MnemonTran
       <div className={css.settingCopy}>
         <span className={css.boardRowTitle}>
           {props.onOpen === undefined ? <strong>{item.label}</strong> : <PageLink label={item.label} onOpen={props.onOpen} />}
-          {item.entry !== undefined && isExperimental(item.entry) && <Tag tone="warning">{t('board.experimental')}</Tag>}
+          {item.entry !== undefined && isExperimental(item.entry) && <Tag tone="info">{t('board.experimental')}</Tag>}
         </span>
         {item.hint !== '' && <small>{item.hint}</small>}
         <ComponentChips chips={item.relations} />
