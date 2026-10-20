@@ -52,6 +52,13 @@ follow an exact cold reference when full text is required
 |   +-- index.json
 |   +-- active/
 |   +-- archived/
++-- skills/                        # 技能管理；不进入 Mnemon Pack
+|   +-- ledger.json
+|   +-- evals.json
+|   +-- trajectories/
+|   +-- versions/
+|   +-- market/
+|   +-- trash/
 +-- data/
 |   +-- .dsh-memory-bodies.json
 |   +-- <memory-space-id>/
@@ -232,6 +239,21 @@ location      本地 Store/CLI 作用域，或远程 endpoint + Provider 作用�
 
 三方可见性由各自 Provider 作用域决定，例如服务与 URI、workspace/peers、bank、project/user、知识目录或 container。任何 Provider 的共享都不延伸到 `runtime/` 或 `documents/`；不能把“共享第三层记忆”表述为自动共享完整 DSH 上下文。
 
+## 技能管理
+
+技能管理管理的是 DSH 本来就会读取的文件，它从不进入回合的 View。技能本身留在 DSH 的技能目录里——`<project>/.dsh/skills`、`<project>/.agents/skills`、`$DSH_HOME/skills`（`~/.dsh/skills`）和 `$DSH_AGENTS_HOME/skills`（`~/.agents/skills`）——每次写入都以文件的 SHA-256 为准。技能管理为它们保存的内容放在存储根目录的 `skills/` 文件夹中：
+
+| 路径 | 内容 | 保留 |
+|---|---|---|
+| `ledger.json` | 建议、草案、复盘日志、记录对话的摘要、版本索引和市场安装记录 | 最近 200 条复盘、60 份草案 |
+| `evals.json` | 测试用例与回测记录 | 每个技能 40 个用例、20 次回测 |
+| `trajectories/<id>.json` | 一段记录下来的对话：编号步骤及复盘在其上的标注，机密已替换 | 最近 100 段；置顶的、被建议或用例引用的最后清理 |
+| `versions/<skill>/<id>.md` | 每个旧版本的 `SKILL.md`，用于对比和恢复 | 每个技能 30 个 |
+| `market/registries.json`、`market/cache/<id>.json` | 市场里添加的来源，以及每个来源最近一次发布的列表 | 直到移除；六小时后刷新 |
+| `trash/` | 被删除、或被更新与恢复替换下来的技能文件夹 | 直到手动删除 |
+
+该文件夹在存储锁内以原子替换方式写入，和其他 Source 一样跟随存储范围。它不属于 Mnemon Pack，因此 ZIP 备份和 Git 同步都不包含它；技能本身就是各技能目录里的普通文件。它的设置属于配置，保存在 `mnemon` 条目的 `skills` 下，见[技能管理设置](./configuration.md#技能管理设置)。
+
 ## 四类关系
 
 Mnemon Native 保留 `temporal`、`semantic`、`causal` 和 `entity` 关系；Hindsight 投影 Provider 图谱，Holographic 生成本地实体/语义关系。没有图谱边的 Provider 只贡献有界无边节点，适配器不会伪造关系。记忆空间页会按能力隐藏不适用的关联、链接、浏览与遗忘动作。
@@ -248,5 +270,7 @@ Mnemon Native 保留 `temporal`、`semantic`、`causal` 和 `entity` 关系；Hi
 | 机器标识 | `state/machine.json`：id、名称与 `labelSource`（`hostname` 跟随主机名，`custom` 为手动填写） | 导出包与同步状态中的 `machine` 字段 |
 | 跨机删除 | `state/tombstones.json` | `state/runtime-index.json`，后续导出以它作为比对基准 |
 | 整理建议 | `state/review-ledger.json` | 审查卡片；被接受的建议作用于各 Source，而不是账本本身 |
+| 技能 | DSH 技能目录中的 `SKILL.md` 文件夹 | 技能管理页面展示的目录；`skills/` 中的版本、安装记录与市场缓存 |
+| 技能进化 | `skills/ledger.json`、`skills/evals.json`、`skills/trajectories/` | “进化”上的计数、状态卡片与回合下方的提示行 |
 | 长期记忆 | Mnemon `mnemon.db` 或远程 Provider | 图谱投影、跨 Provider 排名融合 |
 | 审查水位 | Host 进程内存 | 状态页快照；尚未持久化 |

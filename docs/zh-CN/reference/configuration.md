@@ -24,6 +24,7 @@ Web profile 的 patch 通常是 `~/.dsh/profiles/web/cordis.patch.yml`。旧宿�
 | 运行时记忆页面 | 用户画像范围 | `runtimeUserScope` |
 | 记忆空间页面 | 记忆 Provider；Mnemon Native 嵌入（自动、Ollama 或 OpenAI 兼容） | `state/memory-providers.json` 中的 Provider 注册表；`embedding` |
 | 分层策略页面 | 任务 Agent 模型；空闲审查 | `taskAgentModel`；`idleReview` |
+| 技能管理页面 | 自进化、草案自动回测、复盘参数、对话提示、侧边栏入口 | `skills`；见[技能管理设置](#技能管理设置) |
 
 开关与选择器立即生效；存储目录、嵌入连接、审查参数与组件选项等需要输入的值要点击**应用**。Provider 可复用的服务字段（服务地址、凭据、可执行文件）保存在 Provider 注册表中，而不是 Mnemon 的 YAML；启用或保存 Provider 时，会把它已有的命名空间发现到**记忆空间 → 概览**，关闭时只移除这些本地映射。其他高级项需要直接修改 YAML。
 
@@ -133,8 +134,9 @@ mnemon:
 | `remoteAccess` | `read-only` | `read-only` / `trusted-host` | 非 loopback Mnemon 管理授权，仅启动时读取，由 API Gateway 映射执行 |
 | `conversationInteraction.turnBar` | `true` | boolean | 回复下方的回合记忆栏，立即生效 |
 | `conversationInteraction.saveAction` | `true` | boolean | 已完成回复上的**存入记忆**操作及其确认框，立即生效 |
+| `skills` | 见[技能管理设置](#技能管理设置) | 该节列出的各键 | 技能管理的自进化、复盘参数、对话提示与侧边栏入口；立即生效，不重建记忆运行图 |
 
-所有值都保存在 `mnemon` 条目下并实时生效：界面的 `mnemon-ui` 设置范围保存为 `conversationInteraction`，`mnemon-view` 设置范围保存为 `memoryView`。存储根只会在新运行图初始化成功后原子切换。
+所有值都保存在 `mnemon` 条目下并实时生效：界面的 `mnemon-ui` 设置范围保存为 `conversationInteraction`，`mnemon-view` 设置范围保存为 `memoryView`，`mnemon-skills` 设置范围保存为 `skills`。存储根只会在新运行图初始化成功后原子切换。
 
 ### Runtime Memory 容量与维护预算
 
@@ -331,6 +333,33 @@ mnemon:
 ```
 
 DSH 的实时模型目录会报告各模型的输入模态，选择器为支持图片的模型标记**图片输入**。选中它不代表 Mnemon 后台任务会摄取图片：整理名称与说明、Agent 查询、存入记忆、智能选择与档案归档仍只提交文本与有界证据。在主对话中，dsh-mnemon 追加生命周期指引时会保留 DSH 管理的图片块及其附件引用，活动阈值只计算文本块。原始图片字节不会复制进运行时记忆、项目档案或记忆空间。
+
+## 技能管理设置
+
+技能管理的设置保存在 `mnemon` 条目的 `skills` 下，通过 `mnemon-skills` 设置范围在 **插件 → dsh-mnemon** 里它自己的页面上编辑。每个键都立即生效：修改直接作用于运行中的自进化和客户端，不重建记忆运行图。各项含义见[技能管理指南](../guides/skills.md#自进化)。
+
+| 键 | 默认值 | 范围 | 含义 |
+|---|---:|---|---|
+| `skills.evolution` | `false` | boolean | **自进化**：对话结束后在后台复盘，提出新建或改进技能的建议 |
+| `skills.autoBacktest` | `true` | boolean | **草案自动回测**：草案写好后用测试用例与当前版本对比 |
+| `skills.hints` | `true` | boolean | **对话提示**：在每个回合下方显示**本回合技能** |
+| `skills.sidebar` | `false` | boolean | **侧边栏入口**：技能管理单独显示在侧边栏，不再放在记忆系统里 |
+| `skills.reviewThreshold` | `5` | 1–50 | **复盘阈值**：对话窗口的活动积分达到它才会复盘 |
+| `skills.idleSeconds` | `20` | 0–3600 秒 | **空闲等待**：对话空闲多久后开始复盘 |
+| `skills.cooldownSeconds` | `150` | 0–86400 秒 | **复盘间隔**：同一段对话两次复盘之间的最短时间 |
+| `skills.minConfidence` | `0.6` | 0–1 | **最低置信度**：低于它的建议不予收下 |
+| `skills.expiryDays` | `7` | 1–90 天 | **建议有效期**：未处理的建议超过这个时间即过期 |
+| `skills.maxPendingPerSession` | `5` | 1–20 | **单个对话待处理上限**：超出后，这段对话里置信度最低的待处理建议过期 |
+| `skills.casesPerRun` | `8` | 1–20 | **每次回测用例数**：一次自动回测最多运行的用例数 |
+
+```yaml
+mnemon:
+  skills:
+    evolution: true
+    idleSeconds: 30
+```
+
+技能管理 Source 自己的数据（建议、用例、记录的对话、版本、市场来源）不是配置，保存在存储根目录的 `skills/` 文件夹中，见[存储模型](./storage-model.md#技能管理)。
 
 ## Provider 要求
 

@@ -135,11 +135,13 @@ Mnemon 在 DSH 中展示的一切都注册到 DSH 自己的界面区域。对话
 | DSH 区域 | 注册 | 行为 |
 |---|---|---|
 | `conversation.chat.turnTail` | list，`id=dsh-mnemon/turn-tail` | 通过 `turn-activity` 汇总完成回合中的 `mnemon_*` 调用，以及工具活动元数据中每次调用读到或写入的内容；无活动或未完成回合不渲染 |
+| `conversation.chat.turnTail` | list，`id=dsh-mnemon/skill-tail` | `skills.hints` 开启时：通过 `skill-activity` 列出每个完成回合用到的技能，以及随后复盘的状态和仍在等待的建议；没有内容的回合不渲染 |
 | `conversation.chat.assistant-actions` | list，`id=mnemon-save` | 通过 `assistant-message` 读取已定稿文本；只在用户确认后调用 `supervise` |
 | `conversation.session.header.lineage` | DSH 官方条目的低优先级副本 | 任务 Agent 会话页眉只统计该 Agent 自己的 token，不含其 fork 来源的日志 |
 | `plugins.bundle.config` | keyed，`dsh-mnemon` | 插件页中 dsh-mnemon 页面上的全部配置 |
 | `plugins.row.config` | keyed，`dsh-mnemon#<row>` | 每个随包组件的行打开的页面，含该组件注册的设置 |
 | `plugins.detail.actions` | list，`id=dsh-mnemon/open-workspace` | 从插件详情页打开记忆系统 |
+| `sidebar.panellist` 与 `main` | `id=mnemon-skills` | `skills.sidebar` 开启时：技能管理在记忆系统之后的独立侧边栏入口与页面，此时记忆系统不再显示技能管理页 |
 
 Mnemon 自己声明两个 keyed 区域，都以组件包名为键：`mnemon.component.settings` 渲染在该组件的页面上，`mnemon.component.status` 是它在状态页上的卡片。官方组件与第三方组件都通过这两个区域注册，见[插件开发](../development/extensions.md)。
 
@@ -193,6 +195,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `list` / `entities` | 内容列表与实体聚合 |
 | `search` / `agent-search` / `related` | 直接检索、证据回答与关系遍历 |
 | `turn-activities` / `turn-activity` | 会话或单回合的记忆工具活动 |
+| `skill-activity` | 一段对话按回合列出的技能使用，以及随后每次复盘的状态（scheduled、reviewing、suggested、nothing、error）和仍在等待的建议；有在线 Agent 时由它回答，从历史记录重新打开的对话则读取已存储的会话 |
 | `assistant-message` | 按 messageId 读取已定稿助手文本 |
 | `source-management-catalog` / `source-management-read` / `source-assistance` | 通用 Source 管理：实例目录、声明的读取操作与只读辅助检索 |
 
@@ -212,7 +215,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 | `body-metadata-maintain` | 由任务 Agent 刷新 1 到 20 个 active 记忆空间的名称与说明 |
 | `provider-service-update` | 更新单个 Provider 服务；凭据仅在 Host 保存，响应脱敏 |
 | `embedding-fill` | 为一个 Mnemon Native 空间补齐缺少的向量，使用 Host 的存储根目录与嵌入设置；最多运行一分钟，每步最多十秒，返回补齐与仍缺少的数量 |
-| `source-management-mutate` / `source-assistance` | 通用 Source 管理 mutation，以及按 Source 当前修订确认的 Host 辅助操作 |
+| `source-management-mutate` / `source-assistance` | 通用 Source 管理 mutation，以及按 Source 当前修订确认的 Host 辅助操作；技能管理的辅助操作是 `skill-draft`、`skill-backtest`、`skill-derive-cases` 与 `skill-review-now`，均由任务 Agent 执行 |
 | `version-update` | 更新明确组件；Host 固定命令与参数 |
 
 `provider-services` 通过读通道返回脱敏目录。设置编辑器只知道哪些凭据字段已经配置；保存新的值或显式清除字段，不回读已保存的凭据值。
@@ -276,7 +279,7 @@ Gateway 通过 Mnemon 在 `dshMnemon` 命名空间下的 `mnemonRemote` Typert �
 
 ### 设置通道
 
-`/dsh-mnemon-settings` 为两个命名空间提供 `get` 与 `mutate`：`mnemon` 管理 Host 与存储设置，`mnemon-ui` 管理 `turnBar` 与 `saveAction`，保存为 `conversationInteraction`。mutation 携带 settings revision，防止覆盖并发编辑。插件页中的 dsh-mnemon 页面（`plugins.bundle.config`）在回环页面和远程页面上都通过该通道读写。回环页面还会跟随 DSH `ctx.configForms` 中 `mnemon` 条目的 revision，在其他页面或 profile 重新加载改动它时重新读取该通道。
+`/dsh-mnemon-settings` 为三个命名空间提供 `get` 与 `mutate`：`mnemon` 管理 Host 与存储设置，`mnemon-ui` 管理 `turnBar` 与 `saveAction`，保存为 `conversationInteraction`，`mnemon-skills` 管理技能管理的设置，保存为 `skills`（见[技能管理设置](./configuration.md#技能管理设置)）；`mnemon-skills` 的修改无需重建记忆运行图即可生效。mutation 携带 settings revision，防止覆盖并发编辑。插件页中的 dsh-mnemon 页面（`plugins.bundle.config`）在回环页面和远程页面上都通过该通道读写。回环页面还会跟随 DSH `ctx.configForms` 中 `mnemon` 条目的 revision，在其他页面或 profile 重新加载改动它时重新读取该通道。
 
 ### 记忆组合通道
 

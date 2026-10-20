@@ -62,7 +62,7 @@ Each finished reply has a brain-shaped **Save to memory** in its action strip, t
 
 ![Status, runtime memory, a document, the Memory Spaces overview and graph, then an Agent answer with citations](../../assets/webui-v0.5.32/en/memory.gif)
 
-The Memory System has four pages, named by the components that provide them: **Status**, **Runtime memory**, **Project Documents** and **Memory Spaces**. An installed Source adds its own page the same way. The header shows the connection and the composing main strategy, for example *Connected · Layered strategy*, the storage scope, **Refresh** and a gear that opens the Plugins page. **Refresh** reloads the open page, so pages carry no refresh or sync buttons of their own.
+The Memory System has five pages, named by the components that provide them: **Status**, **Runtime memory**, **Project Documents**, **Memory Spaces** and **Skills**. An installed Source adds its own page the same way. The header shows the connection and the composing main strategy, for example *Connected · Layered strategy*, the storage scope, **Refresh** and a gear that opens the Plugins page. **Refresh** reloads the open page, so pages carry no refresh or sync buttons of their own.
 
 By default the Memory System is a sidebar entry that keeps its page when you come back. Opened from a turn's item, a page lands on that item; a tab in the header opens the page fresh. Under **Interface → Memory System opens in**, choose **Conversation tab** to open it inside a conversation instead; the pages are the same. **Back to chat** and Escape return to the conversation.
 
@@ -159,6 +159,10 @@ Each space declares what its Provider can really supply. Mnemon Native gives typ
 
 **Save to memory** here works like the conversation's dialog with **Let the Agent decide**: write the candidate, send it to the task Agent, and view the result under **Content** from the receipt. Open **Advanced options** only when a target, category or importance is genuinely required.
 
+### Skills
+
+**Skills** (技能管理, experimental) is the page of the Skills component, with four tabs of its own: **Skills** to switch, use, edit and restore the DSH skills a workspace loads; **Evolution** for what self-evolution suggests, its drafts and their evidence; **Evals** for every skill's test cases and backtests; **Market** to search skills.sh and install from GitHub repositories, Agent Skills sites and catalogs. Under each turn that used a skill, a **Turn skills** line names the skills and what the turn's review suggested, each opening here. With **Sidebar entry** on, the page becomes a sidebar entry of its own and leaves the Memory System. The [Skills guide](./skills.md) walks through each tab.
+
 ### On a phone
 
 | Conversation | Memory Spaces | Configuration |
@@ -210,6 +214,7 @@ The gear on a row, the gear beside **Main strategy**, and a component's name any
 
 - **Runtime memory's page**: **User profile scope**. *Shared globally* combines a global `USER.md` with workspace or custom `MEMORY.md`, without moving either.
 - **Memory Spaces' page**: the **Memory providers**. Mnemon Native comes first and, expanded, holds only its embedding settings. Every third-party Provider has its own switch and is off by default; its endpoint, key and fields appear once it is on. The Global or Workspace tag shows its effective scope. OpenViking's **User key owner (skip admin)** field selects one user namespace for keys without admin access; see [its limits](./memory-providers.md#operational-boundaries).
+- **Skills' page**, tagged **Experimental**: **Self-evolution**, and while it is on, **Backtest drafts** and the folded **Review parameters**; **In the conversation** for the line under each turn; **Sidebar entry**. Switches apply at once, the parameters with **Apply**; see the [Skills guide](./skills.md#settings).
 - **Layered strategy's page**: **Background tasks**. **Task Agent model** chooses the model of the task Agents behind Save to memory, Ask Agent, Tidy names and descriptions, smart selection for new spaces and document archiving, never of the main conversation: **Follow global**, **Follow the conversation** or **Custom**. [Configuration](../reference/configuration.md#background-task-agent-model-route) explains each choice. **Idle review**, **Write runtime memory**, its method and Agent Teams compatibility apply at once; **Review limits** apply with **Apply**. With **Write runtime memory** off, review only creates Documents. Review runs only after turns the Layered strategy composed; see [configuration](../reference/configuration.md#provider-requirements).
 
 <details>

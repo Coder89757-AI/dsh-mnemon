@@ -284,6 +284,8 @@ The Host runs the Mnemon CLI without a shell, bounds every call's time and outpu
 
 These boundaries are not a secret scanner. There is no deterministic credential detection; never submit keys, tokens, private keys, or raw sensitive logs.
 
+A skill installed from the Skills market is instructions an Agent follows, and may carry scripts. dsh-mnemon never runs a skill's scripts itself: every install is previewed first, a site's artifact must match its published digest, archives may not hold links or paths outside the skill folder, and size and file counts are bounded. Review a skill before installing it; see the [Skills guide](./skills.md#data-and-trust).
+
 ### Security reporting
 
 Report vulnerabilities privately through [SECURITY.md](../../../SECURITY.md), not a public issue. Data loss, path traversal, lock/revision bypasses, subagent-isolation breaks, and injection through rendered memory are in scope.
@@ -324,6 +326,7 @@ Report vulnerabilities privately through [SECURITY.md](../../../SECURITY.md), no
 | After dsh-mnemon was updated while DSH ran, enabling a component reports `ERR_PACKAGE_PATH_NOT_EXPORTED` (`Package subpath './starter'` or `'./bundle'`) | The running process still loads with the old version's package information; quit DSH completely and start it again (`Cmd+Q` for the desktop app). On 0.5.18 or 0.5.19, do not turn off `dsh-mnemon/starter`; see [Install and start](./installation.md#err_package_path_not_exported-after-an-update) |
 | `mnemon-bundle (cordis:group): pending (waiting for service: mnemonStarterReady)`, or the desktop app fails to start and shows its plugin recovery page | `dsh-mnemon/starter` of 0.5.18 or 0.5.19 is off; turn it on under **Plugins → dsh-mnemon**, or update to 0.5.20, which has no separate readiness switch. On the desktop app, remove the plugin from the recovery page and add dsh-mnemon again; see [Install and start](./installation.md#dsh-says-waiting-for-service-mnemonstarterready) |
 | `mnemon-bundle (dsh-mnemon/bundle): pending (waiting for service: mnemonStarterReady)` right after an update | DSH was updated to 0.5.20 without a restart and still runs the old component group; quit DSH completely and start it again, as [Install and start](./installation.md#err_package_path_not_exported-after-an-update) describes |
+| Skills' **Evolution** stays empty, a turn shows **Review failed**, or the market says GitHub declined | Self-evolution is off until turned on; a review needs a few turns of work and a pause. GitHub allows 60 unauthenticated requests an hour: set `GITHUB_TOKEN` or `GH_TOKEN` in DSH's environment and restart. See [Skills troubleshooting](./skills.md#troubleshooting) |
 | Mnemon RPC returns 401 after a DSH restart or authority change | Open the launch URL printed by `dsh web` so the one-time token can establish a fresh authority-bound browser cookie |
 
 <a id="dsh-015-compatibility-and-legacy-session-recovery"></a>

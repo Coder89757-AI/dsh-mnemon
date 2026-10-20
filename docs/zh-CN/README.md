@@ -15,6 +15,7 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 | 熟悉对话、记忆系统与插件页 | [界面指南](./guides/ui-guide.md) |
 | 了解每个组件与策略能做什么 | [能力地图](./guides/capabilities.md) |
 | 选择并接入长期记忆后端 | [Provider 指南](./guides/memory-providers.md) |
+| 管理技能，让它们从对话中改进，测试它们并安装更多技能 | [技能管理](./guides/skills.md) |
 | 备份、迁移存储或排查故障 | [运维指南](./guides/operations.md) |
 | 升级已有安装 | [兼容性与升级](./reference/compatibility.md) |
 

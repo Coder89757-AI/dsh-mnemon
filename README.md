@@ -35,6 +35,7 @@ An Agent that starts every session from scratch keeps asking what it was already
 - **The right memory for each turn.** Preferences and working facts stay in context. Project documents and long-term evidence are searched only when a question needs them.
 - **You can see what a turn used.** Under each reply, the turn memory bar lists the documents and memories the turn read and wrote, and one click opens each in the Memory System. The Memory System shows everything that is stored and lets you edit it.
 - **Save to memory in one click.** When a conversation turns up a fact worth keeping, the brain mark under the reply hands it to a task Agent, which removes duplicates, distils it and writes it to the right Memory Space, or saves it where you choose: working memory, your profile or a Memory Space. The receipt says where it went.
+- **Skills that get better with use.** Skills (技能管理) puts every DSH skill in one place, can improve them from your real conversations with a draft you test before adopting it, and installs more from skills.sh, GitHub repositories and sites that publish Agent Skills.
 - **Compose it on the Plugins page.** Choose a main strategy and optional enhancements, and switch them without moving any data. Every component has its own page for its settings.
 - **Keep data where you want it.** Local by default with Mnemon Native, or one of eight third-party Providers. Storage can be global, per workspace, centralized or in a directory you choose, with ZIP backup.
 - **Extend it.** Sources and Strategies are ordinary DSH plugins built on public SDKs. An installed component gets the same pages and switches as the shipped ones.
@@ -72,6 +73,18 @@ Every step is explained in the [UI guide](https://github.com/omdsh-dev/dsh-mnemo
 | **Memory Spaces** | Durable facts, decisions, entities and their relationships | Recalled on demand from the enabled Providers |
 
 The default **Layered strategy** keeps runtime memory resident and reads the other two on demand. The **General strategy** offers every available source within one budget and lets the model decide how to use each. A **memory space** is one named, Provider-backed scope for long-term evidence; the Chinese product term is 记忆空间.
+
+## Skills that improve with use
+
+**Skills** (技能管理, experimental) manages the `SKILL.md` skills DSH loads from the project and from your home, on its own page in the Memory System or as a sidebar entry of its own.
+
+- **Manage.** Switch a skill off for the model or the `/` menu, use it in the conversation in one click, edit it, and go back to any earlier version.
+- **Evolve.** With self-evolution on, finished conversations are reviewed in the background for corrections, "from now on" instructions, failed tools and reusable procedures. A suggestion cites the steps it rests on; a task Agent drafts the new `SKILL.md`, which is backtested against the current version before you adopt it. Nothing changes without your **Adopt**.
+- **Test.** Each skill has its own cases, from reviews, from recorded conversations or written by hand, and a backtest scores any version on them.
+- **Install.** The market searches skills.sh's open index and reads any GitHub repository, any site publishing an Agent Skills discovery index, and curated catalogs; every install is previewed, with security reviews where they exist.
+- **In the conversation.** A line under each turn names the skills it used and what its review suggested, each one click from its page.
+
+Self-evolution is off until you turn it on under **Plugins → dsh-mnemon → Skills**. The [Skills guide](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/skills.md) covers every step.
 
 ## Quick start
 
@@ -113,7 +126,7 @@ The Starter pins a tested combination of independently versioned packages. One m
 | [dsh-mnemon-source-runtime](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-runtime/README.md) | Runtime memory: USER.md, MEMORY.md, revisions and local storage | On |
 | [dsh-mnemon-source-documents](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-documents/README.md) | Project Documents: Markdown, search, revisions and archiving | On |
 | [dsh-mnemon-source-memory-spaces](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-memory-spaces/README.md) | Memory Spaces: durable evidence and their Providers | On |
-| [dsh-mnemon-source-skills](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-skills/README.md) | Skills: DSH skills with versions, self-evolution from real conversations, evidence trajectories and eval sets | On (self-evolution off) |
+| [dsh-mnemon-source-skills](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-source-skills/README.md) | Skills (experimental): DSH skills with versions, self-evolution from real conversations, tests and backtests, and a market of skills.sh, GitHub and Agent Skills sites | On (self-evolution off) |
 | [dsh-mnemon-strategy-default-three-tier](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-default-three-tier/README.md) | Layered strategy: resident runtime memory, the rest on demand | Selected |
 | [dsh-mnemon-strategy-general](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-general/README.md) | General strategy: every available source in one budget | Off |
 | [dsh-mnemon-strategy-auto-capture](https://github.com/omdsh-dev/dsh-mnemon/blob/main/plugins/dsh-mnemon-strategy-auto-capture/README.md) | Active capture: in-turn guidance to keep useful facts | Off |
@@ -132,6 +145,7 @@ Start with the [plugin author guide](https://github.com/omdsh-dev/dsh-mnemon/blo
 
 - Runtime memory and Project Documents are local files; Mnemon Native is local. Third-party Providers use their own services and scopes.
 - Turning a component off does not erase its memory, and changing the storage location does not move data. Use ZIP backup to carry it.
+- Skills' evolution data — suggestions, test cases and the conversations reviews read, with secrets redacted — stays local in the storage root and is not part of a backup. A skill from the market is followed as written by an Agent; preview it first.
 - Git sync publishes the same Mnemon Pack payload as readable files to a repository you own, so another machine can pull it, with **Sync now**, **Check remote** before anything is written, or **Automatic sync**. When two machines wrote one subject differently, both wordings stay until you accept and apply a **Memory reconciliation** plan; see [Git repository sync](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/operations.md#git-repository-sync).
 - Saved Provider credentials stay on the Host and are never exported. Backups still contain private memory; protect them.
 - Sources and Strategies are trusted in-process JavaScript, not sandboxed code. Remembered history never outranks current instructions.

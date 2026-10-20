@@ -284,6 +284,8 @@ Host 调用 Mnemon CLI 时不经过 shell，限制每次调用的时间与输出
 
 这些边界不是秘密扫描器。当前没有确定性的凭据检测；不要提交密钥、token、私钥和原始敏感日志。
 
+从技能管理市场安装的技能是 Agent 会照着执行的指令，也可能带有脚本。dsh-mnemon 自身从不运行技能里的脚本：每次安装前都可预览，网站发布的压缩包必须与其公布的摘要一致，压缩包不得包含链接或技能文件夹之外的路径，大小与文件数也有上限。安装前请先审阅技能，见[技能管理指南](./skills.md#数据与信任)。
+
 ### 安全问题报告
 
 按 [SECURITY.md](../../../SECURITY.md) 私下报告漏洞，不要创建公开 issue。数据丢失、路径穿越、锁 / revision 绕过、子 Agent 隔离破坏和 WebUI 记忆内容注入都在范围内。
@@ -324,6 +326,7 @@ Host 调用 Mnemon CLI 时不经过 shell，限制每次调用的时间与输出
 | DSH 运行期间更新 dsh-mnemon 后，启用组件提示 `ERR_PACKAGE_PATH_NOT_EXPORTED`（`Package subpath './starter'` 或 `'./bundle'`） | 正在运行的进程仍按旧版本的包信息加载；完全退出并重新启动 DSH（桌面版按 `Cmd+Q`）。使用 0.5.18 或 0.5.19 时不要关闭 `dsh-mnemon/starter`，见[安装与启动](./installation.md#更新后启用时提示-err_package_path_not_exported) |
 | `mnemon-bundle (cordis:group): pending (waiting for service: mnemonStarterReady)`，或桌面版启动失败并显示插件恢复页 | 0.5.18 或 0.5.19 的 `dsh-mnemon/starter` 被关闭；在**插件 → 可组合记忆**中打开它，或更新到 0.5.20（没有单独的就绪开关）。桌面版在恢复页卸载后重新添加 dsh-mnemon，见[安装与启动](./installation.md#dsh-提示waiting-for-service-mnemonstarterready) |
 | 更新后提示 `mnemon-bundle (dsh-mnemon/bundle): pending (waiting for service: mnemonStarterReady)` | 更新到 0.5.20 后没有重启，正在运行的 DSH 仍保留旧的组件组；完全退出并重新启动 DSH，见[安装与启动](./installation.md#更新后启用时提示-err_package_path_not_exported) |
+| 技能管理的**进化**一直是空的、回合下显示**复盘失败**，或市场提示 GitHub 拒绝列出仓库 | 自进化默认关闭；一次复盘需要几轮实际工作和一次停顿。GitHub 对未认证请求每小时限 60 次：在 DSH 的运行环境中设置 `GITHUB_TOKEN` 或 `GH_TOKEN` 后重启。见[技能管理常见问题](./skills.md#常见问题) |
 | DSH 重启或 authority 改变后 Mnemon RPC 返回 401 | 打开 `dsh web` 输出的启动 URL，让一次性 token 建立新的、与 authority 绑定的浏览器 Cookie |
 
 <a id="dsh-015-兼容与旧会话恢复"></a>

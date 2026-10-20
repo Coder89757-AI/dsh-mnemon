@@ -546,6 +546,44 @@ describe('MnemonSettingsCard', () => {
     expect(within(documents).getByText('已关闭')).toBeTruthy()
   })
 
+  it('marks 技能管理 experimental on its row and its page, and no other component', async () => {
+    const scope = settingsScope({ status: 'ready' as const, value: { storageScope: 'global' as const }, base: {}, user: {}, revision: 0, writable: true, mode: 'host' as const })
+    const participation = { recall: 'automatic', write: 'automatic', projection: 'automatic', maintenance: 'automatic' } as const
+    const descriptor: MemoryCompositionStatus = {
+      serving: true,
+      evaluation: { state: 'ready', contributionRevision: 1, sourceInstanceKeys: [], diagnostics: [] },
+      sources: [],
+      configuration: { id: 'default-three-tier', strategyId: 'default-three-tier', layers: Object.fromEntries(['runtime', 'skills'].map(id => [id, { enabled: true, participation: { ...participation }, adapterIds: [] }])) },
+    }
+    const component = (entryId: string, packageName: string, label: string, roles: MemoryPluginEntryView['roles'], typeId: string): MemoryPluginEntryView => ({
+      entryId, packageName, roles, typeId, label: { en: label, 'zh-CN': label }, description: { en: '', 'zh-CN': '' }, fields: [], provides: [], requires: [], requiredBy: [],
+      enabled: true, active: true, writable: true, config: {},
+    })
+    const dashboard: MemoryViewDashboard = {
+      revision: 'view-1', writable: true, strategyTypeId: 'default-three-tier', currentUnavailable: 'no-session', sources: [], diagnostics: [],
+      pluginInstallation: { supported: false, reason: 'loader-unavailable', suggestions: [] },
+      entries: [
+        { ...component('mnemon-strategy-default-three-tier', 'dsh-mnemon-strategy-default-three-tier', '分层策略', ['strategy'], 'default-three-tier'), provides: [{ id: 'strategy', exclusive: false }] },
+        component('mnemon-source-runtime', 'dsh-mnemon-source-runtime', '运行时记忆', ['source'], 'runtime'),
+        component('mnemon-source-skills', 'dsh-mnemon-source-skills', '技能管理', ['source'], 'skills'),
+      ],
+    }
+    const call = vi.fn(async (channel: string, endpoint: string) => {
+      if (channel === '/dsh-mnemon-read' && endpoint === 'memory-system') return { ok: true as const, value: descriptor }
+      if (channel === '/dsh-mnemon-view' && endpoint === 'dashboard') return { ok: true as const, value: structuredClone(dashboard) }
+      if (channel === '/dsh-mnemon-read' && endpoint === 'task-agent-models') return { ok: true as const, value: { groups: [], failures: [] } }
+      if (channel === '/dsh-mnemon-pack' && endpoint === 'target') return { ok: true as const, value: { root: '/root/.mnemon', scope: 'global' as const } }
+      throw new Error(`unexpected ${channel} ${endpoint}`)
+    })
+    render(<MnemonSettingsCard scope={scope} connection={{ rpc: { call }, isLoopback: true } as ClientConnectionHandle} />)
+    const skills = (await screen.findByRole('switch', { name: '技能管理' })).closest('[data-mnemon-target]') as HTMLElement
+    expect(within(skills).getByText('实验性')).toBeTruthy()
+    const runtime = screen.getByRole('switch', { name: '运行时记忆' }).closest('[data-mnemon-target]') as HTMLElement
+    expect(within(runtime).queryByText('实验性')).toBeNull()
+    fireEvent.click(within(skills).getByRole('button', { name: '技能管理' }))
+    expect(within(await screen.findByRole('dialog', { name: '技能管理' })).getByText('实验性')).toBeTruthy()
+  })
+
   it('ignores a Provider catalog response from the previously selected workspace', async () => {
     const snapshot = {
       status: 'ready' as const,

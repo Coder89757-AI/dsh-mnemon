@@ -15,6 +15,7 @@ dsh-mnemon gives DeepSeek Harness three kinds of memory: **runtime memory** in e
 | Find your way around the conversation, the Memory System and the Plugins page | [UI guide](./guides/ui-guide.md) |
 | Understand what each component and strategy does | [Capability map](./guides/capabilities.md) |
 | Choose and connect a long-term backend | [Providers](./guides/memory-providers.md) |
+| Manage skills, let them improve from conversations, test them and install more | [Skills](./guides/skills.md) |
 | Back up, move storage or troubleshoot | [Operations](./guides/operations.md) |
 | Upgrade an existing installation | [Compatibility and upgrades](./reference/compatibility.md) |
 
