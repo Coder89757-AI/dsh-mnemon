@@ -119,13 +119,13 @@ export function createRuntimeMemorySource(config: Config = {}): MemorySourceDefi
         if (request.mode === 'read') {
           let value: unknown
           if (request.operation === 'snapshot') value = controller.snapshot()
-          else if (request.operation === 'maintenance-plan') value = await controller.planMaintenance(runtimeMutation(request.input))
+          else if (request.operation === 'maintenance-plan') value = await controller.planMaintenance(runtimeMutation(request.input), { preserveImportance: input.preserveImportance === true })
           else throw new Error('unsupported Runtime management read operation: ' + request.operation)
           return { revision: controller.snapshot().revision, value: value as MemoryJsonValue }
         }
         if (!request.confirmed) throw new Error('Runtime management mutation requires explicit confirmation')
         let result: unknown
-        if (request.operation === 'mutate') result = await controller.mutate(runtimeMutation(request.input))
+        if (request.operation === 'mutate') result = await controller.mutate(runtimeMutation(request.input), { preserveImportance: input.preserveImportance === true })
         else if (request.operation === 'compact-and-mutate') {
           if (!Array.isArray(input.compacted)) throw new Error('compacted must be an array')
           const compacted = input.compacted.map(value => {
@@ -141,13 +141,13 @@ export function createRuntimeMemorySource(config: Config = {}): MemorySourceDefi
           result = await controller.compactAndMutate(
             text(input.revision, 'revision', 300)!, runtimeMutation(input.mutation!), compacted,
             typeof input.maxBytes === 'number' ? input.maxBytes : undefined,
-            input.archive === 'local' ? { archive: 'local' } : {},
+            { ...(input.archive === 'local' ? { archive: 'local' as const } : {}), preserveImportance: input.preserveImportance === true },
           )
         } else throw new Error('unsupported Runtime management mutation operation: ' + request.operation)
         return { revision: controller.snapshot().revision, value: result as unknown as MemoryJsonValue }
       },
       async mutate(request) {
-        const result = await controller.mutate(runtimeMutation(request.input))
+        const result = await controller.mutate(runtimeMutation(request.input), { preserveImportance: true })
         const revision = controller.snapshot().revision
         return receipt(request.view.id, request.offer.id, context.sourceInstanceKey, revision, result as unknown as MemoryJsonValue, 'committed')
       },

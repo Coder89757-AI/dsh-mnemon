@@ -499,9 +499,9 @@ export class MnemonSubagentCoordinator {
     try {
       const runtime = graph.source('runtime', scope).forGeneration(lease.generation)
       const context: RuntimeWriteContext = {
-        runtime, inspectRuntime: runtime,
+        runtime, inspectRuntime: runtime, preserveImportance: true,
         maintain: strategyDrives(lease.generation.strategy.definition.manifest, 'runtime-capacity'),
-        commit: () => runtime.mutate('mutate', request, signal),
+        commit: () => runtime.mutate('mutate', { ...request, preserveImportance: true }, signal),
         memorySpaces: async () => {
           if (!graph.config.writeEnabled || !this.runtimeSource.config.writeEnabled) throw new Error('dsh-mnemon is configured read-only')
           // Memory Spaces switched off, taking no automatic writes or not installed
@@ -551,7 +551,7 @@ export class MnemonSubagentCoordinator {
       }
       const runtime = graph.source(source.sourceTypeId, turn.scope).forInstance(source.sourceInstanceKey).forTurn(turn).forGeneration(lease.generation)
       const result = await this.enqueueRuntime({
-        runtime, inspectRuntime: graph.source('runtime', turn.scope).forInstance(source.sourceInstanceKey).forGeneration(lease.generation), maintain: true, commit,
+        runtime, inspectRuntime: graph.source('runtime', turn.scope).forInstance(source.sourceInstanceKey).forGeneration(lease.generation), maintain: true, preserveImportance: true, commit,
         assertWritable: () => { if (!authorize()) throw new Error('Runtime capacity maintenance is no longer authorized') },
         memorySpaces: async () => {
           if (!authorize()) throw new Error('Runtime capacity maintenance is no longer authorized')

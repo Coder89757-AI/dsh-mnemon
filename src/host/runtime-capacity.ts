@@ -32,6 +32,8 @@ export interface RuntimeWriteContext {
   runtime: SourceSession
   inspectRuntime: SourceSession
   maintain: boolean
+  /** Automatic writes retain the replaced entry's importance through planning and compaction. */
+  preserveImportance?: boolean
   expectedRevision?: string
   assertWritable?(): void
   commit(): Promise<RuntimeMemoryMutationResult>
@@ -138,7 +140,7 @@ async function archiveRuntimeLocally(counters: SubagentCounters, context: Runtim
   const runId = `host-${randomUUID()}`
   const compacted = plan.entries.map(({ content, importance, branches }): RuntimeMemoryCompactedEntry => ({ content, importance, ...(branches === undefined ? {} : { branches }) }))
   const mutation = await context.runtime.mutateResult<RuntimeMemoryMutationResult>('compact-and-mutate', {
-    revision: plan.revision, mutation: request, compacted, maxBytes: compactedBudget(plan), archive: 'local',
+    revision: plan.revision, ...(context.preserveImportance ? { preserveImportance: true } : {}), mutation: request, compacted, maxBytes: compactedBudget(plan), archive: 'local',
   }, signal)
   const archived = mutation.value.archived?.entries ?? 0
   counters.migrations += 1
@@ -168,7 +170,7 @@ export async function runtimeLocked(counters: SubagentCounters, context: Runtime
     if (!sourceFailure(error, 'runtime-capacity') || !context.maintain) throw error
   }
 
-  const plan = await runtimeMemory.read<RuntimeMemoryMaintenancePlan>('maintenance-plan', request, signal)
+  const plan = await runtimeMemory.read<RuntimeMemoryMaintenancePlan>('maintenance-plan', { ...request, ...(context.preserveImportance ? { preserveImportance: true } : {}) }, signal)
   if (context.expectedRevision !== undefined && context.expectedRevision !== plan.revision) throw new Error('Runtime source revision conflict before capacity maintenance')
   if (!plan.requiresMaintenance) return context.commit()
   if (plan.entries.length === 0) throw new Error('runtime memory capacity was exceeded without entries available for maintenance')
@@ -302,7 +304,7 @@ ${chunk.context}
   // Re-check the local source before any Provider side effect. A later race is
   // still caught by compactAndMutate; Provider receipts are verified because
   // an external data plane cannot share the local filesystem lock.
-  const current = await runtimeMemory.read<RuntimeMemoryMaintenancePlan>('maintenance-plan', request, signal)
+  const current = await runtimeMemory.read<RuntimeMemoryMaintenancePlan>('maintenance-plan', { ...request, ...(context.preserveImportance ? { preserveImportance: true } : {}) }, signal)
   if (current.revision !== plan.revision) throw new Error('runtime memory changed while archival was running; no archive writes were attempted')
   const destinations = await readDirectory()
   for (const memoryBodyId of new Set(routed.values())) {
@@ -372,7 +374,7 @@ ${chunk.context}
     signal.throwIfAborted()
     context.assertWritable?.()
     commitAttempted = true
-    const mutation = await runtimeMemory.mutateResult<RuntimeMemoryMutationResult>('compact-and-mutate', { revision: plan.revision, mutation: request, compacted: compactedEntries, maxBytes: budget, lineage }, signal)
+    const mutation = await runtimeMemory.mutateResult<RuntimeMemoryMutationResult>('compact-and-mutate', { revision: plan.revision, ...(context.preserveImportance ? { preserveImportance: true } : {}), mutation: request, compacted: compactedEntries, maxBytes: budget, lineage }, signal)
     if (provider === 'host') {
       counters.migrations += 1
       counters.lastRunId = runId
@@ -457,7 +459,7 @@ ${runtimeSnapshotContext('user', plan.entries)}`
   if (candidateBytes > budget) throw new Error(`USER.md compaction did not fit the host budget (${candidateBytes} > ${budget} bytes)`)
   signal.throwIfAborted()
   context.assertWritable?.()
-  const mutation = await runtimeMemory.mutateResult<RuntimeMemoryMutationResult>('compact-and-mutate', { revision: plan.revision, mutation: request, compacted: candidates, maxBytes: budget }, signal)
+  const mutation = await runtimeMemory.mutateResult<RuntimeMemoryMutationResult>('compact-and-mutate', { revision: plan.revision, ...(context.preserveImportance ? { preserveImportance: true } : {}), mutation: request, compacted: candidates, maxBytes: budget }, signal)
   return {
     ...mutation.value,
     revision: mutation.revision,

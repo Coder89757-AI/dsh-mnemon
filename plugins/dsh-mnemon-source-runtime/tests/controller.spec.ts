@@ -24,6 +24,23 @@ function fixture(now = new Date('2026-08-13T08:00:00.000Z')): { directory: strin
 }
 
 describe('RuntimeMemoryController', () => {
+  it('preserves importance through a separate USER.md store, plans and compaction (#469)', async () => {
+    const { directory } = fixture()
+    const controller = new RuntimeMemoryController({ effectiveDataDir: () => directory }, undefined, undefined,
+      { effectiveDataDir: () => join(directory, 'profile') })
+    await controller.mutate({ action: 'add', target: 'user', content: 'Keep the original rule', importance: 'critical' })
+    const request = { action: 'replace' as const, target: 'user' as const, oldText: 'Keep the original rule', content: 'Correct the rule', importance: 'normal' as const }
+    const plan = await controller.planMaintenance(request, { preserveImportance: true })
+    expect(plan.pending?.importance).toBe('critical')
+    await controller.compactAndMutate(plan.revision, request, [], undefined, { preserveImportance: true })
+    expect(controller.snapshot().entries[0]?.importance).toBe('critical')
+    await controller.mutate({ ...request, oldText: request.content, content: 'Another correction', importance: 'low' }, { preserveImportance: true })
+    expect(controller.snapshot().entries[0]?.importance).toBe('critical')
+    await controller.mutate({ ...request, oldText: 'Another correction', content: 'Manual reclassification', importance: 'low' })
+    await controller.mutate({ ...request, oldText: 'Manual reclassification', content: 'Automatic promotion', importance: 'critical' }, { preserveImportance: true })
+    expect(controller.snapshot().entries[0]?.importance).toBe('critical')
+  })
+
   it('creates the JSON source of truth and deterministic Markdown projections', async () => {
     const { directory, controller } = fixture()
     await controller.mutate({ action: 'add', target: 'user', content: '用户偏好简洁回答', importance: 'critical' })
