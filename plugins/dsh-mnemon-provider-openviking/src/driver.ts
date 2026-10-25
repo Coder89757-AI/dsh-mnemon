@@ -11,7 +11,7 @@ import type {
   RememberRequest,
   SearchRequest,
 } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
-import { CATEGORIES, NORMALIZED_RELEVANCE_SCORE, type MemoryProviderAdapter, type ProviderBodyStatus as ProviderSpaceStatus, type ProviderMemorySpace, type ProviderSearchResult } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
+import { CATEGORIES, type MemoryProviderAdapter, type ProviderBodyStatus as ProviderSpaceStatus, type ProviderMemorySpace, type ProviderSearchResult } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
 
 interface OpenVikingEnvelope {
   status?: string
@@ -129,7 +129,7 @@ function refused(error: unknown): boolean {
 
 export class OpenVikingProvider implements MemoryProviderAdapter {
   readonly id = 'openviking' as const
-  readonly scoreSemantics = NORMALIZED_RELEVANCE_SCORE
+  readonly scoreSemantics = Object.freeze({ kind: 'provider-native' as const })
   private readonly requestFetch: typeof fetch
   private readonly requestTimeoutMs: number
 

@@ -40,6 +40,7 @@
               highScoreThreshold: 0.6
               candidateMultiplier: 3
               maxMediumResults: 4
+              maxRankedResults: 4
               maxUnknownResults: 2
         - id: mnemon-source-runtime
           name: dsh-mnemon-source-runtime

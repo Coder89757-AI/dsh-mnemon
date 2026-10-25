@@ -1,5 +1,5 @@
 /** Memory Spaces-owned recall quality policy. */
-import type { Insight, MemoryProviderId, ResolvedRecallQualityConfig } from '../contracts.ts'
+import type { Insight, MemoryProviderId, RecallRelevanceTier, ResolvedRecallQualityConfig } from '../contracts.ts'
 import type { ProviderScoreSemantics } from '../providers/adapter.ts'
 
 export type RecallQualityDecisionReason =
@@ -8,6 +8,8 @@ export type RecallQualityDecisionReason =
   | 'low-score'
   | 'non-positive-score'
   | 'invalid-score'
+  | 'native-score'
+  | 'out-of-range-score'
   | 'unscaled-score'
   | 'unscored'
 
@@ -22,7 +24,7 @@ export interface RecallQualityCandidate {
 
 export interface RecallQualityDecision {
   action: 'keep' | 'drop'
-  tier: 'high' | 'medium' | 'low' | 'unknown'
+  tier: RecallRelevanceTier
   reason: RecallQualityDecisionReason
   normalizedScore?: number
 }

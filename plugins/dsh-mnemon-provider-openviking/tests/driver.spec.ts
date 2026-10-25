@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemorySpaceProviderFixture } from 'dsh-mnemon-source-memory-spaces/testing'
-import { OpenVikingProvider, descriptor } from '../src/index.ts'
+import { OpenVikingProvider, descriptor, definition } from '../src/index.ts'
 
 const temporaryDirectories: string[] = []
 afterEach(() => { for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true }) })
@@ -64,6 +64,9 @@ describe('standalone OpenViking data plane', () => {
       })
     })
     const { body, provider } = await bodyAndRegistry(fetchMock)
+
+    expect(definition.manifest.scoreSemantics).toBe('provider-native')
+    expect(provider.scoreSemantics).toEqual({ kind: 'provider-native' })
 
     const result = await provider.search(body, { query: '回答风格', limit: 8 })
 

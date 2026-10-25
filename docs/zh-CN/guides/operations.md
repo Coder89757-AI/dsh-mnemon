@@ -267,6 +267,7 @@ HTTP 403 可能来自 Host/Origin 不匹配，或旧远程 Client 仍调用独�
          highScoreThreshold: 0.6
          candidateMultiplier: 3
          maxMediumResults: 4
+         maxRankedResults: 4
          maxUnknownResults: 2
    ```
 

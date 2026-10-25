@@ -5,13 +5,17 @@ import { MEMORY_PLACEMENT_CAPABILITIES } from '../src/contracts.ts'
 describe('Memory Spaces configuration rules', () => {
   it('validates configurable recall quality policy thresholds and expansion', () => {
     expect(resolveConfig({
-      recallQuality: { policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxUnknownResults: 1 },
-    }).recallQuality).toEqual({ policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxUnknownResults: 1 })
+      recallQuality: { policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxRankedResults: 3, maxUnknownResults: 1 },
+    }).recallQuality).toEqual({ policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxRankedResults: 3, maxUnknownResults: 1 })
     expect(() => resolveConfig({ recallQuality: { lowScoreThreshold: 0.7, highScoreThreshold: 0.6 } })).toThrow('less than')
     expect(() => resolveConfig({ recallQuality: { candidateMultiplier: 1.5 } })).toThrow('integer')
     expect(() => resolveConfig({ recallQuality: { policy: '../unsafe' } })).toThrow('policy id')
     expect(() => resolveConfig({ recallQuality: { maxMediumResults: 51 } })).toThrow('max medium')
     expect(() => resolveConfig({ recallQuality: { maxUnknownResults: -1 } })).toThrow('max unknown')
+    expect(resolveConfig({}).recallQuality.maxRankedResults).toBe(4)
+    for (const maxRankedResults of [-1, 0.5, 51, Number.NaN]) {
+      expect(() => resolveConfig({ recallQuality: { maxRankedResults } })).toThrow('max ranked')
+    }
   })
 
   it('takes a store hint only as a space id', () => {

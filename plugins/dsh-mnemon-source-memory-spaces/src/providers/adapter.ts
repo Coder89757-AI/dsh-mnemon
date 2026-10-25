@@ -57,8 +57,8 @@ export interface ProviderSearchResult {
 }
 
 export interface ProviderScoreSemantics {
-  /** Provider promises a finite relevance score in 0..1 where larger is better. */
-  kind: 'normalized-relevance'
+  /** Normalized relevance is calibrated in 0..1; native scores only carry Provider ordering. */
+  kind: 'normalized-relevance' | 'provider-native'
 }
 
 export type MemoryProviderScoreSemantics = 'normalized-relevance' | 'provider-native' | 'none'

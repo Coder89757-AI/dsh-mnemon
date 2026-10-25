@@ -20,13 +20,15 @@ function scoreDecision(
   const score = candidate.insight.score
   if (score === undefined) return { action: 'keep', tier: 'unknown', reason: 'unscored' }
   if (!Number.isFinite(score)) return { action: 'drop', tier: 'unknown', reason: 'invalid-score' }
+  if (candidate.scoreSemantics?.kind === 'provider-native') {
+    return { action: 'keep', tier: 'ranked', reason: 'native-score' }
+  }
   if (candidate.scoreSemantics?.kind !== 'normalized-relevance') {
     return { action: 'keep', tier: 'unknown', reason: 'unscaled-score' }
   }
   if (score <= 0) return { action: nonPositiveAction, tier: 'low', reason: 'non-positive-score', normalizedScore: 0 }
-  // A Provider violating its declared 0..1 range is safer as an unknown-scale
-  // ranked result than as a fabricated high-confidence result.
-  if (score > 1) return { action: 'keep', tier: 'unknown', reason: 'unscaled-score' }
+  // A violated range supplies ordering evidence, not calibrated confidence.
+  if (score > 1) return { action: 'keep', tier: 'ranked', reason: 'out-of-range-score' }
   if (score < context.config.lowScoreThreshold) return { action: lowScoreAction, tier: 'low', reason: 'low-score', normalizedScore: score }
   if (score < context.config.highScoreThreshold) return { action: 'keep', tier: 'medium', reason: 'medium-score', normalizedScore: score }
   return { action: 'keep', tier: 'high', reason: 'high-score', normalizedScore: score }
@@ -42,9 +44,16 @@ export const STRICT_RECALL_QUALITY_POLICY: RecallQualityPolicy = {
   evaluate: (candidate, context) => scoreDecision(candidate, context, 'drop', 'drop'),
   select(candidates, context) {
     const kept = candidates.filter(candidate => candidate.decision.action === 'keep')
+    let medium = 0
+    let ranked = 0
+    // Preserve the fused order of these bounded lanes; raw score scales do not
+    // justify placing every medium result ahead of every native ranked result.
+    const scored = kept.filter(({ decision }) =>
+      decision.tier === 'medium' ? medium++ < context.config.maxMediumResults
+        : decision.tier === 'ranked' && ranked++ < context.config.maxRankedResults)
     return [
       ...kept.filter(candidate => candidate.decision.tier === 'high'),
-      ...kept.filter(candidate => candidate.decision.tier === 'medium').slice(0, context.config.maxMediumResults),
+      ...scored,
       ...kept.filter(candidate => candidate.decision.tier === 'unknown').slice(0, context.config.maxUnknownResults),
     ].slice(0, context.requestedLimit)
   },

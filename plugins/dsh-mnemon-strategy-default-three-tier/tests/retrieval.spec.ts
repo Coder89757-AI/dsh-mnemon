@@ -56,6 +56,28 @@ async function fixture(kind: 'documents' | 'memory-spaces', copies = 1) {
 const output = (value: { output?: MemoryJsonValue }) => value.output as { results: Array<{ id: string; content: string }>; notRun?: boolean; hint: string }
 
 describe('independent three-tier execution policy', () => {
+  it.each([
+    { tiers: ['ranked', 'ranked', 'ranked', 'unknown', 'unknown', 'low'], expected: ['0', '1', '2', '3'] },
+    { tiers: ['unknown', 'unknown', 'low', 'ranked', 'ranked'], expected: ['0', '3', '4'] },
+  ])('admits Source-ranked evidence within the turn budget and keeps unknown/low guards (#454): $tiers', async ({ tiers, expected }) => {
+    const { runner, query } = await fixture('memory-spaces')
+    const original = query.getMockImplementation()!
+    query.mockImplementation(async request => ({
+      ...await original(request),
+      items: tiers.map((relevanceTier, index) => ({ id: String(index), text: `Distinct synthetic fact ${index}.`, score: 1.038,
+        provenance: { memoryBodyId: 'project', relevanceTier },
+      })),
+    }))
+    try {
+      const turn = await runner.beginTurn()
+      const route = turn.view.routes.find(route => route.sourceRouteId === 'recall')!
+      const result = output(await turn.executeRoute(route.id, { query: 'ranked evidence', limit: 6 }))
+      expect(result.results.map(item => item.id)).toEqual(expected)
+      expect(result.results).toHaveLength(expected.length)
+      expect(query).toHaveBeenCalledOnce()
+    } finally { await runner.dispose() }
+  })
+
   it('preserves empty-read diagnostics on same-Source replay without leaking them to another Source', async () => {
     const { runner, query } = await fixture('memory-spaces', 3)
     query.mockImplementation(request => ({ id: 'empty:' + request.route.sourceInstanceKey,

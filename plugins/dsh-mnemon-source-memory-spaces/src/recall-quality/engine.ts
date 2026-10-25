@@ -9,9 +9,9 @@ import type {
 import { STRICT_RECALL_QUALITY_POLICY } from './policies.ts'
 
 const ACTIONS = new Set(['keep', 'drop'])
-const TIERS = new Set(['high', 'medium', 'low', 'unknown'])
+const TIERS = new Set(['high', 'medium', 'ranked', 'low', 'unknown'])
 const REASONS = new Set([
-  'high-score', 'medium-score', 'low-score', 'non-positive-score', 'invalid-score', 'unscaled-score', 'unscored',
+  'high-score', 'medium-score', 'low-score', 'non-positive-score', 'invalid-score', 'native-score', 'out-of-range-score', 'unscaled-score', 'unscored',
 ])
 
 function assertDecision(decision: RecallQualityDecision): void {

@@ -8,7 +8,7 @@ interface RecallInsight {
   category?: string; importance?: number; tags?: string[]; entities?: string[]; source?: string; createdAt?: string
   depth?: number; edgeType?: string; memoryBodyId?: string; memoryBodyName?: string
   memoryProviderId?: string; memoryCapabilities?: MemoryJsonValue; externalUri?: string
-  relevanceTier?: 'high' | 'medium' | 'low' | 'unknown'
+  relevanceTier?: 'high' | 'medium' | 'ranked' | 'low' | 'unknown'
 }
 type Insight = RecallInsight
 interface SearchRequest { query: string; mode?: string; limit?: number; memoryBodyIds?: string[] }

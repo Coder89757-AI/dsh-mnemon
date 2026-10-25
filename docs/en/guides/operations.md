@@ -267,6 +267,7 @@ For authenticated remote clients, `remoteAccess: trusted-host` grants management
          highScoreThreshold: 0.6
          candidateMultiplier: 3
          maxMediumResults: 4
+         maxRankedResults: 4
          maxUnknownResults: 2
    ```
 

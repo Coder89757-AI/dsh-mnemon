@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemorySpaceProviderFixture } from 'dsh-mnemon-source-memory-spaces/testing'
 import type { MemoryProviderConnection, MemoryProviderId } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
-import { HindsightProvider, descriptor } from '../src/index.ts'
+import { HindsightProvider, descriptor, definition } from '../src/index.ts'
 
 const temporaryDirectories: string[] = []
 afterEach(() => { for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true }) })
@@ -59,6 +59,9 @@ describe('standalone hindsight data plane', () => {
       endpoint: 'https://api.hindsight.vectorize.io', apiKey: 'hs-secret', bankId: 'alice/profile', budget: 'high',
     })
     const provider = new HindsightProvider(registry, { fetch: fetchMock })
+
+    expect(definition.manifest.scoreSemantics).toBe('provider-native')
+    expect(provider.scoreSemantics).toEqual({ kind: 'provider-native' })
 
     await expect(provider.search(body, { query: 'language', limit: 3 })).resolves.toEqual({
       results: [expect.objectContaining({ id: 'hs-1', category: 'world', score: 0.93, entities: ['Alice'] })],
