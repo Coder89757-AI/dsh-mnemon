@@ -271,3 +271,122 @@ describe('standalone OpenViking data plane', () => {
     await expect(provider.forget(body, 'viking://user/other/memories/fact.md')).rejects.toThrow(/inside this Memory Space/u)
   })
 })
+
+describe('OpenViking literal keyword search', () => {
+  it.each([
+    ['v0.5.1 (rc)+[42]?', String.raw`v0\.5\.1 \(rc\)\+\[42\]\?`],
+    [String.raw`C:\work\file.md`, String.raw`C:\\work\\file\.md`],
+    ['a.*|b$', String.raw`a\.\*\|b\$`],
+    ['编号（42）', '编号（42）'],
+  ])('escapes %s as literal text and returns full content without a synthetic score', async (query, pattern) => {
+    const uri = 'viking://user/team/memories/entities/example.md'
+    const content = `Full text containing ${query}, beyond the matching line.`
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const target = new URL(String(url))
+      if (target.pathname === '/api/v1/content/read') {
+        expect(target.searchParams.get('uri')).toBe(uri)
+        return ok(content)
+      }
+      expect(target.pathname).toBe('/api/v1/search/grep')
+      // Common request fields in the published 0.4.16 and 0.5.1.1 GrepRequest.
+      expect(JSON.parse(String(init?.body))).toEqual({ uri: 'viking://user/team/memories', pattern, case_insensitive: true, node_limit: 3 })
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer private-key')
+      return ok({ matches: [{ uri, line: 3, content: 'Only an excerpt', score: 999 }], count: 1 })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    const result = await provider.search(body, { query, mode: 'keyword', limit: 3 })
+    expect(result.results).toEqual([{ id: uri, externalUri: uri, content, category: 'fact', source: 'external' }])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('deduplicates lines, rejects unsafe or foreign files and caps full-content reads', async () => {
+    const root = 'viking://user/team/memories'
+    const first = `${root}/entities/first.md`
+    const second = `${root}/preferences/second.md`
+    const reads: string[] = []
+    const fetchMock = vi.fn<typeof fetch>(async url => {
+      const target = new URL(String(url))
+      if (target.pathname === '/api/v1/content/read') {
+        const uri = target.searchParams.get('uri')!
+        reads.push(uri)
+        return ok(`Full content for ${uri}`)
+      }
+      return ok({ matches: [
+        { uri: 'viking://user/other/memories/entities/foreign.md' },
+        { uri: `${root}/entities/.abstract.md` },
+        { uri: `${root}/entities/../outside.md` },
+        { uri: `${root}/entities/%2e%2e/outside.md` },
+        { uri: `${root}-other/entities/foreign.md` },
+        { uri: first, line: 1 }, { uri: first, line: 2 },
+        { uri: second, line: 3 }, { uri: `${root}/entities/over-budget.md` },
+      ] })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    const result = await provider.search(body, { query: 'device', mode: 'keyword', limit: 2 })
+    expect(result.results.map(entry => entry.id)).toEqual([first, second])
+    expect(reads).toEqual([first, second])
+  })
+
+  it('keeps readable matches and reports a file removed before hydration', async () => {
+    const root = 'viking://user/team/memories/entities/'
+    const fetchMock = vi.fn<typeof fetch>(async url => {
+      const target = new URL(String(url))
+      if (target.pathname === '/api/v1/content/read') return target.searchParams.get('uri') === root + 'gone.md'
+        ? new Response(JSON.stringify({ error: { message: 'file no longer exists' } }), { status: 404 }) : ok('Complete readable memory')
+      return ok({ matches: [{ uri: root + 'present.md' }, { uri: root + 'gone.md' }] })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    const result = await provider.search(body, { query: 'device', mode: 'keyword' })
+    expect(result.results).toMatchObject([{ content: 'Complete readable memory' }])
+    expect(result.hint).toMatch(/^1 OpenViking result could not be read/u)
+  })
+
+  it.each([undefined, 0, 500])('bounds the grep node budget for limit %s', async limit => {
+    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
+      expect(JSON.parse(String(init?.body)).node_limit).toBe(limit === undefined ? 10 : limit === 0 ? 1 : 50)
+      return ok({ matches: [] })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    expect(await provider.search(body, { query: 'device', mode: 'keyword', ...(limit === undefined ? {} : { limit }) })).toEqual({ results: [] })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not turn blank text into a match-all scan', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    expect(await provider.search(body, { query: ' \n ', mode: 'keyword' })).toEqual({ results: [] })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['unsupported', 'malformed'] as const)('reports %s grep responses without falling back to semantic search', async failure => {
+    const fetchMock = vi.fn<typeof fetch>(async url => {
+      expect(new URL(String(url)).pathname).toBe('/api/v1/search/grep')
+      return failure === 'unsupported'
+        ? new Response(JSON.stringify({ error: { message: 'grep unavailable' } }), { status: 404 })
+        : ok({ memories: [] })
+    })
+    const { body, provider } = await bodyAndRegistry(fetchMock)
+    await expect(provider.search(body, { query: 'device', mode: 'keyword' })).rejects.toThrow(failure === 'unsupported' ? 'grep unavailable' : 'did not return matches')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['cancel', 'timeout'] as const)('honors %s while grep is in flight', async reason => {
+    vi.useFakeTimers()
+    try {
+      const controller = new AbortController()
+      const fetchMock = vi.fn<typeof fetch>(async (_url, init) => new Promise((_resolve, reject) => {
+        const signal = init!.signal!
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      }))
+      const { body, provider } = await bodyAndRegistry(fetchMock)
+      const rejection = expect(provider.search(body, { query: 'device', mode: 'keyword' }, controller.signal))
+        .rejects.toThrow(reason === 'cancel' ? 'selection changed' : 'OpenViking request timed out')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      if (reason === 'cancel') controller.abort(new Error('selection changed'))
+      else await vi.advanceTimersByTimeAsync(1000)
+      await rejection
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+})

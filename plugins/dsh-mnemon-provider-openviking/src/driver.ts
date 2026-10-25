@@ -192,10 +192,23 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
   }
 
   async search(body: MemorySpace, request: SearchRequest, signal?: AbortSignal): Promise<ProviderSearchResult> {
+    const keyword = request.mode === 'keyword'
+    signal?.throwIfAborted()
+    if (keyword && request.query.trim() === '') return { results: [] }
+    // Match the Source's 1..50 search budget, including for direct adapter callers.
+    const limit = keyword
+      ? Math.min(50, Math.max(1, Math.floor(number(request.limit) ?? 10)))
+      : request.limit
     const memoryRoot = await this.memoryRoot(body, signal)
-    const result = await this.request(body, '/api/v1/search/find', {
+    const result = await this.request(body, keyword ? '/api/v1/search/grep' : '/api/v1/search/find', {
       method: 'POST',
-      body: JSON.stringify({
+      body: JSON.stringify(keyword ? {
+        uri: memoryRoot,
+        // The public keyword mode accepts literal text, not caller-supplied regex.
+        pattern: request.query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'),
+        case_insensitive: true,
+        node_limit: limit,
+      } : {
         query: request.query,
         target_uri: memoryRoot,
         context_type: ['memory'],
@@ -203,12 +216,17 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
       }),
     }, { signal })
     const root = object(result)
-    const entries = Array.isArray(root?.memories) ? root.memories : []
+    if (keyword && !Array.isArray(root?.matches)) throw new Error('OpenViking keyword search did not return matches')
+    const values = keyword ? root?.matches : root?.memories
+    const entries = Array.isArray(values) ? values : []
+    const seen = new Set<string>()
     const matches = entries.flatMap((value): Insight[] => {
         const item = object(value)
         const uri = string(item?.uri)
         if (uri === undefined || !isMemoryFile(uri, memoryRoot)) return []
-        const score = number(item?.score)
+        if (keyword && seen.has(uri)) return []
+        seen.add(uri)
+        const score = keyword ? undefined : number(item?.score)
         return [{
           id: uri,
           externalUri: uri,
@@ -217,11 +235,11 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
           source: 'external',
           ...(score === undefined ? {} : { score }),
         }]
-      }).slice(0, request.limit)
+      }).slice(0, limit)
     const { read, skipped } = await this.readAll(body, matches, signal)
     return {
       results: read,
-      ...(skipped === 0 ? {} : { hint: `${skipped} OpenViking ${skipped === 1 ? 'result' : 'results'} could not be read and ${skipped === 1 ? 'was' : 'were'} left out; the server's index can list a file it no longer holds.` }),
+      ...(skipped === 0 ? {} : { hint: `${skipped} OpenViking ${skipped === 1 ? 'result' : 'results'} could not be read and ${skipped === 1 ? 'was' : 'were'} left out; the server can list a file it no longer holds.` }),
     }
   }
 
