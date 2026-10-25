@@ -70,8 +70,8 @@ function spaces(root: string, bodies: Array<{ id: string; name: string; insights
   }, null, 2)}\n`)
 }
 
-function registryOf(root: string): Array<{ id: string; name: string }> {
-  return (JSON.parse(readFileSync(join(root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: Array<{ id: string; name: string }> }).bodies
+function registryOf(root: string): Array<{ id: string; name: string; active: boolean }> {
+  return (JSON.parse(readFileSync(join(root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: Array<{ id: string; name: string; active: boolean }> }).bodies
 }
 
 /** Two memories as both machines first held them; `reads` bumps the counters a recall writes. */
@@ -380,19 +380,31 @@ describe('Mnemon Pack', () => {
       }
     })
 
-    it('keeps one copy of a space whose memory was forgotten on one side, and moves that copy on as the other side writes', async () => {
+    it.each([false, true])('keeps one inactive conflict copy and respects manual activation=%s as the remote grows (#449)', async activateCopy => {
       const source = await fixture('pack-forgotten-source', 68)
       const target = await fixture('pack-forgotten-target', 69)
       // This machine forgot i-2, as Mnemon's forget does; the other machine still holds it and keeps learning.
       spaces(target.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: [memories()[0]!, { ...memories()[1]!, deletedAt: '2026-10-13T01:00:00Z', updatedAt: '2026-10-13T01:00:00Z' }] }])
       const learned: SpaceInsight[] = []
+      let copyId: string | undefined
       for (let round = 1; round <= 3; round += 1) {
         learned.push({ id: 'i-' + String(round + 2), content: 'Learned in round ' + String(round) })
         spaces(source.root, [{ id: 'gateway', name: 'AI Gateway routing', insights: memories(round, learned), reads: round }])
         await target.manager.importPack((await source.manager.exportPack('memory-spaces')).base64, { mode: 'merge' })
         const bodies = registryOf(target.root)
         expect(bodies).toHaveLength(2)
-        expect(bodies.map(body => body.name)).toEqual(['AI Gateway routing', 'AI Gateway routing'])
+        const copy = bodies.find(body => body.id !== 'gateway')!
+        expect(bodies.find(body => body.id === 'gateway')).toMatchObject({ name: 'AI Gateway routing', active: true })
+        expect(copy.name).toMatch(/^AI Gateway routing \(import conflict [a-f0-9]{8}\)$/u)
+        expect(copy.active).toBe(round > 1 && activateCopy)
+        if (copyId !== undefined) expect(copy.id).toBe(copyId)
+        copyId = copy.id
+        if (round === 1 && activateCopy) {
+          const path = join(target.root, 'data', '.dsh-memory-bodies.json')
+          const registry = JSON.parse(readFileSync(path, 'utf8'))
+          registry.bodies.find((body: { id: string }) => body.id === copy.id).active = true
+          writeFileSync(path, JSON.stringify(registry))
+        }
         // The forgotten memory stays forgotten here; the copy holds the other machine's version, as it grows.
         expect(held(target.root, 'gateway')).toEqual(['i-1', 'i-2'])
         expect(held(target.root, bodies.find(body => body.id !== 'gateway')!.id)).toEqual(['i-1', 'i-2', ...learned.map(insight => insight.id)])
@@ -607,6 +619,10 @@ describe('Mnemon Pack', () => {
   it('merges components without overwriting a divergent Memory Space id', async () => {
     const source = await fixture('pack-merge-source', 6, 'shared')
     const target = await fixture('pack-merge-target', 7, 'shared')
+    const path = join(source.root, 'data', '.dsh-memory-bodies.json')
+    const sourceRegistry = JSON.parse(readFileSync(path, 'utf8'))
+    sourceRegistry.bodies[0].name = '长'.repeat(100)
+    writeFileSync(path, JSON.stringify(sourceRegistry))
     const exported = await source.manager.exportPack('full')
 
     await target.manager.importPack(exported.base64, { mode: 'merge' })
@@ -614,6 +630,9 @@ describe('Mnemon Pack', () => {
     const registry = JSON.parse(readFileSync(join(target.root, 'data', '.dsh-memory-bodies.json'), 'utf8')) as { bodies: Array<{ id: string }> }
     expect(registry.bodies).toHaveLength(2)
     expect(new Set(registry.bodies.map(body => body.id)).size).toBe(2)
+    const copy = registryOf(target.root).find(body => body.id !== 'shared')!
+    expect(copy).toMatchObject({ active: false, name: expect.stringContaining('import conflict') })
+    expect(copy.name).toHaveLength(100)
     expect(readdirSync(join(target.root, 'data')).filter(name => !name.startsWith('.'))).toHaveLength(2)
     const runtime = JSON.parse(readFileSync(join(target.root, 'runtime', 'memories.json'), 'utf8')) as { entries: unknown[] }
     expect(runtime.entries).toHaveLength(1)
