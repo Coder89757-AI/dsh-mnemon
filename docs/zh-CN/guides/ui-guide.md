@@ -286,6 +286,7 @@ Agent 写入用户画像时，`branches` 必须省略或为空。对工作记忆
 | `--mn-bg` | 基础表面的 CSS 颜色 | `var(--dsw-alias-bg-base)` |
 | `--mn-backdrop` | 默认分层表面中位于基础色之后的 CSS 颜色 | `var(--dsw-alias-bg-overlay, var(--mn-bg))` |
 | `--mn-surface` | 工作区、顶栏与画布使用的 CSS `background` 值 | 基础渐变叠加在背景渐变之上，并以基础色兜底 |
+| `--mn-block-fill` | 大块信息背景的 CSS 值，不影响徽章、选中态和容量条 | `var(--mn-fill)` |
 
 默认表面为 `linear-gradient(var(--mn-bg), var(--mn-bg)), linear-gradient(var(--mn-backdrop), var(--mn-backdrop)) var(--mn-bg)`。当皮肤把宿主基础色设为透明时，这层叠加保证文字依然清晰；官方主题保持不透明。皮肤可以整体替换这一组合，例如：
 

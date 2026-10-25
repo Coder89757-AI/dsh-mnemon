@@ -286,6 +286,7 @@ The sidebar and the conversation tab expose one workspace root: `[data-dsh-plugi
 | `--mn-bg` | CSS color for the base surface | `var(--dsw-alias-bg-base)` |
 | `--mn-backdrop` | CSS color behind the base in the default layered surface | `var(--dsw-alias-bg-overlay, var(--mn-bg))` |
 | `--mn-surface` | CSS `background` value for the workspace, header and canvas | Base gradient over backdrop gradient, backed by the base color |
+| `--mn-block-fill` | CSS background for large informational blocks, excluding badges, selected states and capacity bars | `var(--mn-fill)` |
 
 The default surface is `linear-gradient(var(--mn-bg), var(--mn-bg)), linear-gradient(var(--mn-backdrop), var(--mn-backdrop)) var(--mn-bg)`. The layered backing keeps text readable when a skin makes the host base transparent; the official theme stays opaque. A skin can replace the composition, for example:
 
