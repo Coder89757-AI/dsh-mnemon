@@ -24,7 +24,7 @@ import {
   parseDocumentIndex, type DocumentIndex, type DocumentRecord,
 } from 'dsh-mnemon-source-documents/contracts'
 import {
-  MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY, MNEMON_ACTIVE_STORE_FILE,
+  MEMORY_SPACE_DATABASE_FILE, MEMORY_SPACE_ID_PATTERN, MEMORY_SPACE_NAME_MAX_LENGTH, MEMORY_SPACE_REGISTRY_FILE, MEMORY_SPACES_DIRECTORY, MNEMON_ACTIVE_STORE_FILE,
   parseMemorySpaceRegistry, type MemorySpaceRegistryEntry, type MemorySpaceRegistryFile,
 } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { MemorySpaceIdentity } from 'dsh-mnemon-source-memory-spaces/space-identity'
@@ -897,6 +897,12 @@ function mergeDocuments(root: string, pack: ParsedPack, base?: Readonly<Record<s
   return current
 }
 
+/** Stable across repeated imports, bounded by the registry contract, and distinguishable in the UI. */
+function conflictSpaceName(source: MemorySpaceRegistryEntry): string {
+  const suffix = ` (import conflict ${createHash('sha256').update(source.id).digest('hex').slice(0, 8)})`
+  return source.name.slice(0, MEMORY_SPACE_NAME_MAX_LENGTH - suffix.length) + suffix
+}
+
 function mergeRegistry(root: string, pack: ParsedPack): { registry: MemorySpaceRegistryFile; databases: Map<string, Uint8Array> } {
   const current = readCurrentRegistry(root)
   const incoming = archiveRegistry(pack)
@@ -930,16 +936,16 @@ function mergeRegistry(root: string, pack: ParsedPack): { registry: MemorySpaceR
         }
         // A memory edited or forgotten on one side: the other version stays beside this one as a
         // copy, once. A space here already holding it, whatever its name, takes its place, and a
-        // copy of the same name it only added to moves on with it.
+        // conflict copy it only added to moves on with it. Also recognize older same-name copies.
         if (held(sourceDb, body => body.id !== source.id)) continue
-        const copy = current.registry.bodies.find(body => body.id !== source.id && body.name === source.name
+        const copy = current.registry.bodies.find(body => body.id !== source.id && (body.name === conflictSpaceName(source) || body.name === source.name)
           && identity.contains(sourceDb, current.databases.get(body.id)!))
         const advanced = copy === undefined ? undefined : identity.merge(current.databases.get(copy.id)!, sourceDb)
         if (copy !== undefined && advanced !== undefined) {
           current.databases.set(copy.id, advanced)
           continue
         }
-        add({ ...source, id: randomUUID(), updatedAt: new Date().toISOString() }, sourceDb)
+        add({ ...source, id: randomUUID(), name: conflictSpaceName(source), active: false, updatedAt: new Date().toISOString() }, sourceDb)
       } else if (!held(sourceDb, body => body.name === source.name)) {
         // A space new here, unless one of the same name already holds every memory in it:
         // a copy an older version made, or the other machine's copy of a divergent space.
