@@ -16,7 +16,7 @@ The screens below come from the [v0.5.34 Skills gallery](../../assets/skills-v0.
 
 ## The Skills page
 
-The page has four tabs: **Skills**, **Evolution**, **Evals** and **Market**. The count on **Evolution** is how many suggestions and drafts wait for you.
+The page has five tabs: **Skills**, **Evolution**, **Evals**, **Market** and **Trash**. The count on **Evolution** is how many suggestions and drafts wait for you.
 
 ### Skills
 
@@ -26,11 +26,19 @@ The list groups every `SKILL.md` DSH can load by where it lives, in DSH's order 
 
 - Each row has a **switch** that turns the skill on or off for both the model and the `/` menu, and **Use** (on hover) that returns to the conversation with `/name` in its input. A dot means an improvement waits for the skill DSH loads.
 - **New** writes a `SKILL.md` from a name and a description in the root you choose; the name must be lowercase letters, digits and single hyphens.
-- The detail shows the rendered `SKILL.md` with **Use**, **Edit** and a menu with **Draft an improvement** (a task Agent writes a draft, optionally from your note) and **Delete** (the folder goes to the Skills trash, not away).
+- The detail shows the rendered `SKILL.md` with **Use**, **Edit** and a menu with **Draft an improvement** (a task Agent writes a draft, optionally from your note) and **Remove** (the folder moves to the **Trash** tab).
 - **Invocation** is one choice: **Auto and / command**, **/ command only**, **Auto-load only** or **Off**. It writes DSH's own `disable-model-invocation` and `user-invocable` keys.
 - **Tests** is one line with the skill's case count and last score; it opens the skill under **Evals**. **Versions** and **Files** fold away: every change (creation, edit, invocation, install, an adopted improvement, a restore) leaves a version you can compare and restore.
 
 Every write is fenced by the file's hash, so a skill edited elsewhere in the meantime is not overwritten.
+
+### Trash
+
+**Trash** lists removed skills with their name, removal time, original location, bundle or single-file layout, and size. **Restore** returns a known entry to its recorded path, including its original project even when another workspace is selected. Older entries without a known location ask you to choose a root.
+
+When the name is already taken, choose another name, explicitly confirm replacement, or cancel. Replacement checks the current file hash and keeps the displaced skill in the Trash. Renaming updates the skill name while retaining the bundle's other files. The list and count refresh after each operation.
+
+**Delete for good** asks you to type the skill name. **Empty the Trash** has its own confirmation. Both permanently remove files; ordinary **Remove** keeps them recoverable.
 
 ### Evolution
 

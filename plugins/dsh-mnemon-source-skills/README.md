@@ -46,6 +46,10 @@ A source is a GitHub folder, a URL to one `SKILL.md`, or a folder relative to a 
 
 Under the storage root, `skills/` holds `ledger.json` (suggestions, drafts, reviews, versions and installs), `evals.json` (cases and runs), `trajectories/` (recorded conversations), `versions/` (earlier `SKILL.md` files), `market/` (added sources and their cached lists) and `trash/`. It is written under the storage lock with atomic replacement and is not part of a Mnemon Pack. See the [storage model](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/reference/storage-model.md#skills).
 
+## Trash management
+
+The scoped management API exposes `trash-list` (`trash` is an alias), `trash-restore-preview`, `trash-restore`, `trash-purge` and `trash-empty`. Restore inputs use an entry `id`, an optional selected `root` and `name`; replacement also requires `replace: true` and the current conflict's `expectedHash` from the preview. Mutations retain the Source's confirmation and revision checks. Optional sidecars record the original project and path; legacy entries require an explicit destination when their origin is unknown.
+
 ## Source-owned UI and tests
 
 The optional `./client` entry is an ordinary DSH Client plugin. This package owns its pages and `presentation/` resources and uses `dsh-mnemon/client` for the shared frame and scoped management client. It never receives a Host Context, credentials or another Source's controller.

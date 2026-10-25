@@ -276,7 +276,13 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
                 case 'market-preview': return service.marketPreview(text(fields.registryId, 'registryId', 80)!, text(fields.name, 'name', 300)!, request.signal)
                 case 'market-search': return service.searchMarket(root, text(fields.query, 'query', 200)!, request.signal)
                 case 'installs': return service.installs()
-                case 'trash': return service.trashItems()
+                case 'trash':
+                case 'trash-list': return service.trashItems()
+                case 'trash-restore-preview': return service.previewTrashRestore(root, {
+                  id: text(fields.id, 'id', 300)!,
+                  ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }),
+                  ...(optionalText(fields.name, 'name', 64) === undefined ? {} : { name: optionalText(fields.name, 'name', 64)! }),
+                })
                 default: throw new Error('unsupported Skills read operation: ' + request.operation)
               }
             }
@@ -301,6 +307,9 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
             case 'trash-restore': value = await service.restoreTrash(root, {
               id: text(fields.id, 'id', 300)!,
               ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }),
+              ...(optionalText(fields.name, 'name', 64) === undefined ? {} : { name: optionalText(fields.name, 'name', 64)! }),
+              ...(fields.replace === true ? { replace: true } : {}),
+              ...(optionalText(fields.expectedHash, 'expectedHash', 100) === undefined ? {} : { expectedHash: optionalText(fields.expectedHash, 'expectedHash', 100)! }),
             }); break
             case 'trash-purge': value = await service.purgeTrash({ id: text(fields.id, 'id', 300)! }); break
             case 'trash-empty': value = await service.emptyTrash(); break

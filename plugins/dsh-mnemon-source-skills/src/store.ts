@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import type {
   BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, MarketSourceKind, ReviewLogEntry, SkillDraft, SkillRootKind, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary, TrashEntry,
 } from './contracts.ts'
@@ -67,10 +67,20 @@ export function keyDirectory(skillKey: string): string {
   return createHash('sha256').update(skillKey).digest('hex').slice(0, 16)
 }
 
+/** A dangling symlink still occupies its name and must never be overwritten. */
+export function entryExists(path: string): boolean {
+  try { lstatSync(path); return true } catch (error) {
+    if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return false
+    throw error
+  }
+}
+
 /** Where a trashed entry came from, as recorded beside it. */
 interface TrashSource {
   root?: SkillRootKind
   key?: string
+  originalPath?: string
+  workspace?: string
 }
 
 /** The sidecar a trashed entry keeps, so the page can name and restore it later. */
@@ -84,7 +94,8 @@ interface TrashRecord extends TrashSource {
 /** Bytes an entry occupies on disk; an unreadable entry reports 0. */
 function trashSize(path: string): number {
   try {
-    const info = statSync(path)
+    const info = lstatSync(path)
+    if (info.isSymbolicLink()) return 0
     if (!info.isDirectory()) return info.size
     return readdirSync(path).reduce((total, name) => total + trashSize(join(path, name)), 0)
   } catch { return 0 }
@@ -245,8 +256,14 @@ export class SkillsStore {
   trash(path: string, name: string, source: TrashSource = {}): string {
     const file = basename(path).endsWith('.md') && !existsSync(join(path, 'SKILL.md'))
     const trashedAt = new Date()
-    const id = `${trashedAt.toISOString().replace(/[:.]/gu, '-')}-${name}${file ? '.md' : ''}`
-    const target = this.path(join('trash', id))
+    let id: string
+    let target: string
+    do {
+      id = `${trashedAt.toISOString().replace(/[:.]/gu, '-')}-${name}${file ? '.md' : ''}`
+      target = this.path(join('trash', id))
+      if (!entryExists(target)) break
+      trashedAt.setTime(trashedAt.getTime() + 1)
+    } while (true)
     mkdirSync(join(target, '..'), { recursive: true, mode: 0o700 })
     try {
       renameSync(path, target)
@@ -269,7 +286,8 @@ export class SkillsStore {
     const entries: TrashEntry[] = []
     for (const id of names) {
       if (id.endsWith('.json')) continue
-      const record = object(this.readJson(join('trash', `${id}.json`)))
+      let record: Record<string, unknown> | undefined
+      try { record = object(this.readJson(join('trash', `${id}.json`))) } catch { /* Older or damaged optional metadata must not hide the entry. */ }
       const stored = record === undefined ? undefined : record as Partial<TrashRecord>
       const name = typeof stored?.name === 'string' ? stored.name : /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-(.+)$/u.exec(id)?.[1]?.replace(/\.md$/u, '') ?? id
       entries.push({
@@ -280,6 +298,8 @@ export class SkillsStore {
         bytes: trashSize(this.path(join('trash', id))),
         ...(stored?.root === undefined ? {} : { root: stored.root }),
         ...(typeof stored?.key === 'string' ? { key: stored.key } : {}),
+        ...(typeof stored?.originalPath === 'string' ? { originalPath: stored.originalPath } : {}),
+        ...(typeof stored?.workspace === 'string' ? { workspace: stored.workspace } : {}),
       })
     }
     return entries.sort((a, b) => b.trashedAt.localeCompare(a.trashedAt) || b.id.localeCompare(a.id))
@@ -292,21 +312,32 @@ export class SkillsStore {
     return entry
   }
 
-  /** Move an entry back under `directory`, refusing to overwrite; returns where it landed. */
-  restoreTrash(entry: TrashEntry, directory: string): string {
+  /** Stage a complete restore beside the target before removing the recoverable entry. */
+  restoreTrash(entry: TrashEntry, to: string, content?: string): string {
     const from = this.path(join('trash', entry.id))
-    const to = join(directory, entry.kind === 'file' ? `${entry.name}.md` : entry.name)
-    if (existsSync(to)) throw new Error(`${entry.name} already exists there; rename or remove it first`)
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    if (entryExists(to)) throw new Error(`${entry.name} already exists there; rename or remove it first`)
+    mkdirSync(dirname(to), { recursive: true, mode: 0o700 })
+    const staging = join(dirname(to), `.mnemon-restore-${randomUUID()}`)
     try {
-      renameSync(from, to)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
-      cpSync(from, to, { recursive: true, errorOnExist: true })
+      if (lstatSync(from).isSymbolicLink()) symlinkSync(readlinkSync(from), staging, entry.kind === 'bundle' ? 'dir' : 'file')
+      else cpSync(from, staging, { recursive: true, force: false, errorOnExist: true, verbatimSymlinks: true })
+      if (content !== undefined) {
+        const document = entry.kind === 'file' ? staging : join(staging, 'SKILL.md')
+        if (lstatSync(staging).isSymbolicLink() || lstatSync(document).isSymbolicLink()) throw new Error('a linked skill cannot be renamed during restore')
+        writeFileSync(document, content)
+      }
+      if (entryExists(to)) throw new Error(`${entry.name} already exists there; rename or remove it first`)
+      renameSync(staging, to)
       rmSync(from, { recursive: true, force: true })
+      rmSync(this.path(join('trash', `${entry.id}.json`)), { force: true })
+    } finally {
+      rmSync(staging, { recursive: true, force: true })
     }
-    rmSync(this.path(join('trash', `${entry.id}.json`)), { force: true })
     return to
+  }
+
+  trashContent(entry: TrashEntry): string {
+    return readFileSync(this.path(join('trash', entry.id, ...(entry.kind === 'file' ? [] : ['SKILL.md']))), 'utf8')
   }
 
   /** Delete an entry for good. */

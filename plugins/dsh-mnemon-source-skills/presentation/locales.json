@@ -322,7 +322,15 @@
     "trash.empty": "清空回收站",
     "trash.clearTitle": "清空回收站里的 {count} 项？",
     "trash.clearBody": "这些文件会从磁盘上删除，无法恢复。",
-    "trash.emptied": "已清空 {count} 项"
+    "trash.emptied": "已清空 {count} 项",
+    "trash.file": "单个 Markdown 文件",
+    "trash.bundle": "技能目录",
+    "trash.restoreTitle": "恢复 {name}",
+    "trash.chooseRoot": "请选择恢复位置",
+    "trash.original": "原位置",
+    "trash.chooseHint": "可选择恢复位置或改名。同名替换需要明确确认，现有技能会保留在回收站。",
+    "trash.replace": "替换同名技能，并将现有版本保留在回收站",
+    "trash.confirmName": "输入 {name} 确认彻底删除"
   },
   "en": {
     "page.title": "Skills",
@@ -647,6 +655,14 @@
     "trash.empty": "Empty the Trash",
     "trash.clearTitle": "Empty the Trash of {count:item|items}?",
     "trash.clearBody": "These files are deleted from disk and cannot be brought back.",
-    "trash.emptied": "Emptied {count:item|items}"
+    "trash.emptied": "Emptied {count:item|items}",
+    "trash.file": "Markdown file",
+    "trash.bundle": "Skill bundle",
+    "trash.restoreTitle": "Restore {name}",
+    "trash.chooseRoot": "Choose a restore location",
+    "trash.original": "Original location",
+    "trash.chooseHint": "Choose a location or a different name. Replacing a skill requires confirmation and keeps its current version in the Trash.",
+    "trash.replace": "Replace the existing skill and keep its current version in the Trash",
+    "trash.confirmName": "Type {name} to confirm permanent deletion"
   }
 }

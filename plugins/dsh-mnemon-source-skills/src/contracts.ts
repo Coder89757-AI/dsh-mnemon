@@ -319,6 +319,26 @@ export interface TrashEntry {
   /** The root it was removed from; absent for entries removed before this was recorded. */
   root?: SkillRootKind
   key?: string
+  /** Exact original file or bundle path; its parent must match the recorded root. */
+  originalPath?: string
+  /** The project that owned a project-level skill, independent of the selected workspace. */
+  workspace?: string
+}
+
+export interface TrashRestoreInput {
+  id: string
+  root?: SkillRootKind
+  name?: string
+  replace?: boolean
+  expectedHash?: string
+}
+
+export interface TrashRestorePreview {
+  name: string
+  roots: SkillRootKind[]
+  needsRoot: boolean
+  path?: string
+  conflict?: { hash: string }
 }
 
 export interface SkillsOverview {
