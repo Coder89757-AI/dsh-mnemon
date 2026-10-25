@@ -232,6 +232,8 @@ export class SkillEvolution {
     try {
       const catalog = await source.read<SkillCatalog>('catalog', null, controller.signal)
       const active = catalog.skills.filter(skill => skill.shadowedBy === undefined)
+      const openSuggestions = (await source.read<SkillSuggestion[]>('suggestions', { status: ['pending', 'drafting', 'review'] }, controller.signal))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       const loaded: SkillDocument[] = []
       const caseTitles: Record<string, string[]> = {}
       for (const name of stats.skills.slice(0, 3)) {
@@ -243,7 +245,7 @@ export class SkillEvolution {
       const prompt = skillReviewPrompt({
         ...(title === undefined ? {} : { sessionTitle: title }), ...(workspace === undefined ? {} : { workspace }),
         steps, stats, score: score.score, threshold: score.threshold,
-        loaded, catalog: active.map(skill => ({ name: skill.name, description: skill.description })), caseTitles,
+        loaded, catalog: active.map(skill => ({ name: skill.name, description: skill.description })), caseTitles, openSuggestions,
       })
       const answer = await this.host.runTask(workspace, controller.signal, task => this.host.skillTask(task, 'Mnemon skill review', prompt, SKILL_REVIEW_SCHEMA as unknown as Record<string, unknown>, SKILL_REVIEW_PERSONA, controller.signal))
       const parsed = parseSkillReview(answer.structured)
