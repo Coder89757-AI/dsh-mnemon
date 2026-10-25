@@ -15,7 +15,7 @@ import css from './MnemonSettingsCard.module.css'
 import { SettingRow, SettingSelect, ToggleRow, type SettingOption } from './settings-controls.tsx'
 import { SyncCompareDialog, SyncConfirmDialog, SyncHistoryDialog } from './MnemonSyncDialogs.tsx'
 import {
-  AUTO_SYNC_CHOICES, credentialText, failureText, intervalLabel, issueText, onGitHub, reasonOf, repositoryName, repositoryProblem, transportOf, when,
+  AUTO_SYNC_CHOICES, runtimeArchiveNotice, credentialText, failureText, intervalLabel, issueText, onGitHub, reasonOf, repositoryName, repositoryProblem, transportOf, when,
 } from './sync-view.ts'
 import { FeedbackLine, type Feedback } from './sync-feedback.tsx'
 import type { RepositoryEditorProps } from './sync-repository-editor.ts'
@@ -269,9 +269,10 @@ export function MnemonSyncSection({ connection, sessionId, workspaceId, disabled
 function syncResult(t: MnemonTranslate, result: MnemonSyncPushResult, repoUrl: string, credential: MnemonSyncCredentialSource): Feedback {
   const added = result.merged?.runtime?.added ?? 0
   const commit = result.commit.slice(0, 8)
-  if (result.pushed) return { tone: 'success', text: added > 0 ? t('config.syncDoneMerged', { count: added, commit }) : t('config.syncDone', { commit }) }
-  if (!result.committed) return { tone: 'success', text: added > 0 ? t('config.syncUpToDateMerged', { count: added }) : t('config.syncUpToDate') }
-  return { tone: 'error', text: t('config.syncPushFailed', { reason: failureText(t, result.failure, result.reason ?? '', repoUrl, credential) }) }
+  const archive = runtimeArchiveNotice(t, result.merged?.runtime?.archived)
+  if (result.pushed) return { tone: 'success', text: (added > 0 ? t('config.syncDoneMerged', { count: added, commit }) : t('config.syncDone', { commit })) + archive }
+  if (!result.committed) return { tone: 'success', text: (added > 0 ? t('config.syncUpToDateMerged', { count: added }) : t('config.syncUpToDate')) + archive }
+  return { tone: 'error', text: t('config.syncPushFailed', { reason: failureText(t, result.failure, result.reason ?? '', repoUrl, credential) }) + archive }
 }
 
 /** Where the repository is, whether it answers, and how it is authenticated. */

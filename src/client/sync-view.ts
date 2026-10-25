@@ -191,3 +191,8 @@ export function credentialText(t: MnemonTranslate, status: MnemonSyncStatus): st
     default: return undefined
   }
 }
+
+/** A successful merge can keep excess MEMORY records outside the hot prompt. */
+export function runtimeArchiveNotice(t: MnemonTranslate, archived: number | undefined): string {
+  return archived === undefined || archived <= 0 ? '' : ` ${t('config.runtimeMergeArchived', { count: archived })}`
+}

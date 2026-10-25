@@ -111,6 +111,39 @@ describe('Mnemon Pack', () => {
     expect(Buffer.from(files['payload/data/project/mnemon.db']!)).toEqual(sqlite(21))
   })
 
+  it.each([false, true])('archives MEMORY merge overflow transactionally, blocked archive=%s (#468)', async blocked => {
+    const source = await fixture('overflow-source', 91)
+    const target = await fixture('overflow-target', 92)
+    const entry = (content: string, importance: string) => ({ target: 'memory', content, importance, created_at: now().toISOString(), updated_at: now().toISOString() })
+    const shared = entry('shared-' + 's'.repeat(3993), 'normal')
+    const older = { ...entry('local-' + 'l'.repeat(3994), 'low'), branches: ['main'], origin: { machine: 'left', label: 'Desk', at: now().toISOString() } }
+    const incoming = entry('remote-' + 'r'.repeat(3993), 'critical')
+    const write = (root: string, entries: unknown[]) => writeFileSync(join(root, 'runtime', 'memories.json'), JSON.stringify({ version: 1, entries }))
+    write(source.root, [shared, incoming]); write(target.root, [shared, older])
+    const before = readFileSync(join(target.root, 'runtime', 'memories.json'))
+    const archive = join(target.root, 'runtime', 'archived')
+    if (blocked) writeFileSync(archive, 'keep this existing file')
+    const pack = (await source.manager.exportPack('runtime')).base64
+    if (blocked) {
+      await expect(target.manager.importPack(pack, { mode: 'merge' })).rejects.toThrow()
+      expect(readFileSync(join(target.root, 'runtime', 'memories.json'))).toEqual(before)
+      expect(readFileSync(archive, 'utf8')).toBe('keep this existing file')
+      return
+    }
+    const result = await target.manager.importPack(pack, { mode: 'merge' })
+    expect(result.runtime).toEqual({ added: 1, held: 0, archived: 1 })
+    const held = JSON.parse(readFileSync(join(target.root, 'runtime', 'memories.json'), 'utf8')).entries
+    expect(held).toEqual([shared, incoming])
+    expect(Buffer.byteLength(readFileSync(join(target.root, 'runtime', 'MEMORY.md')))).toBeLessThanOrEqual(10240)
+    const overflow = join(archive, 'import-overflow')
+    const files = readdirSync(overflow)
+    expect(files).toHaveLength(1)
+    expect(JSON.parse(readFileSync(join(overflow, files[0]!), 'utf8')).entries).toEqual([older])
+    await target.manager.importPack(pack, { mode: 'merge' })
+    expect(readdirSync(overflow)).toEqual(files)
+    expect(Object.keys(unzipSync(Buffer.from((await target.manager.exportPack('runtime')).base64, 'base64'))).some(name => name.includes('archived'))).toBe(false)
+  })
+
   it('exports one native, checksummed Pack without leaking the host root', async () => {
     const source = await fixture('pack-export', 1)
     const exported = await source.manager.exportPack('full')

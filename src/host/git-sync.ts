@@ -779,14 +779,16 @@ export class MnemonGitSync {
       let result = await this.pushOnce(settings, message, input.signal)
       let added = result.merged?.runtime?.added ?? 0
       let held = result.merged?.runtime?.held ?? 0
+      let archived = result.merged?.runtime?.archived ?? 0
       for (let attempt = 1; attempt < PUSH_ATTEMPTS && result.failure === 'push-rejected'; attempt += 1) {
         result = await this.pushOnce(settings, message, input.signal)
         added += result.merged?.runtime?.added ?? 0
         held = result.merged?.runtime?.held ?? held
+        archived += result.merged?.runtime?.archived ?? 0
       }
       // What this sync brought in is what every attempt merged, not only the last one.
       if (result.merged !== undefined && (added > 0 || result.merged.runtime !== undefined)) {
-        result = { ...result, merged: { ...result.merged, runtime: { added, held } } }
+        result = { ...result, merged: { ...result.merged, runtime: { added, held, ...(archived > 0 ? { archived } : {}) } } }
       }
       // A branch that already held this payload is in sync as much as a published one.
       if (result.pushed || !result.committed) {

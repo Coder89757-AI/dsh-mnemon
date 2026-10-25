@@ -5,6 +5,7 @@ import { MnemonClient } from './api.ts'
 import type { MnemonTranslate } from './locales.ts'
 import { humanBytes, message } from './page-kit.tsx'
 import css from './MnemonSettingsCard.module.css'
+import { runtimeArchiveNotice } from './sync-view.ts'
 import { SettingRow } from './settings-controls.tsx'
 
 /**
@@ -120,7 +121,7 @@ export function MnemonPackSection({ connection, sessionId, workspaceId, target, 
     setBusy('import'); setFailed(null); setNotice(null)
     try {
       const result = await client.importPack(pending.base64)
-      setNotice(t('config.packImportedWhole', { root: result.targetRoot }))
+      setNotice(t('config.packImportedWhole', { root: result.targetRoot }) + runtimeArchiveNotice(t, result.runtime?.archived))
       setPending(null)
     } catch (reason) {
       setFailed(message(reason))

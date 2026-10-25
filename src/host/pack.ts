@@ -496,6 +496,42 @@ function keepRuntimeArchive(root: string, stagedRuntime: string): void {
   copy(join(root, RUNTIME_DIRECTORY, RUNTIME_ARCHIVE_DIRECTORY), join(stagedRuntime, RUNTIME_ARCHIVE_DIRECTORY))
 }
 
+/** Keep exact overflow records locally; a stable filename makes retried merges idempotent. */
+function archiveRuntimeOverflow(stagedRuntime: string, entries: RuntimeMemoryEntry[]): number {
+  if (entries.length === 0) return 0
+  const directory = join(stagedRuntime, RUNTIME_ARCHIVE_DIRECTORY, 'import-overflow')
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  let added = 0
+  for (const entry of entries) {
+    const content = `${canonicalJson({ version: 1, entries: [entry] })}\n`
+    const path = join(directory, `${sha256(content)}.json`)
+    if (existsSync(path)) {
+      if (readFileSync(path, 'utf8') !== content) throw new Error('Runtime overflow archive content mismatch')
+      continue
+    }
+    writeFileSync(path, content, { mode: 0o600, flag: 'wx' })
+    added += 1
+  }
+  return added
+}
+
+/** Retain the same hot set on both machines, without asking a model to rewrite evidence. */
+function fitMergedRuntime(entries: RuntimeMemoryEntry[], limits: RuntimeMemoryLimits): { entries: RuntimeMemoryEntry[]; archived: RuntimeMemoryEntry[] } {
+  if (runtimeBytes(entries, 'memory') <= limits.memory) return { entries, archived: [] }
+  const importance = { critical: 2, normal: 1, low: 0 }
+  const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+  const ranked = entries.filter(entry => entry.target === 'memory').sort((left, right) =>
+    importance[right.importance] - importance[left.importance] || compare(right.updated_at, left.updated_at) || compare(entryKey(left), entryKey(right)))
+  const kept: RuntimeMemoryEntry[] = []
+  const archived: RuntimeMemoryEntry[] = []
+  for (const entry of ranked) {
+    if (runtimeBytes([...kept, entry], 'memory') <= limits.memory) kept.push(entry)
+    else archived.push(entry)
+  }
+  const selected = new Set(kept)
+  return { entries: entries.filter(entry => entry.target === 'user' || selected.has(entry)), archived }
+}
+
 function writeRuntime(directory: string, file: RuntimeFile): void {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   writeFileSync(join(directory, RUNTIME_MEMORIES_FILE), `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 })
@@ -758,7 +794,7 @@ type RuntimeMergeReport = MnemonRuntimeMergeReport
  * copy is written again, and the tombstone is dropped so the next merge keeps agreeing with
  * the branch instead of hiding the entry a second time.
  */
-function mergeRuntime(root: string, pack: ParsedPack, runtimeLimits: RuntimeMemoryLimits, options: { revive?: boolean; tombstones?: MnemonTombstoneFile } = {}): { runtime: RuntimeFile; report: RuntimeMergeReport; revived: MnemonTombstone[] } {
+function mergeRuntime(root: string, pack: ParsedPack, runtimeLimits: RuntimeMemoryLimits, options: { revive?: boolean; tombstones?: MnemonTombstoneFile } = {}): { runtime: RuntimeFile; report: RuntimeMergeReport; revived: MnemonTombstone[]; archived: RuntimeMemoryEntry[] } {
   const current = readCurrentRuntime(root, runtimeLimits)
   const incoming = parseRuntime(json(pack.files[RUNTIME_MEMORIES_PATH]!, RUNTIME_MEMORIES_PATH), runtimeLimits)
   const tombstones = options.tombstones === undefined ? undefined : mergeTombstoneFiles(readCurrentTombstones(root), options.tombstones).tombstones
@@ -768,6 +804,7 @@ function mergeRuntime(root: string, pack: ParsedPack, runtimeLimits: RuntimeMemo
   // report nothing added while the tombstone kept it hidden — an add that adds nothing.
   const keys = new Set(entries.map(entryKey))
   const report: RuntimeMergeReport = { added: 0, held: 0 }
+  const incomingKeys = new Set<string>()
   const revived: MnemonTombstone[] = []
   for (const entry of incoming.entries) {
     const key = entryKey(entry)
@@ -781,10 +818,13 @@ function mergeRuntime(root: string, pack: ParsedPack, runtimeLimits: RuntimeMemo
     if (keys.has(key)) continue
     keys.add(key)
     entries.push(entry)
-    report.added += 1
+    incomingKeys.add(key)
   }
+  const fitted = fitMergedRuntime(entries, runtimeLimits)
+  report.added = fitted.entries.filter(entry => incomingKeys.has(entryKey(entry))).length
   return {
-    runtime: parseRuntime({ version: 1, entries }, runtimeLimits),
+    runtime: parseRuntime({ version: 1, entries: fitted.entries }, runtimeLimits),
+    archived: fitted.archived,
     report,
     revived: mergeTombstoneFiles({ version: 1, tombstones: revived }, { version: 1, tombstones: [] }).tombstones,
   }
@@ -1007,6 +1047,14 @@ function stageImport(root: string, pack: ParsedPack, components: MnemonPackCompo
         revived = merged.revived
       }
       keepRuntimeArchive(root, join(staging, RUNTIME_DIRECTORY))
+      if (merged !== undefined && merged.archived.length > 0) {
+        const archived = archiveRuntimeOverflow(join(staging, RUNTIME_DIRECTORY), merged.archived)
+        if (archived > 0) merged.report.archived = archived
+        // Archival is not a user deletion. Remove only these keys from the previous
+        // export index in the same transaction, preserving any real pending deletions.
+        const archivedKeys = new Set(merged.archived.map(entry => `${entry.target}\0${tombstoneHash(entry)}`))
+        writeRuntimeIndex(join(staging, 'state'), { version: 1, entries: readRuntimeIndex(root).entries.filter(entry => !archivedKeys.has(`${entry.target}\0${entry.contentHash}`)) })
+      }
     }
     if (components.includes('documents')) {
       const documents = mode === 'merge' ? mergeDocuments(root, pack, options.documentsBase) : archiveDocuments(pack)
@@ -1035,7 +1083,7 @@ function commitStaging(root: string, staging: string, components: MnemonPackComp
   const replacementLocks = sourceLocks(staging, components).map(lock => lock.path)
   const activePath = join(root, MNEMON_ACTIVE_STORE_FILE)
   const previousActive = existsSync(activePath) ? readFileSync(activePath) : undefined
-  let tombstoneSwap: { hadPrevious: boolean } | undefined
+  const stateSwaps: Array<{ file: string; hadPrevious: boolean }> = []
   try {
     for (const lock of replacementLocks) writeFileSync(lock, 'pack-import\n', { mode: 0o600 })
     for (const component of components) {
@@ -1052,19 +1100,18 @@ function commitStaging(root: string, staging: string, components: MnemonPackComp
       }
       committed.push({ directory, hadPrevious })
     }
-    // Tombstones live beside the other machine-local state files, so they are swapped
-    // file by file instead of by replacing the whole state directory — and only when
-    // the import staged a ledger at all, so a ZIP import leaves this machine's own
-    // record of what it deleted exactly as it found it.
-    if (components.includes('runtime') && existsSync(join(staging, 'state', STATE_TOMBSTONE_FILE))) {
+    // Only staged machine-local records participate; unrelated state is preserved.
+    for (const file of [STATE_TOMBSTONE_FILE, STATE_RUNTIME_INDEX_FILE]) {
+      if (!components.includes('runtime') || !existsSync(join(staging, 'state', file))) continue
       const directory = join(root, 'state')
       mkdirSync(directory, { recursive: true, mode: 0o700 })
-      const target = join(directory, STATE_TOMBSTONE_FILE)
-      const previous = join(backup, STATE_TOMBSTONE_FILE)
+      const target = join(directory, file)
+      const previous = join(backup, file)
       const hadPrevious = existsSync(target)
       if (hadPrevious) renameSync(target, previous)
-      renameSync(join(staging, 'state', STATE_TOMBSTONE_FILE), target)
-      tombstoneSwap = { hadPrevious }
+      // Record the move before installing the replacement, so even that rename can roll back.
+      stateSwaps.push({ file, hadPrevious })
+      renameSync(join(staging, 'state', file), target)
     }
     if (components.includes('memory-spaces')) reconcilePersistedStore(root)
     for (const lock of sourceLocks(root, components)) rmSync(lock.path, { force: true })
@@ -1074,10 +1121,10 @@ function commitStaging(root: string, staging: string, components: MnemonPackComp
       rmSync(target, { recursive: true, force: true })
       if (entry.hadPrevious) renameSync(join(backup, entry.directory), target)
     }
-    if (tombstoneSwap !== undefined) {
-      const target = join(root, 'state', STATE_TOMBSTONE_FILE)
+    for (const entry of stateSwaps.reverse()) {
+      const target = join(root, 'state', entry.file)
       rmSync(target, { force: true })
-      if (tombstoneSwap.hadPrevious) renameSync(join(backup, STATE_TOMBSTONE_FILE), target)
+      if (entry.hadPrevious) renameSync(join(backup, entry.file), target)
     }
     if (components.includes('memory-spaces')) {
       if (previousActive === undefined) rmSync(activePath, { force: true })
