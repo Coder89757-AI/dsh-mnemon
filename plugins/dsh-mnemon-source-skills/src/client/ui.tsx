@@ -109,11 +109,25 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
   }, [client, revision])
   // Drafts and backtests finish in the background; follow them while one is under way.
   const busy = overview !== null && (overview.counts.runsRunning > 0 || overview.counts.drafting > 0)
+  const wasBusy = useRef(false)
   useEffect(() => {
+    // The overview and each tab read separately. Once completion stops polling,
+    // fetch the cards again so a pre-completion response cannot remain on screen.
+    if (wasBusy.current && !busy) refresh()
+    wasBusy.current = busy
     if (!busy) return
     const timer = setInterval(refresh, POLL_MS)
     return () => clearInterval(timer)
   }, [busy, refresh])
+  useEffect(() => {
+    const resume = (): void => { if (document.visibilityState !== 'hidden') refresh() }
+    window.addEventListener('focus', resume)
+    document.addEventListener('visibilitychange', resume)
+    return () => {
+      window.removeEventListener('focus', resume)
+      document.removeEventListener('visibilitychange', resume)
+    }
+  }, [refresh])
   useEffect(() => {
     if (notice === null) return
     const timer = setTimeout(() => setNotice(null), NOTICE_MS)

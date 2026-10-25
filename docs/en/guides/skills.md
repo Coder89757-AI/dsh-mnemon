@@ -42,6 +42,8 @@ When the name is already taken, choose another name, explicitly confirm replacem
 
 ### Evolution
 
+The page follows drafts and backtests while they run, refreshes the cards again when they finish, and reloads when you return to the window or tab.
+
 **Pending** lists what waits for you: suggestions, and drafts written for a skill directly. **Done** keeps what was adopted, dismissed, expired or invalidated. **Evidence** lists the conversations reviews read. The sparkle button, **Review this conversation**, reviews the current conversation now instead of waiting for it to pause.
 
 | A suggestion and its evidence | Its draft, backtested |
