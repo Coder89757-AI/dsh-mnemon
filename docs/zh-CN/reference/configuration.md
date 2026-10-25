@@ -322,7 +322,7 @@ Memory Space 目录建立后，长期语义操作使用明确的记忆空间 ID�
 
 ## 后台任务 Agent 的模型路由
 
-整理名称与说明、Agent 查询、记忆系统与对话中的存入记忆和档案归档会创建一个无会话历史的独立顶层任务 Agent。它使用当前查看工作区作为 cwd；即使没有选中主 Agent session，也能落到左上角选定工作区。任务完成后 Agent 会被释放。DSH 保存它的会话时带着 DSH 给自身子代理的来源标记，侧栏和 ACP 会话列表都不会把它当作对话列出（[#435](https://github.com/omdsh-dev/dsh-mnemon/issues/435)）。
+整理名称与说明、Agent 查询、记忆系统与对话中的存入记忆和档案归档会创建一个不继承主对话历史的独立顶层任务 Agent。它使用当前查看工作区作为 cwd；即使没有选中主 Agent session，也能落到左上角选定工作区。任务完成后释放的是 Agent 实例，DSH 已保存的本地会话记录会保留；Mnemon 不自动删除这些记录。DSH 保存它的会话时带着 DSH 给自身子代理的来源标记，侧栏和 ACP 会话列表都不会把它当作对话列出（[#435](https://github.com/omdsh-dev/dsh-mnemon/issues/435)）。
 
 “分层策略”页面的“后台任务 → 任务 Agent 模型”为这些任务 Agent 与空闲审查 worker 提供三个选项：
 
@@ -348,7 +348,7 @@ DSH 的实时模型目录会报告各模型的输入模态，选择器为支持�
 
 | 键 | 默认值 | 范围 | 含义 |
 |---|---:|---|---|
-| `skills.evolution` | `false` | boolean | **自进化**：对话结束后在后台复盘，提出新建或改进技能的建议 |
+| `skills.evolution` | `false` | boolean | **自进化**：后台复盘并建议改进技能；会创建落盘的任务及子代理会话，Mnemon 不自动删除这些记录 |
 | `skills.autoBacktest` | `true` | boolean | **草案自动回测**：草案写好后用测试用例与当前版本对比 |
 | `skills.hints` | `true` | boolean | **对话提示**：在每个回合下方显示**本回合技能** |
 | `skills.sidebar` | `false` | boolean | **侧边栏入口**：技能管理单独显示在侧边栏，不再放在记忆系统里 |
