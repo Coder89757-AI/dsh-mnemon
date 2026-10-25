@@ -165,6 +165,37 @@ afterEach(async () => {
 
 // Every case drives real Git processes against a real bare repository.
 describe.skipIf(!available)('Mnemon Git sync', { timeout: 90_000 }, () => {
+  it('converges overflowing MEMORY unions without turning archival into deletion (#468)', async () => {
+    const origin = await repository('overflow-remote')
+    const left = await machine('overflow-left', origin)
+    const right = await machine('overflow-right', origin)
+    const shared = 'shared-' + 's'.repeat(3993)
+    const low = 'local-' + 'l'.repeat(3994)
+    const critical = 'remote-' + 'r'.repeat(3993)
+    await left.sources.runtime.mutate('mutate', { action: 'add', target: 'memory', content: shared, importance: 'normal' }, { confirmed: true })
+    await left.sync.push()
+    await right.sync.pull()
+    await right.sources.runtime.read('snapshot')
+    await left.sources.runtime.mutate('mutate', { action: 'add', target: 'memory', content: low, importance: 'low' }, { confirmed: true })
+    await right.sources.runtime.mutate('mutate', { action: 'add', target: 'memory', content: critical, importance: 'critical' }, { confirmed: true })
+    await right.sync.push()
+    const result = await left.sync.push()
+    expect(result.merged?.runtime).toMatchObject({ added: 1, held: 0, archived: 1 })
+    expect(entriesOf(left.root)).toEqual([shared, critical])
+    expect(left.packs.tombstones().tombstones).toEqual([])
+    const archive = join(left.root, 'runtime', 'archived', 'import-overflow')
+    expect(JSON.parse(readFileSync(join(archive, readdirSync(archive)[0]!), 'utf8')).entries[0].content).toBe(low)
+    await right.sync.push()
+    expect(entriesOf(right.root)).toEqual(entriesOf(left.root))
+    await left.sync.push() // Records this publisher's existing machine identity.
+    expect((await left.sync.push()).committed).toBe(false)
+    expect(readdirSync(archive)).toHaveLength(1)
+    await left.sources.runtime.read('snapshot')
+    await left.sources.runtime.mutate('mutate', { action: 'remove', target: 'memory', oldText: shared }, { confirmed: true })
+    await left.sync.push()
+    expect(left.packs.tombstones().tombstones).toHaveLength(1)
+  })
+
   it('reports Git, the configuration and the remote before anything is pushed', async () => {
     const origin = await repository('sync-status-remote')
     const machineA = await machine('sync-status', origin)

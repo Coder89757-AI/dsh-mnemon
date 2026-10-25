@@ -231,6 +231,13 @@ describe('Git sync section', () => {
     expect(host.calls('push')).toEqual([{ confirmed: true }])
   })
 
+  it('reports preserved overflow separately from memories admitted to the hot prompt (#468)', async () => {
+    const host = fakeHost({ repoUrl: '/srv/memory.git', push: { merged: { commit: COMMIT, components: ['runtime'], summary: [], tombstones: 0, runtime: { added: 1, held: 0, archived: 2 } } } })
+    section(host.connection)
+    fireEvent.click(await screen.findByRole('button', { name: '立即同步' }))
+    expect(await screen.findByText(/合并了 1 条远端记忆.*2 条超限工作记忆已完整保存在本机 runtime\/archived\/import-overflow/u)).toBeTruthy()
+  })
+
   it('states a refused push and a named failure in the page language', async () => {
     const rejected = fakeHost({ repoUrl: '/srv/memory.git', push: { pushed: false, committed: true, reason: '! [rejected] (fetch first)', failure: 'push-rejected' } })
     section(rejected.connection)

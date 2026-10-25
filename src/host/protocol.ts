@@ -814,10 +814,12 @@ export interface MnemonPackPreview {
  * leaves an entry out because a tombstone still hides it has to say how many.
  */
 export interface MnemonRuntimeMergeReport {
-  /** Incoming entries this merge wrote into the data directory. */
+  /** Incoming entries this merge admitted to hot runtime memory. */
   added: number
   /** Incoming entries a tombstone still hides, so the merge left them out. */
   held: number
+  /** Exact MEMORY records newly saved in the local import-overflow archive. */
+  archived?: number
 }
 
 export interface MnemonPackImportResult {

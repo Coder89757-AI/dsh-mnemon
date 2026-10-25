@@ -6,7 +6,7 @@ import type { MnemonTranslate } from './locales.ts'
 import { MnemonDialog } from './MnemonDialog.tsx'
 import css from './MnemonSettingsCard.module.css'
 import { message } from './page-kit.tsx'
-import { failureText, reasonOf, when } from './sync-view.ts'
+import { failureText, reasonOf, runtimeArchiveNotice, when } from './sync-view.ts'
 
 /** How many backups one page of the branch history holds. */
 const HISTORY_PAGE = 20
@@ -152,7 +152,7 @@ export function SyncCompareDialog({ client, repoUrl, credential, writable, t, on
     try {
       const result = await client.pullSync(undefined, revive)
       const added = result.runtime?.added ?? 0
-      setNotice(revive ? t('config.syncCompareRevived', { count: added }) : added > 0 ? t('config.syncMergedCount', { count: added }) : t('config.syncMerged', { commit: result.commit.slice(0, 8) }))
+      setNotice((revive ? t('config.syncCompareRevived', { count: added }) : added > 0 ? t('config.syncMergedCount', { count: added }) : t('config.syncMerged', { commit: result.commit.slice(0, 8) })) + runtimeArchiveNotice(t, result.runtime?.archived))
     } catch (reason) {
       failure = failureText(t, reasonOf(reason), message(reason), repoUrl, credential)
     } finally { setBusy(null) }
