@@ -93,6 +93,8 @@
 
 ## 快速开始
 
+DSH 会自动加载包内的 `cordis.patch.yml`。不要再把其中的 `insert` 块复制到 Profile：重复的 Mnemon 条目会导致设置无法保存。已经复制过时，请参照[手动安装后的恢复步骤](docs/zh-CN/guides/installation.md#手动安装后设置无法保存)。
+
 第一次使用 DSH？[安装与启动](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/zh-CN/guides/installation.md)从一台空白电脑一直带你到第一条记忆，每一步都有截图。简要步骤如下，需要 [Node.js](https://nodejs.org/) 22.19 或更高：
 
 ```sh
