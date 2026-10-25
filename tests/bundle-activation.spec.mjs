@@ -13,6 +13,11 @@ const profile = process.env.MNEMON_BUNDLE_TEST_PROFILE ?? fileURLToPath(new URL(
 const env = { ...process.env, NODE_PATH: undefined }
 
 describe('published Starter activation contracts', () => {
+  it('saves settings after removing a duplicate manual bundle insertion (#470)', async () => {
+    const { stdout } = await run(process.execPath, ['--expose-internals', fixture, profile, 'settings'], { env, timeout: 30_000 })
+    expect(stdout).toContain('Config editor saved and reloaded Skills evolution with unique bundle/core IDs (#470).')
+  }, 30_000)
+
   it('activates isolated transitive components after a cold start without the bundle selected', async () => {
     const { stdout } = await run(process.execPath, ['--expose-internals', fixture, profile, 'manager', '--isolated'], { env, timeout: 30_000 })
     expect(stdout).toContain('"manager":true,"result":"passed"')

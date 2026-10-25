@@ -74,6 +74,28 @@ If you prefer the command line, you can install with the command below and then 
 npx @deepseek-ai/dsh plugin --profile web add dsh-mnemon
 ```
 
+### Settings cannot save after manual installation
+
+The package's `cordis.patch.yml` is a **bundle layer**, loaded automatically when `dsh-mnemon` is enabled. It is not a template to copy into your profile. Copying its `insert` block creates a second `mnemon-bundle` and `mnemon` with the same IDs. Settings can then fail with `Configuration for "mnemon" is overridden by a home patch or command-line overlay`.
+
+For a profile with that duplicate insertion:
+
+1. Stop DSH and back up the affected profile's `cordis.patch.yml` and `package.json`.
+2. Check that `dsh.profile.bundles` in that profile's `package.json` includes `dsh-mnemon`. If it does not, install/enable the bundle using Plugins or the CLI above before applying this recovery.
+3. Preserve any custom values from the copied Mnemon entries in one top-level override per component ID, such as `- id: mnemon` or `- id: mnemon-source-skills`. Combine them with existing overrides deliberately: a `config` row replaces the complete config object, rather than merging one field at a time.
+4. Remove the copied **Mnemon insertion** from the profile patch. Keep unrelated entries, comments and overrides; if the `insert` block contains other plugins, keep those members. Remove an empty `insert` block.
+5. If a profile-level bundle enable override is needed, it is just the following top-level row; its children come from the package automatically:
+
+   ```yaml
+   - id: mnemon-bundle
+     name: dsh-mnemon/bundle
+     disabled: false
+   ```
+
+6. Restart DSH and save a setting, such as Skills → Self-evolution. It should survive another restart. Runtime memory, Documents, Memory Spaces and skill files are not moved or deleted by this patch repair.
+
+Removing only the nested `config` block does not remove duplicate IDs. The package's own nested defaults work with one bundle insertion and can stay. A genuine home-patch or command-line override is a separate case: change that owning layer instead of applying this duplicate-insertion recovery.
+
 ## 4. Check the installation
 
 Click **Memory System**. It opens on **Status**:

@@ -74,6 +74,28 @@ DSH 在 `http://127.0.0.1:3080` 启动，并自动在浏览器中打开一个带
 npx @deepseek-ai/dsh plugin --profile web add dsh-mnemon
 ```
 
+### 手动安装后设置无法保存
+
+包内的 `cordis.patch.yml` 是**随 bundle 自动加载的配置层**，启用 `dsh-mnemon` 后 DSH 会加载它。它不是需要复制到 Profile 的模板。再次复制其中的 `insert` 块，会产生 ID 相同的第二组 `mnemon-bundle` 和 `mnemon`，导致设置报错：`Configuration for "mnemon" is overridden by a home patch or command-line overlay`。
+
+如果 Profile 中存在这类重复插入：
+
+1. 停止 DSH，备份对应 Profile 的 `cordis.patch.yml` 和 `package.json`。
+2. 确认该 Profile 的 `package.json` 中 `dsh.profile.bundles` 已包含 `dsh-mnemon`；没有时，先通过插件页或上面的 CLI 安装并启用 bundle，再进行恢复。
+3. 将复制条目中自定义过的值保留到对应组件 ID 的一条顶层覆盖中，例如 `- id: mnemon` 或 `- id: mnemon-source-skills`。与已有覆盖逐项核对合并：`config` 覆盖的是完整对象，不是逐字段追加。
+4. 从 Profile patch 中移除复制的 **Mnemon 插入项**，保留其他插件、注释和覆盖。如果同一个 `insert` 块还有其他插件，只移除其中的 Mnemon 项；空的 `insert` 块也应移除。
+5. 如需在 Profile 中明确启用 bundle，只保留以下顶层行；子组件由包自动提供：
+
+   ```yaml
+   - id: mnemon-bundle
+     name: dsh-mnemon/bundle
+     disabled: false
+   ```
+
+6. 重启 DSH，保存一项设置（例如技能的自进化开关），再次重启后确认仍生效。此配置修复不会移动或删除运行时记忆、项目档案、记忆空间或技能文件。
+
+只删除嵌套的 `config` 块不能消除重复 ID。只有一次 bundle 插入时，包内嵌套的默认配置可以正常覆盖，无需删除。如果确实由 home patch 或命令行覆盖控制设置，应修改其所属配置层；不要套用这份针对重复插入的恢复步骤。
+
 ## 4. 确认安装成功
 
 点击**记忆系统**，默认打开**状态**页：

@@ -92,6 +92,8 @@ Self-evolution stays off until you turn it on under **Plugins → dsh-mnemon →
 
 ## Quick start
 
+DSH loads the bundled `cordis.patch.yml` automatically. Do not copy its `insert` block into your profile: duplicate Mnemon entries prevent Settings from saving. See [manual-installation recovery](docs/en/guides/installation.md#settings-cannot-save-after-manual-installation) if you already copied it.
+
 New to DSH? [Install and start](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/guides/installation.md) walks from an empty machine to your first memory, with a screenshot for every step. The short version, with [Node.js](https://nodejs.org/) 22.19 or later:
 
 ```sh

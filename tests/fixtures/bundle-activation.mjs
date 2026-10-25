@@ -23,6 +23,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'mnemon-bundle-activation-'))
 const profileDir = join(temporary, 'profile')
 const patchPath = join(profileDir, 'cordis.patch.yml')
 const configPath = join(profileDir, 'cordis.yml')
+const settings = process.argv[3] === 'settings'
 const isolated = process.argv.includes('--isolated')
 const otherBundle = process.argv.includes('--other-bundle')
 const selected = isolated ? (otherBundle ? ['fixture-other'] : []) : ['dsh-mnemon']
@@ -85,6 +86,19 @@ export async function apply(ctx, config) {
   const retained = '# Operator comment\n- id: mnemon\n  config:\n    timeoutMs: 4321\n- id: mnemon-strategy-auto-capture\n  disabled: false\n- id: mnemon-source-documents\n  disabled: true\n'
   await writeFile(patchPath, retained)
   const patches = () => app.readProfilePatches('dsh', profile)
+  const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
+  if (settings) {
+    // Reproduce the reported manual installation: the selected bundle already inserts these IDs.
+    const shipped = await readFile(join(root, 'cordis.patch.yml'), 'utf8')
+    await writeFile(patchPath, shipped + retained)
+    const duplicated = flatten(app.composeEntries([patches()]))
+    for (const id of ['mnemon-bundle', 'mnemon']) assert.equal(duplicated.filter(row => row.id === id).length, 2)
+    assert.notEqual(duplicated.find(row => row.id === 'mnemon').config.timeoutMs, 4321,
+      'The config editor sees the first duplicate while the override updates the other one')
+    // The documented recovery preserves overrides and uses the automatically loaded bundle once.
+    await writeFile(patchPath, '- id: mnemon-bundle\n  name: dsh-mnemon/bundle\n  disabled: false\n' + retained)
+  }
+  const ConfigEditor = settings ? (await load('@deepseek-ai/dsh-config-editor')).default : undefined
   let Manager
   if (process.argv[3] === 'manager') Manager = (await load('@deepseek-ai/dsh-plugin-manager')).default
   const start = async () => {
@@ -97,6 +111,7 @@ export async function apply(ctx, config) {
       context.provide('profileContext', profile)
       context.provide('webRuntime', {})
       context.provide('webServer', {})
+      if (ConfigEditor) await context.plugin(ConfigEditor).await()
       // Use the manager's real profile reconciliation; no watcher is needed in
       // this deterministic single-operation fixture.
       if (Manager) {
@@ -153,6 +168,18 @@ export async function apply(ctx, config) {
     }
   }
   assertEnabled()
+  if (settings) {
+    const core = [...ctx.loader.entries()].find(entry => entry.options.id === 'mnemon')
+    await ctx.configEditor.edit(core, current => ({ ...current, skills: { evolution: true } }))
+    assert.equal(state.configs.get('dsh-mnemon').skills.evolution, true)
+    const rows = flatten(app.composeEntries([patches()]))
+    for (const id of ['mnemon-bundle', 'mnemon']) assert.equal(rows.filter(row => row.id === id).length, 1)
+    assert.equal(rows.find(row => row.id === 'mnemon').config.skills.evolution, true)
+    await stop(); await start()
+    assertEnabled()
+    assert.equal(state.configs.get('dsh-mnemon').skills.evolution, true)
+    console.log('Config editor saved and reloaded Skills evolution with unique bundle/core IDs (#470).')
+  }
   if (Manager) {
     const manager = ctx.pluginManager
     const components = (await manager.listBundles()).find(bundle => bundle.name === 'dsh-mnemon').rows
