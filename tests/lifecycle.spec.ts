@@ -54,7 +54,7 @@ function composedBy(typeId: string): { strategyTypeId: string; strategyInstanceK
   return { strategyTypeId: typeId, strategyInstanceKey: `strategy:${typeId}`, runtimeGeneration: `fixture-generation:${typeId}` }
 }
 
-function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> }; strategyWorkflows?: Partial<Record<string, readonly MemoryStrategyWorkflow[]>> | undefined } = {}) {
+function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: { taskModelRoute?: boolean; workspaces?: Array<{ path: string }>; sessionModel?: { provider: string; model: string; reasoningEffort?: string }; conversationOptions?: { provider: string; model: string; reasoningEffort?: string }; workingDirectory?: { set: (agent: HostAgent, path: string, signal?: AbortSignal) => Promise<string> }; strategyWorkflows?: Partial<Record<string, readonly MemoryStrategyWorkflow[]>> | undefined } = {}) {
   const agentListeners = new Map<string, Listener>()
   const rootListeners = new Map<string, Listener>()
   const agentSections: Array<{ name: string; order: number; text: () => string }> = []
@@ -67,7 +67,7 @@ function fixture(config = resolveConfig({ cliPath: '/fake/mnemon' }), options: {
   const disposedTaskAgents: string[] = []
   const taskModelRoute = options.taskModelRoute !== false
   const sessionModel = options.sessionModel
-  const defaultModel = { currentSelection: vi.fn(() => ({ provider: 'deepseek', model: 'deepseek-chat' })) }
+  const defaultModel = { currentSelection: vi.fn((): { provider: string; model: string; reasoningEffort?: string } => ({ provider: 'deepseek', model: 'deepseek-chat' })) }
   const llm = {
     listProviders: vi.fn(() => [
       { id: 'deepseek', name: 'DeepSeek' },
@@ -640,6 +640,51 @@ describe('Mnemon DSH lifecycle integration', () => {
     expect(value.createTaskAgent).toHaveBeenCalledWith(expect.objectContaining({
       agentOptions: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: undefined },
     }))
+  })
+
+  it('preserves the default model reasoning effort for clean skill and maintenance tasks', async () => {
+    const value = fixture(undefined, { conversationOptions: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' } })
+    value.defaultModel.currentSelection.mockReturnValue({ provider: 'openai', model: 'gpt-5', reasoningEffort: 'low' })
+
+    await value.lifecycle.runSkillTask(workspaceTwo, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'openai', model: 'gpt-5', reasoningEffort: 'low', maxTokens: undefined },
+    }))
+    await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global', sessionId: 'session-1' }, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'openai', model: 'gpt-5', reasoningEffort: 'low', maxTokens: undefined },
+    }))
+  })
+
+  it('preserves the fallback Agent creation effort when the default model service is unavailable', async () => {
+    const value = fixture(undefined, { conversationOptions: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'adapter-defined' } })
+    value.defaultModel.currentSelection.mockImplementation(() => { throw new Error('default model unavailable') })
+
+    await value.lifecycle.runSkillTask(workspaceTwo, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'adapter-defined', maxTokens: undefined },
+    }))
+  })
+
+  it.each([undefined, '', '   '])('does not borrow a conversation effort when the default selection has %j', async reasoningEffort => {
+    const value = fixture(undefined, { conversationOptions: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' } })
+    value.defaultModel.currentSelection.mockReturnValue({ provider: 'openai', model: 'gpt-5', ...(reasoningEffort === undefined ? {} : { reasoningEffort }) })
+
+    await value.lifecycle.runSkillTask(workspaceTwo, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'openai', model: 'gpt-5', maxTokens: undefined },
+    }))
+  })
+
+  it('does not copy default reasoning effort onto a fixed task model', async () => {
+    const value = fixture(resolveConfig({ cliPath: '/fake/mnemon', taskAgentModel: { mode: 'fixed', provider: 'openai', model: 'gpt-5' } }))
+    value.defaultModel.currentSelection.mockReturnValue({ provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' })
+
+    await value.lifecycle.runSkillTask(workspaceTwo, new AbortController().signal, async () => 'done')
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { provider: 'openai', model: 'gpt-5', maxTokens: undefined },
+    }))
+    expect(value.defaultModel.currentSelection).not.toHaveBeenCalled()
   })
 
   it('follows the conversation that asked for the work once its inherited route is switched to follow it', async () => {
