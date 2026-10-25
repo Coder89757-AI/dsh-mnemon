@@ -65,6 +65,10 @@ Smart placement builds an allowlist from the candidates selected by the user:
 
 Connection secrets never enter the selector prompt. `local-only` excludes every remote provider before model selection. Mnemon Native stays a local candidate while its CLI is available.
 
+## Recall score semantics
+
+Hindsight final ranking scores include boosts; OpenViking similarity scores are not calibrated query confidence. Both declare `provider-native` in the manifest and driver. Memory Spaces admits their original ranking under `recallQuality.maxRankedResults` without comparing raw scores or clamping them to 1; see [recall quality policies](../reference/configuration.md#recall-quality-policies).
+
 ## Operational boundaries
 
 - OpenViking writes a new `.md` file with `content/write`, `mode: "create"` and `wait: true`, sending only `uri`, `content`, `mode` and `wait`; OpenViking 0.5.1 removed the request-body `timeout` field, while the HTTP client deadline still applies, then sets the source, category and importance tags with `content/set_tags`; a server that cannot tag, or does not confirm the tags within 5 seconds, still keeps the verified memory, and the receipt says `tagsApplied: false`. Categories map to `preferences`, `experiences` (insight/decision), `events` (context), or `entities` (fact/general), and the file name ends in `_<category>-<uuid>.md`, so a memory reads back with the category it was written with. Files without it, written by an earlier version or by OpenViking itself, read back by their folder: `preferences` as preference, `experiences` as insight, `events` as context and `entities` as fact. An unknown category is stored as `general`. A write the server refuses (HTTP 4xx other than 408 and 409) is reported as not stored. A stored receipt requires matching URI, a byte count covering the submitted text (newer servers also count reserved metadata), completed vector indexing and exact public full-content readback; semantic processing may be `skipped` for memory files. Recall and browse read full content rather than treating summaries as the stored original. Session extraction and LLM curation are no longer used for these writes.

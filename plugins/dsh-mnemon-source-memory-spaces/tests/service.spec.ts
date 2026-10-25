@@ -10,6 +10,7 @@ import { ProcessError, type ProcessRunner } from '../src/providers/process.ts'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import { createRunner } from '../src/runner.ts'
 import { mutationResultCompletion, mutationResultCommitted, type MemorySpacesService } from '../src/service.ts'
+import type { RecallQualityConfig } from '../src/contracts.ts'
 import type { MnemonRunner } from '../src/runner.ts'
 import { parseMemoryGraph } from 'dsh-mnemon-provider-mnemon-native'
 import { createService } from './providers.ts'
@@ -40,7 +41,7 @@ function populatedDataDir(): string {
   return dataDir
 }
 
-function fixture(writeEnabled = true, embedding?: { enabled: boolean; endpoint?: string }): { service: MemorySpacesService; process: ReturnType<typeof vi.fn<ProcessRunner>>; dataDir: string } {
+function fixture(writeEnabled = true, embedding?: { enabled: boolean; endpoint?: string }, recallQuality?: RecallQualityConfig): { service: MemorySpacesService; process: ReturnType<typeof vi.fn<ProcessRunner>>; dataDir: string } {
   const process = vi.fn<ProcessRunner>(async (_command, args) => {
     if (args.includes('--version')) return { stdout: 'mnemon version 0.1.2\n', stderr: '', exitCode: 0 }
     if (args.includes('status')) return {
@@ -81,6 +82,7 @@ function fixture(writeEnabled = true, embedding?: { enabled: boolean; endpoint?:
     defaultRecallLimit: 7,
     writeEnabled,
     ...(embedding === undefined ? {} : { embedding }),
+    ...(recallQuality === undefined ? {} : { recallQuality }),
   })
   const runner = createRunner(config, process)
   return { service: createService(runner, config, createRegistry(runner, true)), process, dataDir }
@@ -1252,6 +1254,62 @@ describe('MemorySpacesService', () => {
       results: [expect.objectContaining({ memoryProviderId: 'mnemon-native' })],
       hint: expect.stringContaining('团队 OpenViking: unavailable: remote offline'),
       sources: expect.arrayContaining([expect.objectContaining({ providerId: 'openviking', status: 'unavailable' })]),
+    })
+  })
+
+  describe('native score scales (#454)', () => {
+    const query = 'Docker engine and Compose versions'
+    const answer = { id: 'docker', text: 'Docker Engine 29.8.0 and Compose v5.5.1.', score: 1.0379764538482916 }
+    const openVikingRows = [0.7107269167900085, 0.7017678022384644, 0.685615599155426, 0.6702136397361755]
+      .map((score, index) => ({ uri: `viking://user/team/memories/entities/clue-${index}.md`, text: `Synthetic unrelated clue ${index}.`, score }))
+    function remote(hindsightRows = [answer, { id: 'shell', text: 'Use zsh for local scripts.', score: 1.02 }]) {
+      vi.stubGlobal('fetch', vi.fn<typeof fetch>(async url => {
+        const target = new URL(String(url))
+        const reply = (result: unknown) => new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        if (target.pathname.endsWith('/memories/recall')) return reply({ results: hindsightRows.map(row => ({ id: row.id, text: row.text, scores: { final: row.score } })) })
+        if (target.pathname === '/api/v1/content/read') return reply({ status: 'ok', result: openVikingRows.find(row => row.uri === target.searchParams.get('uri'))?.text })
+        if (target.pathname === '/api/v1/search/find') return reply({ status: 'ok', result: { memories: openVikingRows.map(({ uri, score }) => ({ uri, overview: 'Summary', score })) } })
+        throw new Error('unexpected request ' + target.pathname)
+      }))
+    }
+    async function spaces(service: MemorySpacesService) {
+      const hindsight = await service.createSpace({ name: 'Machine notes', description: 'Machine facts.', active: true, providerId: 'hindsight', connection: { endpoint: 'https://hindsight.example', bankId: 'machine' } })
+      const openViking = await service.createSpace({ name: 'Team notes', description: 'Team facts.', active: true, providerId: 'openviking', openViking: { endpoint: 'https://memory.example.com', targetUri: 'viking://user/team/memories' } })
+      return { hindsight, openViking }
+    }
+    it.each([false, true])('preserves the answer and each Provider order with reversed spaces=%s', async reverse => {
+      remote()
+      const { service } = fixture(true, undefined, { lowScoreThreshold: 0.67, highScoreThreshold: 0.78 })
+      const { hindsight, openViking } = await spaces(service)
+      const ids = [hindsight.id, openViking.id]
+      const result = await service.search({ query, limit: 4, memoryBodyIds: reverse ? ids.reverse() : ids })
+      // Existing exact-anchor prioritization keeps the selected Docker answer first.
+      const expected = reverse ? ['docker', openVikingRows[0]!.uri, openVikingRows[1]!.uri, 'shell'] : ['docker', openVikingRows[0]!.uri, 'shell', openVikingRows[1]!.uri]
+      expect(result.results.map(item => item.id)).toEqual(expected)
+      expect(result.results.every(item => item.relevanceTier === 'ranked' && item.normalizedScore === undefined)).toBe(true)
+      expect(result.results.find(item => item.id === 'docker')!.score).toBe(answer.score)
+      expect(result.sources.every(source => source.quality?.selected === 2 && source.quality.unscaled === 0)).toBe(true)
+      expect(result.sources.find(source => source.memoryBodyId === hindsight.id)!.quality).toMatchObject({ ranked: 2 })
+    })
+    it('keeps a single native Provider order and permits four ranks beyond the unknown budget', async () => {
+      remote(Array.from({ length: 6 }, (_, index) => ({ id: `h${index}`, text: `Ranked fact ${index}.`, score: index === 0 ? -0.1 : index + 1 })))
+      const { service } = fixture()
+      const { hindsight } = await spaces(service)
+      const result = await service.search({ query, limit: 6, memoryBodyIds: [hindsight.id] })
+      expect(result.results.map(item => item.id)).toEqual(['h0', 'h1', 'h2', 'h3'])
+      expect(result.results.every(item => item.relevanceTier === 'ranked')).toBe(true)
+      expect(result.sources[0]!.quality).toMatchObject({ fetched: 6, retained: 6, selected: 4, ranked: 6, unscaled: 0 })
+    })
+    it('reports out-of-range normalized scores separately from undeclared scales', async () => {
+      const { service, process } = fixture()
+      const original = process.getMockImplementation()!
+      process.mockImplementation(async (command, args, options) => args.includes('recall')
+        ? { stdout: JSON.stringify({ results: [{ id: 'overflow', content: 'Out of range.', score: 1.2 }, { id: 'high', content: 'Calibrated.', score: 0.7 }] }), stderr: '', exitCode: 0 }
+        : original(command, args, options))
+      const result = await service.search({ query, limit: 4, memoryBodyIds: ['work'] })
+      expect(result.results.map(item => [item.id, item.relevanceTier])).toEqual([['high', 'high'], ['overflow', 'ranked']])
+      expect(result.results[1]!.normalizedScore).toBeUndefined()
+      expect(result.sources[0]!.quality).toMatchObject({ outOfRange: 1, ranked: 1, unscaled: 0 })
     })
   })
 

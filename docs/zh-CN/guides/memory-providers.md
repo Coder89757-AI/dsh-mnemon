@@ -67,6 +67,10 @@ DSH 的“工作区”模式不会统一重写所有 Provider 命名空间。Mne
 
 连接凭据永远不会进入 selector Prompt。`local-only` 会在模型选择前排除全部远程 Provider。Mnemon CLI 可用时，Mnemon Native 始终是本地候选。
 
+## 召回评分语义
+
+Hindsight 的最终排名分包含加权项，OpenViking 的相似度也不等于经过校准的查询置信度。两者在 manifest 和驱动中均声明 `provider-native`。Memory Spaces 按原始排名与 `recallQuality.maxRankedResults` 配额接纳，不跨 Provider 比较原始分数，也不钳制到 1；参见[召回质量策略](../reference/configuration.md#召回质量策略)。
+
 ## 运维边界
 
 - OpenViking 使用 `content/write`、`mode: "create"`、`wait: true` 创建新的 `.md` 文件，只发送 `uri`、`content`、`mode` 和 `wait`；OpenViking 0.5.1 移除了请求体中的 `timeout` 字段，HTTP 客户端超时仍然生效，然后用 `content/set_tags` 设置来源、分类与重要度标签；服务器无法设置标签、或 5 秒内未确认时，已验证的记忆仍然保留，回执中 `tagsApplied` 为 `false`。分类分别映射至 `preferences`、`experiences`（insight/decision）、`events`（context）或 `entities`（fact/general），文件名以 `_<分类>-<uuid>.md` 结尾，因此读回的分类与写入时一致。文件名不含分类的文件（旧版本写入的，或 OpenViking 自己写入的）按所在文件夹读回：`preferences` 为 preference，`experiences` 为 insight，`events` 为 context，`entities` 为 fact。未知分类按 `general` 保存。服务器拒绝的写入（HTTP 4xx，408 与 409 除外）会报告为未保存。只有 URI、覆盖提交正文的字节数（新版本服务器还会计入保留元数据）、向量索引完成状态和公开完整正文读回均匹配时才返回 stored；记忆文件的语义处理状态允许为 `skipped`。召回与浏览读取完整正文，不把摘要当作原文；这些写入不再使用会话抽取或 LLM 提炼。

@@ -60,6 +60,7 @@ mnemon:
     highScoreThreshold: 0.6
     candidateMultiplier: 3
     maxMediumResults: 4
+    maxRankedResults: 4
     maxUnknownResults: 2
   routingGuidance: true
   lifecycleEnabled: true
@@ -111,7 +112,8 @@ mnemon:
 | `recallQuality.highScoreThreshold` | `0.6` | 0–1, above low threshold | Retained normalized scores at or above this boundary are labeled high relevance |
 | `recallQuality.candidateMultiplier` | `3` | 1–5 | Expands each Provider request before filtering, capped by the service limit of 50 candidates |
 | `recallQuality.maxMediumResults` | `4` | 0–50 | Maximum medium-relevance rows admitted by `strict-v1` after all high-relevance rows |
-| `recallQuality.maxUnknownResults` | `2` | 0–50 | Maximum unscored or unknown-scale rows admitted by `strict-v1` after scored evidence |
+| `recallQuality.maxRankedResults` | `4` | 0–50 | Maximum Provider-ranked rows without calibrated confidence admitted by `strict-v1`; interleaved with medium rows by rank |
+| `recallQuality.maxUnknownResults` | `2` | 0–50 | Maximum unscored or undeclared-scale rows admitted by `strict-v1` after scored evidence |
 | `routingGuidance` | `true` | boolean | Whether to register an additional tiered-routing system section |
 | `lifecycleEnabled` | `true` | boolean | Whether to enable the pre-step cue and score-based idle review |
 | `recallMode` | `guided` | `guided` / `off` | Whether to inject one durable on-demand recall cue per session; does not remove explicit recall |
@@ -200,7 +202,11 @@ The WebUI reads Source instances from the live management catalog, so a new Sour
 
 ### Recall quality policies
 
-`strict-v1` is the Agent-safe default: for Providers that explicitly declare a normalized 0–1 relevance score, non-positive and below-threshold rows are removed before their content reaches an Agent. It then returns every high-relevance row up to the requested limit, at most four medium-relevance rows, and at most two unscored or unknown-scale rows by default; it does not fill the result limit with weaker evidence. `balanced-v1` retains low-score rows only after primary evidence, and `exhaustive-v1` preserves finite scored rows for direct inspection. An out-of-range score is treated as unknown-scale instead of being fabricated into a confidence value. Cross-provider ordering continues to use reciprocal-rank fusion.
+`strict-v1` applies the 0–1 thresholds only to Providers that explicitly declare calibrated `normalized-relevance` scores. It drops non-positive and below-threshold normalized scores, keeps high-relevance results first, then admits medium and `ranked` results in the existing fused order under separate limits (four each by default). At most two unscored or undeclared-scale results follow. The requested result limit always applies; the policy does not fill it with weak evidence. `balanced-v1` puts low-score rows after primary evidence, while `exhaustive-v1` preserves finite scored rows for inspection.
+
+Hindsight's boosted final rank and OpenViking's raw similarity use `provider-native` semantics. Their finite scores retain the Provider's result order in the bounded `ranked` tier, even when above 1, without a `normalizedScore`. This tier supplies ordered candidates, not a confidence guarantee. Global relevance thresholds do not calibrate these scales; tune `maxRankedResults` (zero disables this lane) to control admission. Cross-Provider fusion uses rank, never raw score magnitudes. No clamp or per-query min/max transform manufactures high relevance from unrelated candidates.
+
+A normalized Provider returning a score above 1 also enters `ranked`, with reason `out-of-range-score` and `source.quality.outOfRange` diagnostics. `source.quality.ranked` counts ranked candidates; `unscaled` counts undeclared scales separately, and `unscored` counts absent scores. Non-finite scores are rejected. Update the Source and affected Providers together: an older Source safely treats the new native declaration as unknown-scale, but retains the old admission limit. No stored memories or credentials are changed.
 
 These pure recall-quality policies belong to the Memory Spaces Source. Configuration selects a policy ID shipped by that Source. Its internal registration function is not a public plugin API; custom retrieval belongs behind the public Source/Provider contracts. Invalid limits, decisions, or selections fall back to `strict-v1`; an unknown configured id rejects the candidate runtime graph. Filtering counts are returned as structured `source.quality` statistics and are not appended to Agent hints.
 

@@ -76,7 +76,7 @@ describe('Memory Spaces algorithm work bounds', () => {
         status: 'ready', itemCount: 4,
         quality: { policyId: 'counted-v1', fetched: 7, retained: 4,
           selected: result.results.filter(row => row.memoryBodyId === source.memoryBodyId).length,
-          droppedLowScore: 1, droppedNonPositiveScore: 1, droppedInvalidScore: 1, unscored: 1, unscaled: 1 },
+          droppedLowScore: 1, droppedNonPositiveScore: 1, droppedInvalidScore: 1, unscored: 1, unscaled: 0, ranked: 1, outOfRange: 1 },
       })
       expect(visits).toBeLessThanOrEqual(n * 7 + 10)
       expect(result.results.every(row => row.id !== 'r2' && row.id !== 'r3' && row.id !== 'r4')).toBe(true)

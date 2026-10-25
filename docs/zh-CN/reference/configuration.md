@@ -60,6 +60,7 @@ mnemon:
     highScoreThreshold: 0.6
     candidateMultiplier: 3
     maxMediumResults: 4
+    maxRankedResults: 4
     maxUnknownResults: 2
   routingGuidance: true
   lifecycleEnabled: true
@@ -111,7 +112,8 @@ mnemon:
 | `recallQuality.highScoreThreshold` | `0.6` | 0–1，高于低分阈值 | 保留结果达到此边界时标记为高相关度 |
 | `recallQuality.candidateMultiplier` | `3` | 1–5 | 在过滤前扩大各 Provider 候选请求，最多不超过服务的 50 条上限 |
 | `recallQuality.maxMediumResults` | `4` | 0–50 | `strict-v1` 在全部高相关度结果之后最多接纳的中相关度条数 |
-| `recallQuality.maxUnknownResults` | `2` | 0–50 | `strict-v1` 在有分数证据之后最多接纳的无 score 或未知量纲条数 |
+| `recallQuality.maxRankedResults` | `4` | 0–50 | `strict-v1` 最多接纳的 Provider 排名结果数；不表示标准化置信度，与中相关度结果按排名交错选择 |
+| `recallQuality.maxUnknownResults` | `2` | 0–50 | `strict-v1` 在有分数证据之后最多接纳的无 score 或未声明量纲条数 |
 | `routingGuidance` | `true` | boolean | 是否注册额外的分层路由 system section |
 | `lifecycleEnabled` | `true` | boolean | 是否启用 pre-step cue 和评分空闲审查 |
 | `recallMode` | `guided` | `guided` / `off` | 是否在每个会话注入一次可持续复用的按需 recall cue；不移除显式召回 |
@@ -200,7 +202,11 @@ WebUI 从实时管理目录读取 Source 实例，新增 Source 无须修改前�
 
 ### 召回质量策略
 
-`strict-v1` 是面向 Agent 的安全默认值：仅对明确声明为 0–1 标准化相关度的 Provider，在正文进入 Agent 前移除非正分和低于阈值的结果；随后在请求上限内保留全部高相关度结果，默认最多保留 4 条中相关度结果和 2 条无 score 或未知量纲结果，不再用较弱证据补满 limit。`balanced-v1` 把低分结果放在主要证据之后，`exhaustive-v1` 为直接检查保留有限分数结果。超出声明范围的分数按未知量纲处理，不伪造成置信度。跨 Provider 排序继续使用倒数排名融合。
+`strict-v1` 的 0–1 阈值只适用于明确声明为标准化 `normalized-relevance` 相关度的 Provider。它移除非正分与低于阈值的标准化结果，优先保留高相关度结果，再按已有的融合排名交错接纳中相关度和 `ranked` 结果，分别受配额限制（默认各 4 条）；最后最多接纳 2 条无分数或未声明量纲的结果。请求的总条数上限始终有效，不用弱证据补满。`balanced-v1` 把低分结果放在主要证据之后，`exhaustive-v1` 为检查保留有限数值的结果。
+
+Hindsight 的加权最终排名分和 OpenViking 的原始相似度使用 `provider-native` 语义。有限分数按 Provider 返回顺序进入有配额的 `ranked` 档，即使大于 1 也不再降为 unknown，且不会生成 `normalizedScore`。此档只提供有序候选，不保证置信度。全局相关度阈值不能校准这些量纲；可调整 `maxRankedResults` 控制接纳量，设为 0 会关闭此档。跨 Provider 只融合排名，不比较原始分数大小；不通过钳制或每次查询的 min/max 转换把无关候选变成高相关度。
+
+声明标准化分数却返回大于 1 的 Provider 同样进入 `ranked`，原因记为 `out-of-range-score`，并通过 `source.quality.outOfRange` 诊断。`source.quality.ranked` 统计排名候选，`unscaled` 单独统计未声明量纲，`unscored` 统计缺失分数；非有限分数会被拒绝。Source 与相关 Provider 应一起升级：旧 Source 会安全地把新的 native 声明当作未知量纲，但仍沿用旧接纳上限。不修改已存记忆或凭据。
 
 这些是 Memory Spaces Source 自己维护的纯函数召回质量策略，配置只能选择已随该 Source 提供的策略 ID。内部注册函数不是公开插件 API；自定义检索实现应通过 Source/Provider 的公开契约接入。非法候选上限、决策或选择会回退到 `strict-v1`；配置未知 ID 会拒绝候选运行图。过滤计数通过结构化的 `source.quality` 返回，不会拼接进 Agent hint。
 

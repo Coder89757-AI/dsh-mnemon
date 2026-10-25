@@ -272,7 +272,7 @@ export const EDGE_TYPES = ['temporal', 'semantic', 'causal', 'entity'] as const 
 export type Intent = 'WHY' | 'WHEN' | 'ENTITY' | 'GENERAL'
 export const INTENTS = ['WHY', 'WHEN', 'ENTITY', 'GENERAL'] as const satisfies readonly Intent[]
 
-export type RecallRelevanceTier = 'high' | 'medium' | 'low' | 'unknown'
+export type RecallRelevanceTier = 'high' | 'medium' | 'ranked' | 'low' | 'unknown'
 
 /**
  * One spelling-insensitive key per entity. The Host's entity index and the Client's graph
@@ -480,6 +480,10 @@ export interface RecallQualityStats {
   droppedInvalidScore: number
   unscored: number
   unscaled: number
+  /** Finite native or out-of-range scores retained by Provider rank, not confidence. */
+  ranked?: number
+  /** A normalized-relevance Provider returned a score above its declared maximum of 1. */
+  outOfRange?: number
 }
 
 export interface MemoryListRequest {
@@ -549,7 +553,9 @@ export interface RecallQualityConfig {
   candidateMultiplier?: number
   /** Maximum medium-relevance rows admitted by the strict policy. */
   maxMediumResults?: number
-  /** Maximum unknown-scale or unscored rows admitted by the strict policy. */
+  /** Maximum Provider-ranked rows without calibrated relevance admitted by the strict policy. */
+  maxRankedResults?: number
+  /** Maximum undeclared-scale or unscored rows admitted by the strict policy. */
   maxUnknownResults?: number
 }
 
@@ -560,6 +566,7 @@ export interface ResolvedRecallQualityConfig {
   highScoreThreshold: number
   candidateMultiplier: number
   maxMediumResults: number
+  maxRankedResults: number
   maxUnknownResults: number
 }
 

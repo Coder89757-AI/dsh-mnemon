@@ -44,14 +44,14 @@ describe('recall quality policies', () => {
     ], policyContext)
 
     expect(result.selected.map(entry => entry.candidate.insight.id)).toEqual([
-      'high', 'medium-upper', 'medium-lower', 'unscored', 'unscaled',
+      'high', 'medium-upper', 'medium-lower', 'unscaled', 'unscored', 'provider-unknown',
     ])
     expect(result.evaluated.map(entry => [entry.candidate.insight.id, entry.decision])).toEqual(expect.arrayContaining([
       ['high', expect.objectContaining({ action: 'keep', tier: 'high', normalizedScore: 0.6 })],
       ['medium-lower', expect.objectContaining({ action: 'keep', tier: 'medium', normalizedScore: 0.25 })],
       ['low', expect.objectContaining({ action: 'drop', reason: 'low-score' })],
       ['zero', expect.objectContaining({ action: 'drop', reason: 'non-positive-score' })],
-      ['unscaled', expect.objectContaining({ action: 'keep', tier: 'unknown', reason: 'unscaled-score' })],
+      ['unscaled', expect.objectContaining({ action: 'keep', tier: 'ranked', reason: 'out-of-range-score' })],
       ['provider-unknown', expect.objectContaining({ action: 'keep', tier: 'unknown', reason: 'unscaled-score' })],
     ]))
     expect(prepared.candidateLimit).toBe(30)
@@ -73,6 +73,29 @@ describe('recall quality policies', () => {
     expect(result.selected.map(entry => entry.candidate.insight.id)).toEqual([
       'high-1', 'high-2', 'medium-1', 'medium-2', 'medium-3', 'medium-4', 'unknown-1', 'unknown-2',
     ])
+  })
+
+  it('admits native ranks beside medium evidence without inventing normalized confidence (#454)', () => {
+    const policyContext = context('strict-v1', 6)
+    policyContext.config.maxRankedResults = 3
+    policyContext.config.maxUnknownResults = 1
+    const native = (id: string, score: number): RecallQualityCandidate => ({ ...candidate(id, score), scoreSemantics: { kind: 'provider-native' } })
+    const result = applyRecallQualityPolicy(prepareRecallQualityPolicy(STRICT_RECALL_QUALITY_POLICY, policyContext), [
+      native('hindsight-answer', 1.038), native('openviking-first', 0.71),
+      candidate('calibrated-medium', 0.5), native('native-negative', -0.2), native('over-budget', 100),
+      candidate('calibrated-high', 0.8), candidate('unscored'), candidate('undeclared', 2, false),
+      native('invalid', Number.NaN), native('infinite', Number.POSITIVE_INFINITY),
+    ], policyContext)
+    expect(result.selected.map(entry => entry.candidate.insight.id)).toEqual([
+      'calibrated-high', 'hindsight-answer', 'openviking-first', 'calibrated-medium', 'native-negative', 'unscored',
+    ])
+    expect(result.evaluated.slice(0, 2).map(entry => entry.decision)).toEqual([
+      { action: 'keep', tier: 'ranked', reason: 'native-score' }, { action: 'keep', tier: 'ranked', reason: 'native-score' },
+    ])
+    expect(result.evaluated.slice(-2).every(entry => entry.decision.reason === 'invalid-score' && entry.decision.action === 'drop')).toBe(true)
+    policyContext.config.maxRankedResults = 0
+    const disabled = applyRecallQualityPolicy(prepareRecallQualityPolicy(STRICT_RECALL_QUALITY_POLICY, policyContext), [native('native', 1.038), candidate('medium', 0.5)], policyContext)
+    expect(disabled.selected.map(entry => entry.candidate.insight.id)).toEqual(['medium'])
   })
 
   it('balanced-v1 places low-score rows after primary evidence while exhaustive-v1 preserves zero scores', () => {

@@ -17,6 +17,7 @@ import {
   DEFAULT_RECALL_LIMIT,
   DEFAULT_RECALL_LOW_SCORE_THRESHOLD,
   DEFAULT_RECALL_MAX_MEDIUM_RESULTS,
+  DEFAULT_RECALL_MAX_RANKED_RESULTS,
   DEFAULT_RECALL_MAX_UNKNOWN_RESULTS,
   DEFAULT_RECALL_QUALITY_POLICY,
   DEFAULT_RUNTIME_MAINTENANCE_MAX_TOKENS,
@@ -53,6 +54,7 @@ export {
   DEFAULT_RECALL_LIMIT,
   DEFAULT_RECALL_LOW_SCORE_THRESHOLD,
   DEFAULT_RECALL_MAX_MEDIUM_RESULTS,
+  DEFAULT_RECALL_MAX_RANKED_RESULTS,
   DEFAULT_RECALL_MAX_UNKNOWN_RESULTS,
   DEFAULT_RECALL_QUALITY_POLICY,
   DEFAULT_RUNTIME_MAINTENANCE_MAX_TOKENS,
@@ -127,6 +129,7 @@ const RecallQualitySchema: z<RecallQualityConfig> = z.object({
   highScoreThreshold: z.number().min(0).max(1).default(DEFAULT_RECALL_HIGH_SCORE_THRESHOLD),
   candidateMultiplier: z.number().step(1).min(1).max(5).default(DEFAULT_RECALL_CANDIDATE_MULTIPLIER),
   maxMediumResults: z.number().step(1).min(0).max(50).default(DEFAULT_RECALL_MAX_MEDIUM_RESULTS),
+  maxRankedResults: z.number().step(1).min(0).max(50).default(DEFAULT_RECALL_MAX_RANKED_RESULTS),
   maxUnknownResults: z.number().step(1).min(0).max(50).default(DEFAULT_RECALL_MAX_UNKNOWN_RESULTS),
 })
 
@@ -208,6 +211,7 @@ export const Config: z<Config> = z.object({
     highScoreThreshold: DEFAULT_RECALL_HIGH_SCORE_THRESHOLD,
     candidateMultiplier: DEFAULT_RECALL_CANDIDATE_MULTIPLIER,
     maxMediumResults: DEFAULT_RECALL_MAX_MEDIUM_RESULTS,
+    maxRankedResults: DEFAULT_RECALL_MAX_RANKED_RESULTS,
     maxUnknownResults: DEFAULT_RECALL_MAX_UNKNOWN_RESULTS,
   }),
   routingGuidance: z.boolean().default(true),

@@ -18,4 +18,5 @@ export const DEFAULT_RECALL_LOW_SCORE_THRESHOLD = recallDefaults.lowScoreThresho
 export const DEFAULT_RECALL_HIGH_SCORE_THRESHOLD = recallDefaults.highScoreThreshold
 export const DEFAULT_RECALL_CANDIDATE_MULTIPLIER = recallDefaults.candidateMultiplier
 export const DEFAULT_RECALL_MAX_MEDIUM_RESULTS = recallDefaults.maxMediumResults
+export const DEFAULT_RECALL_MAX_RANKED_RESULTS = recallDefaults.maxRankedResults
 export const DEFAULT_RECALL_MAX_UNKNOWN_RESULTS = recallDefaults.maxUnknownResults
