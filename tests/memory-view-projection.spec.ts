@@ -8,16 +8,19 @@ import { modelMemoryWake } from '../src/host/view-presentation.ts'
 import { compositionFixture } from './fixtures/composition.ts'
 const fixtures: Awaited<ReturnType<typeof compositionFixture>>[] = []
 async function fixture() { const value = await compositionFixture(); fixtures.push(value); return value }
-afterEach(async () => { for (const value of fixtures.splice(0)) await value.dispose() })
+afterEach(async () => { vi.useRealTimers(); for (const value of fixtures.splice(0)) await value.dispose() })
 
 describe('LLM View publication boundary', () => {
   it('describes default projections as bounded when metadata clips a store within both byte limits', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-15T08:00:00.000Z'))
     const { graph, workspace } = await fixture()
     const source = graph.source('runtime')
     const empty = await source.read<RuntimeMemorySnapshot>('snapshot')
+    // Non-default importance keeps enough annotation overhead to exercise truncation.
     const entries = (['user', 'memory'] as const).flatMap(target =>
       Array.from({ length: target === 'user' ? 500 : 1200 }, (_, index) => ({
-        content: `${target === 'user' ? 'u' : 'm'}${index}`, target, importance: 'normal',
+        content: `${target === 'user' ? 'u' : 'm'}${index}`, target, importance: 'critical',
         created_at: '2026-09-01T00:00:00.000Z', updated_at: '2026-09-01T00:00:00.000Z',
       })),
     )
@@ -27,7 +30,7 @@ describe('LLM View publication boundary', () => {
     expect(stored.targets.memory.used).toBeLessThanOrEqual(stored.targets.memory.limit)
     const turn = await graph.composableTurns.beginTurn('metadata:dense', { storage: 'custom', workspaceId: workspace })
     const wake = modelMemoryWake(graph, turn)
-    expect(wake.text).toContain('[importance=normal;')
+    expect(wake.text).toContain('[importance=critical; created=14d; updated=14d]')
     expect(wake.text).not.toContain('\nm1199\n')
     expect(wake.guidance?.system).toContain('budget-limited projection')
     expect(wake.guidance?.system).toContain('absence is not evidence that an entry was deleted')

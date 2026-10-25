@@ -116,14 +116,16 @@ branches (optional)
 
 `USER.md` and `MEMORY.md` are deterministic derived files of the complete store. Each item is normalized to one line, and items are separated by a line containing only `§`; `§` is a reserved character. During startup and prompt assembly, the control layer repairs missing or manually modified projections from the JSON source. Branch filtering applies only to the prompt projection, never to these files.
 
-The Runtime Source adds a metadata line before each entry in the model-facing snapshot:
+The Runtime Source adds a metadata line before an entry only when it has non-default annotations in the model-facing snapshot:
 
 ```text
 [importance=critical; created=14d; updated=2d]
 Prefer concise replies.
 ```
 
-`created` and `updated` are elapsed whole 24-hour days since the stored timestamps, computed once when the projection is captured. Ages below one day are `0d`; future timestamps show `future`, and unparseable timestamps show `unknown`. One capture time covers both roots when the user profile is global. The current turn retains its captured ages; the next turn recalculates them even if the storage revision has not changed.
+`created` and `updated` are elapsed whole 24-hour days since the stored timestamps, computed once when the projection is captured. Ages below one day default to `0d` and are omitted, as is `importance=normal`; an entry with no remaining annotations has no metadata line. Future timestamps still show `future`, and unparseable timestamps show `unknown`. One capture time covers both roots when the user profile is global. The current turn retains its captured ages; the next turn recalculates them even if the storage revision has not changed.
+
+The model-facing text omits the revision hash, entry counts and storage-quota statistics; revision checks remain in the Source protocol and monitoring stays available through management/UI. File boundaries and all visible entries, including low-importance entries, remain. This format change does not classify or defer memory content.
 
 These lines annotate the unchanged entry content. `old_text` / `oldText` must match content only, excluding the metadata line. Recorded importance and age never outrank current instructions. JSON, on-disk Markdown, content matching, entry order and storage capacity remain unchanged. Annotations count toward the existing model projection character budget, so even the default Strategy can truncate or omit entries when there are many short records. Its guidance states that snapshots are budget-limited and that absence does not mean deletion; light-context can impose a smaller budget.
 
