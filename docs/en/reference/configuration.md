@@ -322,7 +322,7 @@ After the Memory Space directory has been established, long-term semantic operat
 
 ## Background Task Agent Model Route
 
-Tidy names and descriptions, Ask Agent, Save to memory in the Memory System and in conversations, and document archiving create a clean independent top-level task Agent. It uses the selected workspace as its cwd, works even when no main Agent session is selected, and is disposed after the task finishes. DSH keeps its session with the origin it gives its own subagents, so neither the sidebar nor the ACP session list shows it as a conversation ([#435](https://github.com/omdsh-dev/dsh-mnemon/issues/435)).
+Tidy names and descriptions, Ask Agent, Save to memory in the Memory System and in conversations, and document archiving create a clean independent top-level task Agent. It uses the selected workspace as its cwd, works even when no main Agent session is selected, and does not inherit the main conversation history. Finishing the task disposes the Agent instance; session records already saved by DSH remain on disk, and Mnemon does not automatically delete them. DSH keeps its session with the origin it gives its own subagents, so neither the sidebar nor the ACP session list shows it as a conversation ([#435](https://github.com/omdsh-dev/dsh-mnemon/issues/435)).
 
 **Background tasks → Task Agent model** on the Layered strategy's page offers three choices for these task Agents and the idle review worker:
 
@@ -348,7 +348,7 @@ Skills keeps its settings under `skills` in the `mnemon` entry, edited on its ow
 
 | Key | Default | Range | Meaning |
 |---|---:|---|---|
-| `skills.evolution` | `false` | boolean | **Self-evolution**: review finished conversations in the background and suggest new or better skills |
+| `skills.evolution` | `false` | boolean | **Self-evolution**: review conversations and suggest skills. Task and subagent sessions are saved locally; Mnemon does not automatically delete them. |
 | `skills.autoBacktest` | `true` | boolean | **Backtest drafts**: compare each new draft with the current version on its test cases |
 | `skills.hints` | `true` | boolean | **In the conversation**: the **Turn skills** line under each turn |
 | `skills.sidebar` | `false` | boolean | **Sidebar entry**: Skills as its own sidebar entry, out of the Memory System |

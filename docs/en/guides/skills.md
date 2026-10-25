@@ -125,7 +125,7 @@ Skills has its own page under **Plugins → dsh-mnemon**, like every component, 
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Self-evolution** | Off | Review finished conversations in the background and suggest new or better skills |
+| **Self-evolution** | Off | Review conversations and suggest skills. Task and subagent sessions are saved locally; Mnemon does not automatically delete them. |
 | **Backtest drafts** | On | Compare each new draft with the current version on its test cases |
 | **Review parameters** | — | The thresholds above, folded, applied together with **Apply** |
 | **In the conversation** | On | Show the **Turn skills** line under each turn |
@@ -138,6 +138,7 @@ The [configuration reference](../reference/configuration.md#skills-settings) lis
 - **Skills stay where DSH reads them.** Edits, installs and adoptions write the skill folders themselves. A deleted or replaced skill goes to the Skills trash first.
 - **Skills' own data** lives in the `skills/` folder of the storage root: the ledger of suggestions, drafts and installs, the test cases and runs, the recorded conversations, every skill version, and the market's sources with their cached lists. See the [storage model](../reference/storage-model.md#skills). It is not part of ZIP backups or Git sync.
 - **Recorded conversations** keep what a review needs to cite (your messages, tool names, inputs and failures, skill loads) with secrets redacted. The newest 100 are kept; pinned records and those a suggestion or case cites stay longest. You can delete any record.
+- **Task and subagent sessions** are saved by DSH in its own session directory (by default `~/.dsh/sessions/`; the actual path depends on DSH configuration), separately from the `skills/` evidence above. A review involves a task Agent and a delegated worker. Disposing those instances, hiding them from the sidebar or deleting Skills evidence does not automatically remove their DSH sessions. Mnemon currently has no session cleanup control or automatic retention period; these sessions are also outside Mnemon ZIP backups and Git sync. Turning **Self-evolution** off stops future automatic reviews without deleting earlier sessions; manual drafts, backtests and other model operations can still create sessions.
 - **Model use.** Only self-evolution, drafts, backtests and making cases from evidence call a model, as task Agents. Browsing, editing, switching and installing do not.
 - **The market** fetches from GitHub, skills.sh and the sites you add. GitHub allows 60 unauthenticated requests an hour; listing a repository takes one, reused for ten minutes. Set `GITHUB_TOKEN` or `GH_TOKEN` in DSH's environment to raise the limit.
 
