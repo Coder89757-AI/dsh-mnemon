@@ -140,7 +140,7 @@ function SkillDetail(props: { context: SkillsPageContext; skillKey: string; stat
   const testsMeta = [t('tests.count', { count: stats?.cases ?? 0 }), ...(stats?.lastScore === undefined ? [] : [t('tests.lastScore', { score: points(stats.lastScore) })])].join(' · ')
   const more = [
     ...(context.client.canAssist('skill-draft') ? [{ id: 'improve', label: t('skills.improve'), disabled: !context.writable }] : []),
-    { id: 'delete', label: t('common.delete'), danger: true, disabled: !context.writable },
+    { id: 'remove', label: t('skills.remove'), danger: true, disabled: !context.writable },
   ]
   return <article className={css.skDetail}>
     <header className={css.skDetailHead}>
@@ -194,11 +194,11 @@ function SkillDetail(props: { context: SkillsPageContext; skillKey: string; stat
     {comparing !== null && <SidebarModal wide title={t('versions.compareTitle', { time: stamp(comparing.version.createdAt) })} onClose={() => setComparing(null)}>
       <DiffBlock maxLines={400} labels={diffLabels(t)} diffs={[{ path: `${skill.name}/SKILL.md`, oldText: comparing.content, newText: skill.content }]} />
     </SidebarModal>}
-    {deleting && <Confirm danger title={t('skills.deleteTitle', { name: skill.name })} body={t('skills.deleteBody')} confirmLabel={t('common.delete')} busy={busy} onClose={() => setDeleting(false)} onConfirm={() => void (async () => {
+    {deleting && <Confirm danger title={t('skills.removeTitle', { name: skill.name })} body={t('skills.removeBody')} confirmLabel={t('skills.remove')} busy={busy} onClose={() => setDeleting(false)} onConfirm={() => void (async () => {
       setBusy(true)
       try {
         await context.client.deleteSkill(skill.key, skill.hash)
-        context.notice(t('skills.deleted', { name: skill.name }))
+        context.notice(t('skills.removed', { name: skill.name }))
         setDeleting(false)
         props.onDeleted()
         context.refresh()

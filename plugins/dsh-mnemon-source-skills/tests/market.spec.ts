@@ -164,7 +164,7 @@ describe('market install', () => {
     const updated = await market.installMarket(undefined, { registryId: 'official', name: 'frontend-design', overwrite: true })
     expect(updated.updated).toBe(true)
     expect(readFileSync(join(root, 'dsh', 'skills', 'frontend-design', 'SKILL.md'), 'utf8')).toContain('upstream v2')
-    expect(market.store.trashed().length).toBe(1)
+    expect(market.store.trashEntries().length).toBe(1)
     expect(market.versions('user-dsh:frontend-design').map(version => version.reason)).toEqual(['install', 'install'])
   })
 

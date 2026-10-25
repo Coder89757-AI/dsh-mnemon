@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
-  BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, MarketSourceKind, ReviewLogEntry, SkillDraft, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary,
+  BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, MarketSourceKind, ReviewLogEntry, SkillDraft, SkillRootKind, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary, TrashEntry,
 } from './contracts.ts'
 
 export const MAX_TRAJECTORIES = 100
@@ -65,6 +65,35 @@ function array<T>(value: unknown): T[] {
 /** An opaque, filesystem-safe directory name for one skill key. */
 export function keyDirectory(skillKey: string): string {
   return createHash('sha256').update(skillKey).digest('hex').slice(0, 16)
+}
+
+/** Where a trashed entry came from, as recorded beside it. */
+interface TrashSource {
+  root?: SkillRootKind
+  key?: string
+}
+
+/** The sidecar a trashed entry keeps, so the page can name and restore it later. */
+interface TrashRecord extends TrashSource {
+  version: 1
+  name: string
+  kind: 'bundle' | 'file'
+  trashedAt: string
+}
+
+/** Bytes an entry occupies on disk; an unreadable entry reports 0. */
+function trashSize(path: string): number {
+  try {
+    const info = statSync(path)
+    if (!info.isDirectory()) return info.size
+    return readdirSync(path).reduce((total, name) => total + trashSize(join(path, name)), 0)
+  } catch { return 0 }
+}
+
+/** The removal time encoded in an entry id, for entries that predate sidecars. */
+function trashStamp(id: string): string | undefined {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z-/u.exec(id)
+  return match === null ? undefined : `${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`
 }
 
 /**
@@ -209,9 +238,15 @@ export class SkillsStore {
     if (/^[a-z0-9][a-z0-9-]{0,62}$/u.test(id)) rmSync(this.path(join('market', 'cache', `${id}.json`)), { force: true })
   }
 
-  /** Move a bundle or a flat file out of DSH's reach, never deleting it. */
-  trash(path: string, name: string): string {
-    const target = this.path(join('trash', `${new Date().toISOString().replace(/[:.]/gu, '-')}-${name}${basename(path).endsWith('.md') && !existsSync(join(path, 'SKILL.md')) ? '.md' : ''}`))
+  /**
+   * Move a bundle or a flat file out of DSH's reach, never deleting it, and
+   * record where it came from so the page can offer to put it back.
+   */
+  trash(path: string, name: string, source: TrashSource = {}): string {
+    const file = basename(path).endsWith('.md') && !existsSync(join(path, 'SKILL.md'))
+    const trashedAt = new Date()
+    const id = `${trashedAt.toISOString().replace(/[:.]/gu, '-')}-${name}${file ? '.md' : ''}`
+    const target = this.path(join('trash', id))
     mkdirSync(join(target, '..'), { recursive: true, mode: 0o700 })
     try {
       renameSync(path, target)
@@ -220,10 +255,63 @@ export class SkillsStore {
       cpSync(path, target, { recursive: true, errorOnExist: true })
       rmSync(path, { recursive: true, force: true })
     }
+    // The entry is already safe; a record is a convenience, so never fail the removal over it.
+    try {
+      this.writeJson(join('trash', `${id}.json`), { version: 1, name, kind: file ? 'file' : 'bundle', trashedAt: trashedAt.toISOString(), ...source } satisfies TrashRecord)
+    } catch { /* an entry without a record still lists, but only as a name */ }
     return target
   }
 
-  trashed(): string[] {
-    try { return readdirSync(this.path('trash')).sort().reverse() } catch { return [] }
+  /** Every entry waiting in the Trash, newest first; entries removed before records existed still list. */
+  trashEntries(): TrashEntry[] {
+    let names: string[]
+    try { names = readdirSync(this.path('trash')) } catch { return [] }
+    const entries: TrashEntry[] = []
+    for (const id of names) {
+      if (id.endsWith('.json')) continue
+      const record = object(this.readJson(join('trash', `${id}.json`)))
+      const stored = record === undefined ? undefined : record as Partial<TrashRecord>
+      const name = typeof stored?.name === 'string' ? stored.name : /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-(.+)$/u.exec(id)?.[1]?.replace(/\.md$/u, '') ?? id
+      entries.push({
+        id,
+        name,
+        kind: stored?.kind === 'file' || stored?.kind === 'bundle' ? stored.kind : id.endsWith('.md') ? 'file' : 'bundle',
+        trashedAt: typeof stored?.trashedAt === 'string' ? stored.trashedAt : trashStamp(id) ?? new Date(0).toISOString(),
+        bytes: trashSize(this.path(join('trash', id))),
+        ...(stored?.root === undefined ? {} : { root: stored.root }),
+        ...(typeof stored?.key === 'string' ? { key: stored.key } : {}),
+      })
+    }
+    return entries.sort((a, b) => b.trashedAt.localeCompare(a.trashedAt) || b.id.localeCompare(a.id))
+  }
+
+  /** The entry with this id, or a refusal: the caller names what it wants back or gone. */
+  trashEntry(id: string): TrashEntry {
+    const entry = this.trashEntries().find(candidate => candidate.id === id)
+    if (entry === undefined) throw new Error('trash entry not found: ' + id)
+    return entry
+  }
+
+  /** Move an entry back under `directory`, refusing to overwrite; returns where it landed. */
+  restoreTrash(entry: TrashEntry, directory: string): string {
+    const from = this.path(join('trash', entry.id))
+    const to = join(directory, entry.kind === 'file' ? `${entry.name}.md` : entry.name)
+    if (existsSync(to)) throw new Error(`${entry.name} already exists there; rename or remove it first`)
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    try {
+      renameSync(from, to)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+      cpSync(from, to, { recursive: true, errorOnExist: true })
+      rmSync(from, { recursive: true, force: true })
+    }
+    rmSync(this.path(join('trash', `${entry.id}.json`)), { force: true })
+    return to
+  }
+
+  /** Delete an entry for good. */
+  purgeTrash(entry: TrashEntry): void {
+    rmSync(this.path(join('trash', entry.id)), { recursive: true, force: true })
+    rmSync(this.path(join('trash', `${entry.id}.json`)), { force: true })
   }
 }

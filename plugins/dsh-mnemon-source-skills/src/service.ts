@@ -7,7 +7,7 @@ import {
   type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView,
   type MarketEntry, type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketSearchResult,
   type MarketSourceKind, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
-  type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary,
+  type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary, type TrashEntry,
 } from './contracts.ts'
 import { activeSkill, catalogFingerprint, findSkill, readCatalog, readSkillDocument, rootPath, sha256, type SkillRootOptions } from './catalog.ts'
 import { isSkillName, skillTemplate, validateSkillContent, withInvocation } from './frontmatter.ts'
@@ -145,6 +145,7 @@ export class SkillsService {
         trajectories: ledger.trajectories.length,
         cases: evals.cases.filter(entry => entry.enabled).length,
         runsRunning: evals.runs.filter(run => staleRun(run, now.getTime()).status === 'running').length,
+        trash: this.store.trashEntries().length,
       },
       ...(ledger.reviews[0] === undefined ? {} : { lastReviewAt: ledger.reviews[0].at }),
       attention: attention.slice(0, 20),
@@ -369,13 +370,51 @@ export class SkillsService {
       const previous = this.requireHash(skill, input.expectedHash)
       const ledger = this.store.ledger()
       if (ledger.versions.every(version => version.skillKey !== skill.key)) this.recordVersion(ledger, skill.key, previous, 'original', undefined)
-      const trashedTo = this.store.trash(skill.layout === 'bundle' ? dirname(skill.path) : skill.path, skill.name)
+      const trashedTo = this.store.trash(skill.layout === 'bundle' ? dirname(skill.path) : skill.path, skill.name, { root: skill.root, key: skill.key })
       const now = this.clock().toISOString()
       for (const suggestion of ledger.suggestions) {
         if (suggestion.skillKey === skill.key && suggestion.action === 'update' && OPEN_STATUSES.has(suggestion.status)) { suggestion.status = 'invalidated'; suggestion.updatedAt = now }
       }
       this.store.saveLedger(ledger)
       return { trashedTo }
+    })
+  }
+
+  /** Skills removed and waiting in the Trash, newest first. */
+  trashItems(): TrashEntry[] {
+    return this.store.trashEntries()
+  }
+
+  /** Put a removed skill back, refusing a root that already holds its name. */
+  restoreTrash(workspace: string | undefined, input: { id: string; root?: SkillRootKind }): Promise<{ key: string; path: string }> {
+    return this.write(() => {
+      const entry = this.store.trashEntry(input.id)
+      if (!isSkillName(entry.name)) throw new Error('this Trash entry no longer names a skill: ' + entry.id)
+      const catalog = this.catalog(workspace)
+      const root = input.root ?? entry.root ?? DEFAULT_ROOT
+      const directory = rootPath(catalog, root)
+      const target = join(directory, entry.kind === 'file' ? `${entry.name}.md` : entry.name)
+      if (existsSync(target)) throw new Error(`${entry.name} already exists in ${root}; rename or remove it first`)
+      this.store.restoreTrash(entry, directory)
+      return { key: `${root}:${entry.name}`, path: target }
+    })
+  }
+
+  /** Delete a Trash entry for good. */
+  purgeTrash(input: { id: string }): Promise<{ purged: string }> {
+    return this.write(() => {
+      const entry = this.store.trashEntry(input.id)
+      this.store.purgeTrash(entry)
+      return { purged: entry.id }
+    })
+  }
+
+  /** Delete everything waiting in the Trash for good, and say how much went. */
+  emptyTrash(): Promise<{ purged: number }> {
+    return this.write(() => {
+      const entries = this.store.trashEntries()
+      for (const entry of entries) this.store.purgeTrash(entry)
+      return { purged: entries.length }
     })
   }
 

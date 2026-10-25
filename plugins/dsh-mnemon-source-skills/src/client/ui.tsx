@@ -7,9 +7,10 @@ import { EvolutionPage } from './evolution-page.tsx'
 import { MarketPage } from './market-page.tsx'
 import { css, errorText, sidebarCss, translate, useT } from './presentation.ts'
 import { SkillsPage } from './skills-page.tsx'
+import { TrashPage } from './trash-page.tsx'
 import { installSkillUseBridge, requestSkillUse } from './use-skill.tsx'
 
-export type SkillsTab = 'skills' | 'evolution' | 'evals' | 'market'
+export type SkillsTab = 'skills' | 'evolution' | 'evals' | 'market' | 'trash'
 /** What 进化 lists: suggestions still waiting, those handled, or the conversations reviews read. */
 export type EvolutionFilter = 'pending' | 'done' | 'evidence'
 
@@ -51,7 +52,7 @@ export interface SkillsPageContext {
   sessionId?: string
 }
 
-const TABS: readonly SkillsTab[] = ['skills', 'evolution', 'evals', 'market']
+const TABS: readonly SkillsTab[] = ['skills', 'evolution', 'evals', 'market', 'trash']
 const POLL_MS = 3_000
 const NOTICE_MS = 5_000
 const FILTERS: readonly EvolutionFilter[] = ['pending', 'done', 'evidence']
@@ -144,10 +145,12 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
     ...(props.sessionId === undefined ? {} : { sessionId: props.sessionId }),
   }
   const waiting = overview === null ? 0 : overview.counts.pending + overview.counts.drafts
+  const trashed = overview === null ? 0 : overview.counts.trash
   const tabs = <div className={sidebarCss.memoryNavigation}>
     <div className={sidebarCss.memoryTabs} role="tablist" aria-label={t('tabs.aria')}>
       {TABS.map(tab => <button key={tab} type="button" role="tab" aria-selected={location.tab === tab} data-active={location.tab === tab ? '' : undefined} onClick={() => setLocation({ tab })}>
         {t(`tab.${tab}`)}{tab === 'evolution' && waiting > 0 && <b className={css.skTabBadge} aria-label={t('tabs.waiting', { count: waiting })}>{waiting}</b>}
+        {tab === 'trash' && trashed > 0 && <b className={css.skTabBadge} aria-label={t('tabs.trash', { count: trashed })}>{trashed}</b>}
       </button>)}
     </div>
   </div>
@@ -163,6 +166,7 @@ function SkillsView(props: MemorySourcePageProps & { management: NonNullable<Mem
       {location.tab === 'evolution' && <EvolutionPage context={context} location={location} />}
       {location.tab === 'evals' && <EvalsPage context={context} location={location} />}
       {location.tab === 'market' && <MarketPage context={context} location={location} />}
+      {location.tab === 'trash' && <TrashPage context={context} location={location} />}
     </div>
   </>
 }
