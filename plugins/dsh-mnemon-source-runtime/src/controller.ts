@@ -195,9 +195,15 @@ function age(timestamp: string, projectedAt: number): string {
 
 /** Prompt-only annotations; stored content, matching and capacity stay unchanged. */
 function contextMarkdown(entries: readonly RuntimeMemoryEntry[], target: RuntimeMemoryTarget, projectedAt: number): string {
-  return entries.filter(entry => entry.target === target).map(entry =>
-    `[importance=${entry.importance}; created=${age(entry.created_at, projectedAt)}; updated=${age(entry.updated_at, projectedAt)}]\n${entry.content}`,
-  ).join(RUNTIME_ENTRY_DELIMITER)
+  return entries.filter(entry => entry.target === target).map(entry => {
+    const annotations: string[] = []
+    if (entry.importance !== 'normal') annotations.push(`importance=${entry.importance}`)
+    for (const [name, timestamp] of [['created', entry.created_at], ['updated', entry.updated_at]] as const) {
+      const elapsed = age(timestamp, projectedAt)
+      if (elapsed !== '0d') annotations.push(`${name}=${elapsed}`)
+    }
+    return `${annotations.length === 0 ? '' : `[${annotations.join('; ')}]\n`}${entry.content}`
+  }).join(RUNTIME_ENTRY_DELIMITER)
 }
 
 function revision(file: RuntimeMemoryFile): string {
@@ -448,8 +454,6 @@ export class RuntimeMemoryController {
             user: { ...visibleUser, markdownPath: this.userPath },
           },
         } satisfies RuntimeMemorySnapshot
-    const storeMemory = this.targetView(entries, 'memory')
-    const storeUser = this.targetView(entries, 'user')
     const visibleEntries = branchScope === undefined
       ? entries
       : entries.filter(entry => entry.target === 'user' || entryMatchesBranch(entry, branchScope))
@@ -461,15 +465,14 @@ export class RuntimeMemoryController {
       entries: visibleEntries.map(entry => ({ ...entry, ...(entry.branches === undefined ? {} : { branches: [...entry.branches] }) })),
       totalEntries: entries.length,
       text: `MNEMON RUNTIME MEMORY SNAPSHOT
-Revision: ${snapshot.revision}${branchLine}
-Metadata lines are annotations; created/updated are ages at projection in whole days (future/unknown for future/invalid timestamps). Current instructions win. For old_text/oldText, use entry content only.
+Entry annotations default to importance=normal and ages=0d (whole days at projection; future/unknown for future/invalid timestamps). Current instructions win. For old_text/oldText, use entry content only.${branchLine}
 
-Contents of USER.md (user profile; entries: ${visibleUser.entryCount}; UTF-8 bytes: ${storeUser.used}/${storeUser.limit})
+USER.md (user profile)
 <runtime-memory-file name="USER.md">
 ${user || '(empty)'}
 </runtime-memory-file>
 
-Contents of MEMORY.md (working reference; entries: ${visibleMemory.entryCount}; UTF-8 bytes: ${storeMemory.used}/${storeMemory.limit})
+MEMORY.md (working reference)
 <runtime-memory-file name="MEMORY.md">
 ${memory || '(empty)'}
 </runtime-memory-file>`,

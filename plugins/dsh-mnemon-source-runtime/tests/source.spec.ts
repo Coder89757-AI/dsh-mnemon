@@ -29,13 +29,13 @@ describe('standalone runtime Source', () => {
       await controller.mutate({ action: 'replace', target: 'memory', oldText: 'Original fact.', content: 'Corrected fact.', importance: 'low' })
       const project = { scope, sourceInstanceKey, expectedRevision: facts.revision, includeProjection: true, mode: 'eager' as const, maxCharacters: 2048 }
       const pinned = await source.project(project)
-      expect(pinned.fragments[0]?.text).toContain('[importance=critical; created=0d; updated=0d]\nOriginal fact.')
+      expect(pinned.fragments[0]?.text).toContain('[importance=critical]\nOriginal fact.')
       expect(pinned.fragments[0]?.text).not.toContain('Corrected fact.')
 
       const nextScope = { ...scope }
       const nextFacts = await source.facts({ ...request, scope: nextScope })
       const next = await source.project({ ...project, scope: nextScope, expectedRevision: nextFacts.revision })
-      expect(next.fragments[0]?.text).toContain('[importance=low; created=1d; updated=0d]\nCorrected fact.')
+      expect(next.fragments[0]?.text).toContain('[importance=low; created=1d]\nCorrected fact.')
       expect(next.fragments[0]?.revision).not.toBe(pinned.fragments[0]?.revision)
       expect(next.presentation?.items).toMatchObject([{ title: 'Corrected fact.' }])
     } finally {
@@ -112,7 +112,7 @@ describe('standalone runtime Source', () => {
       first.release()
       const next = await runner.beginTurn({ scope: { storage: 'custom', workspaceId: workspace } })
       expect(next.view.projection.find(value => value.sourceInstanceKey === 'source:work')?.text)
-        .toContain('[importance=normal; created=0d; updated=0d]\nwork-only sentinel')
+        .toContain('<runtime-memory-file name="MEMORY.md">\nwork-only sentinel')
       expect(next.view.sourcePresentations?.find(value => value.sourceInstanceKey === 'source:work')).toMatchObject({
         mode: 'eager', visibleItems: 1, totalItems: 1, items: [{ title: 'work-only sentinel' }],
       })

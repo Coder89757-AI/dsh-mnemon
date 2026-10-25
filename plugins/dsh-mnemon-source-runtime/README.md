@@ -19,7 +19,7 @@ Choose an existing data authority deliberately. Without `dataDir`, each stable S
 
 Disabling participation does not delete stored entries. Source data remains separate from the current turn's projection and access grants.
 
-Model projections annotate each entry with its recorded importance and elapsed whole-day ages, for example `[importance=critical; created=14d; updated=2d]`, followed by the exact content. Future timestamps show `future`; unparseable ones show `unknown`. Ages are captured once per projection and remain fixed for that turn. Annotations count toward the Strategy's projection budget, but do not change stored JSON/Markdown, content matching or storage capacity. For replacement/removal, use only the entry content. Current instructions retain priority.
+Model projections omit default `importance=normal` and whole-day ages of `0d`; they annotate entries only when non-default fields remain, for example `[importance=critical; created=14d; updated=2d]`, followed by the exact content. Future timestamps show `future`; unparseable ones show `unknown`. Ages are captured once per projection and remain fixed for that turn. Annotations count toward the Strategy's projection budget, but do not change stored JSON/Markdown, content matching or storage capacity. For replacement/removal, use only the entry content. Current instructions retain priority. Model-facing text omits revision hashes and quota/count statistics, while the Source protocol and management/UI retain them. File boundaries and all visible content remain; no low-importance entry is automatically hidden.
 
 ## Storage files
 
