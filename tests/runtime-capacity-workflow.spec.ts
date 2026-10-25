@@ -57,6 +57,30 @@ async function fixture(taskRunner?: RuntimeMaintenanceTaskRunner, config: Config
 }
 
 describe('default Runtime capacity workflow across Host entry points', () => {
+  it.each(['named', 'generic', 'fallback'].flatMap(entry => [false, true].map(overflow => ({ entry, overflow }))))('preserves importance for $entry writes, overflow=$overflow (#469)', async ({ entry, overflow }) => {
+    const f = await fixture()
+    const runtime = f.graph.source('runtime')
+    await runtime.mutate('mutate', { action: 'replace', target: 'memory', oldText: saved, content: saved, importance: 'critical' })
+    await runtime.mutate('mutate', { action: 'add', target: 'memory', content: 'Filler '.repeat(20).trim(), importance: 'low' })
+    const turn = entry === 'fallback' ? undefined : await f.begin()
+    const content = 'Corrected durable rule. '.repeat(overflow ? 19 : 3).trim()
+    const mutation = { action: 'replace' as const, target: 'memory' as const, oldText: saved, content, importance: 'normal' as const }
+    if (entry === 'fallback') await f.coordinator.runtime(f.root, mutation, new AbortController().signal)
+    else if (entry === 'named') await f.execute('mnemon_runtime_memory', { ...mutation, old_text: saved }, f.child)
+    else {
+      const offer = turn!.view.actionOffers.find(value => value.sourceInstanceKey === runtimeKey && value.sourceActionId === 'mutate')!
+      // A model-provided flag cannot bypass the Source's automatic-write policy.
+      await expect(f.execute('mnemon_view_action', { offerId: offer.id, input: { ...mutation, preserveImportance: false } }, f.child)).rejects.toThrow('unsupported property')
+      await f.execute('mnemon_view_action', { offerId: offer.id, input: mutation }, f.child)
+    }
+    const entries = (await runtime.read<RuntimeMemorySnapshot>('snapshot')).entries
+    expect(entries.find(row => row.content === content)?.importance).toBe('critical')
+    expect(entries).toHaveLength(overflow ? 1 : 2)
+    // Explicit management still lets the user lower an entry's importance.
+    await runtime.mutate('mutate', { ...mutation, oldText: content, content: 'User-edited rule', importance: 'low' })
+    expect((await runtime.read<RuntimeMemorySnapshot>('snapshot')).entries.find(row => row.content === 'User-edited rule')?.importance).toBe('low')
+  })
+
   it.each(['root', 'child', 'enhanced-root', 'enhanced-child'] as const)('archives into a known namespace activated after the %s View was pinned (issue 250)', async caller => {
     const f = await fixture()
     if (caller.startsWith('enhanced-')) {

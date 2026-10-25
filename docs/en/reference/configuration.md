@@ -154,6 +154,8 @@ The defaults preserve the released 10240 / 4096 / 8192 behavior. Saving the bloc
 
 Storage byte limits count entry content and delimiters. The model snapshot's importance and age annotations do not consume storage capacity; they do consume the Strategy's existing projection character budget. They add no ranking, relevance filter or separate configuration.
 
+Automatic Runtime Actions, including idle review, can retain or raise an existing entry's importance but cannot lower it. Capacity planning and compaction preserve the same rule. A replacement receipt says when the original importance was retained. Explicit edits on the Runtime memory page can still lower importance. Existing saved entries are not reclassified.
+
 The Runtime memory page shows each file's size against its limit.
 
 ![Runtime memory with USER.md and MEMORY.md against their default limits](../../assets/webui-v0.5.32/en/memory-runtime-limits.jpg)

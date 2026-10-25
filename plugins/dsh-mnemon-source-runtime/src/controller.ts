@@ -208,6 +208,7 @@ function prepareMutation(
   before: readonly RuntimeMemoryEntry[],
   request: RuntimeMemoryMutation,
   now: string,
+  preserveImportance = false,
 ): PreparedRuntimeMemoryMutation {
   if (!isTarget(request.target)) throw new Error('target must be memory or user')
   if (!['add', 'replace', 'remove'].includes(request.action)) throw new Error('action must be add, replace, or remove')
@@ -258,12 +259,15 @@ function prepareMutation(
   const compactableEntries = entries.filter((entry, entryIndex) => entry.target === request.target && entryIndex !== index)
 
   if (request.action === 'replace') {
+    const ranks = { low: 0, normal: 1, critical: 2 }
+    const requested = request.importance ?? previous.importance
+    const importance = preserveImportance && ranks[requested] < ranks[previous.importance] ? previous.importance : requested
     const content = normalizeContent(request.content, 'content')
     const pendingEntry: RuntimeMemoryEntry = {
       ...previous,
       content,
       updated_at: now,
-      importance: request.importance ?? previous.importance,
+      importance,
     }
     if (branchScope !== undefined) {
       if (branchScope.length === 0) delete pendingEntry.branches
@@ -276,7 +280,7 @@ function prepareMutation(
       compactableEntries,
       pendingEntry,
       excludedEntry: previous,
-      fields: { message: 'Entry replaced.', replaced: { from: previous.content, to: content } },
+      fields: { message: importance === requested ? 'Entry replaced.' : 'Entry replaced; original importance preserved.', replaced: { from: previous.content, to: content } },
     }
   }
 
@@ -500,19 +504,19 @@ ${memory || '(empty)'}
     })
   }
 
-  mutate(request: RuntimeMemoryMutation): Promise<RuntimeMemoryMutationResult> {
-    if (request.target === 'user' && this.userController !== undefined) return this.userController.mutate(request)
-    const operation = this.queue.then(() => this.withLock(() => this.mutateLocked(request)))
+  mutate(request: RuntimeMemoryMutation, options: { preserveImportance?: boolean } = {}): Promise<RuntimeMemoryMutationResult> {
+    if (request.target === 'user' && this.userController !== undefined) return this.userController.mutate(request, options)
+    const operation = this.queue.then(() => this.withLock(() => this.mutateLocked(request, options.preserveImportance)))
     this.queue = operation.catch(() => undefined)
     return operation
   }
 
   /** Resolve exactly which committed entries survive a blocked mutation and are safe to compact. */
-  planMaintenance(request: RuntimeMemoryMutation): Promise<RuntimeMemoryMaintenancePlan> {
-    if (request.target === 'user' && this.userController !== undefined) return this.userController.planMaintenance(request)
+  planMaintenance(request: RuntimeMemoryMutation, options: { preserveImportance?: boolean } = {}): Promise<RuntimeMemoryMaintenancePlan> {
+    if (request.target === 'user' && this.userController !== undefined) return this.userController.planMaintenance(request, options)
     const operation = this.queue.then(() => this.withLock(() => {
       const file = this.readSource()
-      const prepared = prepareMutation(file.entries, request, this.now().toISOString())
+      const prepared = prepareMutation(file.entries, request, this.now().toISOString(), options.preserveImportance)
       const used = runtimeBytes(file.entries, request.target)
       const projected = runtimeBytes(prepared.projectedEntries, request.target)
       const limit = this.limits[request.target]
@@ -546,17 +550,17 @@ ${memory || '(empty)'}
     request: RuntimeMemoryMutation,
     compacted: RuntimeMemoryCompactedEntry[],
     maxCompactedBytes?: number,
-    options: { archive?: 'local' } = {},
+    options: { archive?: 'local'; preserveImportance?: boolean } = {},
   ): Promise<RuntimeMemoryMutationResult> {
     if (request.target === 'user' && this.userController !== undefined) {
-      return this.userController.compactAndMutate(expectedRevision, request, compacted, maxCompactedBytes)
+      return this.userController.compactAndMutate(expectedRevision, request, compacted, maxCompactedBytes, options)
     }
     const operation = this.queue.then(() => this.withLock(() => {
       const file = this.readSource()
       const beforeRevision = revision(file)
       if (beforeRevision !== expectedRevision) throw new RuntimeMemoryConflictError()
       const now = this.now().toISOString()
-      const prepared = prepareMutation(file.entries, request, now)
+      const prepared = prepareMutation(file.entries, request, now, options.preserveImportance)
       const compactedByteBudget = maxCompactedBytes ?? this.limits[request.target]
       if (!Number.isInteger(compactedByteBudget) || compactedByteBudget < 0 || compactedByteBudget > this.limits[request.target]) {
         throw new Error('compaction byte budget is invalid')
@@ -623,9 +627,9 @@ ${memory || '(empty)'}
     })
   }
 
-  private mutateLocked(request: RuntimeMemoryMutation): RuntimeMemoryMutationResult {
+  private mutateLocked(request: RuntimeMemoryMutation, preserveImportance = false): RuntimeMemoryMutationResult {
     const file = this.readSource()
-    const prepared = prepareMutation(file.entries, request, this.now().toISOString())
+    const prepared = prepareMutation(file.entries, request, this.now().toISOString(), preserveImportance)
     if (!prepared.changed) return this.result(request.target, prepared.projectedEntries, prepared.fields)
     const used = runtimeBytes(prepared.projectedEntries, request.target)
     const limit = this.limits[request.target]
