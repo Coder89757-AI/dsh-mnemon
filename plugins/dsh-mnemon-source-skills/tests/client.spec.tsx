@@ -24,7 +24,7 @@ import { installSkillsMemoryUI, SkillsSourcePage } from '../src/client.ts'
 import { draftWithSkill, installSkillUseBridge, SKILL_USE_SLOT, SkillUseBridge } from '../src/client/use-skill.tsx'
 import { translate } from '../src/client/presentation.ts'
 import { compareRuns } from '../src/client/evolution-page.tsx'
-import type { BacktestRun, CaseResult, ReviewRecordInput } from '../src/contracts.ts'
+import type { BacktestRun, CaseResult, ReviewRecordInput, SkillSummary, TrashEntry } from '../src/contracts.ts'
 
 const t = translate('en')
 /** An accessible name made of these parts in order, however its markup spaces them. */
@@ -78,11 +78,70 @@ afterEach(async () => {
   rmSync(directory, { recursive: true, force: true })
 })
 
-function page(navigationInput?: { seed: string; nonce: number }) {
+function page(navigationInput: { seed: string; nonce: number } = { seed: 'skill:user-dsh:release-notes', nonce: 1 }) {
   return render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={management} {...(navigationInput === undefined ? {} : { navigationInput })} />)
 }
 
 describe('Skills page', () => {
+  it('restores a removed skill from the Trash and refreshes its count', async () => {
+    const skill = (await management.read('skill', { key: 'user-dsh:release-notes' })).value as unknown as SkillSummary
+    await mutate('skill-delete', { key: skill.key, expectedHash: skill.hash })
+    page()
+    fireEvent.click(await screen.findByRole('tab', { name: /^Trash/u }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+    await screen.findByText('The Trash is empty')
+    expect(readFileSync(skillPath(), 'utf8')).toBe(SKILL)
+    expect((await management.read('trash-list', null)).value).toEqual([])
+  })
+
+  it('asks where to restore a legacy entry and does not choose a user root silently', async () => {
+    const trash = join(directory, 'data', 'skills', 'trash')
+    mkdirSync(trash, { recursive: true })
+    writeFileSync(join(trash, '2026-10-20T09-30-00-000Z-legacy.md'), SKILL.replaceAll('release-notes', 'legacy'))
+    page()
+    fireEvent.click(await screen.findByRole('tab', { name: /^Trash/u }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Restore legacy' })
+    expect((within(dialog).getByRole('button', { name: 'Restore' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: /Location.*Choose a restore location/u }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'User · .agents' }))
+    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Restore' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Restore' }))
+    await screen.findByText('The Trash is empty')
+    expect(readFileSync(join(directory, 'agents', 'skills', 'legacy.md'), 'utf8')).toContain('name: legacy')
+  })
+
+  it('requires an explicit replacement choice and keeps the displaced skill recoverable', async () => {
+    const skill = (await management.read('skill', { key: 'user-dsh:release-notes' })).value as unknown as SkillSummary
+    await mutate('skill-delete', { key: skill.key, expectedHash: skill.hash })
+    await mutate('skill-create', { name: 'release-notes', description: 'New version.' })
+    page()
+    fireEvent.click(await screen.findByRole('tab', { name: /^Trash/u }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Restore release-notes' })
+    expect((within(dialog).getByRole('button', { name: 'Restore' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(await within(dialog).findByRole('checkbox'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(readFileSync(skillPath(), 'utf8')).toBe(SKILL)
+    expect((await management.read('trash-list', null)).value as unknown as TrashEntry[]).toHaveLength(1)
+  })
+
+  it('requires the skill name before permanent deletion and rejects unconfirmed RPC mutations', async () => {
+    const skill = (await management.read('skill', { key: 'user-dsh:release-notes' })).value as unknown as SkillSummary
+    await mutate('skill-delete', { key: skill.key, expectedHash: skill.hash })
+    const entries = (await management.read('trash-list', null)).value as unknown as TrashEntry[]
+    await expect(management.mutate('trash-purge', { id: entries[0]!.id }, { confirmed: false } as never)).rejects.toThrow(/confirm/iu)
+    page()
+    fireEvent.click(await screen.findByRole('tab', { name: /^Trash/u }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete for good' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete release-notes for good?' })
+    expect((within(dialog).getByRole('button', { name: 'Delete for good' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'release-notes' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete for good' }))
+    await screen.findByText('The Trash is empty')
+  })
+
   it('offers to turn self-evolution on where it is off, and opens its settings', async () => {
     const replace = vi.fn(async () => undefined)
     const onOpenSettings = vi.fn()

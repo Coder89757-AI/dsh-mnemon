@@ -2,7 +2,7 @@ import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
 import type { MnemonSourceManagementClient } from 'dsh-mnemon/client'
 import type {
   BacktestRun, CatalogView, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketSearchResult, MarketView, EvidencePack, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
-  SkillVersion, SkillsOverview, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary,
+  SkillVersion, SkillsOverview, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary, TrashEntry, TrashRestoreInput, TrashRestorePreview,
 } from '../contracts.ts'
 
 export interface CaseDraft {
@@ -36,6 +36,15 @@ export interface SkillsPageClient {
   saveSkill(key: string, content: string, expectedHash: string): Promise<SkillSummary>
   setInvocation(key: string, invocation: { modelInvocable: boolean; userInvocable: boolean }, expectedHash: string): Promise<SkillSummary>
   deleteSkill(key: string, expectedHash: string): Promise<{ trashedTo: string }>
+  /** Removed skills waiting in the Trash, newest first. */
+  trash(): Promise<TrashEntry[]>
+  /** Put a removed skill back; a new root moves it out of the one it came from. */
+  previewTrashRestore(input: TrashRestoreInput): Promise<TrashRestorePreview>
+  restoreTrash(input: TrashRestoreInput): Promise<{ key: string; path: string }>
+  /** Delete a Trash entry for good. */
+  purgeTrash(id: string): Promise<{ purged: string }>
+  /** Delete everything waiting in the Trash. */
+  emptyTrash(): Promise<{ purged: number }>
   restoreVersion(key: string, versionId: string, expectedHash: string): Promise<SkillSummary>
   dismissSuggestion(id: string): Promise<SkillSuggestion>
   pinTrajectory(id: string, pinned: boolean): Promise<TrajectorySummary>
@@ -114,6 +123,11 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
     saveSkill: (key, content, expectedHash) => mutate('skill-save', { key, content, expectedHash }),
     setInvocation: (key, invocation, expectedHash) => mutate('skill-invocation', { key, ...invocation, expectedHash }),
     deleteSkill: (key, expectedHash) => mutate('skill-delete', { key, expectedHash }),
+    trash: () => read('trash-list'),
+    previewTrashRestore: input => read('trash-restore-preview', input),
+    restoreTrash: input => mutate('trash-restore', input),
+    purgeTrash: id => mutate('trash-purge', { id }),
+    emptyTrash: () => mutate('trash-empty', {}),
     restoreVersion: (key, versionId, expectedHash) => mutate('version-restore', { key, versionId, expectedHash }),
     dismissSuggestion: id => mutate('suggestion-dismiss', { id }),
     pinTrajectory: (id, pinned) => mutate('trajectory-pin', { id, pinned }),

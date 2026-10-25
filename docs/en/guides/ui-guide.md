@@ -169,7 +169,7 @@ Each space declares what its Provider can really supply. Mnemon Native gives typ
 
 ![Skills: every skill by where it lives, one shadowed; release-notes with an improvement waiting](../../assets/skills-v0.5.34/en/skills-library.jpg)
 
-**Skills** is the page of the experimental Skills component, with four tabs of its own: **Skills** to switch, use, edit and restore the DSH skills a workspace loads; **Evolution** for what self-evolution suggests, its drafts and their evidence; **Evals** for every skill's test cases and backtests; **Market** to search skills.sh and install from GitHub repositories, Agent Skills sites and catalogs. With **Sidebar entry** on, the page becomes a sidebar entry of its own and leaves the Memory System. The [Skills guide](./skills.md) walks through each tab, with a screen for each.
+**Skills** is the page of the experimental Skills component, with five tabs of its own: **Skills** to switch, use, edit and restore the DSH skills a workspace loads; **Evolution** for what self-evolution suggests, its drafts and their evidence; **Evals** for every skill's test cases and backtests; **Market** to search skills.sh and install from GitHub repositories, Agent Skills sites and catalogs; **Trash** restores or permanently deletes removed skills. With **Sidebar entry** on, the page becomes a sidebar entry of its own and leaves the Memory System. The [Skills guide](./skills.md) walks through each tab, with a screen for each.
 
 ### On a phone
 

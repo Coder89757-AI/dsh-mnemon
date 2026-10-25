@@ -307,6 +307,40 @@ export const DEFAULT_SKILLS_POLICY: Readonly<SkillsPolicy> = Object.freeze({
   maxPendingPerSession: 5,
 })
 
+/** One removed skill waiting in the Trash, and where it came from. */
+export interface TrashEntry {
+  /** The stored directory name: `<removal time>-<skill name>`. */
+  id: string
+  name: string
+  /** A bundle directory, or a single flat `.md` file. */
+  kind: 'bundle' | 'file'
+  trashedAt: string
+  bytes: number
+  /** The root it was removed from; absent for entries removed before this was recorded. */
+  root?: SkillRootKind
+  key?: string
+  /** Exact original file or bundle path; its parent must match the recorded root. */
+  originalPath?: string
+  /** The project that owned a project-level skill, independent of the selected workspace. */
+  workspace?: string
+}
+
+export interface TrashRestoreInput {
+  id: string
+  root?: SkillRootKind
+  name?: string
+  replace?: boolean
+  expectedHash?: string
+}
+
+export interface TrashRestorePreview {
+  name: string
+  roots: SkillRootKind[]
+  needsRoot: boolean
+  path?: string
+  conflict?: { hash: string }
+}
+
 export interface SkillsOverview {
   counts: {
     skills: number
@@ -317,6 +351,8 @@ export interface SkillsOverview {
     trajectories: number
     cases: number
     runsRunning: number
+    /** Skills waiting in the Trash. */
+    trash: number
   }
   lastReviewAt?: string
   /** Suggestions and drafts waiting for the user, newest first. */

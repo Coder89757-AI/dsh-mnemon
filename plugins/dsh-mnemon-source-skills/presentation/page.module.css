@@ -351,6 +351,11 @@
 .skVersions li:hover { background: var(--mn-hover); }
 .skVersions time { color: var(--mn-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .skVersions li > span { flex: 1; }
+.skTrashList li { flex-wrap: wrap; padding-block: 10px; }
+.skTrashList li > span { flex: 0 0 auto; }
+.skTrashList li > .skRowText { flex: 1 1 220px; }
+.skTrashTags { display: flex; flex-wrap: wrap; gap: 6px; }
+.skTrashList li > .skTrashActions { display: flex; flex: 0 0 auto; margin-left: auto; gap: 6px; }
 .skResources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .skResources code { padding: 1px 8px; border-radius: 999px; color: var(--mn-muted); background: var(--mn-fill); font: 11px/17px var(--mn-code); }
 

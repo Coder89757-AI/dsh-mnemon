@@ -1,18 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import {
   SKILL_ROOT_KINDS,
   type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView,
   type MarketEntry, type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketSearchResult,
   type MarketSourceKind, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
-  type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary,
+  type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary, type TrashEntry, type TrashRestoreInput, type TrashRestorePreview,
 } from './contracts.ts'
 import { activeSkill, catalogFingerprint, findSkill, readCatalog, readSkillDocument, rootPath, sha256, type SkillRootOptions } from './catalog.ts'
-import { isSkillName, skillTemplate, validateSkillContent, withInvocation } from './frontmatter.ts'
+import { isSkillName, setFrontmatterKey, skillTemplate, validateSkillContent, withInvocation } from './frontmatter.ts'
 import { admitReview, expireSuggestions, OPEN_STATUSES, policyFrom, similarCase, trajectorySummary } from './policy.ts'
-import { MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, SkillsStore, type EvalsFile, type LedgerFile, type RegistryRecord } from './store.ts'
+import { entryExists, MAX_CASES_PER_SKILL, MAX_VERSIONS_PER_SKILL, SkillsStore, type EvalsFile, type LedgerFile, type RegistryRecord } from './store.ts'
 import {
   bundledOfficialRegistry, defaultFetcher, fetchSkillDocument, fetchSkillFiles, indexedParts, isDiscoveryIndex, isPluginMarketplace, listSkillFiles, loadDiscovery,
   loadJson, loadRegistry, loadRepository, marketplaceRepository, OFFICIAL_REGISTRY_ID, OFFICIAL_REGISTRY_URL, parseDiscovery, parseRegistry, REGISTRY_REFRESH_MS,
@@ -145,6 +145,7 @@ export class SkillsService {
         trajectories: ledger.trajectories.length,
         cases: evals.cases.filter(entry => entry.enabled).length,
         runsRunning: evals.runs.filter(run => staleRun(run, now.getTime()).status === 'running').length,
+        trash: this.store.trashEntries().length,
       },
       ...(ledger.reviews[0] === undefined ? {} : { lastReviewAt: ledger.reviews[0].at }),
       attention: attention.slice(0, 20),
@@ -369,13 +370,109 @@ export class SkillsService {
       const previous = this.requireHash(skill, input.expectedHash)
       const ledger = this.store.ledger()
       if (ledger.versions.every(version => version.skillKey !== skill.key)) this.recordVersion(ledger, skill.key, previous, 'original', undefined)
-      const trashedTo = this.store.trash(skill.layout === 'bundle' ? dirname(skill.path) : skill.path, skill.name)
+      const path = skill.layout === 'bundle' ? dirname(skill.path) : skill.path
+      const trashedTo = this.store.trash(path, skill.name, this.trashOrigin(skill, this.catalog(workspace)))
       const now = this.clock().toISOString()
       for (const suggestion of ledger.suggestions) {
         if (suggestion.skillKey === skill.key && suggestion.action === 'update' && OPEN_STATUSES.has(suggestion.status)) { suggestion.status = 'invalidated'; suggestion.updatedAt = now }
       }
       this.store.saveLedger(ledger)
       return { trashedTo }
+    })
+  }
+
+  /** Skills removed and waiting in the Trash, newest first. */
+  trashItems(): TrashEntry[] {
+    return this.store.trashEntries()
+  }
+
+  private trashOrigin(skill: SkillSummary, catalog: SkillCatalog) {
+    return {
+      root: skill.root, key: skill.key, originalPath: skill.layout === 'bundle' ? dirname(skill.path) : skill.path,
+      ...(skill.root.startsWith('project-') && catalog.projectRoot !== undefined ? { workspace: catalog.projectRoot } : {}),
+    }
+  }
+
+  private trashTarget(workspace: string | undefined, input: TrashRestoreInput) {
+    const entry = this.store.trashEntry(input.id)
+    const name = input.name ?? entry.name
+    if (!isSkillName(name)) throw new Error('a skill name uses lowercase letters, digits and single hyphens (max 64)')
+    const selected = this.catalog(workspace)
+    const root = input.root ?? entry.root
+    if (root !== undefined && !SKILL_ROOT_KINDS.includes(root)) throw new Error('unknown skill root: ' + root)
+    if (root === undefined || (input.root === undefined && root.startsWith('project-') && entry.workspace === undefined)) {
+      return { entry, name, roots: selected.roots.map(item => item.kind), destination: undefined }
+    }
+    const catalog = input.root === undefined && entry.workspace !== undefined ? this.catalog(entry.workspace) : selected
+    const directory = rootPath(catalog, root)
+    let path = join(directory, entry.kind === 'file' ? `${name}.md` : name)
+    if (input.root === undefined && name === entry.name && entry.originalPath !== undefined) {
+      if (!isAbsolute(entry.originalPath) || resolve(dirname(entry.originalPath)) !== resolve(directory)) throw new Error('the original skill root has changed; choose a restore location')
+      path = entry.originalPath
+    }
+    const conflict = catalog.skills.find(skill => skill.root === root && skill.name === name)
+    const occupied = [path, join(directory, name), join(directory, `${name}.md`)].filter(entryExists)
+    const conflictPath = conflict === undefined ? undefined : conflict.layout === 'bundle' ? dirname(conflict.path) : conflict.path
+    if (occupied.some(candidate => candidate !== conflictPath)) throw new Error('the restore location already holds another file; choose a different name')
+    return { entry, name, roots: selected.roots.map(item => item.kind), destination: { root, path, catalog, conflict, conflictPath } }
+  }
+
+  previewTrashRestore(workspace: string | undefined, input: TrashRestoreInput): TrashRestorePreview {
+    const target = this.trashTarget(workspace, input)
+    return {
+      name: target.name, roots: target.roots, needsRoot: target.destination === undefined,
+      ...(target.destination === undefined ? {} : { path: target.destination.path }),
+      ...(target.destination?.conflict === undefined ? {} : { conflict: { hash: target.destination.conflict.hash } }),
+    }
+  }
+
+  /** Restore to the recorded origin, or an explicitly selected root; replacement preserves its predecessor. */
+  restoreTrash(workspace: string | undefined, input: TrashRestoreInput): Promise<{ key: string; path: string }> {
+    return this.write(() => {
+      const { entry, name, destination } = this.trashTarget(workspace, input)
+      if (destination === undefined) throw new Error('choose a root for this Trash entry; its original location is unknown')
+      const { root, path, catalog, conflict, conflictPath } = destination
+      if (conflict !== undefined && (input.replace !== true || input.expectedHash !== conflict.hash)) throw new Error(`${name} already exists in ${root}; rename it or confirm replacement of the current version`)
+      let content: string | undefined
+      if (name !== entry.name) {
+        content = setFrontmatterKey(this.store.trashContent(entry), 'name', name)
+        validateSkillContent(content, name)
+      }
+      let displaced: string | undefined
+      try {
+        if (conflict !== undefined) displaced = this.store.trash(conflictPath!, conflict.name, this.trashOrigin(conflict, catalog))
+        this.store.restoreTrash(entry, path, content)
+      } catch (error) {
+        if (displaced !== undefined && !existsSync(conflictPath!)) try { renameSync(displaced, conflictPath!) } catch { /* The predecessor stays recoverable in the Trash. */ }
+        throw error
+      }
+      const key = `${root}:${name}`
+      const ledger = this.store.ledger()
+      // Relative links become readable again only after returning to their original location.
+      try { content ??= readFileSync(entry.kind === 'file' ? path : join(path, 'SKILL.md'), 'utf8') } catch { /* Restoring the files must also work when a linked target is unavailable. */ }
+      if (content !== undefined) this.recordVersion(ledger, key, content, 'restore', undefined)
+      this.store.saveLedger(ledger)
+      return { key, path }
+    })
+  }
+
+  /** Delete a Trash entry for good. */
+  purgeTrash(input: { id: string }): Promise<{ purged: string }> {
+    return this.write(() => {
+      const entry = this.store.trashEntry(input.id)
+      this.store.purgeTrash(entry)
+      this.store.saveLedger(this.store.ledger())
+      return { purged: entry.id }
+    })
+  }
+
+  /** Delete everything waiting in the Trash for good, and say how much went. */
+  emptyTrash(): Promise<{ purged: number }> {
+    return this.write(() => {
+      const entries = this.store.trashEntries()
+      for (const entry of entries) this.store.purgeTrash(entry)
+      if (entries.length > 0) this.store.saveLedger(this.store.ledger())
+      return { purged: entries.length }
     })
   }
 
@@ -1000,7 +1097,7 @@ export class SkillsService {
       const previous = existing === undefined ? undefined : readFileSync(existing.path, 'utf8')
       let trashed: string | undefined
       try {
-        if (existing !== undefined) trashed = this.store.trash(target, name)
+        if (existing !== undefined) trashed = this.store.trash(target, name, this.trashOrigin(existing, catalog))
         const finalTarget = existing?.layout === 'flat' ? join(dirname(target), name) : target
         moveInto(staged, finalTarget)
       } catch (error) {
