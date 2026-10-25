@@ -34,7 +34,7 @@ import type { SkillEvolution } from './skill-evolution.ts'
 type AgentRuntimeSource = Pick<MnemonAgentRuntimeSource, 'forAgent' | 'executions'>
 
 interface HostDefaultModelService {
-  currentSelection(): { provider: string; model: string }
+  currentSelection(): { provider: string; model: string; reasoningEffort?: string }
 }
 
 interface HostAgentPresetService {
@@ -1099,7 +1099,9 @@ export class MnemonLifecycle {
     const conversation = this.config.taskAgentModel.followConversation === true ? this.conversationRoute(fallbackSessionId) : undefined
     if (conversation !== undefined) return { source: 'session', options: { ...conversation, ...maxTokens } }
     const inherited = this.inheritedRoute(fallback)
-    return inherited === undefined ? undefined : { source: inherited.source, options: { provider: inherited.provider, model: inherited.model, ...maxTokens } }
+    if (inherited === undefined) return undefined
+    const { source, ...options } = inherited
+    return { source, options: { ...options, ...maxTokens } }
   }
 
   /** The asking conversation's Agent, else an open one to borrow creation options from. */
@@ -1112,15 +1114,19 @@ export class MnemonLifecycle {
    * DSH new-session default, which DSH sets to the model last picked in any
    * conversation, else an open Agent's creation route when DSH keeps none.
    */
-  private inheritedRoute(fallback: HostAgent | undefined): { provider: string; model: string; source: 'dsh-default' | 'active-agent' } | undefined {
-    let selected: { provider: string; model: string } | undefined
+  private inheritedRoute(fallback: HostAgent | undefined): { provider: string; model: string; reasoningEffort?: string; source: 'dsh-default' | 'active-agent' } | undefined {
+    let selected: ReturnType<HostDefaultModelService['currentSelection']> | undefined
     try { selected = modelService(this.ctx.get('agentDefaultModel'))?.currentSelection() } catch {}
     const selectedProvider = selected?.provider.trim()
     const selectedModel = selected?.model.trim()
     const provider = selectedProvider || fallback?.options?.provider?.trim()
     const model = selectedModel || fallback?.options?.model?.trim()
     if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
-    return { provider, model, source: selectedProvider !== undefined && selectedProvider !== '' && selectedModel !== undefined && selectedModel !== '' ? 'dsh-default' : 'active-agent' }
+    const fromDefault = selectedProvider !== undefined && selectedProvider !== '' && selectedModel !== undefined && selectedModel !== ''
+    // Effort belongs to its provider/model; never borrow it from another route.
+    const matchesFallback = provider === fallback?.options?.provider?.trim() && model === fallback?.options?.model?.trim()
+    const effort = fromDefault ? selected?.reasoningEffort : matchesFallback ? fallback?.options?.reasoningEffort : undefined
+    return { provider, model, ...(typeof effort === 'string' && effort.trim() !== '' ? { reasoningEffort: effort } : {}), source: fromDefault ? 'dsh-default' : 'active-agent' }
   }
 
   /**
