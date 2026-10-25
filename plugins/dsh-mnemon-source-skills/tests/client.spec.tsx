@@ -2,7 +2,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryCompositionRunner } from 'dsh-mnemon/testing'
 import { strategy } from './fixture.ts'
@@ -74,6 +74,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   cleanup()
+  vi.restoreAllMocks()
   await runner.dispose()
   rmSync(directory, { recursive: true, force: true })
 })
@@ -175,6 +176,40 @@ describe('Skills page', () => {
     fireEvent.click(await screen.findByRole('button', { name: named(t('versions.title'), '3') }))
     expect(await screen.findByText(t('versions.reason.invocation'))).not.toBeNull()
     expect(screen.getByText(t('versions.reason.original'))).not.toBeNull()
+  })
+
+  it('refreshes stale cards once more when the overview finishes, and again on focus (#448)', async () => {
+    await mutate('review-record', review())
+    const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
+    await mutate('suggestion-status', { id: suggestion!.id, status: 'drafting' })
+    const oldList = await management.read('suggestions', null)
+    const oldDetail = await management.read('suggestion', { id: suggestion!.id })
+    const stale = new Set<string>()
+    const watched = new Proxy(management, {
+      get: (target, key, receiver) => key === 'read'
+        ? (operation: string, input: unknown) => {
+            if (stale.delete(operation)) return Promise.resolve(operation === 'suggestions' ? oldList : oldDetail)
+            return target.read(operation as never, input as never)
+          }
+        : Reflect.get(target, key, receiver),
+    })
+    const intervals = vi.spyOn(globalThis, 'setInterval')
+    const { unmount } = render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={watched} navigationInput={{ seed: `suggestion:${suggestion!.id}`, nonce: 1 }} />)
+    await screen.findByText(t('evolution.drafting'))
+    await waitFor(() => expect(intervals.mock.calls.some(([, delay]) => delay === 3_000)).toBe(true))
+    const poll = intervals.mock.calls.find(([, delay]) => delay === 3_000)![0] as () => void
+    await mutate('draft-record', { suggestionId: suggestion!.id, skillName: 'release-notes', content: SKILL + '\n2. Group by component\n', notes: 'Finished in the background', changes: [], guidance: [] })
+    // The card requests saw the old ledger; the independent overview sees completion.
+    stale.add('suggestions'); stale.add('suggestion')
+    act(() => poll())
+    await screen.findByText('Finished in the background')
+    expect(screen.queryByText(t('evolution.drafting'))).toBeNull()
+    // Another writer changes the idle page. Returning to the window refreshes it too.
+    await mutate('suggestion-dismiss', { id: suggestion!.id })
+    fireEvent.focus(window)
+    await waitFor(() => expect(screen.queryByText('Finished in the background')).toBeNull())
+    unmount()
+    intervals.mockRestore()
   })
 
   it('shows a suggestion with its evidence folded, then reviews and adopts its draft', async () => {
