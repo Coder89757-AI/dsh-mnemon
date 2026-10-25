@@ -6,6 +6,10 @@ Requires a reachable OpenViking endpoint supporting `POST /api/v1/content/write`
 
 The supported scope is `viking://user/<user>/memories`. Existing `viking://user/memories` settings resolve through the configured user or authenticated `/api/v1/system/status` identity, without rewriting the local registry. A failed response, timeout, or mismatched readback produces an error instead of a committed receipt. When the server refused the write (an HTTP 4xx other than 408 or 409), the error says nothing was stored; otherwise it includes the requested URI because remote content may remain, so inspect it before retrying. Existing memories remain readable, and downgrading does not remove files written by this adapter.
 
+## Search
+
+OpenViking `keyword` search uses `POST /api/v1/search/grep` for case-insensitive literal text, with regex metacharacters escaped. It scopes `uri` to the selected user memory root and bounds `node_limit` to the Source search budget (1–50; direct adapter default 10). Repeated lines in one file count as one result; only safe in-root memory Markdown files are hydrated through `content/read`, and no relevance score is invented. `smart`/`basic` keep `search/find`. A missing grep endpoint or invalid response is reported as an error rather than a semantic fallback; arbitrary regular-expression input is not exposed. The request uses the common fields of OpenViking 0.4.16 and 0.5.1.1.
+
 ## Use
 
 The default `dsh-mnemon` Starter already installs this package. Enable and configure the service on the `dsh-mnemon` page under **Plugins**, then inspect its synchronized Memory Spaces.
