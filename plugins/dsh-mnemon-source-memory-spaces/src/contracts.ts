@@ -333,6 +333,7 @@ export interface SearchRequest {
 export interface RememberRequest {
   content: string
   category?: Category
+  /** Integer 1..5 when supplied. Omission uses the Provider's default. */
   importance?: number
   tags?: string[]
   entities?: string[]

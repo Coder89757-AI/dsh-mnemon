@@ -287,7 +287,7 @@ export class MnemonNativeProvider implements MemoryProviderAdapter {
         insights: batch.map(({ request }) => ({
           content: request.content,
           category: request.category,
-          importance: request.importance,
+          importance: request.importance ?? 3,
           source: request.source,
           ...(request.tags === undefined ? {} : { tags: request.tags }),
           ...(request.entities === undefined ? {} : { entities: request.entities }),

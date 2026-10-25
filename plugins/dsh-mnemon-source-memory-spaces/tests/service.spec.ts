@@ -87,6 +87,18 @@ function fixture(writeEnabled = true, embedding?: { enabled: boolean; endpoint?:
 }
 
 describe('MemorySpacesService', () => {
+  it('preserves omitted importance through single and batch writes so Holographic defaults apply (#447)', async () => {
+    const { service, dataDir } = fixture()
+    await service.updateProviderService('holographic', {})
+    const body = await service.createSpace({ name: 'Trust test', description: 'Synthetic trust defaults.', providerId: 'holographic', active: true,
+      connection: { defaultTrust: 0.7, minTrust: 0.5 } })
+    await service.remember({ memoryBodyId: body.id, content: 'Default single' })
+    await service.rememberMany([{ memoryBodyId: body.id, content: 'Default batch' }, { memoryBodyId: body.id, content: 'Explicit low', importance: 1 }])
+    const store = JSON.parse(readFileSync(join(dataDir, 'state', 'holographic', 'store.json'), 'utf8'))
+    expect(store.facts.map((fact: { trustScore: number }) => fact.trustScore)).toEqual([0.7, 0.7, 0.2])
+    expect((await service.list({ memoryBodyIds: [body.id] })).items.map(row => row.content).sort()).toEqual(['Default batch', 'Default single'])
+  })
+
   it('keeps canonical space methods on the same writable authority', async () => {
     const { service, dataDir } = fixture()
     service.updateSpace('work', { name: 'Project memory space' })

@@ -52,7 +52,7 @@ describe('OpenViking writes through composed Host and Sources', () => {
     const turn = await f.graph.composableTurns.beginTurn(f.agent.id + ':1', agentScope(f.agent, f.config))
     f.graph.composableTurns.pinTurn(child.id + ':1', agentScope(child, f.config), turn.view.id)
     const content = 'Synthetic work release canary.\n逐字读回。'
-    const receipt = await tools.get('mnemon_remember').execute({ memoryBodyId: f.work.id, content, category: 'decision' }, { agent: child, signal: new AbortController().signal })
+    const receipt = await tools.get('mnemon_remember').execute({ memoryBodyId: f.work.id, content, category: 'decision', importance: 3 }, { agent: child, signal: new AbortController().signal })
     expect(receipt).toMatchObject({ action: 'stored', id: expect.stringContaining('viking://user/default/memories/experiences/'), memoryBodyId: f.work.id })
     expect(await f.spaces.read('search', { query: 'work release canary', memoryBodyIds: [f.work.id] }))
       .toMatchObject({ results: [{ id: receipt.id, content, memoryBodyId: f.work.id }] })

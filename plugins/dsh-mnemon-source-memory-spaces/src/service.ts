@@ -1672,7 +1672,8 @@ export class MemorySpacesService {
     // enough for the Host to archive any valid hot-memory entry byte-for-byte;
     // the UI remains at its existing 8,000-character limit.
     const content = required(request.content, 'content', 8 * 1024)
-    const importance = integer(request.importance, 3, 1, 5)
+    // Keep omission distinct from an explicit level so Provider defaults apply.
+    const importance = request.importance === undefined ? undefined : integer(request.importance, 3, 1, 5)
     const category = allowed(request.category, CATEGORIES, 'category') ?? 'general'
     const source = allowed(request.source, SOURCES, 'source') ?? 'user'
     const tags = commaList(request.tags, 'tags', 20)?.split(',')
@@ -1681,7 +1682,7 @@ export class MemorySpacesService {
       body,
       request: {
         content,
-        importance,
+        ...(importance === undefined ? {} : { importance }),
         category,
         source,
         memoryBodyId: body.id,
