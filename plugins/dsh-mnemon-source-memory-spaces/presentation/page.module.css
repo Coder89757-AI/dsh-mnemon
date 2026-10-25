@@ -54,7 +54,7 @@ button.readSourceCard:hover { background: var(--mn-hover); }
 .bodyDirectoryControls { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 8px; padding-right: 28px; }
 .bodyDirectoryControls > strong { flex: 0 0 auto; padding: 1px 8px; border-radius: 999px; color: var(--mn-muted); background: var(--mn-fill); font-size: 11px; font-weight: 500; line-height: 17px; font-variant-numeric: tabular-nums; }
 .bodyGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 8px; }
-.bodyDirectoryEmpty { grid-column: 1 / -1; min-height: 96px; display: flex; align-items: center; justify-content: center; gap: 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-fill); }
+.bodyDirectoryEmpty { grid-column: 1 / -1; min-height: 96px; display: flex; align-items: center; justify-content: center; gap: 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-block-fill, var(--mn-fill)); }
 .bodyDirectoryEmpty > span { color: var(--mn-faint); font-size: 24px; }
 .bodyDirectoryEmpty strong { display: block; color: var(--mn-text); font-weight: 500; }
 .bodyDirectoryEmpty p { margin: 2px 0 0; color: var(--mn-faint); font-size: 12px; }

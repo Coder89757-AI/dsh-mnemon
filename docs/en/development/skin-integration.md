@@ -12,7 +12,7 @@ The Sidebar and the conversation tab share this root selector:
 [data-dsh-plugin="dsh-mnemon"][data-dsh-part="mnemon-view"]
 ```
 
-The supported background properties are `--mn-bg`, `--mn-backdrop` and `--mn-surface`. The [UI guide's skin contract](../guides/ui-guide.md#theme-skin-overrides) defines their value types, default composition, cascade priority and inheritance scope. Without overrides, the default background remains and the official theme stays opaque.
+The supported background properties are `--mn-bg`, `--mn-backdrop`, `--mn-surface` and `--mn-block-fill`. The [UI guide's skin contract](../guides/ui-guide.md#theme-skin-overrides) defines their value types, default composition, cascade priority and inheritance scope. Without overrides, the default background remains and the official theme stays opaque.
 
 This contract was introduced by [PR #284](https://github.com/omdsh-dev/dsh-mnemon/pull/284); test with a build containing that change. Older versions may lack the root marker, in which case the rule does not match. CSS-module hashes, unlisted internal properties and DOM nesting are not compatibility interfaces.
 
@@ -40,10 +40,13 @@ html[data-dsh-skin="my-glass-skin"]
   --mn-bg: var(--dsw-alias-bg-base);
   --mn-backdrop: var(--mn-bg);
   --mn-surface: var(--mn-bg);
+  --mn-block-fill: transparent;
 }
 ```
 
-The rule replaces the default backing composition with the skin's base color in workbench regions that consume `--mn-surface`. A fully transparent base produces a fully transparent result, so skin authors must choose suitable opacity. Wallpaper and blur remain the skin's responsibility; these three properties do not create them. The dsh-web file format and activation marker belong to the skin center. Other skin systems should use their own loading mechanism and activation scope with the same Mnemon root selector.
+`--mn-block-fill` is also a supported override on the same root. It defaults to `var(--mn-fill)` and controls large informational blocks: storage placeholders and paths, version guidance, Source summary metrics, Runtime read-only notices and the empty Memory Spaces directory. Set it to `transparent` for a glass skin, as above. Badges, selected states and capacity bars retain their existing fills. Source pages fall back to `--mn-fill` when running on an older Host without this token; body-portaled dialogs remain outside the root hook.
+
+The rule replaces the default backing composition with the skin's base color in workbench regions that consume `--mn-surface`. A fully transparent base produces a fully transparent result, so skin authors must choose suitable opacity. Wallpaper and blur remain the skin's responsibility; these properties do not create them. The dsh-web file format and activation marker belong to the skin center. Other skin systems should use their own loading mechanism and activation scope with the same Mnemon root selector.
 
 Keep the rule in an unlayered stylesheet and retain both Mnemon attributes. Those two attributes alone have higher specificity than the defaults, so the override needs neither a particular stylesheet order nor `!important`. A normal declaration inside `@layer` ranks below Mnemon's unlayered defaults.
 

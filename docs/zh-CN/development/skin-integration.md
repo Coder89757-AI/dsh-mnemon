@@ -12,7 +12,7 @@ Sidebar 与会话标签页共用以下根选择器：
 [data-dsh-plugin="dsh-mnemon"][data-dsh-part="mnemon-view"]
 ```
 
-受支持的背景变量为 `--mn-bg`、`--mn-backdrop` 和 `--mn-surface`。值类型、默认合成、层叠优先级与继承范围以[界面指南的皮肤约定](../guides/ui-guide.md#theme-skin-overrides)为准。未覆盖时保留默认背景，官方主题保持不透明。
+受支持的背景变量为 `--mn-bg`、`--mn-backdrop`、`--mn-surface` 和 `--mn-block-fill`。值类型、默认合成、层叠优先级与继承范围以[界面指南的皮肤约定](../guides/ui-guide.md#theme-skin-overrides)为准。未覆盖时保留默认背景，官方主题保持不透明。
 
 该约定随 [PR #284](https://github.com/omdsh-dev/dsh-mnemon/pull/284) 引入；测试时应使用包含该变更的构建。较早版本可能没有此根标记，此时规则不会匹配。不要把 CSS-module 哈希类名、未列出的内部变量或 DOM 层级当作兼容接口。
 
@@ -40,10 +40,13 @@ html[data-dsh-skin="my-glass-skin"]
   --mn-bg: var(--dsw-alias-bg-base);
   --mn-backdrop: var(--mn-bg);
   --mn-surface: var(--mn-bg);
+  --mn-block-fill: transparent;
 }
 ```
 
-此规则让使用 `--mn-surface` 的工作台区域采用皮肤基础色，替换默认的背衬合成。如果基础色完全透明，结果也会完全透明；需要皮肤作者选择合适的透明度。壁纸与模糊效果仍由皮肤负责，这三个变量不会自动创建它们。这里的 dsh-web 文件格式与激活标记属于皮肤中心；其他皮肤系统应采用自己的加载方式和激活范围，保留同一个 Mnemon 根选择器。
+`--mn-block-fill` 也是同一根元素上受支持的覆盖点，默认值为 `var(--mn-fill)`，控制大块信息背景：存储占位与路径、版本提示、Source 汇总指标、Runtime 只读提示及记忆空间空目录。玻璃皮肤可按上例设为 `transparent`；徽章、选中态和容量条仍保留原有填充。Source 页面在没有此变量的旧 Host 上回退到 `--mn-fill`；挂载到 `body` 的弹窗仍不在根覆盖范围内。
+
+此规则让使用 `--mn-surface` 的工作台区域采用皮肤基础色，替换默认的背衬合成。如果基础色完全透明，结果也会完全透明；需要皮肤作者选择合适的透明度。壁纸与模糊效果仍由皮肤负责，这些变量不会自动创建它们。这里的 dsh-web 文件格式与激活标记属于皮肤中心；其他皮肤系统应采用自己的加载方式和激活范围，保留同一个 Mnemon 根选择器。
 
 规则应放在未分层的样式表中，保留两个 Mnemon 属性。仅这两个属性的优先级就高于默认声明，无需依赖样式表加载顺序或添加 `!important`。不要把普通覆盖放进 `@layer`，它会低于 Mnemon 未分层的默认声明。
 
