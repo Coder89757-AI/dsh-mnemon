@@ -1,12 +1,12 @@
 // Deterministic protocol fixture for issue 233, not a live OpenViking backend.
 // It models a cosmetic extraction update that never stores the submitted text, and the
-// request validation of OpenViking 0.4.16: the content API refuses any field it does not
+// request validation of OpenViking 0.5.1.1: the content API refuses any field it does not
 // declare (issue 353), and tags are set by their own endpoint.
 import { realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 
-export const WRITE_FIELDS = ['uri', 'content', 'mode', 'wait', 'timeout', 'telemetry', 'processing_mode']
+export const WRITE_FIELDS = ['uri', 'content', 'mode', 'wait', 'telemetry', 'processing_mode']
 export const TAG_FIELDS = ['uri', 'tags', 'mode', 'recursive', 'telemetry']
 
 /** OpenViking 0.4.16's answer to a body with undeclared fields, or undefined when it has none. */

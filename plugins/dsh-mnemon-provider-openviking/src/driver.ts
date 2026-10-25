@@ -288,15 +288,18 @@ export class OpenVikingProvider implements MemoryProviderAdapter {
     try {
       written = object(await this.request(body, '/api/v1/content/write', {
         method: 'POST',
-        // WriteContentRequest takes these fields alone and refuses any other with HTTP 400 (OpenViking 0.4.16, #353).
-        body: JSON.stringify({ uri, content: request.content, mode: 'create', wait: true, timeout: this.requestTimeoutMs / 1000 }),
+        // OpenViking 0.5.1 removed the server-side timeout field. Keep the common
+        // 0.4/0.5 request shape and bound the request with our HTTP deadline.
+        body: JSON.stringify({ uri, content: request.content, mode: 'create', wait: true }),
       }, { signal }))
     } catch (error) {
       if (refused(error)) throw new Error(`OpenViking refused the write at ${uri}; nothing was stored. ${error instanceof Error ? error.message : String(error)}`, { cause: error })
       throw new Error(`OpenViking write was not verified at ${uri}; remote content may remain. Inspect this URI before retrying. ${error instanceof Error ? error.message : String(error)}`, { cause: error })
     }
     try {
-      if (written?.uri !== uri || written.content_updated !== true || written.written_bytes !== writtenBytes
+      // Newer servers count their reserved metadata trailer too. Reject short
+      // writes here; the public readback below must still match the exact text.
+      if (written?.uri !== uri || written.content_updated !== true || (number(written.written_bytes) ?? -1) < writtenBytes
         || written.mode !== 'create' || written.context_type !== 'memory'
         || written.vector_status !== 'complete' || !['complete', 'skipped'].includes(String(written.semantic_status))
         || queueFailed(written.queue_status)) {
