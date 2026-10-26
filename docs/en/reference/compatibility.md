@@ -6,11 +6,13 @@ The Starter pins a tested combination of official plugins. The table records ver
 
 | Component | Baseline | What is verified |
 |---|---|---|
-| DSH | `0.2.1-rc.2` (npm `latest` and `next`), `0.2.0-rc.2` | The supported hosts. 0.2.1-rc.2 is the pinned development baseline, and CI also runs every root test against an installed 0.2.0-rc.2. Both are checked through the WebUI, Headless and the Starter's activation contracts; see [DSH 0.2.0 and 0.2.1](#dsh-020-and-021). The range also admits 0.2.1-rc.1, the baseline v0.5.31 was released on |
+| DSH | `0.2.1-rc.2`, `0.2.1-rc.3`, `0.2.0-rc.2` | 0.2.1-rc.2 remains the pinned development baseline. CI also runs every root test against installed 0.2.0-rc.2 and 0.2.1-rc.3 packages. See [DSH 0.2.0 and 0.2.1](#dsh-020-and-021) for version differences; the supported range also admits 0.2.1-rc.1. |
 | Node.js | `22.19` and `24` | Source CI and packed-artifact CI respectively; development requires `^22.19.0 \|\| >=24.0.0` |
 | Node.js 20 | Public package imports only | Does not establish that the DSH Host runs on Node 20 |
 | Mnemon Native CLI | `0.2.9` | Opt-in tests against a real CLI and disposable data; install the CLI separately |
 | Third-party Providers | Adapter contracts and fixtures | Does not establish live cloud-account conformance or upstream availability |
+
+DSH 0.2.1-rc.3 fetches the official API-key model directory over the network. The task Agent model selector allows that Provider up to six seconds, covering DSH's default five-second request budget; other Providers retain their three-second bound. This changes directory loading only, not model selection, inference timeouts or saved configuration.
 
 dsh-mnemon supports `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`: DSH 0.2.0 from 0.2.0-rc.2, and DSH 0.2.1 and the later 0.2 releases from 0.2.1-rc.1, final releases included. DSH 0.2.1 reads the range from the Starter's `engines.dsh`; DSH 0.2.0 reads it from the Starter's DSH peers (`dsh-app-boot`, which is optional, and `dsh-typert-protocol`), which state the same range. Before DSH installs a plugin, and each time a profile starts, it checks the range against its own version, prereleases included, and refuses a release that excludes it or turns it off. `tests/dsh-host-compatibility.spec.ts` runs DSH's own check over all 19 package manifests, for the supported releases and for those no longer supported. The five Strategy packages require `dsh-mnemon ^0.5.17`, whose extension SDK they use; the three Sources require `^0.5.19`, and the Providers depend on the Memory Spaces Source instead.
 
@@ -25,7 +27,7 @@ Installing for the first time? How DSH chooses the registry, and why its result 
 | DSH | dsh-mnemon |
 |---|---|
 | `0.1.7-rc.2`, `0.2.0-rc.1`, `0.2.1-alpha.2` | `0.5.30` |
-| `0.2.1-alpha.3` and later alphas | None works in full: memory subagents and **Check versions → Update** fail in 0.5.30. Upgrade DSH to `0.2.1-rc.2` (npm `latest` and `next`) |
+| `0.2.1-alpha.3` and later alphas | None works in full: memory subagents and **Check versions → Update** fail in 0.5.30. Upgrade DSH to `0.2.1-rc.2` or later |
 | `0.1.5-rc.1` to `0.1.7-alpha.1` | `0.5.16` |
 
 What those hosts needed is kept under [Older DSH hosts](#older-dsh-hosts). How each release was verified, and the earlier Headless and WebUI records that remain historical evidence, are under [Verification and evidence](#verification-and-evidence).
