@@ -15,7 +15,7 @@
 | Provider | 数据面 | 召回 / 浏览 | 图谱 / 关联 | 写入 | 遗忘 |
 |---|---|---|---|---|---|
 | **Mnemon Native** | 官方 CLI 操作本地 `mnemon.db` | 支持 / 支持 | 完整类型图谱 / 支持 | 精确写入 | 软删除 |
-| **OpenViking** | 已有 HTTP 服务与 `viking://` 记忆根 | 支持 / 支持 | 投影节点 / 不支持 | 经验证的精确正文 | 仅允许精确用户 `.md` 资源的受控硬删除 |
+| **OpenViking** | 已有 HTTP 服务与 `viking://` 记忆根 | 支持 / 支持 | 投影节点 / 不支持 | 文本精确写入并验证；不支持图片/附件写入 | 仅允许精确用户 `.md` 资源的受控硬删除 |
 | **Honcho** | v3 工作区 conclusions | 支持 / 支持 | 不支持 / 不支持 | 精确 Peer conclusion | 硬删除 |
 | **Mem0** | Platform v3 或自托管 HTTP API | 支持 / 支持 | 不支持 / 不支持 | 异步提炼 | 硬删除 |
 | **Hindsight** | Memory bank API 与知识图谱 | 支持 / 支持 | Provider 图谱 / 支持 | 异步 retain | invalidation（软删除） |
@@ -70,6 +70,14 @@ DSH 的“工作区”模式不会统一重写所有 Provider 命名空间。Mne
 ## 召回评分语义
 
 Hindsight 的最终排名分包含加权项，OpenViking 的相似度也不等于经过校准的查询置信度。两者在 manifest 和驱动中均声明 `provider-native`。Memory Spaces 按原始排名与 `recallQuality.maxRankedResults` 配额接纳，不跨 Provider 比较原始分数，也不钳制到 1；参见[召回质量策略](../reference/configuration.md#召回质量策略)。
+
+## OpenViking 内容支持范围
+
+OpenViking 适配器目前通过 `RememberRequest.content` 接收文本，并保存为 Markdown 文件。它不上传图片或文件附件，也不发送 `content_base64`；服务端具备多模态能力，并不会扩展此适配器的输入契约。
+
+经由此适配器写入的内容需要使用支持文本输入的 embedding 配置。文本 embedding 模型即可处理这种输入格式；如果现有多模态模型在你的 OpenViking 部署中支持文本输入，可以继续使用。仅凭此限制，无需更换 embedding 模型或重建已有索引。
+
+后续图片与附件写入支持由 [issue #453](https://github.com/omdsh-dev/dsh-mnemon/issues/453) 持续跟踪。
 
 ## 运维边界
 

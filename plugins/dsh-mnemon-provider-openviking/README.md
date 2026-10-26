@@ -6,6 +6,14 @@ Requires a reachable OpenViking endpoint supporting `POST /api/v1/content/write`
 
 The supported scope is `viking://user/<user>/memories`. Existing `viking://user/memories` settings resolve through the configured user or authenticated `/api/v1/system/status` identity, without rewriting the local registry. A failed response, timeout, or mismatched readback produces an error instead of a committed receipt. When the server refused the write (an HTTP 4xx other than 408 or 409), the error says nothing was stored; otherwise it includes the requested URI because remote content may remain, so inspect it before retrying. Existing memories remain readable, and downgrading does not remove files written by this adapter.
 
+## Text and attachment writes
+
+The adapter currently accepts text through `RememberRequest.content` and stores it as a Markdown file. It does not upload images or file attachments, or send `content_base64`; a server's multimodal capabilities do not extend this adapter's input contract.
+
+For content written through this adapter, use an embedding configuration that accepts text. A text embedding model is sufficient for this input format; an existing multimodal model can remain in use if it supports text in your OpenViking deployment. This limitation alone does not require changing embedding models or rebuilding an existing index.
+
+Future image and attachment write support is tracked in [issue #453](https://github.com/omdsh-dev/dsh-mnemon/issues/453).
+
 ## Search
 
 OpenViking `keyword` search uses `POST /api/v1/search/grep` for case-insensitive literal text, with regex metacharacters escaped. It scopes `uri` to the selected user memory root and bounds `node_limit` to the Source search budget (1–50; direct adapter default 10). Repeated lines in one file count as one result; only safe in-root memory Markdown files are hydrated through `content/read`, and no relevance score is invented. `smart`/`basic` keep `search/find`. A missing grep endpoint or invalid response is reported as an error rather than a semantic fallback; arbitrary regular-expression input is not exposed. The request uses the common fields of OpenViking 0.4.16 and 0.5.1.1.
