@@ -78,6 +78,8 @@ export const InteractionConfig: z<InteractionConfig> = z.object({
 /** 技能管理's settings, with the ranges its page accepts. */
 export const SkillsConfig: z<Partial<ResolvedSkillsConfig>, ResolvedSkillsConfig> = z.object({
   evolution: z.boolean().default(DEFAULT_SKILLS_CONFIG.evolution),
+  allowCreate: z.boolean().default(DEFAULT_SKILLS_CONFIG.allowCreate),
+  allowUpdate: z.boolean().default(DEFAULT_SKILLS_CONFIG.allowUpdate),
   autoBacktest: z.boolean().default(DEFAULT_SKILLS_CONFIG.autoBacktest),
   hints: z.boolean().default(DEFAULT_SKILLS_CONFIG.hints),
   sidebar: z.boolean().default(DEFAULT_SKILLS_CONFIG.sidebar),

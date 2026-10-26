@@ -4,11 +4,19 @@ import { parse } from 'yaml'
 import { MEMORY_PLACEMENT_CAPABILITIES } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { Config as RuntimeConfig } from 'dsh-mnemon-source-runtime'
 import { RUNTIME_MEMORY_LIMIT_MAX_BYTES, RUNTIME_MEMORY_LIMITS } from 'dsh-mnemon-source-runtime/contracts'
-import { Config, resolveConfig } from "../src/host/config.ts"
+import { Config, resolveConfig, resolveSkillsConfig } from "../src/host/config.ts"
 
 afterEach(() => vi.unstubAllEnvs())
 
 describe('Mnemon config and resolution', () => {
+  it('keeps both skill suggestion types enabled for old configurations and resolves each switch independently', () => {
+    expect(resolveSkillsConfig()).toMatchObject({ evolution: false, allowCreate: true, allowUpdate: true })
+    expect(resolveSkillsConfig({ evolution: true })).toMatchObject({ evolution: true, allowCreate: true, allowUpdate: true })
+    expect(resolveSkillsConfig({ allowCreate: false })).toMatchObject({ allowCreate: false, allowUpdate: true })
+    expect(resolveSkillsConfig({ allowUpdate: false })).toMatchObject({ allowCreate: true, allowUpdate: false })
+    expect(() => resolveSkillsConfig({ allowCreate: 'false' } as never)).toThrow()
+    expect(() => resolveSkillsConfig({ allowUpdate: 0 } as never)).toThrow()
+  })
   it.each([{ maxPerSession: -1 }, { maxPerSession: 201 }, { minIntervalMs: 0 }, { maxContextChars: 1 }, { maxTokens: 0 }, { provider: 'unisolated' }, { agentTeams: 'unrestricted' }, { runtimeMemory: 'documents' }])('rejects invalid idle review policy %j', idleReview => {
     expect(() => resolveConfig({ idleReview } as never)).toThrow()
   })

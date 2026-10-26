@@ -24,15 +24,36 @@ describe('技能管理 settings under Plugins', () => {
     const scope = liveSettingsScope<SkillsConfig>({ status: 'ready', value: {}, revision: 1, writable: true, mode: 'host' }, writes)
     render(<SkillsSettings scope={scope} page={page} t={t} />)
     expect(screen.queryByRole('switch', { name: t('skills.autoBacktest') })).toBeNull()
+    expect(screen.queryByRole('switch', { name: t('skills.allowCreate') })).toBeNull()
+    expect(screen.queryByRole('switch', { name: t('skills.allowUpdate') })).toBeNull()
     expect(screen.queryByText(t('skills.parameters'))).toBeNull()
     fireEvent.click(screen.getByRole('switch', { name: t('skills.evolution') }))
     await waitFor(() => expect(writes).toHaveBeenCalledWith([{ op: 'set', path: ['evolution'], value: true }]))
     expect(await screen.findByRole('switch', { name: t('skills.autoBacktest') })).not.toBeNull()
+    expect(screen.getByRole('switch', { name: t('skills.allowCreate') }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('switch', { name: t('skills.allowUpdate') }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('switch', { name: t('skills.allowCreate') }))
+    await waitFor(() => expect(writes).toHaveBeenLastCalledWith([{ op: 'set', path: ['allowCreate'], value: false }]))
+    expect(screen.getByRole('switch', { name: t('skills.allowUpdate') }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('switch', { name: t('skills.allowUpdate') }))
+    await waitFor(() => expect(writes).toHaveBeenLastCalledWith([{ op: 'set', path: ['allowUpdate'], value: false }]))
     expect(screen.getByText(t('skills.parameters'))).not.toBeNull()
     fireEvent.click(screen.getByRole('switch', { name: t('skills.hints') }))
     await waitFor(() => expect(writes).toHaveBeenLastCalledWith([{ op: 'set', path: ['hints'], value: false }]))
     fireEvent.click(screen.getByRole('switch', { name: t('skills.sidebar') }))
     await waitFor(() => expect(writes).toHaveBeenLastCalledWith([{ op: 'set', path: ['sidebar'], value: true }]))
+  })
+
+  it.each(['page', 'scope'] as const)('keeps both suggestion switches read-only when %s refuses writes', async blocked => {
+    const writes = vi.fn(async () => {})
+    const scope = liveSettingsScope<SkillsConfig>({ status: 'ready', value: { evolution: true, allowCreate: false, allowUpdate: true }, revision: 1, writable: blocked !== 'scope', mode: 'host' }, writes)
+    render(<SkillsSettings scope={scope} page={{ ...page, writable: blocked !== 'page' }} t={t} />)
+    for (const key of ['allowCreate', 'allowUpdate'] as const) {
+      const toggle = screen.getByRole('switch', { name: t(`skills.${key}`) })
+      expect(toggle).toHaveProperty('disabled', true)
+      fireEvent.click(toggle)
+    }
+    expect(writes).not.toHaveBeenCalled()
   })
 
   it('applies the review parameters together and holds back one out of range', async () => {
