@@ -107,6 +107,8 @@ Self-evolution is off until you turn it on under [Settings](#settings), or from 
 5. **Draft** writes the new `SKILL.md`. With **Backtest drafts** on, the draft and the current version (or no skill, for a new one) run the same cases, at most **Cases per backtest**, and the draft shows the comparison.
 6. You adopt, edit, redraft or discard it. Nothing changes a skill without your **Adopt**.
 
+**Suggest new skills** and **Suggest skill improvements** can be switched independently. Both are on by default; turn off the first to review only improvements to existing skills, or the second to review only new skills. The Source checks each suggestion against the current skill catalog, so a proposed "new" skill with an existing name still counts as an improvement. Disabled types and their proposed test cases are not saved, including when you turn a type off while a review is running. Turning both off pauses automatic and manual conversation reviews without starting a model call. Earlier suggestions remain available for manual drafting, testing and adoption.
+
 A review that fails is logged under the turn and keeps its window; after three failures in a row, the conversation stops reviewing until DSH recreates its Agent. Reviews, drafts and backtests run as dsh-mnemon task Agents, on the model the **Task Agent model** setting picks; see [Configuration](../reference/configuration.md#background-task-agent-model-route).
 
 ## In a conversation
@@ -130,6 +132,8 @@ Skills has its own page under **Plugins → dsh-mnemon**, like every component, 
 | Setting | Default | What it does |
 |---|---|---|
 | **Self-evolution** | Off | Review conversations and suggest skills. Task and subagent sessions are saved locally; Mnemon does not automatically delete them. |
+| **Suggest new skills** | On | Allow reviews to propose skills that do not exist yet |
+| **Suggest skill improvements** | On | Allow reviews to improve existing skills; reviews pause when both suggestion types are off |
 | **Backtest drafts** | On | Compare each new draft with the current version on its test cases |
 | **Review parameters** | — | The thresholds above, folded, applied together with **Apply** |
 | **In the conversation** | On | Show the **Turn skills** line under each turn |
@@ -150,7 +154,7 @@ The [configuration reference](../reference/configuration.md#skills-settings) lis
 
 | What you see | What to do |
 |---|---|
-| **Evolution** stays empty | Check that **Self-evolution** is on. A conversation needs a few turns of real work and a pause before its first review; use **Review this conversation** to review it now. |
+| **Evolution** stays empty | Check that **Self-evolution** and at least one suggestion type are on. A conversation needs a few turns of real work and a pause before its first review; use **Review this conversation** to review it now. |
 | **Review failed** under a turn | The task Agent could not answer; the window is kept for the next try. After three failures, the conversation stops reviewing until DSH recreates its Agent. |
 | *GitHub declined to list …* | The hourly limit is spent. Try again later, or set `GITHUB_TOKEN`. A skills.sh preview still shows the skill from its text copy, and says so. |
 | *skills.sh is busy* or *can't search right now* | Search again in a moment; your other sources still work. The switch under **Sources** turns skills.sh off. |

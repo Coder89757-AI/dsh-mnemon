@@ -349,6 +349,8 @@ Skills keeps its settings under `skills` in the `mnemon` entry, edited on its ow
 | Key | Default | Range | Meaning |
 |---|---:|---|---|
 | `skills.evolution` | `false` | boolean | **Self-evolution**: review conversations and suggest skills. Task and subagent sessions are saved locally; Mnemon does not automatically delete them. |
+| `skills.allowCreate` | `true` | boolean | **Suggest new skills**: allow reviews to propose skills that do not exist yet |
+| `skills.allowUpdate` | `true` | boolean | **Suggest skill improvements**: allow reviews to improve existing skills |
 | `skills.autoBacktest` | `true` | boolean | **Backtest drafts**: compare each new draft with the current version on its test cases |
 | `skills.hints` | `true` | boolean | **In the conversation**: the **Turn skills** line under each turn |
 | `skills.sidebar` | `false` | boolean | **Sidebar entry**: Skills as its own sidebar entry, out of the Memory System |
@@ -359,6 +361,8 @@ Skills keeps its settings under `skills` in the `mnemon` entry, edited on its ow
 | `skills.expiryDays` | `7` | 1–90 days | **Suggestion expiry**: an untouched suggestion expires after this long |
 | `skills.maxPendingPerSession` | `5` | 1–20 | **Pending per conversation**: past this, the least confident pending suggestions of a conversation expire |
 | `skills.casesPerRun` | `8` | 1–20 | **Cases per backtest**: the most cases one automatic backtest runs |
+
+Both suggestion switches default to `true`, preserving old configurations. Turn either off independently; turning both off pauses automatic and manual conversation reviews without starting a model call. The switches also filter matching eval cases and results from reviews already running. Existing suggestions and explicit draft, backtest and adopt actions remain available. `skills.evolution` remains the master switch for automatic reviews.
 
 ```yaml
 mnemon:
