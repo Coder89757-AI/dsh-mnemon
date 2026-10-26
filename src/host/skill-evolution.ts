@@ -232,7 +232,8 @@ export class SkillEvolution {
     try {
       const catalog = await source.read<SkillCatalog>('catalog', null, controller.signal)
       const active = catalog.skills.filter(skill => skill.shadowedBy === undefined)
-      const openSuggestions = (await source.read<SkillSuggestion[]>('suggestions', { status: ['pending', 'drafting', 'review'] }, controller.signal))
+      // Management reads are deeply frozen, so order a copy instead of the result.
+      const openSuggestions = [...await source.read<SkillSuggestion[]>('suggestions', { status: ['pending', 'drafting', 'review'] }, controller.signal)]
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       const loaded: SkillDocument[] = []
       const caseTitles: Record<string, string[]> = {}
