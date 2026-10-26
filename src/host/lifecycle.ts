@@ -738,9 +738,13 @@ export class MnemonLifecycle {
     const entries = await Promise.all(providers.map(async provider => {
       try {
         let timeout: ReturnType<typeof setTimeout> | undefined
+        // DSH 0.2.1-rc.3 loads the first-party directory over the network with
+        // a default 5-second request budget. Leave room for that response while
+        // preserving the existing bound for other Providers.
+        const timeoutMs = provider.id === 'deepseek-official' ? 6_000 : 3_000
         const models = await Promise.race([
           llm.listModels(provider.id),
-          new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('model directory timed out after 3 seconds')), 3_000) }),
+          new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error(`model directory timed out after ${timeoutMs / 1000} seconds`)), timeoutMs) }),
         ]).finally(() => { if (timeout !== undefined) clearTimeout(timeout) })
         return {
           kind: 'group' as const,
