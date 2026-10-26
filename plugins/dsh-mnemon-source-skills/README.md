@@ -20,6 +20,8 @@ The Source never calls a model and never joins a model View; skills reach the mo
 
 Self-evolution, its review parameters, the line under each turn and the sidebar entry are dsh-mnemon settings, under `skills` in its configuration, edited on this component's page under **Plugins → dsh-mnemon**; see [Skills settings](https://github.com/omdsh-dev/dsh-mnemon/blob/main/docs/en/reference/configuration.md#skills-settings). The Host passes the admission rules with each review, so this Source keeps no settings of its own.
 
+The Host's `skills.allowCreate` and `skills.allowUpdate` independently control new-skill and existing-skill improvement suggestions. Both default to `true` for older configurations. The Source enforces these rules against the current skill catalog for suggestions and proposed eval cases; labeling an existing skill as `create` does not bypass the update rule. Turning both off pauses conversation reviews, while existing suggestions and explicit draft, backtest and adopt actions remain available.
+
 ## A catalog
 
 A team can publish its own curated list as one JSON file, by URL or path:

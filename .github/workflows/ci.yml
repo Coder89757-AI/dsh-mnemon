@@ -110,7 +110,7 @@ jobs:
         run: node scripts/verify-public-entries.mjs
 
   # The pinned development baseline is DSH 0.2.1; the root tests also run against the
-  # other supported release, installed from npm as users install it.
+  # older supported release and the next 0.2.1 candidate, installed from npm.
   verify-installed-dsh:
     name: Verify on installed DSH ${{ matrix.dsh }} (Node 22.19)
     runs-on: ubuntu-latest
@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dsh: ['0.2.0-rc.2']
+        dsh: ['0.2.0-rc.2', '0.2.1-rc.3']
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -154,6 +154,10 @@ jobs:
         env:
           DSH_HOST_ROOT: ${{ runner.temp }}/dsh/lib/node_modules/@deepseek-ai/dsh
         run: pnpm run test:installed-dsh
+
+      - name: Verify delayed first-party model discovery on rc.3
+        if: matrix.dsh == '0.2.1-rc.3'
+        run: node --experimental-transform-types scripts/verify-task-model-directory.mjs "$RUNNER_TEMP/dsh/lib/node_modules/@deepseek-ai/dsh/package.json"
 
   verify-artifacts:
     name: Verify packed plugins (Node 24)

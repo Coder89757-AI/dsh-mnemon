@@ -190,13 +190,13 @@ describe('profile settings facade', () => {
     const target = await f.mount('skills-mnemon')
     registerNamespaces(target)
     target.settings.register('mnemon-skills', SkillsConfig, { base: { ...DEFAULT_SKILLS_CONFIG }, applies: 'live' })
-    await target.settings.mutate('mnemon-skills', [{ op: 'set', path: ['evolution'], value: true }], 3)
-    expect(f.forms.mutate).toHaveBeenLastCalledWith('skills-mnemon', [{ op: 'set', path: ['skills', 'evolution'], value: true }], 3)
+    await target.settings.mutate('mnemon-skills', [{ op: 'set', path: ['evolution'], value: true }, { op: 'set', path: ['allowCreate'], value: false }], 3)
+    expect(f.forms.mutate).toHaveBeenLastCalledWith('skills-mnemon', [{ op: 'set', path: ['skills', 'evolution'], value: true }, { op: 'set', path: ['skills', 'allowCreate'], value: false }], 3)
     const listener = vi.fn()
     target.settings.onUpdated(listener)
-    f.commit(target, { skills: createVolatile({ ...DEFAULT_SKILLS_CONFIG, evolution: true }) }, [['skills', 'evolution']])
+    f.commit(target, { skills: createVolatile({ ...DEFAULT_SKILLS_CONFIG, evolution: true, allowCreate: false }) }, [['skills', 'evolution'], ['skills', 'allowCreate']])
     // Turning self-evolution on reaches 技能管理 alone; the memory runtime is not rebuilt for it.
-    expect(listener).toHaveBeenCalledExactlyOnceWith('mnemon-skills', expect.objectContaining({ evolution: true, hints: true }))
+    expect(listener).toHaveBeenCalledExactlyOnceWith('mnemon-skills', expect.objectContaining({ evolution: true, allowCreate: false, allowUpdate: true, hints: true }))
   })
 
   it('disposes its presentation and subscriptions with the owning fiber', async () => {

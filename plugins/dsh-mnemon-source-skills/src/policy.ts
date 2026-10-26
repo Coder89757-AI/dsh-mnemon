@@ -90,11 +90,18 @@ export function similarCase(cases: readonly EvalCase[], skillName: string, title
 
 /** The admission rules a review asked for, each kept within its range or left at its default. */
 export function policyFrom(value: Partial<SkillsPolicy> | undefined): SkillsPolicy {
-  const pick = (key: keyof SkillsPolicy, minimum: number, maximum: number): number => {
+  const pick = (key: 'minConfidence' | 'expiryDays' | 'maxPendingPerSession', minimum: number, maximum: number): number => {
     const candidate = value?.[key]
     return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= minimum && candidate <= maximum ? candidate : DEFAULT_SKILLS_POLICY[key]
   }
+  const allowed = (key: 'allowCreate' | 'allowUpdate'): boolean => {
+    const candidate = value?.[key]
+    if (candidate !== undefined && typeof candidate !== 'boolean') throw new Error(`skills policy ${key} must be a boolean`)
+    return candidate ?? true
+  }
   return {
+    allowCreate: allowed('allowCreate'),
+    allowUpdate: allowed('allowUpdate'),
     minConfidence: pick('minConfidence', 0, 1),
     expiryDays: Math.round(pick('expiryDays', 1, 90)),
     maxPendingPerSession: Math.round(pick('maxPendingPerSession', 1, 20)),
@@ -123,6 +130,7 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
   const stepIndexes = new Set(input.trajectory.steps.map(step => step.index))
   const steps = (values: readonly number[]) => [...new Set(values.filter(value => Number.isInteger(value) && stepIndexes.has(value)))].sort((a, b) => a - b)
   const skipped: ReviewRecordResult['skipped'] = []
+  const allowed = (action: 'create' | 'update') => (action === 'create' ? policy.allowCreate : policy.allowUpdate) !== false
   let inserted = 0
   let updated = 0
   let casesAdded = 0
@@ -139,6 +147,7 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
     // A proposal follows the file DSH actually loads: creating a skill that exists is an update.
     const existing = activeSkill(catalog, name)
     const action = existing !== undefined ? 'update' : 'create'
+    if (!allowed(action)) { skipped.push({ skillName: name, action, reason: 'suggestion_type_disabled' }); continue }
     if (raw.action === 'update' && existing === undefined) { skipped.push({ skillName: name, action: raw.action, reason: 'unknown_skill' }); continue }
     const key = `${name}::${action}`
     const previous = batch.get(key)
@@ -212,6 +221,7 @@ export function admitReview(context: AdmissionContext, input: ReviewRecordInput)
     const checks = raw.checks.filter(check => check.text.trim() !== '').slice(0, 8).map(check => ({ id: context.id(), text: clip(check.text, 300), must: check.must === true }))
     const cited = steps(raw.steps)
     if (name === undefined || title === '' || prompt === '' || checks.length === 0) { skipped.push({ skillName: raw.skillName, reason: 'invalid_case' }); continue }
+    if (!allowed(activeSkill(catalog, name) === undefined ? 'create' : 'update')) { skipped.push({ skillName: name, reason: 'suggestion_type_disabled' }); continue }
     if (similarCase(evals.cases, name, title, prompt) !== undefined) { skipped.push({ skillName: name, reason: 'similar_case' }); continue }
     if (evals.cases.filter(entry => entry.skillName === name).length >= MAX_CASES_PER_SKILL) { skipped.push({ skillName: name, reason: 'case_limit' }); continue }
     if (!checks.some(check => check.must)) checks[0]!.must = true

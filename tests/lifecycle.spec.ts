@@ -743,6 +743,55 @@ describe('Mnemon DSH lifecycle integration', () => {
     await expect(fixture(follow, { sessionModel: { provider: '  ', model: 'space-bunny' } }).lifecycle.taskAgentModels(false, 'session-1')).resolves.toEqual(dshDefault)
   })
 
+  it.each([3_600, 5_000])('waits for a first-party network model directory returning after %i ms', async delay => {
+    vi.useFakeTimers()
+    const value = fixture()
+    value.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'openai', name: 'OpenAI' }])
+    value.llm.listModels.mockImplementation(async provider => {
+      if (provider === 'deepseek-official') await new Promise(resolve => setTimeout(resolve, delay))
+      return [{ id: provider === 'deepseek-official' ? 'deepseek-flash' : 'gpt-5', name: provider }]
+    })
+
+    const pending = value.lifecycle.taskAgentModels()
+    await vi.advanceTimersByTimeAsync(delay)
+    await expect(pending).resolves.toMatchObject({
+      groups: [{ id: 'deepseek-official', models: [{ id: 'deepseek-flash' }] }, { id: 'openai', models: [{ id: 'gpt-5' }] }],
+      failures: [],
+    })
+    expect(value.llm.listModels).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('preserves a first-party directory failure within the upstream request budget', async () => {
+    vi.useFakeTimers()
+    const value = fixture()
+    value.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    value.llm.listModels.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 5_000))
+      throw new Error('provider model directory request timed out')
+    })
+    const pending = value.lifecycle.taskAgentModels()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await expect(pending).resolves.toMatchObject({ groups: [], failures: [{ id: 'deepseek-official', message: 'provider model directory request timed out' }] })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('still bounds a first-party directory that never settles', async () => {
+    vi.useFakeTimers()
+    const value = fixture()
+    value.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'openai', name: 'OpenAI' }])
+    value.llm.listModels.mockImplementation(async provider => provider === 'deepseek-official'
+      ? await new Promise<never>(() => {})
+      : [{ id: 'gpt-5', name: 'GPT-5' }])
+    const pending = value.lifecycle.taskAgentModels()
+    await vi.advanceTimersByTimeAsync(6_000)
+    await expect(pending).resolves.toMatchObject({
+      groups: [{ id: 'openai', models: [{ id: 'gpt-5' }] }],
+      failures: [{ id: 'deepseek-official', message: 'model directory timed out after 6 seconds' }],
+    })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('isolates a stalled Provider while keeping the rest of the model catalog usable', async () => {
     vi.useFakeTimers()
     const value = fixture()

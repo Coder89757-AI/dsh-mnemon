@@ -15,7 +15,7 @@ Each adapter is an independently published `dsh-mnemon-provider-*` package, inst
 | Provider | Data plane | Recall / browse | Graph / related | Write | Forget |
 |---|---|---|---|---|---|
 | **Mnemon Native** | Local `mnemon.db` through the official CLI | Yes / yes | Full typed graph / yes | Exact | Soft delete |
-| **OpenViking** | Existing HTTP service and `viking://` memory root | Yes / yes | Projected nodes / no | Verified exact content | Guarded hard delete for exact user `.md` resources |
+| **OpenViking** | Existing HTTP service and `viking://` memory root | Yes / yes | Projected nodes / no | Verified exact text; no image/attachment writes | Guarded hard delete for exact user `.md` resources |
 | **Honcho** | v3 workspace conclusions | Yes / yes | No / no | Exact peer conclusion | Hard delete |
 | **Mem0** | Platform v3 or self-hosted HTTP API | Yes / yes | No / no | Async extraction | Hard delete |
 | **Hindsight** | Memory bank API and knowledge graph | Yes / yes | Provider graph / yes | Async retain | Invalidate (soft) |
@@ -68,6 +68,14 @@ Connection secrets never enter the selector prompt. `local-only` excludes every 
 ## Recall score semantics
 
 Hindsight final ranking scores include boosts; OpenViking similarity scores are not calibrated query confidence. Both declare `provider-native` in the manifest and driver. Memory Spaces admits their original ranking under `recallQuality.maxRankedResults` without comparing raw scores or clamping them to 1; see [recall quality policies](../reference/configuration.md#recall-quality-policies).
+
+## OpenViking content support
+
+The OpenViking adapter currently accepts text through `RememberRequest.content` and stores it as a Markdown file. It does not upload images or file attachments, or send `content_base64`; a server's multimodal capabilities do not extend this adapter's input contract.
+
+For content written through this adapter, use an embedding configuration that accepts text. A text embedding model is sufficient for this input format; an existing multimodal model can remain in use if it supports text in your OpenViking deployment. This limitation alone does not require changing embedding models or rebuilding an existing index.
+
+Future image and attachment write support is tracked in [issue #453](https://github.com/omdsh-dev/dsh-mnemon/issues/453).
 
 ## Operational boundaries
 

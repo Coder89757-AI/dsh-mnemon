@@ -300,12 +300,18 @@ export interface ReviewLogEntry {
 
 /** How the Source admits a review's suggestions; the Host sends its settings with each review. */
 export interface SkillsPolicy {
+  /** Whether a review may propose new skills; omitted by older Hosts, default true. */
+  allowCreate?: boolean
+  /** Whether a review may improve existing skills; omitted by older Hosts, default true. */
+  allowUpdate?: boolean
   minConfidence: number
   expiryDays: number
   maxPendingPerSession: number
 }
 
 export const DEFAULT_SKILLS_POLICY: Readonly<SkillsPolicy> = Object.freeze({
+  allowCreate: true,
+  allowUpdate: true,
   minConfidence: 0.6,
   expiryDays: 7,
   maxPendingPerSession: 5,

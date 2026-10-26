@@ -4,7 +4,7 @@
 
 ## 环境与命令
 
-插件的 Node engine 下限为 20；锁定的完整 DSH 开发 Profile 是正式发布的 0.2.1-rc.2（npm `latest` 与 `next`），需要 Node `^22.19.0 || >=24.0.0`，建议开发使用 Node 24。Root、Source Client 测试和外部制品消费者均使用该依赖族，`dsh-client-store` 提供子 Agent projection 适配器使用的公开 selector 类型。CI 另在 Node 20 冒烟导入公开 Node 入口。DSH 0.2.0-rc.2（npm `latest`）同样受支持：`tests/dsh-host-compatibility.spec.ts` 对全部 19 个包的清单执行 DSH 自己的安装前兼容检查，覆盖受支持与不受支持的版本；CI 还会在已安装的 0.2.0-rc.2 上运行根测试。要自己在另一个安装上运行：
+插件的 Node engine 下限为 20；锁定的完整 DSH 开发 Profile 是正式发布的 0.2.1-rc.2，需要 Node `^22.19.0 || >=24.0.0`，建议开发使用 Node 24。Root、Source Client 测试和外部制品消费者均使用该依赖族，`dsh-client-store` 提供子 Agent projection 适配器使用的公开 selector 类型。CI 另在 Node 20 冒烟导入公开 Node 入口。DSH 0.2.0-rc.2 同样受支持：`tests/dsh-host-compatibility.spec.ts` 对全部 19 个包的清单执行 DSH 自己的安装前兼容检查，覆盖受支持与不受支持的版本；CI 还会在已安装的 0.2.0-rc.2 和 0.2.1-rc.3 上运行根测试。要自己在另一个安装上运行：
 
 ```sh
 npm install --global --prefix <目录> @deepseek-ai/dsh@0.2.0-rc.2

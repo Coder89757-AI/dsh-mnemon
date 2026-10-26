@@ -126,6 +126,8 @@ export const SKILL_REVIEW_SCHEMA = {
 } as const
 
 export interface SkillReviewInput {
+  allowCreate?: boolean
+  allowUpdate?: boolean
   sessionTitle?: string
   workspace?: string
   steps: readonly TrajectoryStep[]
@@ -150,6 +152,7 @@ export function skillReviewPrompt(input: SkillReviewInput): string {
   })).join('\n')
   return [
     'Review this finished conversation window now.',
+    `Allowed suggestion types: create=${input.allowCreate !== false}, update=${input.allowUpdate !== false}. Do not propose disabled suggestion types or their eval cases. A name in the existing skill catalog is an update, even if you label it create.`,
     `Session: ${input.sessionTitle ?? '(untitled)'}${input.workspace === undefined ? '' : ` · workspace ${input.workspace}`}`,
     `Window: ${input.stats.turns} turn(s), ${input.stats.toolCalls} tool call(s), ${input.stats.toolFailures} failed; skills loaded: ${input.stats.skills.join(', ') || 'none'}; review score ${input.score} (threshold ${input.threshold}).`,
     '',
