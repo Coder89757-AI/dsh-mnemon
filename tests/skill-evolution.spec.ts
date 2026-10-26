@@ -166,6 +166,17 @@ describe('skill evolution in the Host', () => {
     await vi.advanceTimersByTimeAsync(0)
   }
 
+  function mixedReview() {
+    return {
+      outcome: 'suggest', summary: 'Two reusable workflows.',
+      suggestions: [
+        { skillName: 'incident-triage', action: 'create', summary: 'Capture incident logs.', confidence: 0.9, steps: [1] },
+        { skillName: 'release-notes', action: 'update', summary: 'Group by component.', confidence: 0.9, steps: [1] },
+      ],
+      cases: ['incident-triage', 'release-notes'].map(skillName => ({ skillName, title: 'Workflow', prompt: 'Follow the workflow', checks: [{ text: 'Follows the workflow', must: true }], steps: [1] })),
+    }
+  }
+
   it('stays out of the way until evolution is turned on', async () => {
     const { skills, skillTask } = evolution([])
     const stop = skills.watch(agent)
@@ -173,6 +184,81 @@ describe('skill evolution in the Host', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     expect(skillTask).not.toHaveBeenCalled()
     expect(skills.pending('session-1')).toBeUndefined()
+    stop()
+  })
+
+  it.each([
+    { allowCreate: true, allowUpdate: true },
+    { allowCreate: true, allowUpdate: false },
+    { allowCreate: false, allowUpdate: true },
+    { allowCreate: false, allowUpdate: false },
+  ])('applies independent suggestion switches end to end: %j', async switches => {
+    config = { ...config, evolution: true, idleSeconds: 3600, ...switches }
+    const { skills, skillTask, runTask } = evolution([mixedReview])
+    const stop = skills.watch(agent)
+    await endTurn(1, 'Capture incident logs and group release notes by component.')
+    const count = Number(switches.allowCreate) + Number(switches.allowUpdate)
+    if (count === 0) {
+      await expect(skills.reviewNow(agent)).rejects.toThrow('Enable new-skill or skill-improvement suggestions')
+      expect(skills.pending(agent.id)).toBeUndefined()
+      expect(runTask).not.toHaveBeenCalled()
+    } else {
+      expect(await skills.reviewNow(agent)).toMatchObject({ inserted: count, casesAdded: count })
+      expect(skillTask.mock.calls[0]![2]).toContain(`Allowed suggestion types: create=${switches.allowCreate}, update=${switches.allowUpdate}`)
+    }
+    const suggestions = await source.read<SkillSuggestion[]>('suggestions')
+    expect(suggestions.map(entry => entry.action).sort()).toEqual([
+      ...(switches.allowCreate ? ['create'] : []), ...(switches.allowUpdate ? ['update'] : []),
+    ])
+    expect(await source.read('cases', { skill: 'incident-triage' })).toHaveLength(Number(switches.allowCreate))
+    expect(await source.read('cases', { skill: 'release-notes' })).toHaveLength(Number(switches.allowUpdate))
+    stop()
+  })
+
+  it('skips a scheduled review when both types are disabled and resumes on a later turn', async () => {
+    config = { ...config, evolution: true, reviewThreshold: 1, idleSeconds: 20 }
+    const { skills, skillTask } = evolution([mixedReview])
+    const stop = skills.watch(agent)
+    await endTurn(1, 'Capture incident logs before changing the system.')
+    config = { ...config, allowCreate: false, allowUpdate: false }
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(skillTask).not.toHaveBeenCalled()
+    config = { ...config, allowUpdate: true }
+    await endTurn(2, 'Group release notes by component.')
+    await vi.advanceTimersByTimeAsync(20_000)
+    await vi.waitFor(async () => expect(await source.read('suggestions')).toMatchObject([{ action: 'update' }]))
+    expect(skillTask).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it.each(['allowCreate', 'allowUpdate'] as const)('honors %s being disabled while a review is running', async key => {
+    config = { ...config, evolution: true, idleSeconds: 3600 }
+    const { skills, host } = evolution([])
+    let markStarted!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    let complete!: (value: { structured: unknown }) => void
+    host.skillTask.mockImplementation(() => { markStarted(); return new Promise(resolve => { complete = resolve }) })
+    const stop = skills.watch(agent)
+    await endTurn(1, 'Keep incident and release workflows consistent.')
+    const pending = skills.reviewNow(agent)
+    await started
+    config = { ...config, [key]: false }
+    complete({ structured: mixedReview() })
+    expect(await pending).toMatchObject({ inserted: 1, casesAdded: 1 })
+    expect(await source.read('suggestions')).toMatchObject([{ action: key === 'allowCreate' ? 'update' : 'create' }])
+    stop()
+  })
+
+  it('does not start the model if both types are disabled while its task is being prepared', async () => {
+    const { skills, runTask, skillTask } = evolution([])
+    runTask.mockImplementation(async (_root, _signal, operation) => {
+      config = { ...config, allowCreate: false, allowUpdate: false }
+      return operation(agent)
+    })
+    const stop = skills.watch(agent)
+    await endTurn(1, 'Capture incident logs before changing the system.')
+    expect(await skills.reviewNow(agent)).toMatchObject({ inserted: 0, updated: 0, casesAdded: 0 })
+    expect(skillTask).not.toHaveBeenCalled()
     stop()
   })
 
@@ -258,6 +344,7 @@ describe('skill evolution in the Host', () => {
   })
 
   it('drafts in the background, backtests draft and baseline, and adopts through the Source', async () => {
+    config = { ...config, allowCreate: false, allowUpdate: false }
     config = { ...config, evolution: true }
     await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Grouped notes', prompt: 'Write v2 notes', checks: [{ text: 'Grouped by component', must: true }] } })
     const next = '---\nname: release-notes\ndescription: Write release notes grouped by component.\n---\n\n1. Read CHANGELOG.md\n2. Group by component\n'
@@ -404,6 +491,31 @@ describe('skill evolution in the Host', () => {
     expect(suggestions[0]).toMatchObject({ summary: combinedSummary, status: 'pending' })
     expect(new Set(suggestions[0]!.evidence.map(reference => reference.trajectoryId)).size).toBe(2)
     expect(skillTask).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('orders open suggestions from an earlier review without writing to the frozen result', async () => {
+    config = { ...config, evolution: true, idleSeconds: 3600 }
+    let prompt = ''
+    const { skills } = evolution([
+      () => ({ outcome: 'suggest', summary: 'Two workflows worth keeping.', suggestions: [
+        { skillName: 'incident-triage', action: 'create', summary: 'Triage an incident before fixing it.', confidence: 0.8, steps: [1] },
+        { skillName: 'release-notes', action: 'update', summary: 'Group entries by component.', confidence: 0.8, steps: [1] },
+      ] }),
+      (_label, text) => {
+        prompt = text
+        return { outcome: 'nothing', summary: 'Nothing to add.', suggestions: [] }
+      },
+    ])
+    const stop = skills.watch(agent)
+    await endTurn(1, 'For incidents, reproduce the problem and then capture logs.')
+    expect(await skills.reviewNow(agent)).toMatchObject({ inserted: 2 })
+    await endTurn(2, 'Keep the release notes grouped by component.')
+    // A management read hands back a deeply frozen result, so ordering two open
+    // suggestions must not write to it.
+    expect(await skills.reviewNow(agent)).toMatchObject({ inserted: 0, updated: 0 })
+    expect(prompt).toContain('"skillName":"incident-triage"')
+    expect(prompt).toContain('"skillName":"release-notes"')
     stop()
   })
 

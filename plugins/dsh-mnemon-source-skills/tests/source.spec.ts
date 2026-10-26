@@ -27,6 +27,15 @@ describe('Skills Source', () => {
         input: { key: 'user-dsh:pdf', modelInvocable: false, userInvocable: true, expectedHash: skill.hash } })
       expect(toggled.value).toMatchObject({ invocation: { modelInvocable: false, userInvocable: true } })
       expect(toggled.revision).not.toBe(catalog.revision)
+      for (const key of ['allowCreate', 'allowUpdate']) {
+        await expect(runner.executeManagement({ ...base, mode: 'mutate', operation: 'review-record', confirmed: true, expectedRevision: toggled.revision,
+          input: {
+            policy: { [key]: 'false' },
+            review: { at: '2026-10-26T00:00:00Z', sessionId: 'test', outcome: 'nothing', trigger: 'manual', durationMs: 0 },
+            trajectory: { sessionId: 'test', startedAt: '2026-10-26T00:00:00Z', endedAt: '2026-10-26T00:00:00Z', steps: [], stats: { turns: 0, userCharacters: 0, toolCalls: 0, toolFailures: 0, uniqueTools: 0, skills: [] } },
+            suggestions: [], cases: [], annotations: [],
+          } })).rejects.toThrow('must be a boolean')
+      }
       // Settings are the Host's: the Source has none of its own to change.
       await expect(runner.executeManagement({ ...base, mode: 'mutate', operation: 'settings-update', confirmed: true, expectedRevision: toggled.revision, input: { patch: { minConfidence: 0.9 } } })).rejects.toThrow()
       await expect(runner.executeManagement({ ...base, mode: 'read', operation: 'nope', input: null })).rejects.toThrow('unsupported Skills read operation')

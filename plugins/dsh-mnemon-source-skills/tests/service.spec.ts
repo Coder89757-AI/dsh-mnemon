@@ -124,6 +124,51 @@ describe('skill writes', () => {
 })
 
 describe('review admission', () => {
+  it.each([
+    { allowCreate: true, allowUpdate: true },
+    { allowCreate: true, allowUpdate: false },
+    { allowCreate: false, allowUpdate: true },
+    { allowCreate: false, allowUpdate: false },
+  ])('enforces actual suggestion and case types with %j', async policy => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    const input = review()
+    const result = await store.recordReview(workspace, review({
+      policy,
+      suggestions: [
+        // Calling an existing skill a creation must not bypass the update switch.
+        { ...input.suggestions[0]!, action: 'create' },
+        { ...input.suggestions[0]!, action: 'create', skillName: 'incident-triage' },
+      ],
+      cases: [input.cases[0]!, { ...input.cases[0]!, skillName: 'incident-triage' }],
+    }))
+    const count = Number(policy.allowCreate) + Number(policy.allowUpdate)
+    expect(result).toMatchObject({ inserted: count, updated: 0, casesAdded: count })
+    expect(store.suggestions().map(entry => entry.action).sort()).toEqual([
+      ...(policy.allowCreate ? ['create'] : []), ...(policy.allowUpdate ? ['update'] : []),
+    ])
+    expect(store.cases('release-notes')).toHaveLength(Number(policy.allowUpdate))
+    expect(store.cases('incident-triage')).toHaveLength(Number(policy.allowCreate))
+    expect(store.trajectory(result.trajectoryId!).outcome).toBe(count === 0 ? 'nothing' : 'suggested')
+  })
+
+  it('leaves an existing suggestion unchanged when its type is disabled', async () => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const before = store.suggestions()
+    now = new Date(now.getTime() + 1_000)
+    const result = await store.recordReview(workspace, review({ policy: { allowUpdate: false } }))
+    expect(result).toMatchObject({ inserted: 0, updated: 0, casesAdded: 0, suggestionIds: [] })
+    expect(store.suggestions()).toEqual(before)
+  })
+
+  it.each(['allowCreate', 'allowUpdate'])('rejects malformed %s before writing review data', async key => {
+    const store = service()
+    await expect(store.recordReview(workspace, review({ policy: { [key]: 'false' } as never }))).rejects.toThrow('must be a boolean')
+    expect(store.overview(workspace).counts).toMatchObject({ trajectories: 0, pending: 0, cases: 0 })
+  })
+
   it('records the trajectory, links evidence, and adds proposed cases once', async () => {
     write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
     const store = service()

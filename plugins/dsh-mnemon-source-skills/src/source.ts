@@ -124,7 +124,12 @@ function step(value: MemoryJsonValue): TrajectoryStep {
 function policyInput(value: MemoryJsonValue): Partial<SkillsPolicy> {
   const input = record(value, 'policy')
   const number = (key: keyof SkillsPolicy) => typeof input[key] === 'number' && Number.isFinite(input[key]) ? { [key]: input[key] as number } : {}
-  return { ...number('minConfidence'), ...number('expiryDays'), ...number('maxPendingPerSession') }
+  const allowed = (key: 'allowCreate' | 'allowUpdate') => {
+    if (input[key] === undefined) return {}
+    if (typeof input[key] !== 'boolean') throw new Error(`skills policy ${key} must be a boolean`)
+    return { [key]: input[key] }
+  }
+  return { ...allowed('allowCreate'), ...allowed('allowUpdate'), ...number('minConfidence'), ...number('expiryDays'), ...number('maxPendingPerSession') }
 }
 
 /** The Host's record of one review; bounded here as well as there. */

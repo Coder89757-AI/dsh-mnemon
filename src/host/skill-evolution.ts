@@ -149,7 +149,7 @@ export class SkillEvolution {
   async turnEnded(agent: HostAgent, turn: number): Promise<void> {
     if (this.disposed) return
     const settings = this.host.settings()
-    if (!settings.evolution) return
+    if (!settings.evolution || (!settings.allowCreate && !settings.allowUpdate)) { this.cancelTimer(agent.id); return }
     if (this.source(agent) === undefined) return
     const captured = captureTurn(agent.session.snapshotEvents(), turn)
     if (captured === undefined || captured.steps.length === 0) return
@@ -170,7 +170,8 @@ export class SkillEvolution {
       delete state.timer
       delete state.scheduled
       if (this.disposed || state.running !== undefined) return
-      if (agent.status !== 'idle' || !this.host.settings().evolution) return
+      const current = this.host.settings()
+      if (agent.status !== 'idle' || !current.evolution || (!current.allowCreate && !current.allowUpdate)) return
       state.running = this.review(agent, state, 'automatic').then(() => undefined).finally(() => { delete state.running })
     }, Math.max(settings.idleSeconds * 1000, cooldown))
   }
@@ -180,6 +181,8 @@ export class SkillEvolution {
    * or the session's recent turns when nothing is collected yet.
    */
   async reviewNow(agent: HostAgent): Promise<ReviewRecordResult> {
+    const settings = this.host.settings()
+    if (!settings.allowCreate && !settings.allowUpdate) throw new Error('Enable new-skill or skill-improvement suggestions before reviewing')
     const source = this.source(agent)
     if (source === undefined) throw new Error('the Skills Source is not running for this conversation')
     const state = this.state(agent)
@@ -205,14 +208,22 @@ export class SkillEvolution {
   private async review(agent: HostAgent, state: SessionState, trigger: 'automatic' | 'manual'): Promise<ReviewRecordResult | Error> {
     const source = this.source(agent)
     if (source === undefined) return new Error('the Skills Source is not running for this conversation')
+    const settings = this.host.settings()
+    if ((!settings.allowCreate && !settings.allowUpdate) || (trigger === 'automatic' && !settings.evolution)) return new Error('Skill reviews are disabled')
+    const allowedTypes = () => {
+      const current = this.host.settings()
+      const enabled = trigger === 'manual' || current.evolution
+      return {
+        allowCreate: enabled && settings.allowCreate && current.allowCreate,
+        allowUpdate: enabled && settings.allowUpdate && current.allowUpdate,
+      }
+    }
     const started = this.now()
     // The window moves out now; turns that end during the review start the next one.
     const window = state.window
     state.window = new TrajectoryWindow()
     const turn = window.lastTurn
     if (turn !== undefined) state.reviewing = turn
-    const settings = this.host.settings()
-    const policy = { minConfidence: settings.minConfidence, expiryDays: settings.expiryDays, maxPendingPerSession: settings.maxPendingPerSession }
     const events = agent.session.snapshotEvents()
     const workspace = agent.session.header?.cwd?.trim() || undefined
     const steps = window.steps()
@@ -232,7 +243,8 @@ export class SkillEvolution {
     try {
       const catalog = await source.read<SkillCatalog>('catalog', null, controller.signal)
       const active = catalog.skills.filter(skill => skill.shadowedBy === undefined)
-      const openSuggestions = (await source.read<SkillSuggestion[]>('suggestions', { status: ['pending', 'drafting', 'review'] }, controller.signal))
+      // Management reads are deeply frozen, so order a copy instead of the result.
+      const openSuggestions = [...await source.read<SkillSuggestion[]>('suggestions', { status: ['pending', 'drafting', 'review'] }, controller.signal)]
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       const loaded: SkillDocument[] = []
       const caseTitles: Record<string, string[]> = {}
@@ -243,12 +255,26 @@ export class SkillEvolution {
         caseTitles[name] = (await source.read<EvalCase[]>('cases', { skill: name }, controller.signal)).map(entry => entry.title)
       }
       const prompt = skillReviewPrompt({
+        ...allowedTypes(),
         ...(title === undefined ? {} : { sessionTitle: title }), ...(workspace === undefined ? {} : { workspace }),
         steps, stats, score: score.score, threshold: score.threshold,
         loaded, catalog: active.map(skill => ({ name: skill.name, description: skill.description })), caseTitles, openSuggestions,
       })
-      const answer = await this.host.runTask(workspace, controller.signal, task => this.host.skillTask(task, 'Mnemon skill review', prompt, SKILL_REVIEW_SCHEMA as unknown as Record<string, unknown>, SKILL_REVIEW_PERSONA, controller.signal))
+      const paused = { structured: { outcome: 'nothing', summary: 'Skill review was paused by the current settings.', suggestions: [] } }
+      const types = allowedTypes()
+      const answer = !types.allowCreate && !types.allowUpdate ? paused : await this.host.runTask(workspace, controller.signal, task => {
+        const current = allowedTypes()
+        return !current.allowCreate && !current.allowUpdate ? Promise.resolve(paused)
+          : this.host.skillTask(task, 'Mnemon skill review', prompt, SKILL_REVIEW_SCHEMA as unknown as Record<string, unknown>, SKILL_REVIEW_PERSONA, controller.signal)
+      })
       const parsed = parseSkillReview(answer.structured)
+      // A switch changed while the model ran also applies to this result. The
+      // Source checks the final action against its current skill catalog.
+      const current = this.host.settings()
+      const policy = {
+        ...allowedTypes(),
+        minConfidence: current.minConfidence, expiryDays: current.expiryDays, maxPendingPerSession: current.maxPendingPerSession,
+      }
       const result = await source.mutate<ReviewRecordResult>('review-record', {
         review: { ...base, durationMs: this.now().getTime() - started.getTime(), outcome: parsed.suggestions.length > 0 ? 'suggested' : 'nothing', summary: parsed.summary },
         trajectory, annotations: parsed.annotations, suggestions: parsed.suggestions, cases: parsed.cases, policy,

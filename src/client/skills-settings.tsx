@@ -54,6 +54,8 @@ export function SkillsSettings(props: { scope: ClientSettingsScope<SkillsConfig>
   const saved = resolvedSkills(snapshot.value)
   const write = (key: keyof ResolvedSkillsConfig) => async (value: boolean): Promise<void> => { await scope.mutate([set(key, value)]) }
   const evolution = useLive(saved.evolution, write('evolution'))
+  const allowCreate = useLive(saved.allowCreate, write('allowCreate'))
+  const allowUpdate = useLive(saved.allowUpdate, write('allowUpdate'))
   const autoBacktest = useLive(saved.autoBacktest, write('autoBacktest'))
   const hints = useLive(saved.hints, write('hints'))
   const sidebar = useLive(saved.sidebar, write('sidebar'))
@@ -66,6 +68,8 @@ export function SkillsSettings(props: { scope: ClientSettingsScope<SkillsConfig>
   return <section className={css.panelSection} aria-label={t('skills.label')}>
     <div className={css.rows}>
       <ToggleRow id="mnemon-skills-evolution" label={t('skills.evolution')} hint={t('skills.evolutionHint')} checked={evolution.value} disabled={disabled} onChange={evolution.set} />
+      {evolution.value && <ToggleRow id="mnemon-skills-create" label={t('skills.allowCreate')} hint={t('skills.allowCreateHint')} checked={allowCreate.value} disabled={disabled} onChange={allowCreate.set} />}
+      {evolution.value && <ToggleRow id="mnemon-skills-update" label={t('skills.allowUpdate')} hint={t('skills.allowUpdateHint')} checked={allowUpdate.value} disabled={disabled} onChange={allowUpdate.set} />}
       {evolution.value && <ToggleRow id="mnemon-skills-backtest" label={t('skills.autoBacktest')} hint={t('skills.autoBacktestHint')} checked={autoBacktest.value} disabled={disabled} onChange={autoBacktest.set} />}
       {evolution.value && <details className={css.advanced}>
         <summary>{t('skills.parameters')}<IconChevronDownOutlineRegular size={12} /></summary>
@@ -83,6 +87,6 @@ export function SkillsSettings(props: { scope: ClientSettingsScope<SkillsConfig>
       <ToggleRow id="mnemon-skills-hints" label={t('skills.hints')} hint={t('skills.hintsHint')} checked={hints.value} disabled={disabled} onChange={hints.set} />
       <ToggleRow id="mnemon-skills-sidebar" label={t('skills.sidebar')} hint={t('skills.sidebarHint')} checked={sidebar.value} disabled={disabled} onChange={sidebar.set} />
     </div>
-    <WriteFailure error={evolution.failed ?? autoBacktest.failed ?? hints.failed ?? sidebar.failed} t={t} />
+    <WriteFailure error={evolution.failed ?? allowCreate.failed ?? allowUpdate.failed ?? autoBacktest.failed ?? hints.failed ?? sidebar.failed} t={t} />
   </section>
 }
