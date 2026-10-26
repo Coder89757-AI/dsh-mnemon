@@ -407,6 +407,31 @@ describe('skill evolution in the Host', () => {
     stop()
   })
 
+  it('orders open suggestions from an earlier review without writing to the frozen result', async () => {
+    config = { ...config, evolution: true, idleSeconds: 3600 }
+    let prompt = ''
+    const { skills } = evolution([
+      () => ({ outcome: 'suggest', summary: 'Two workflows worth keeping.', suggestions: [
+        { skillName: 'incident-triage', action: 'create', summary: 'Triage an incident before fixing it.', confidence: 0.8, steps: [1] },
+        { skillName: 'release-notes', action: 'update', summary: 'Group entries by component.', confidence: 0.8, steps: [1] },
+      ] }),
+      (_label, text) => {
+        prompt = text
+        return { outcome: 'nothing', summary: 'Nothing to add.', suggestions: [] }
+      },
+    ])
+    const stop = skills.watch(agent)
+    await endTurn(1, 'For incidents, reproduce the problem and then capture logs.')
+    expect(await skills.reviewNow(agent)).toMatchObject({ inserted: 2 })
+    await endTurn(2, 'Keep the release notes grouped by component.')
+    // A management read hands back a deeply frozen result, so ordering two open
+    // suggestions must not write to it.
+    expect(await skills.reviewNow(agent)).toMatchObject({ inserted: 0, updated: 0 })
+    expect(prompt).toContain('"skillName":"incident-triage"')
+    expect(prompt).toContain('"skillName":"release-notes"')
+    stop()
+  })
+
   it('offers an existing unloaded skill for update and omits dismissed suggestions', async () => {
     const { skills } = evolution([
       () => ({ outcome: 'suggest', summary: 'Triage.', suggestions: [{ skillName: 'incident-triage', action: 'create', summary: 'Dismissed workflow', confidence: 0.8, steps: [1] }] }),
