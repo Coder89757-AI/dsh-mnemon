@@ -149,7 +149,10 @@ async function verifyIndependent(name) {
   // npm runs the package's own commands; no workspace runner, shared config,
   // prebuilt lib/, repository aliases, or sibling source packages are present.
   for (const command of ['typecheck', 'test', 'build']) {
-    await run('npm', ['run', command], directory, `${name}: standalone ${command}`)
+    // The outer pool already runs several packages together. Give each Vitest
+    // process one worker so it cannot multiply that pool by the CPU count.
+    const commandArgs = command === 'test' ? ['--', '--maxWorkers=1'] : []
+    await run('npm', ['run', command, ...commandArgs], directory, `${name}: standalone ${command}`)
   }
   const installed = await realpath(directory)
   assert(!inside(root, installed))

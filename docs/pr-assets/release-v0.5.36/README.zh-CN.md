@@ -36,3 +36,7 @@ rc.3 升级前，通过运行时的**添加记忆**保存一条合成项目事�
 - [目录选择器记录](../storage-directory-picker/README.zh-CN.md)包含真实 WebUI 能力判定、手动输入、异常恢复、设置保存和数据保留检查。**真实系统弹窗的选择/取消尚未完成手验**，Windows/Linux 弹窗亦未手验。自动化测试覆盖成功、取消返回值及迟到的异步结果。发布说明保留此限制。
 
 [建议开关记录](../issue-496-suggestion-switches/README.zh-CN.md)和[模型目录记录](../rc3-model-directory/README.zh-CN.md)包含功能专项验收。发布阶段会另外冻结 main，核对 npm 字节，完成干净 Registry 安装和升级，最后才创建 GitHub Release。
+
+## 发布验证调度
+
+首次发布工作流因未改动的 Memory Spaces 客户端集成测试超过原有五秒超时，在写入 npm 前停止。PR CI 也出现过相同失败，同一提交重跑后通过。为消除两层并发造成的 CPU 过度占用，独立验证现让每个包只使用一个 Vitest worker，保留外层四个包的并发。本地完整 18 仓库 / 19 制品验证及 20 项发布测试已在此设置下通过；没有放宽断言或超时，这一脚本调整不改变已验收安装包。[停止的发布流程](https://github.com/omdsh-dev/dsh-mnemon/actions/runs/40342572010)。

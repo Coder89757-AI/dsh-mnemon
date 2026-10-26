@@ -36,3 +36,7 @@ Reproduction: build and pack the three selected candidates, then run `node scrip
 - The [directory-picker record](../storage-directory-picker/README.md) documents actual WebUI gating, manual input, failure recovery, saved settings and data-preservation checks. **Actual native OS-dialog selection/cancel was not manually completed**, including Windows/Linux dialogs. Automated tests cover success/cancel return values and stale asynchronous results. This limitation is retained in the release notes.
 
 The [suggestion-control record](../issue-496-suggestion-switches/README.md) and [model-directory record](../rc3-model-directory/README.md) document feature-specific checks. Publication separately freezes main, verifies npm bytes, performs a clean Registry installation and upgrade, and creates the GitHub Release last.
+
+## Release verification scheduling
+
+The first publication workflow stopped before any npm write because the unchanged Memory Spaces client integration test exceeded its existing five-second timeout. The PR CI had shown the same failure and passed on an unchanged rerun. To remove nested CPU oversubscription, standalone verification now runs one Vitest worker per package inside the existing four-package pool. The complete local 18-repository / 19-artifact suite and 20 release tests passed with that bound; no assertions or timeouts were relaxed, and this script-only change does not alter the accepted packages. [Stopped publication](https://github.com/omdsh-dev/dsh-mnemon/actions/runs/40342572010).

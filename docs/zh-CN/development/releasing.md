@@ -33,3 +33,5 @@
 中断的流程可以恢复：Registry 中已有的选中版本只有在 integrity 与冻结 tarball 完全一致时才能复用；同版本内容不同会立即终止。正式包使用 `latest`，预发布显式使用 `alpha`、`beta` 或 `rc` 通道。未变化的包必须已存在于 Registry，并通过完整 Starter 安装接受验证，但不会再次打包或发布。
 
 npm 发布不是事务。失败时保留冻结制品并重跑同一 revision；完整性检查会安全跳过匹配版本并继续补齐缺失版本。不能覆盖或撤销不可变版本。只有新 Starter 及其精确组合中的所有版本都可安装，才算发布完成。开发验证不会创建 Git tag、GitHub Release 或 npm 发布。
+
+独立插件验证通过 `MNEMON_PLUGIN_VERIFY_CONCURRENCY` 限制包级并发数（默认四个）。外层并发池内，每个包的 Vitest 命令只使用一个 worker，避免在 CI 机器上再次按 CPU 数倍增并发。所有测试文件、断言和原有超时限制仍生效；独立类型检查和构建仍使用各包自己的命令。

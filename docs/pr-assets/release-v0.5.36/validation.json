@@ -149,7 +149,9 @@
     "independentPlugins": {
       "repositories": 18,
       "artifacts": 19,
-      "passed": true
+      "passed": true,
+      "standaloneVitestWorkers": 1,
+      "verifiedAgainAfterSchedulingFix": true
     },
     "starterSize": {
       "unpackedBytes": 2171049,
@@ -160,11 +162,18 @@
       "firstLoadMs": 3607,
       "firstLoadSucceeded": true,
       "realNetworkRequests": 0
-    }
+    },
+    "releaseTestsPassed": 20
   },
   "limitations": [
     "Real OS native-dialog selection and cancellation were not manually completed; component regressions cover returned values.",
     "Windows native dialogs and Linux native dialogs were not manually tested.",
     "No live model API or private user data was used."
-  ]
+  ],
+  "publicationFirstAttempt": {
+    "url": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/40342572010",
+    "outcome": "stopped before npm writes",
+    "reason": "unchanged Memory Spaces client integration test exceeded 5000 ms with nested worker pools",
+    "remediation": "one Vitest worker per standalone package; keep outer package concurrency and all assertions/timeouts"
+  }
 }
