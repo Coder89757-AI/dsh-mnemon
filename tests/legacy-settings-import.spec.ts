@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { resolveConfig, type Config } from '../src/host/config.ts'
 import { planLegacySettingsImport, type LegacySettingsImportOptions } from '../src/host/legacy-settings-import.ts'
 
 const viewNamespace = 'mnemon-view-0123456789abcdef'
@@ -61,6 +62,17 @@ describe('pure legacy settings import planning', () => {
     expect(result).toEqual({ diagnostics: [], patch: {
       conversationInteraction: { turnBar: false, saveAction: true }, legacySettingsImported: true,
     } })
+  })
+
+  it('still imports a retained toolviews preference, which the resolved config then leaves out', () => {
+    const result = plan({ mnemon: { conversationInteraction: { toolviews: true } } },
+      { currentOverride: { conversationInteraction: { turnBar: false } } })
+    expect(result).toEqual({ diagnostics: [], patch: {
+      conversationInteraction: { toolviews: true, turnBar: false }, legacySettingsImported: true,
+    } })
+    expect(resolveConfig(result.patch as Config).conversationInteraction).toEqual({ turnBar: false, saveAction: true })
+    expect(plan({ mnemon: {} }, { currentOverride: { conversationInteraction: { toolviews: false } } }))
+      .toEqual({ diagnostics: [], patch: { legacySettingsImported: true } })
   })
 
   it('uses unified View preferences before legacy Source preferences for each Entry', () => {

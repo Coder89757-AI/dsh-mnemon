@@ -1,3 +1,4 @@
+// The release plan and its publication steps: --check (read-only), --pack, --publish-plugins, --verify-plugins, --publish-starter, --verify-release.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'

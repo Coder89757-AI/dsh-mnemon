@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { MEMORY_SETTINGS_CLASS_NAMES } from '../src/client/settings-controls.tsx'
 
 const sidebarCss = readFileSync(new URL('../src/client/MnemonSidebarView.module.css', import.meta.url), 'utf8')
 const workspaceCss = readFileSync(new URL('../src/client/MnemonWorkspace.module.css', import.meta.url), 'utf8')
@@ -94,5 +95,13 @@ describe('Sidebar layout invariants', () => {
     expect(spacesCss).toContain('white-space: nowrap;')
     expect(spacesCss).toContain(".shell .bodyCardStats {\n  display: flex;\n  min-width: 0;\n  flex-wrap: nowrap;")
     expect(spacesCss).toContain('  overflow: hidden;')
+  })
+})
+
+describe('Configuration classes another package\'s settings look up', () => {
+  it('keeps every class Memory Spaces\' own settings use, which an installed Memory Spaces finds by name', () => {
+    const settingsCss = readFileSync(new URL('../src/client/MnemonSettingsCard.module.css', import.meta.url), 'utf8')
+    const missing = MEMORY_SETTINGS_CLASS_NAMES.filter(name => !new RegExp(`\\.${name}(?![\\w-])`, 'u').test(settingsCss))
+    expect(missing).toEqual([])
   })
 })

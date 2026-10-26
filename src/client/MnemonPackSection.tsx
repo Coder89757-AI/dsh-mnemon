@@ -5,6 +5,7 @@ import { MnemonClient } from './api.ts'
 import type { MnemonTranslate } from './locales.ts'
 import { humanBytes, message } from './page-kit.tsx'
 import css from './MnemonSettingsCard.module.css'
+import { runtimeArchiveNotice } from './sync-view.ts'
 import { SettingRow } from './settings-controls.tsx'
 
 /**
@@ -32,6 +33,8 @@ interface MnemonPackSectionProps {
   workspaceId?: string
   /** The directory a backup exports and an import merges into. */
   target: PackTarget | null
+  /** An import ran and may have merged a backup into memory. */
+  onImported?: () => void
   t: MnemonTranslate
 }
 
@@ -75,7 +78,7 @@ function download(result: MnemonPackExport): void {
 }
 
 /** Backup and migration of the data directory as one ZIP; the directory itself shows beside the storage choice. */
-export function MnemonPackSection({ connection, sessionId, workspaceId, target, t }: MnemonPackSectionProps): JSX.Element {
+export function MnemonPackSection({ connection, sessionId, workspaceId, target, onImported, t }: MnemonPackSectionProps): JSX.Element {
   const client = useMemo(() => connection === undefined ? null : new MnemonClient(connection, sessionId, workspaceId), [connection, sessionId, workspaceId])
   const input = useRef<HTMLInputElement | null>(null)
   const [pending, setPending] = useState<PendingZip | null>(null)
@@ -118,11 +121,16 @@ export function MnemonPackSection({ connection, sessionId, workspaceId, target, 
     setBusy('import'); setFailed(null); setNotice(null)
     try {
       const result = await client.importPack(pending.base64)
-      setNotice(t('config.packImportedWhole', { root: result.targetRoot }))
+      setNotice(t('config.packImportedWhole', { root: result.targetRoot }) + runtimeArchiveNotice(t, result.runtime?.archived))
       setPending(null)
     } catch (reason) {
       setFailed(message(reason))
-    } finally { setBusy(null) }
+    } finally {
+      setBusy(null)
+      // An import that reports a failure can have merged already: the Host reads Memory
+      // Spaces again after the write, and that read can fail on its own.
+      onImported?.()
+    }
   }
 
   const items = pending?.preview.manifest.summary.reduce((sum, component) => sum + component.items, 0) ?? 0

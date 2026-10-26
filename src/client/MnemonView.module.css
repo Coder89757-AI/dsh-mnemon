@@ -12,6 +12,7 @@
   --mn-layer-1: var(--dsw-alias-bg-layer-1);
   --mn-layer-2: var(--dsw-alias-bg-layer-2);
   --mn-fill: var(--dsw-alias-bg-module-platform);
+  --mn-block-fill: var(--mn-fill);
   --mn-input: var(--dsw-alias-bg-layer-1);
   --mn-text: var(--dsw-alias-label-primary);
   --mn-muted: var(--dsw-alias-label-secondary);
@@ -231,7 +232,7 @@
 .sourceManagementIdentity strong { overflow: hidden; font-size: 14px; font-weight: 500; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .sourceManagementIdentity code { overflow: hidden; color: var(--mn-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .sourceManagementSummary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
-.sourceManagementSummary dl > div { display: grid; min-width: 0; align-content: center; gap: 2px; padding: 8px 10px; border-radius: var(--dsw-radius-sm); background: var(--mn-fill); }
+.sourceManagementSummary dl > div { display: grid; min-width: 0; align-content: center; gap: 2px; padding: 8px 10px; border-radius: var(--dsw-radius-sm); background: var(--mn-block-fill); }
 .sourceManagementSummary dt { color: var(--mn-faint); font-size: 11px; line-height: 14px; }
 .sourceManagementSummary dd { margin: 0; overflow: hidden; font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .sourceManagementSummary dd code { font-size: 12px; }
@@ -359,7 +360,7 @@
 .providerHealthList article[data-status='unhealthy'] .providerHealthSignal { background: var(--mn-danger); }
 .providerHealthList article[data-status='idle'] .providerHealthSignal { background: var(--mn-idle); }
 .storageDomains { margin-bottom: 16px; padding: 16px; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
-.storageRoot { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; margin-top: 12px; padding: 10px 12px; border-radius: var(--dsw-radius-md); background: var(--mn-fill); }
+.storageRoot { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; margin-top: 12px; padding: 10px 12px; border-radius: var(--dsw-radius-md); background: var(--mn-block-fill); }
 .storageRoot > div:first-child { display: grid; min-width: 0; gap: 2px; }
 .storageRoot span, .storageRoot small { color: var(--mn-faint); font-size: 12px; line-height: 18px; }
 .storageRoot code { overflow: hidden; color: var(--mn-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -381,7 +382,7 @@
 .storageAreaGrid article > p { min-height: 36px; margin: 6px 0 8px; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
 .storagePath { display: block; overflow: hidden; margin-top: auto; padding-top: 8px; border-top: .5px solid var(--mn-line); color: var(--mn-faint); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .storageAreaGrid article > small { display: block; margin-top: 6px; color: var(--mn-danger); font-size: 12px; line-height: 18px; }
-.storageUnavailable { display: grid; min-height: 120px; place-content: center; gap: 4px; margin-top: 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-fill); text-align: center; }
+.storageUnavailable { display: grid; min-height: 120px; place-content: center; gap: 4px; margin-top: 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-block-fill); text-align: center; }
 .storageUnavailable strong { font-size: 13px; font-weight: 500; }
 .storageUnavailable p { max-width: 520px; margin: 0; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
 .storageFootnote { margin: 12px 0 0; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
@@ -421,7 +422,7 @@
 .versionList article > header em[data-state="unknown"], .versionList article > header em[data-state="local"], .versionList article > header em[data-state="missing"] { color: var(--mn-faint); }
 .versionList article > header em[data-state="restart"] { color: var(--mn-accent); }
 .versionNotice { margin: 8px 0 0; color: var(--mn-muted); font-size: 12px; line-height: 18px; }
-.versionGuidance { display: grid; gap: 6px; min-width: 0; margin-top: 10px; padding: 10px 12px; border-radius: var(--dsw-radius-md); background: var(--mn-fill); }
+.versionGuidance { display: grid; gap: 6px; min-width: 0; margin-top: 10px; padding: 10px 12px; border-radius: var(--dsw-radius-md); background: var(--mn-block-fill); }
 .versionGuidance > strong { font-size: 13px; font-weight: 500; }
 .versionGuidance > p { margin: 0; color: var(--mn-muted); font-size: 12px; line-height: 18px; }
 .versionGuidance > a { justify-self: start; color: var(--dsw-alias-link, var(--mn-accent)); font-size: 12px; }

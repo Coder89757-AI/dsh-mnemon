@@ -15,6 +15,10 @@ function contribution(slot: string, value: MemoryStrategyContribution['value']):
 }
 
 describe('three-tier owned extension contracts', () => {
+  it('declares the background work the Host runs for it', () => {
+    expect(strategy.manifest.workflows).toEqual(['idle-review', 'runtime-capacity'])
+  })
+
   it('owns only the Runtime capacity workflow of the selected default Strategy', () => {
     expect(threeTierActionWorkflow('default-three-tier', 'runtime', 'mutate')).toBe('runtime-capacity')
     expect(threeTierActionWorkflow('custom', 'runtime', 'mutate')).toBeUndefined()

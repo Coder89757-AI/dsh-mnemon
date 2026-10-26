@@ -1,6 +1,6 @@
 # Install and start
 
-[简体中文](../../zh-CN/guides/installation.md) | **English** | [Documentation hub](../README.md)
+[简体中文](../../zh-CN/guides/installation.md) | **English** | [Documentation](../README.md)
 
 This page is for your first time: it starts from a computer that has never run DeepSeek Harness (DSH), installs dsh-mnemon, and ends with a conversation that uses your first memory. It takes about ten minutes. Already using DSH? Skip to [step 3](#3-install-and-enable-dsh-mnemon).
 
@@ -45,7 +45,7 @@ npx @deepseek-ai/dsh web
 
 DSH starts at `http://127.0.0.1:3080` and opens a one-time link in your browser; the terminal prints the same link. Keep the terminal open while you use DSH, and press `Ctrl+C` to stop it.
 
-- This runs the DSH release tagged `latest` on npm (0.1.7-rc.2 at the time of writing). For the DSH 0.2 preview, run `npx @deepseek-ai/dsh@next web` instead. dsh-mnemon supports both from 0.5.19.
+- This runs the DSH release tagged `latest` on npm, 0.2.1-rc.2 at the time of writing, which is also the one tagged `next`; `npx @deepseek-ai/dsh@0.2.0-rc.2 web` runs DSH 0.2.0-rc.2. dsh-mnemon supports both; see [Compatibility and upgrades](../reference/compatibility.md).
 - If you use DSH often, install it globally with `npm install --global @deepseek-ai/dsh` and then run `dsh web`; the [command line](#7-command-line-and-headless) needs the global `dsh` too.
 
 The first time you open it:
@@ -58,7 +58,7 @@ The first time you open it:
 ## 3. Install and enable dsh-mnemon
 
 1. Click **Plugins** in the sidebar, then **Add plugin** in the top right corner.
-2. Type `dsh-mnemon` and click **Install**. DSH picks the **Registry** on the right of the dialog: usually the **Official npm registry**, or the **Mainland China mirror** in mainland China. You rarely need to change it.
+2. Type `dsh-mnemon` and click **Install**. DSH chooses the **Registry** on the right of the dialog for you: until you pick one, it uses whichever answers faster, usually the **Official npm registry**, or the **Mainland China mirror** in mainland China. You rarely need to change it.
 3. After a few seconds the dialog says **Installed** with the version. Click **Enable now**; DSH does not need a restart.
 4. **Memory System** appears in the sidebar. That is it.
 
@@ -66,11 +66,35 @@ The first time you open it:
 |---|---|
 | ![The Add plugin dialog with dsh-mnemon typed and the Official npm registry chosen](../../assets/install-v0.5.19/en/install-04-add.jpg) | ![The Installed dialog shows dsh-mnemon version 0.5.19 and Enable now](../../assets/install-v0.5.19/en/install-05-installed.jpg) |
 
-If you prefer the command line, you can install with the command below and then start DSH as in step 2; if DSH is already running, restart it after installing:
+The **Installed** card shows the description from the package, which is in English; the plugin list shows the name and description in the interface language.
+
+If you prefer the command line, you can install with the command below and then start DSH as in step 2; if DSH is already running, restart it after installing. [Command line and Headless](#7-command-line-and-headless) has the rest of the commands.
 
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add dsh-mnemon
 ```
+
+### Settings cannot save after manual installation
+
+The package's `cordis.patch.yml` is a **bundle layer**, loaded automatically when `dsh-mnemon` is enabled. It is not a template to copy into your profile. Copying its `insert` block creates a second `mnemon-bundle` and `mnemon` with the same IDs. Settings can then fail with `Configuration for "mnemon" is overridden by a home patch or command-line overlay`.
+
+For a profile with that duplicate insertion:
+
+1. Stop DSH and back up the affected profile's `cordis.patch.yml` and `package.json`.
+2. Check that `dsh.profile.bundles` in that profile's `package.json` includes `dsh-mnemon`. If it does not, install/enable the bundle using Plugins or the CLI above before applying this recovery.
+3. Preserve any custom values from the copied Mnemon entries in one top-level override per component ID, such as `- id: mnemon` or `- id: mnemon-source-skills`. Combine them with existing overrides deliberately: a `config` row replaces the complete config object, rather than merging one field at a time.
+4. Remove the copied **Mnemon insertion** from the profile patch. Keep unrelated entries, comments and overrides; if the `insert` block contains other plugins, keep those members. Remove an empty `insert` block.
+5. If a profile-level bundle enable override is needed, it is just the following top-level row; its children come from the package automatically:
+
+   ```yaml
+   - id: mnemon-bundle
+     name: dsh-mnemon/bundle
+     disabled: false
+   ```
+
+6. Restart DSH and save a setting, such as Skills → Self-evolution. It should survive another restart. Runtime memory, Documents, Memory Spaces and skill files are not moved or deleted by this patch repair.
+
+Removing only the nested `config` block does not remove duplicate IDs. The package's own nested defaults work with one bundle insertion and can stay. A genuine home-patch or command-line override is a separate case: change that owning layer instead of applying this duplicate-insertion recovery.
 
 ## 4. Check the installation
 
@@ -102,34 +126,65 @@ The **Plugins** page of the DeepSeek Harness desktop app works like the web page
 
 - The desktop app uses its own `desktop` profile. From DSH 0.2 the command line no longer manages that profile, so install and manage plugins on the app's Plugins page.
 - Desktop windows load from the app's own `dsh-app://app/` address. dsh-mnemon 0.5.18 and earlier treated them as remote pages, which made the Memory System and the plugin settings read only ([#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)). 0.5.19 fixes this; update dsh-mnemon, with no configuration change.
-- DSH's Plugins page cannot update an installed plugin. Update dsh-mnemon from **Memory System → Status → Check versions → Update**, which installs the new version with the app's own installer. dsh-mnemon 0.5.21 and earlier cannot do this in the desktop app; update from them once by removing dsh-mnemon on the Plugins page and adding it again. Your memory data stays.
+- DSH's Plugins page cannot update an installed plugin. Update dsh-mnemon from **Memory System → Status → Check versions → Update**; [Version checks and updates](./operations.md#version-checks-and-updates) explains how it installs. dsh-mnemon 0.5.21 and earlier cannot do this in the desktop app, and on DSH 0.2.1 neither can 0.5.30 and earlier, whose update stops with `already-installed`: update from them once by uninstalling dsh-mnemon on the Plugins page and adding it again with **Add plugin**, typing the newest version Check versions shows, for example `dsh-mnemon@0.5.35`. Your memory data and settings stay.
 - After updating dsh-mnemon in the desktop app, quit the app completely and open it again (`Cmd+Q` on macOS) so the new version loads. If an error appears after an update, see [Common problems](#common-problems).
 
 ## 7. Command line and Headless
 
-With DSH installed globally, you can manage each profile's plugins from the command line:
+This section is for servers, scripts, one-shot jobs and development checkouts. You need:
+
+- a DSH release that [Compatibility and upgrades](../reference/compatibility.md) lists, Node.js `^22.19.0 || >=24.0.0`, and pnpm;
+- a DSH model route that can create independent task Agents; [Provider requirements](../reference/configuration.md#provider-requirements) says how they are started;
+- for Mnemon Native only, the Mnemon CLI, as in [step 1](#1-get-nodejs-pnpm-and-the-mnemon-cli) or [other ways to install it](#other-ways-to-install-the-mnemon-cli). The other Providers connect to their own services.
+
+Install DSH globally, then check the release you run and the ones npm offers:
 
 ```sh
 npm install --global @deepseek-ai/dsh
+dsh --version
+npm view @deepseek-ai/dsh dist-tags
+```
+
+Install dsh-mnemon into the Web profile, which has the complete workbench, then start DSH, or restart it if it is already running:
+
+```sh
 dsh plugin --profile web add dsh-mnemon
 dsh web
 ```
 
-Profiles keep separate plugin lists. To give one-shot jobs memory too, install it into the Headless profile as well:
+For a development checkout, add it by absolute path instead:
+
+```sh
+dsh plugin --profile web add "link:/absolute/path/to/dsh-mnemon"
+```
+
+### Headless
+
+Profiles keep separate plugin lists. To give one-shot jobs memory too, install dsh-mnemon into the Headless profile as well, or the `link:` path of a development checkout:
 
 ```sh
 dsh plugin --profile headless add dsh-mnemon
 dsh --profile headless "Check persistent project context before answering."
 ```
 
-Upgrade and uninstall:
+Headless mounts the same runtime context, Project Documents, Memory Space tools, lifecycle guidance and supervised write path as a Web Agent. It does not mount the workbench, the conversation buttons, the RPC channels or an interactive slash-command surface. [Profile surfaces](../reference/interfaces.md#profile-surfaces) lists the differences, such as the idle review a one-shot run cancels when it exits, and [the `workspace` scope](../reference/configuration.md#workspace) says where Headless keeps per-workspace memory.
+
+### Update and uninstall
 
 ```sh
 dsh plugin --profile web update dsh-mnemon
 dsh plugin --profile web remove dsh-mnemon
 ```
 
-Restart DSH after upgrading. For 24 hours after a release, pnpm 11 keeps `update` on the installed version; add the new version by name instead, for example `dsh plugin --profile web add dsh-mnemon@0.5.20`. Uninstalling removes the plugin, never your memory data. Development checkouts, cloud access and Headless details are in [Getting started](./getting-started.md#1-install-and-upgrade-from-the-command-line).
+- Restart DSH after an update so the new version loads.
+- For 24 hours after a release, pnpm 11 keeps `update` on the installed version; add the new version by name instead, as [Common problems](#common-problems) describes.
+- In the WebUI and the desktop app, **Memory System → Status → Check versions → Update** installs the exact new version, as `dsh plugin add dsh-mnemon@<version>` would, so the 24-hour rule does not hold it back. On DSH 0.2.1, dsh-mnemon 0.5.30 and earlier stop there with `already-installed` instead. Update from them once: for the WebUI, quit DSH, run `dsh plugin --profile web add dsh-mnemon@<version>` and start DSH again; in the desktop app, uninstall dsh-mnemon on the Plugins page and add it again with **Add plugin** as `dsh-mnemon@<version>`. See [Version checks and updates](./operations.md#version-checks-and-updates).
+- Before you move to another DSH release, follow the [upgrade order](../reference/compatibility.md#upgrade-order).
+- Uninstalling removes the plugin registration, never your memory data in global, workspace or custom roots.
+
+### Cloud access
+
+If the Web profile is reached through a cloud hostname, do not publish port 3080 directly. DSH authenticates every Mnemon RPC and stream through a browser session established from the one-time URL printed at Host startup. Configure the HTTPS reverse proxy or access gateway and trusted authority together, then open that launch URL, by following [Cloud-hosted WebUI](./operations.md#cloud-hosted-webui).
 
 ## Other ways to install the Mnemon CLI
 
@@ -197,16 +252,16 @@ mnemon:
 
 ## Common problems
 
-### Installing says "dsh-mnemon@… is incompatible with DSH 0.2.0-rc.1"
+### Installing says "dsh-mnemon@… is incompatible with DSH …"
 
 ![The plugin could not be installed: dsh-mnemon@0.5.18 is incompatible with DSH 0.2.0-rc.1, with Edit and Retry](../../assets/install-v0.5.19/en/trouble-incompatible.jpg)
 
-Before DSH installs a plugin, and each time it starts, it checks which DSH versions the plugin declares support for. dsh-mnemon releases before 0.5.19 declare DSH 0.1.7 only, so DSH 0.2 refuses them.
+Before DSH installs a plugin, and each time it starts, it checks which DSH versions the plugin declares support for, and refuses a release that leaves its own version out. The screenshot shows DSH 0.2.0-rc.1 refusing dsh-mnemon 0.5.18, which declares DSH 0.1.7 only; [Compatibility and upgrades](../reference/compatibility.md) lists which releases each DSH takes.
 
-- Check that npm has 0.5.19 or later: `npm view dsh-mnemon version`.
-- For 24 hours after a release, pnpm does not pick the new version by default and installs an earlier one instead, which leads to this message. After two releases within a day it falls back further, for example to 0.5.17. DSH 0.1.7 accepts such an earlier release without a message, so check the version on Status. Click **Edit**, type the version as well, for example `dsh-mnemon@0.5.25` (use the version `npm view` shows), and click **Install**; on the command line, run `dsh plugin --profile web add dsh-mnemon@0.5.25`. Or retry after 24 hours.
+- Check which version npm has: `npm view dsh-mnemon version`.
+- For 24 hours after a release, pnpm does not pick the new version by default and installs an earlier one instead, which leads to this message. After two releases within a day it falls back further. Where DSH accepts that earlier release, **Add plugin** on DSH 0.2.1 says which version it installed, while DSH 0.2.0 shows no message, so check the version on Status. Click **Edit**, type the version as well, for example `dsh-mnemon@0.5.35` (use the version `npm view` shows), and click **Install**; on the command line, run `dsh plugin --profile web add dsh-mnemon@0.5.35`. Or retry after 24 hours.
 - A versioned install pins the profile to that version. To upgrade later, run `dsh plugin --profile web update --latest dsh-mnemon` once the next release is a day old; within that day, add the new version by name the same way.
-- Do not accept the risk for an older release with `allow-version` or similar: it really has not been verified on DSH 0.2.
+- Do not accept the risk for an older release with `allow-version` or similar: it really has not been verified on that DSH.
 
 ### The Plugins page says pnpm was not found
 
@@ -253,6 +308,6 @@ The sidebar has no **Memory System**, and every dsh-mnemon component on the Plug
 - The desktop app treats this as a failed start and shows its plugin recovery page. Click **Remove this plugin and continue** (your memory data stays), and once the app is up, add dsh-mnemon again as in [step 3](#3-install-and-enable-dsh-mnemon). Reinstalling 0.5.18 or 0.5.19 keeps the switch off, because the profile saves it, so then turn it on as above.
 - From 0.5.20 there is no separate switch: the group prepares dependency resolution itself, and a leftover setting for it is ignored. If the message names `dsh-mnemon/bundle`, DSH was updated to 0.5.20 without a restart and still runs the old group; quit DSH completely and start it again.
 
-### Moving DSH to 0.2
+### Upgrading DSH
 
-First run `dsh plugin --profile web update dsh-mnemon` on your current DSH to get dsh-mnemon 0.5.19 or later, then upgrade DSH. Otherwise DSH 0.2 turns the incompatible older release off when it starts; your memory is untouched and comes back once the plugin is updated. See [Compatibility and upgrades](../reference/compatibility.md) for details.
+Update dsh-mnemon on your current DSH first, then upgrade DSH, and update dsh-mnemon again. Otherwise DSH 0.2 turns a release before 0.5.19 off when it starts, with your memory untouched until the plugin is updated, and on DSH 0.2.1 releases up to 0.5.30 keep running while their memory subagents and **Check versions → Update** fail. [Older DSH releases](../reference/compatibility.md#older-dsh-releases) lists the release each older DSH keeps, and the [upgrade order](../reference/compatibility.md#upgrade-order) gives the steps, including how to update once where **Check versions → Update** stops with `already-installed`.

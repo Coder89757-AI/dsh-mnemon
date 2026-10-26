@@ -92,7 +92,7 @@ jobs:
       - name: Run complete workspace verification
         run: pnpm run verify
 
-      - name: Verify independent plugins and packed v0.5.15 upgrade E2E
+      - name: Verify independent plugins and the packed upgrade E2E
         env:
           MNEMON_PLUGIN_VERIFY_CONCURRENCY: '4'
         run: pnpm run verify:plugins --skip-build
@@ -172,10 +172,12 @@ jobs:
       - name: Read back and install the complete Registry release
         run: node scripts/release.mjs --verify-release --artifacts release-artifacts
 
-      - name: Smoke-test a real v0.5.16 Registry upgrade
+      # The earlier release must install on the pinned DSH: releases before 0.5.19 declare
+      # DSH 0.1 only, which DSH 0.2 refuses. verify:plugins upgrades from the same release.
+      - name: Smoke-test a real Registry upgrade from v0.5.29
         run: >-
           node scripts/verify-headless-profile.mjs
-          --upgrade-from dsh-mnemon@0.5.16
+          --upgrade-from dsh-mnemon@0.5.29
           --upgrade-registry https://registry.npmjs.org
           --package dsh-mnemon@${{ needs.prepare.outputs.version }}
           --registry https://registry.npmjs.org

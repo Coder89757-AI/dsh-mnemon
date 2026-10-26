@@ -2,10 +2,17 @@
 export function isDefaultSourceInstance(instanceKey: string, sourceTypeId: string): boolean {
   return instanceKey.startsWith('source:') && instanceKey.endsWith(':mnemon-source-' + sourceTypeId)
 }
+/**
+ * The Source of one type a named tool works on: the Starter instance, the Entry
+ * `mnemon-source-<type>` also when nested under an include, or the only instance there
+ * is. Among several others there is none, and each keeps its exact offers.
+ */
+export function namedToolInstance<T extends { sourceInstanceKey: string }>(instances: readonly T[], sourceTypeId: string): T | undefined {
+  return instances.find(source => isDefaultSourceInstance(source.sourceInstanceKey, sourceTypeId)) ?? (instances.length === 1 ? instances[0] : undefined)
+}
 export type MemoryParticipationMode = 'off' | 'manual' | 'automatic'
 export type MemoryParticipationChannel = 'recall' | 'write' | 'projection' | 'maintenance'
 export type MemoryLayerParticipation = Record<MemoryParticipationChannel, MemoryParticipationMode>
-export interface MemoryTopologyDefinition { id: string; strategyId: string; layers: Array<ResolvedMemoryLayerConfig & { id: string }> }
 export interface MemoryCompositionStatus {
   /** Whether a composition serves new turns. A rejected change can leave the previous one serving. */
   serving: boolean
@@ -22,11 +29,14 @@ import type {
   ResolvedMemoryPersistenceStrategy,
   MemoryProviderRuntimeStatus,
   Source,
-  MemoryBodyStats as MemorySpaceStats,
-  MemoryBodyView as MemorySpaceView,
+  MemorySpaceStats,
+  MemorySpaceView,
 } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { ConnectionHandle as DshClientConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
+import type { DocumentMutationResult, DocumentSnapshot } from 'dsh-mnemon-source-documents/contracts'
+import type { RuntimeMemoryMutationResult } from 'dsh-mnemon-source-runtime/contracts'
+import type { MemoryMigrationLineage, MemoryMutationReceipt } from '../core/contracts/index.ts'
+import { MNEMON_VIEW_CHANNEL, MNEMON_VIEW_WRITE_CHANNEL } from './view-protocol.ts'
 
 export const MNEMON_READ_CHANNEL = '/dsh-mnemon-read'
 export const MNEMON_ACTIVATION_CHANNEL = '/dsh-mnemon-activation'
@@ -70,7 +80,43 @@ export const MNEMON_REMOTE_VIEW_WRITE_ENDPOINT = `${MNEMON_REMOTE_NAMESPACE}/vie
 export const MNEMON_REMOTE_REVIEW_ENDPOINT = `${MNEMON_REMOTE_NAMESPACE}/review`
 export const MNEMON_SETTINGS_NAMESPACE = 'mnemon'
 export const MNEMON_UI_SETTINGS_NAMESPACE = 'mnemon-ui'
+/** 技能管理's settings: one live group of the dsh-mnemon entry, drawn on that component's page. */
+export const MNEMON_SKILLS_SETTINGS_NAMESPACE = 'mnemon-skills'
 export * from './view-protocol.ts'
+export * from './memory-tools.ts'
+export * from './sync-rules.ts'
+
+/**
+ * Every endpoint the Host serves on each channel, by the names both sides use: the client's calls
+ * are typed against this list, and tests/rpc-endpoints.spec.ts checks that each Host handler serves
+ * exactly these names.
+ */
+export const MNEMON_RPC_ENDPOINTS = {
+  [MNEMON_READ_CHANNEL]: [
+    'status', 'status-summary', 'memory-system', 'versions', 'task-agent-models', 'runtime-memory', 'documents', 'document', 'document-search',
+    'graph', 'bodies', 'body-directory', 'body-reconnect', 'provider-services', 'embedding-status', 'list', 'entities', 'search', 'agent-search', 'related',
+    'turn-activities', 'turn-activity', 'skill-activity', 'assistant-message', 'source-management-catalog', 'source-management-read', 'source-assistance',
+  ],
+  [MNEMON_ACTIVATION_CHANNEL]: ['body', 'source-assistance'],
+  [MNEMON_WRITE_CHANNEL]: [
+    'runtime-memory', 'document', 'supervise', 'remember', 'link', 'forget', 'body-create', 'body-update', 'body-delete', 'body-merge',
+    'body-metadata-maintain', 'provider-service-update', 'embedding-fill', 'source-management-mutate', 'source-assistance', 'version-update',
+  ],
+  [MNEMON_PACK_CHANNEL]: ['target', 'export', 'inspect', 'import'],
+  [MNEMON_SYNC_CHANNEL]: [
+    'status', 'configure', 'push', 'preview', 'backups', 'diff', 'pull',
+    'github-status', 'github-start', 'github-poll', 'github-cancel', 'github-signout', 'github-repositories', 'github-create',
+  ],
+  [MNEMON_REVIEW_CHANNEL]: ['view', 'opinion', 'decide', 'reopen', 'reconcile', 'apply'],
+  [MNEMON_SETTINGS_CHANNEL]: ['get', 'mutate'],
+  [MNEMON_VIEW_CHANNEL]: ['dashboard', 'preview', 'inspect-plugin'],
+  [MNEMON_VIEW_WRITE_CHANNEL]: ['apply', 'install-plugin'],
+} as const satisfies Readonly<Record<string, readonly string[]>>
+/** A channel the Host serves. */
+export type MnemonRpcChannel = keyof typeof MNEMON_RPC_ENDPOINTS
+/** An endpoint the Host serves on a channel, or on any of several. */
+export type MnemonRpcEndpoint<Channel extends MnemonRpcChannel = MnemonRpcChannel> = (typeof MNEMON_RPC_ENDPOINTS)[Channel][number]
+
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
 
@@ -116,7 +162,8 @@ export interface MemorySourceManagementResult {
 export type RpcError =
   | { code: 'bad-request'; message: string; details: { issues: JsonValue[] } }
   | { code: 'settings-rejected'; message: string; details: { ns: string } }
-  | { code: 'internal'; message: string; details: Record<string, never> }
+  /** `reason` names a failure the page can state in its own language, such as a sync remote refusing credentials. */
+  | { code: 'internal'; message: string; details: Record<string, never> | { reason: string } }
 
 export type RpcResult<T = JsonValue> =
   | { ok: true; value: T }
@@ -194,6 +241,7 @@ export interface ResolvedRuntimeMemoryConfig {
   maintenanceMaxTokens: number
 }
 
+export { STARTER_COMPONENT_ROWS } from './starter-components.ts'
 export { normalizeDisplayMode } from './display-mode.ts'
 export type MnemonDisplayMode = 'sidebar' | 'builtin'
 
@@ -239,7 +287,7 @@ export interface Config {
   /** Optional DSH-owned overrides injected into every Mnemon CLI process. */
   embedding?: MnemonEmbeddingConfig
   memoryTopology?: MemoryTopologyConfig
-  /** Profile-owned plugin choices on DSH 0.1.7 and newer. */
+  /** Profile-owned plugin choices. */
   memoryView?: import('./view-protocol.ts').MemoryViewPreferences
   /** Successful import of this profile's removed settings namespaces. */
   legacySettingsImported?: boolean
@@ -257,10 +305,13 @@ export interface Config {
   idleReviewMs?: number
   idleReview?: Partial<ResolvedIdleReviewConfig>
   conversationInteraction?: {
+    /** @deprecated Switches nothing. Stored profiles may still hold it; the resolved config leaves it out. */
     toolviews?: boolean
     turnBar?: boolean
     saveAction?: boolean
   }
+  /** 技能管理: skill evolution and where the page shows. */
+  skills?: SkillsConfig
   /** Provider policy used when an Agent must create a new Memory Space while distilling memory. */
   persistenceStrategy?: MemoryPersistenceStrategy
   /** Model route used by clean, session-independent maintenance Agents. */
@@ -277,12 +328,21 @@ export interface TaskAgentModelConfig {
   mode?: 'inherit' | 'fixed'
   provider?: string
   model?: string
+  /**
+   * With `inherit`, run on the model the conversation that asked for the work
+   * last used, while that conversation is open. Off by default; a switch
+   * rather than a third mode, so a release that does not know it keeps
+   * reading `inherit` as before.
+   */
+  followConversation?: boolean
 }
 
 export interface ResolvedTaskAgentModelConfig {
   mode: 'inherit' | 'fixed'
   provider?: string
   model?: string
+  /** Present, and true, only on an inherited route that follows its conversation. */
+  followConversation?: true
 }
 
 export interface TaskAgentModelCatalogModel {
@@ -306,8 +366,20 @@ export interface TaskAgentModelCatalogFailure {
 }
 
 export interface TaskAgentModelCatalog {
-  effective?: { provider: string; model: string; source: 'fixed' | 'dsh-default' | 'active-agent' }
+  effective?: { provider: string; model: string; source: 'fixed' | 'session' | 'dsh-default' | 'active-agent' }
   defaultSelection?: { provider: string; model: string }
+  /**
+   * The route the asking conversation's own delegated work takes while it is
+   * open: the model of its last request, or the one it was created with before
+   * its first. An inherited setting that follows its conversation takes it too;
+   * it is reported whether or not that switch is on.
+   */
+  session?: { provider: string; model: string }
+  /**
+   * The route an inherited setting takes without following a conversation: the
+   * DSH new-session default, else an open Agent's creation route.
+   */
+  inherited?: { provider: string; model: string; source: 'dsh-default' | 'active-agent' }
   groups: TaskAgentModelCatalogGroup[]
   failures: TaskAgentModelCatalogFailure[]
 }
@@ -341,7 +413,6 @@ export interface ResolvedConfig {
   idleReviewMs: number
   idleReview: ResolvedIdleReviewConfig
   conversationInteraction: {
-    toolviews: boolean
     turnBar: boolean
     saveAction: boolean
   }
@@ -353,6 +424,80 @@ export interface ResolvedConfig {
 export interface ResolvedInteractionConfig {
   turnBar: boolean
   saveAction: boolean
+}
+
+/** 技能管理's settings, as stored; every key is optional and falls back to its default. */
+export type SkillsConfig = Partial<ResolvedSkillsConfig>
+
+export interface ResolvedSkillsConfig {
+  /** Review finished conversations in the background and suggest new or better skills. */
+  evolution: boolean
+  /** Backtest a draft against the current version as soon as it is written. */
+  autoBacktest: boolean
+  /** The one-line skills bar under a finished turn. */
+  hints: boolean
+  /** 技能管理 as a sidebar entry of its own instead of a Memory System page. */
+  sidebar: boolean
+  /** The post-turn score a conversation's window needs before it is reviewed. */
+  reviewThreshold: number
+  /** How long a conversation sits idle before its review runs. */
+  idleSeconds: number
+  /** The least time between two reviews of one conversation. */
+  cooldownSeconds: number
+  /** Suggestions below this confidence are dropped. */
+  minConfidence: number
+  /** A pending suggestion expires after this many days. */
+  expiryDays: number
+  /** At most this many pending suggestions from one conversation. */
+  maxPendingPerSession: number
+  /** At most this many cases in one backtest. */
+  casesPerRun: number
+}
+
+export const DEFAULT_SKILLS_CONFIG: Readonly<ResolvedSkillsConfig> = Object.freeze({
+  evolution: false,
+  autoBacktest: true,
+  hints: true,
+  sidebar: false,
+  reviewThreshold: 5,
+  idleSeconds: 20,
+  cooldownSeconds: 150,
+  minConfidence: 0.6,
+  expiryDays: 7,
+  maxPendingPerSession: 5,
+  casesPerRun: 8,
+})
+
+/** One skill a turn used: the model loaded it, or the user asked for it with `/name`. */
+export interface TurnSkillUse {
+  name: string
+  by: 'model' | 'user'
+}
+
+/** A skill review of a conversation, placed under the turn its window ended with. */
+export interface TurnSkillReview {
+  turn: number
+  /** `scheduled` waits for the conversation to sit idle; the others say how it went. */
+  state: 'scheduled' | 'reviewing' | 'suggested' | 'nothing' | 'error'
+  /** The suggestions it left that still exist, newest first. */
+  suggestions: Array<{ id: string; skillName: string; action: 'create' | 'update'; status: string }>
+  error?: string
+}
+
+/** What one conversation did with skills: each turn's uses and each review, for the turn bars. */
+export interface SkillActivitySnapshot {
+  /** Whether a skills bar has anything to read: the Skills Source runs for this conversation. */
+  available: boolean
+  turns: Array<{ turn: number; skills: TurnSkillUse[] }>
+  reviews: TurnSkillReview[]
+}
+
+/** What the Status page says about 技能管理. */
+export interface SkillsStatusSummary {
+  evolution: boolean
+  skills: number
+  /** Suggestions and drafts waiting for the user. */
+  waiting: number
 }
 
 /**
@@ -472,10 +617,52 @@ export interface SubagentCounters {
   documentArchives: number
   metadataMaintenances: number
   reconciliations: number
+  /** Skill reviews, drafts, backtest runs and case derivations. */
+  skills?: number
   failures: number
   lastRunId?: string
-  lastOperation?: 'recall' | 'write' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile'
+  lastOperation?: 'recall' | 'write' | 'review' | 'placement' | 'migration' | 'compaction' | 'document-archive' | 'metadata-maintenance' | 'reconcile' | 'skill'
   lastAt?: string
+}
+
+/** What a delegated memory write did, as the write task Agent's receipts show it. */
+export interface DelegatedWriteResult {
+  delegated: true
+  runId: string
+  provider: string
+  summary: string
+  action: string
+  /** Where the memory went: the spaces its receipts name, else what the writer reported. */
+  memoryBodyIds: string[]
+  /** Spaces that were inactive and that this write switched on. */
+  activatedMemoryBodyIds?: string[]
+  documentIds?: string[]
+  /** Memories saved without a vector, as the Provider's receipt says (#388). */
+  unembedded?: Array<{ memoryBodyId?: string; id?: string }>
+  hint?: string
+}
+
+/** The `supervise` RPC result: a delegated write for the conversation that asked for it. */
+export interface SupervisedWritebackResult extends DelegatedWriteResult { sessionId: string }
+
+/** What a task Agent answered from the evidence a search recalled, as `agent-search` adds it to the results. */
+export interface DelegatedAnswerResult {
+  answer: string
+  citations: string[]
+  delegation: { runId: string; provider: string }
+}
+
+/** A Document write or archive the Host ran: the Documents Source's result, and the archival it ran, for the archive or to make room for the write. */
+export type CoordinatedDocumentResult = DocumentMutationResult & {
+  lineage?: MemoryMigrationLineage[]
+  maintenance?: { runId: string; provider: string; summary: string; memoryBodyIds: string[]; archivedDocumentIds: string[] }
+}
+
+/** A runtime memory write the Host ran: the Runtime Source's result, and the capacity maintenance that ran with it. */
+export type CoordinatedRuntimeMemoryResult = RuntimeMemoryMutationResult & {
+  revision?: string
+  maintenance?: { runId: string; provider: string; summary: string; memoryBodyIds: string[] }
+  memoryReceipt?: Pick<MemoryMutationReceipt, 'status' | 'completion' | 'committedAt'>
 }
 
 export type LifecyclePhase = 'idle' | 'prime' | 'recall' | 'writeback' | 'review' | 'supervised' | 'error'
@@ -558,6 +745,8 @@ export interface StatusView {
   memorySystem?: MemoryCompositionStatus
   lifecycle?: LifecycleSnapshot
   documents?: DocumentSnapshot
+  /** 技能管理, when its Source runs for this scope. */
+  skills?: SkillsStatusSummary
   storage?: StorageScopeCatalog
   workspaceContext?: {
     mode: StorageScopeKind
@@ -598,6 +787,8 @@ export interface MnemonPackTarget {
   root: string
   scope: StorageScopeKind
   defaultRoot: string
+  /** Optional on older Hosts; only a native DSH backend can open an OS chooser. */
+  nativeDirectoryPicker?: boolean
 }
 
 export interface MnemonPackExport {
@@ -625,10 +816,12 @@ export interface MnemonPackPreview {
  * leaves an entry out because a tombstone still hides it has to say how many.
  */
 export interface MnemonRuntimeMergeReport {
-  /** Incoming entries this merge wrote into the data directory. */
+  /** Incoming entries this merge admitted to hot runtime memory. */
   added: number
   /** Incoming entries a tombstone still hides, so the merge left them out. */
   held: number
+  /** Exact MEMORY records newly saved in the local import-overflow archive. */
+  archived?: number
 }
 
 export interface MnemonPackImportResult {
@@ -651,6 +844,12 @@ export interface MnemonMachineIdentity {
   label: string
   createdAt: string
 }
+
+/**
+ * Where an installation's name comes from: the host name of the computer it runs on,
+ * which the name then follows, or a name a person typed, which stays as given.
+ */
+export type MnemonMachineLabelSource = 'hostname' | 'custom'
 
 /** Which machine wrote one runtime entry, so a merge can tell two installations apart. */
 export interface MnemonEntryOrigin {
@@ -792,9 +991,6 @@ export interface MnemonSyncConfigView {
  */
 export type MnemonSyncCredentialSource = 'environment' | 'token' | 'github' | 'none'
 
-/** How far the browser step of a GitHub sign-in has come. */
-export type MnemonSyncGitHubFlowStatus = 'pending' | 'expired' | 'denied' | 'error'
-
 export interface MnemonSyncGitHubFlow {
   userCode: string
   verificationUri: string
@@ -850,11 +1046,52 @@ export interface MnemonSyncGitStatus {
   issue?: string
 }
 
+/**
+ * Why a remote could not be read, as a code the settings page names in its own
+ * language: credentials missing or refused, an address that leads nowhere, a
+ * network that does not reach the host, or a host that did not answer in time.
+ */
+export type MnemonSyncRemoteIssue = 'auth' | 'not-found' | 'network' | 'timeout' | 'unknown'
+
+/**
+ * Why a sync operation did not run or did not finish. The message beside it is
+ * Git's or the Host's own words; the reason is what a page can translate and act
+ * on, so an operator reads "sign in or add a token" rather than a Git trace.
+ */
+export type MnemonSyncFailureReason =
+  | 'busy'
+  | 'no-repository'
+  | 'git-missing'
+  | 'remote-empty'
+  | 'remote-auth'
+  | 'remote-not-found'
+  | 'remote-network'
+  | 'remote-timeout'
+  | 'push-rejected'
+  | 'github-unauthorized'
+
 export interface MnemonSyncRemoteStatus {
   reachable: boolean
   branchExists: boolean
   commit?: string
   error?: string
+  /** What kind of failure `error` is, when the remote could not be read. */
+  issue?: MnemonSyncRemoteIssue
+}
+
+/**
+ * The last sync this installation finished, kept on disk so a restart still
+ * says when memory last travelled. `sync` merged the branch and published the
+ * result; `merge` only merged the branch here.
+ */
+export interface MnemonSyncLastRun {
+  at: string
+  kind: 'sync' | 'merge'
+  commit: string
+  /** Whether the commit reached the remote; a merge never publishes. */
+  pushed: boolean
+  /** Remote runtime entries the merge wrote here. */
+  added?: number
 }
 
 export interface MnemonSyncCommit {
@@ -879,7 +1116,14 @@ export interface MnemonSyncStatus {
    * runs, and a disabled block writes nothing.
    */
   machine?: MnemonMachineIdentity
+  /**
+   * How `machine.label` is chosen, with the host name a host-name label follows.
+   * Present with `machine`; it describes this computer and is never published.
+   */
+  machineLabel?: { source: MnemonMachineLabelSource; hostname: string }
   lastCommit?: MnemonSyncCommit
+  /** The last sync or merge this installation finished. */
+  lastRun?: MnemonSyncLastRun
   /** The background cadence this Host keeps; absent when no timer runs for this runtime. */
   autoBackup?: MnemonSyncAutoBackup
 }
@@ -898,6 +1142,8 @@ export interface MnemonSyncAutoBackup {
   nextAt?: string
   /** Why the last automatic run failed, when it did. */
   lastError?: string
+  /** The kind of failure `lastError` is, when the Host could tell. */
+  lastFailure?: MnemonSyncFailureReason
   /** The commit the last automatic run recorded. */
   lastCommit?: string
   /** Whether the last automatic run reached the branch. */
@@ -950,9 +1196,13 @@ export interface MnemonSyncPushResult {
     summary: MnemonPackComponentSummary[]
     /** Entries the merge dropped because a tombstone removed them. */
     tombstones: number
+    /** What the merge wrote into this machine's runtime memory. */
+    runtime?: MnemonRuntimeMergeReport
   }
   /** Why the branch was not published, when it was not. */
   reason?: string
+  /** The kind of failure `reason` describes, when the Host could tell. */
+  failure?: MnemonSyncFailureReason
   /** What folding the mirror's loose objects into a pack recovered, when it ran. */
   compaction?: MnemonSyncCompaction
 }
@@ -1092,17 +1342,6 @@ export interface MnemonSyncDiff {
   remoteTombstones: MnemonTombstone[]
 }
 
-/** Moving the data directory: what was moved, and how. */
-export interface MnemonStorageMigration {
-  from: string
-  to: string
-  source: 'rename' | 'copy'
-  files: number
-  bytes: number
-  /** Whether the old directory was removed after the copy verified. */
-  removed: boolean
-}
-
 export type VersionPackageId = `dsh-mnemon-${'source' | 'strategy' | 'provider'}-${string}`
 export type VersionComponentId = 'mnemon' | 'dsh-mnemon' | VersionPackageId
 export type VersionInstallMode = 'homebrew' | 'go' | 'npm' | 'link' | 'manual' | 'missing'
@@ -1164,13 +1403,3 @@ export interface VersionUpdateResult {
   restartRequired: boolean
   output?: string
 }
-
-// Default-product form values; Source configuration is validated again by its owner.
-export const CATEGORIES = ['preference', 'decision', 'fact', 'insight', 'context', 'general'] as const
-export const SOURCES = ['user', 'agent', 'external'] as const
-export const EDGE_TYPES = ['temporal', 'semantic', 'causal', 'entity'] as const
-export const INTENTS = ['WHY', 'WHEN', 'ENTITY', 'GENERAL'] as const
-export const DEFAULT_EMBEDDING_ENDPOINT = 'http://localhost:11434'
-export const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text'
-export const DEFAULT_EMBEDDING_PROTOCOL = 'auto'
-export const MNEMON_EMBEDDING_PROTOCOLS = ['auto', 'ollama', 'openai'] as const

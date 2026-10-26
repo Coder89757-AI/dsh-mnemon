@@ -1,12 +1,17 @@
+import { STARTER_COMPONENT_ROWS } from '../host/protocol.ts'
 import type { MemoryPluginEntryView } from '../host/view-protocol.ts'
 import type { MnemonTranslate } from './locales.ts'
 
 /** Packages the dsh-mnemon Starter installs; any other component came from an installed extension. */
-const SHIPPED_PACKAGES: ReadonlySet<string> = new Set([
-  'dsh-mnemon-source-runtime', 'dsh-mnemon-source-documents', 'dsh-mnemon-source-memory-spaces',
-  'dsh-mnemon-strategy-default-three-tier', 'dsh-mnemon-strategy-general',
-  'dsh-mnemon-strategy-auto-capture', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-scoped',
-])
+const SHIPPED_PACKAGES: ReadonlySet<string> = new Set(STARTER_COMPONENT_ROWS.map(row => row.packageName))
+
+/** Shipped components still taking shape: their row and page say so, and they may change more than the rest. */
+const EXPERIMENTAL_PACKAGES: ReadonlySet<string> = new Set(['dsh-mnemon-source-skills'])
+
+/** Whether a component is marked experimental. */
+export function isExperimental(entry: Pick<MemoryPluginEntryView, 'packageName'>): boolean {
+  return EXPERIMENTAL_PACKAGES.has(entry.packageName)
+}
 
 /** Whether a component ships with dsh-mnemon rather than an installed extension. */
 export function isShipped(entry: MemoryPluginEntryView): boolean {

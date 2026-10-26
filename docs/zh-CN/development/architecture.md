@@ -25,7 +25,7 @@ flowchart TB
 
 Memory Spaces **自己定义内部 Fiber 与 Provider 协议**。每个 Provider 都来自明确安装并配置的子模块；两个 Source 实例可以使用同名子节点，各自持有独立目录和凭据。不存在扫描依赖自动选择实现、全局 Provider 注册表等隐式装配。
 
-借鉴 Spring Boot Starter，默认发行包负责选依赖、给默认配置，不把 Source 业务收回 Core。用户仍只安装 `dsh-mnemon`；17 个插件包可独立开发、测试与发布。Starter 安装全部官方包，其中通用策略与三个策略增强以停用 Entry 随附：增强在开关打开后参与 View，通用策略只有被选为主策略后才组合 View。更换主策略始终需要显式选择。
+借鉴 Spring Boot Starter，默认发行包负责选依赖、给默认配置，不把 Source 业务收回 Core。用户仍只安装 `dsh-mnemon`；18 个插件包可独立开发、测试与发布。Starter 安装全部官方包，其中通用策略与三个策略增强以停用 Entry 随附：增强在开关打开后参与 View，通用策略只有被选为主策略后才组合 View。更换主策略始终需要显式选择。
 
 | 归属 | 负责 | 不负责 |
 |---|---|---|
@@ -44,6 +44,14 @@ Memory Spaces **自己定义内部 Fiber 与 Provider 协议**。每个 Provider
 
 Host 将解析后的目录交给各默认 Source。Source 继续拥有自己的格式、事务和 Provider 状态；切换布局不搬迁其数据。显式选择全局 USER.md 时仅用户档案使用全局根，项目数据仍留在所选工作区根。设置和只读清单使用同一布局解析器。
 
+Host 复制或统计 Source 的文件时（Mnemon Pack、Git 同步和状态页的存储清单），从该 Source 的 `./contracts` 读取其文件名、锁文件与解析器：
+
+- Runtime：目录、文件与锁文件，以及其控制器写入 USER.md/MEMORY.md 所用的投影与字节计数；
+- Documents：目录、索引解析器与锁文件；
+- Memory Spaces：存储布局、注册表解析器与记忆空间计数。比较与合并同一 Mnemon 存储的两个副本（[#370](https://github.com/omdsh-dev/dsh-mnemon/issues/370)、[#391](https://github.com/omdsh-dev/dsh-mnemon/issues/391)）由其仅限 Node 的 `./space-identity` 入口提供。
+
+只有 Pack 对传入文件的自身检查留在 Host：memories.json 的条目、档案的 front matter 与内容哈希，以及存储的 SQLite 文件头。Pack 用各 Source 的名称拼出条目路径，并由测试将其固定为版本 1 格式。
+
 ## 默认插件组合
 
 | 插件 | 记忆权威 | 默认 View 贡献 |
@@ -51,6 +59,7 @@ Host 将解析后的目录交给各默认 Source。Source 继续拥有自己的�
 | `dsh-mnemon-source-runtime` | Runtime JSON、USER/MEMORY 投影、分支过滤与容量 | eager 精确工作上下文 |
 | `dsh-mnemon-source-documents` | 受管 Markdown、索引、搜索、修订与归档 | 有界叙事封面与搜索 route |
 | `dsh-mnemon-source-memory-spaces` | 记忆空间目录、内部 Provider、能力与召回质量策略 | 有界持久证据封面与 recall/related route |
+| `dsh-mnemon-source-skills` | 以文件哈希为界的 DSH 技能文件夹；版本、进化账本、评测集、记录的对话与市场来源 | 无：只用于管理；技能经由 DSH 自带的 `skill` 工具进入模型 |
 | `dsh-mnemon-strategy-default-three-tier` | 不存储记忆 | 分层策略：选择三种角色，分配投影、route 与 action |
 | `dsh-mnemon-strategy-general` | 不存储记忆 | 可替代分层策略：在同一份预算内接入全部可用 Source，由模型决定路由 |
 
@@ -112,9 +121,42 @@ Host 的 `MemoryExecutions` 统一持有 Core 回合及对应的运行时绑定�
 
 Source 自己拥有可选的 `./client` DSH 模块、页面、管理协议与测试，通过公开 Source 页面 SDK 注册到工作台的 `mnemon.source.page` Slot。Client 生命周期与 React 渲染仍由 DSH 管理。
 
-Host 交给页面的是限定实例的管理客户端与脱敏元信息，不是裸 RPC、Host Context 或 LLM grant。读取和带确认、修订栅栏的修改指向一个 Source。档案归档到记忆空间等默认协作由 Host 编排，也只调用公开管理协议。
+组件自己的设置在它于插件页中的组件页上遵循同样的原则：组件从自己的 `./client` 注册到 `mnemon.component.settings` 区域，记忆空间的 Provider 与嵌入就是这样提供的。这些设置需要 dsh-mnemon 的配置或 Host 操作时，页面借给注册在该组件键下的设置一个限定范围的 `host`，而不是设置服务或传输层。dsh-mnemon 还把记忆空间的设置保留为后备：只要记忆空间自己的客户端没有注册设置（记忆空间关闭时、其客户端加载期间、客户端出错时，以及搭配本身没有设置的旧版本时），页面就由后备绘制，记忆空间自己的注册会替代它；详见[扩展开发](./extensions.md#组件自己的设置与状态卡片)。
 
-同一个共用工作台提供两个互斥的 DSH 入口。Sidebar 在受支持的 DSH（0.1.7-rc.2 与 0.2.0-rc.2）公开的 `sidebar.panellist` 与 `main` Slot 中注册配对的 `mnemon` 入口。DSH 负责按钮、图标尺寸、标签、选中状态和主面板导航。`shell.overlay` 注册保留 Source 子 Slot 的渲染权限，将工作台 portal 到持久的原生主面板挂载点，从而保留切换面板时的页面状态和独立的 Better Sidebar 挂载点。未提供原生面板契约的替换布局继续使用现有入口及浮层回退。Sidebar 无会话也可打开，保留自己的工作区选择，与 Taskboard/SSH 协调，并通过 `layout.selectPanel(null)` 返回会话。会话标签页（`builtin`）使用 `conversation.view`，读写和任务均使用所属会话的存储范围，不提供独立工作区选择器。两个入口渲染同一组 Source 自有子 Slot，不创建第二个 React root、兜底页面注册表或复制业务页面。
+Host 交给页面的是限定实例的管理客户端与脱敏元信息，不是裸 RPC、Host Context 或 LLM grant。读取和带确认、修订栅栏的修改指向一个 Source。档案归档到记忆空间等默认协作由 Host 编排，也只调用公开管理协议。技能进化同样如此：Host 记录每个回合的步骤、为窗口计分、在下一次停顿时安排复盘，并以任务 Agent 运行复盘、草案与回测，每个结果都通过技能管理 Source 带修订栅栏的操作写入；Source 本身从不调用模型。它的设置是实时生效的 `mnemon-skills` 范围，修改直接作用于运行中的进化与客户端，不重建运行图。
+
+同一个共用工作台提供两个互斥的 DSH 入口。Sidebar 在[受支持的 DSH](../reference/compatibility.md) 公开的 `sidebar.panellist` 与 `main` Slot 中注册配对的 `mnemon` 入口。DSH 负责按钮、图标尺寸、标签、选中状态和主面板导航。`shell.overlay` 注册保留 Source 子 Slot 的渲染权限，将工作台 portal 到持久的原生主面板挂载点，从而保留切换面板时的页面状态和独立的 Better Sidebar 挂载点。未提供原生面板契约的替换布局继续使用现有入口及浮层回退。Sidebar 无会话也可打开，保留自己的工作区选择，与 Taskboard/SSH 协调，并通过 `layout.selectPanel(null)` 返回会话。会话标签页（`builtin`）使用 `conversation.view`，读写和任务均使用所属会话的存储范围，不提供独立工作区选择器。两个入口渲染同一组 Source 自有子 Slot，不创建第二个 React root、兜底页面注册表或复制业务页面。
+
+## 安全边界
+
+以下是 Host 在进程、文件、WebUI 与任务 Agent 周围保持的边界。它们不是秘密扫描器：这对你保存的数据意味着什么，见[运维指南](../guides/operations.md#安全边界)；如何报告漏洞，见 [SECURITY.md](../../../SECURITY.md)。
+
+### 进程
+
+- CLI 使用 `spawn(command, args, { shell: false })`，不拼接 shell。
+- 每次调用的 stdout + stderr 合计限制 2 MiB。Mnemon Native 在内容列表、图谱，以及运行时记忆归档前的逐字比对中会读取整个记忆空间，这些读取随 Store 增长，上限为 128 MiB。
+- 调用失败时会写明原因：只有启动失败才提示安装 Mnemon 或设置 `mnemon.cliPath`；超时、取消和输出超出上限会各自说明。
+- 每次调用受 `timeoutMs` 与 AbortSignal 控制；取消先 `SIGTERM`，1.5 秒后 `SIGKILL`。
+- 单个 Runner 内调用串行；跨 DSH 进程仍依赖 Mnemon / SQLite 并发语义。
+
+### 文件
+
+- Runtime、Documents 和 Pack 操作使用进程内队列或组件锁。
+- lock 默认等待 5 秒，超过 30 秒才视为 stale。
+- 写入使用临时文件、staging 与 rename。
+- Runtime revision 阻止过期压缩覆盖；Document revision 阻止移动已更新原文。
+- `sourcePaths` 不能逃出发起会话工作区，也不能指向受管 Documents 目录。
+
+### Web 与模型
+
+- DSH 负责远程 RPC 与 stream 的认证或配对；Mnemon 的 API Gateway 映射对管理操作另行要求 `remoteAccess: trusted-host`，本地回环客户端与 DSH 桌面版窗口（`dsh-app://app/`）使用各自的通道。
+- Provider 目录和管理响应始终脱敏；界面只显示已配置字段名，不返回已保存凭据值。
+- WebUI 依据 Host 返回的可写 settings snapshot 判断产品能力，不再根据传输位置猜测权限；设置通道不可用时会显示明确诊断，而不是空白页。
+- WebUI 不直接读取 SQLite、启动进程、调用远程 Provider 或指定任意更新命令；Provider 网络访问只发生在 Host。
+- worker 使用 persona、工具白名单与 `maxDepth: 1`。固定结果工具仅接受当前子任务的可撤销请求 ID，并按每次操作的 schema 校验结果。
+- 蒸馏和 supervised writeback worker 不能调用 `mnemon_forget`；空闲审查的档案写入只开放仅创建工具，不能覆盖用户原文，也不能通过归档腾出容量。这些限制默认启用，无需增强插件。
+- 空闲审查每轮只写一层：建了项目档案后，修改工作记忆会被拒绝；修改工作记忆后，新建项目档案会被拒绝。`idleReview.runtimeMemory: false` 会完全收回它的运行时记忆工具。
+- 查询、候选、档案正文与历史记忆全部按不可信数据处理。
 
 ## 使用兼容与未来演进
 

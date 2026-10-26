@@ -32,6 +32,7 @@ import {
 } from './view-protocol.ts'
 import { inspectMemoryView } from './view-presentation.ts'
 import { schema, legacySchema, preferences, legacyPreferences, type LegacySourcePreferences } from './view-preferences.ts'
+import { withMainStrategy } from './main-strategy.ts'
 
 /** Deliberately excludes Loader.write(): generated or package YAML is never edited. */
 export interface MemoryPluginLoaderEntry {
@@ -182,8 +183,7 @@ export class MemoryPluginManagement {
   }
 
   resolveConfig(config: ResolvedConfig, view = this.settings.get()): ResolvedConfig {
-    const selected = view.strategyTypeId
-    return selected === undefined ? config : { ...config, memoryTopology: { ...config.memoryTopology, strategyId: selected } }
+    return withMainStrategy(config, view)
   }
 
   start(): () => void {

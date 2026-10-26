@@ -1,3 +1,4 @@
+// Verify every packed package outside the workspace: each plugin as its own repository, an external consumer and the Starter in real DSH.
 import { createServer } from 'node:http'
 import { createReadStream } from 'node:fs'
 import assert from 'node:assert/strict'
@@ -15,9 +16,9 @@ const configuredConcurrency = process.env.MNEMON_PLUGIN_VERIFY_CONCURRENCY ?? '4
 assert.match(configuredConcurrency, /^[1-9]\d*$/, 'MNEMON_PLUGIN_VERIFY_CONCURRENCY must be a positive integer')
 const concurrency = Math.min(Number(configuredConcurrency), names.length)
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-// The newest earlier release that runs on the supported DSH is the realistic
-// upgrade base; upgrading to the same version would test nothing.
-const upgradeBase = '0.5.15'
+// An earlier release that installs on both supported DSH releases is the
+// realistic upgrade base; upgrading to the same version would test nothing.
+const upgradeBase = '0.5.29'
 assert.notEqual(upgradeBase, manifest.version, 'The upgrade base must be an earlier release than the packed version')
 const temporary = await mkdtemp(join(tmpdir(), 'mnemon-plugin-artifacts-'))
 assert(!inside(root, temporary), 'The consumer must be outside the development workspace')

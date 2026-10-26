@@ -1,4 +1,4 @@
-import { isDefaultSourceInstance } from './protocol.ts'
+import { namedToolInstance } from './protocol.ts'
 import type { MemoryActionOffer, MemoryEvidence, MemoryJsonValue, MemoryMutationReceipt, MemoryOperationScope, MemorySourceManagementRequest } from '../core/contracts/index.ts'
 import type { MemoryGenerationHost } from '../core/index.ts'
 import type { ComposableMemoryTurn, ComposableMemoryTurnManager } from '../core/turns.ts'
@@ -97,8 +97,7 @@ export class SourceSession {
   private select(generation: import('../core/composition.ts').MemoryCompositionGeneration) {
     const candidates = generation.sourceInstances().filter(source => source.sourceTypeId === this.typeId)
     const source = this.instanceKey !== undefined ? candidates.find(source => source.sourceInstanceKey === this.instanceKey)
-      : candidates.find(source => isDefaultSourceInstance(source.sourceInstanceKey, this.typeId))
-      ?? (candidates.length === 1 ? candidates[0] : undefined)
+      : namedToolInstance(candidates, this.typeId)
     if (source === undefined) throw new Error('Source ' + this.typeId + ' is ' + (candidates.length === 0 ? 'not installed' : 'ambiguous; select an explicit instance'))
     return source
   }

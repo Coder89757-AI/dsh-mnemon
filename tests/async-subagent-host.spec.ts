@@ -6,7 +6,7 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { LlmAdapter, createUserMessage, type ContentBlock, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { JsonlSessionPersistence } from './helpers/dsh-plugins.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -19,6 +19,7 @@ import { MnemonLifecycle } from '../src/host/lifecycle.ts'
 import { LiveMnemonRuntime } from '../src/host/runtime.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
+import { loadWorkingDirectory } from './helpers/installed-dsh.ts'
 import { memoryGraphFixture } from './helpers/memory-graph.ts'
 
 type Response = string | { name: string; args: Record<string, unknown> }
@@ -117,6 +118,7 @@ async function harness(respond: (options: GenerateOptions) => Response | Promise
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
+  await loadWorkingDirectory(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   ctx.llm.registerAdapter(['mock'], new ScriptedAdapter(respond))
@@ -140,11 +142,12 @@ async function harness(respond: (options: GenerateOptions) => Response | Promise
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(_args, execution) {
       if (execution.agent === undefined) throw new Error('test tool requires an Agent')
-      return ctx.subagents.startContinuable({
-        provider: 'spawn', label: 'Recall task',
-        request: { parent: execution.agent, prompt: [{ type: 'text', text: 'Recall release history.' }] },
-        signal: execution.signal,
-      })
+      const subagents = ctx.subagents as unknown as { startContinuable?: (spec: unknown) => Promise<unknown>; startActivation?: (spec: unknown) => Promise<{ childId: string; messageId?: string }> }
+      const spec = { provider: 'spawn', label: 'Recall task', request: { parent: execution.agent, prompt: [{ type: 'text', text: 'Recall release history.' }] }, signal: execution.signal }
+      // DSH 0.2.0 starts a continuable child; DSH 0.2.1 starts every child as an activation, here delivered to the parent.
+      if (typeof subagents.startContinuable === 'function') return subagents.startContinuable(spec)
+      const activation = await subagents.startActivation!({ ...spec, delivery: 'parent' })
+      return { childId: activation.childId, messageId: activation.messageId }
     },
   })
   const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' }, { cwd: root })

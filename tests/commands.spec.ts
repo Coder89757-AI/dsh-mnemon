@@ -6,7 +6,7 @@ import type { MnemonAgentRuntimeSource, MnemonRuntimeGraph } from '../src/host/r
 import type { MnemonSubagentCoordinator } from "../src/host/subagent.ts"
 import { MemoryExecutions } from '../src/host/memory-executions.ts'
 
-function runtime(fixture: { config: { writeEnabled: boolean; defaultRecallLimit: number }; status?: () => Promise<unknown> }): MnemonAgentRuntimeSource {
+function runtime(fixture: { config: { writeEnabled: boolean; defaultRecallLimit: number; embedding?: { enabled: boolean } }; status?: () => Promise<unknown> }): MnemonAgentRuntimeSource {
   const config = resolveConfig(fixture.config)
   const source = {
     config,
@@ -81,6 +81,17 @@ describe('/mnemon command', () => {
     expect(result).toEqual(expect.objectContaining({ kind: 'success', text: expect.stringContaining('memory-full-id') }))
   })
 
+  it('says when a recall or related query did not run, instead of that nothing was found (#389)', async () => {
+    const service = { config: { writeEnabled: true, defaultRecallLimit: 10 } }
+    const memoryCoordinator = coordinator({
+      recall: vi.fn(async () => ({ query: '站会', mode: 'smart', results: [], notRun: true as const, budgetExhausted: true as const })),
+      related: vi.fn(async () => ({ query: 'related:memory-full-id', mode: 'related', results: [], notRun: true as const })),
+    })
+    const command = createMnemonCommand(runtime(service), memoryCoordinator)
+    expect(await command.handler(invocation('recall 站会'))).toEqual({ kind: 'error', text: '本回合的召回次数已用完，“站会”没有查询。' })
+    expect(await command.handler(invocation('related memory-full-id'))).toEqual({ kind: 'error', text: expect.stringContaining('ID memory-full-id 没有查询') })
+  })
+
   it('rejects mutation subcommands in read-only mode', async () => {
     const remember = vi.fn()
     const service = { config: { writeEnabled: false, defaultRecallLimit: 10 }, remember }
@@ -95,6 +106,26 @@ describe('/mnemon command', () => {
     }
     const result = await createMnemonCommand(runtime(service), coordinator()).handler(invocation('remember 一条稳定记忆'))
     expect(result).toEqual({ kind: 'success', text: 'Mnemon 记忆 Agent 已处理：stored · 记忆空间 project' })
+  })
+
+  // With the embedding settings at their default no embedding service is set up, and the line says so without alarm;
+  // once DSH manages them, a configured service did not answer.
+  const noService = '\n这条记忆暂未生成向量：当前没有可用的嵌入服务，它暂不参与语义匹配，关键词检索不受影响。连接嵌入服务后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
+  const failed = '\n未生成向量：嵌入没有成功，这条记忆暂时不参与语义匹配。嵌入服务可用后，可在 Mnemon Native 嵌入设置的「测试状态」中补齐。'
+  it.each([
+    ['stored', false, noService],
+    ['stored', true, failed],
+    ['skipped', false, ''],
+    ['skipped', true, ''],
+  ])('says when a %s write saved its memory without a vector, DSH managing the embedding: %s (#388)', async (action, managed, line) => {
+    const service = { config: { writeEnabled: true, defaultRecallLimit: 10, embedding: { enabled: managed } } }
+    const memoryCoordinator = coordinator({
+      remember: vi.fn(async () => ({ delegated: true as const, runId: 'run-1', provider: 'spawn', summary: '', action, memoryBodyIds: ['project'],
+        unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }], hint: 'Saved without a vector.' })),
+    })
+    const result = await createMnemonCommand(runtime(service), memoryCoordinator).handler(invocation('remember 一条稳定记忆'))
+    // A write that put no memory anywhere says nothing about one.
+    expect(result).toEqual({ kind: 'success', text: `Mnemon 记忆 Agent 已处理：${action} · 记忆空间 project${line}` })
   })
 
   it('reports an explicit forget only after a forgotten receipt', async () => {

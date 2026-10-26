@@ -11,6 +11,7 @@ import type { MemoryPluginEntryView } from '../host/view-protocol.ts'
 import { MnemonClient } from './api.ts'
 import { isRemoteConnection } from './remote-rpc.ts'
 import { CompositionBoard, usePageTrail, type ComponentSettingsRenderer, type LayerSettings } from './CompositionBoard.tsx'
+import { subscribeComponentPage, takeComponentPage } from './component-page-request.ts'
 import { componentCopy } from './component-copy.ts'
 import { useViewFeedback } from './view-feedback.tsx'
 import { SelectRow, ToggleRow } from './settings-controls.tsx'
@@ -23,6 +24,7 @@ import { usePackTarget } from './MnemonPackSection.tsx'
 import { MnemonStorageSection } from './MnemonStorageSection.tsx'
 import type { MnemonDirectoryPicker } from './picker.ts'
 import type { MnemonChangeSignal } from './change-signal.ts'
+import type { MnemonComponentListSeat } from './component-list-seat.ts'
 
 /** How the page reaches the settings components contribute to their own pages. */
 export interface ComponentSettingsSource {
@@ -38,23 +40,28 @@ export interface MnemonSettingsCardProps {
   interactionScope?: ClientSettingsScope<InteractionConfig>
   /** Loopback RPC used for whole-directory ZIP backup and restore. */
   connection?: ClientConnectionHandle
+  directoryPicker?: MnemonDirectoryPicker
   sessionId?: string
   workspaceId?: string
   workspaceLabel?: string
-  /** The shell's own directory chooser, passed through to where memory lives. */
-  pickDirectory?: MnemonDirectoryPicker
   t?: MnemonTranslate
   /** Active DSH locale id for installed Strategies that bring their own text. */
   language?: string
-  /** Moves when a component is switched through DSH's plugin manager, for example on the Plugins page below. */
-  componentChanges?: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot'>
+  /**
+   * Moves when a component is switched through DSH's plugin manager, for example on the Plugins page below.
+   * This page moves it too after a sync, a merge, an import or an applied plan, so the memory views read memory again.
+   */
+  componentChanges?: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot' | 'bump'>
   /** The settings components contribute to their pages; without it a page shows what their declarations give. */
   componentSettings?: ComponentSettingsSource
   /** Show one component's page alone, by its package name, as DSH's row page for that component. */
   component?: string
+  /** What DSH's component list below this configuration shows, as the page reports it. */
+  componentList?: Pick<MnemonComponentListSeat, 'subscribe' | 'getSnapshot'>
 }
 
-const NO_CHANGE_SIGNAL: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => 0 }
+const NO_CHANGE_SIGNAL: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot' | 'bump'> = { subscribe: () => () => {}, getSnapshot: () => 0, bump: () => {} }
+const NO_COMPONENT_LIST: Pick<MnemonComponentListSeat, 'subscribe' | 'getSnapshot'> = { subscribe: () => () => {}, getSnapshot: () => undefined }
 
 /**
  * The dsh-mnemon configuration, shown on its bundle page under DSH Plugins:
@@ -66,13 +73,15 @@ const NO_CHANGE_SIGNAL: Pick<MnemonChangeSignal, 'subscribe' | 'getSnapshot'> = 
  * Typed values wait for their group's Apply; the storage location waits too,
  * because it moves where every component reads and writes.
  */
-export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractionScope, connection, sessionId, workspaceId, workspaceLabel, pickDirectory, t = translateZh, language = 'zh', componentChanges = NO_CHANGE_SIGNAL, componentSettings, component }: MnemonSettingsCardProps): JSX.Element | null {
+export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractionScope, connection, directoryPicker, sessionId, workspaceId, workspaceLabel, t = translateZh, language = 'zh', componentChanges = NO_CHANGE_SIGNAL, componentSettings, component, componentList = NO_COMPONENT_LIST }: MnemonSettingsCardProps): JSX.Element | null {
   const interactionScope = suppliedInteractionScope ?? scope as unknown as ClientSettingsScope<InteractionConfig>
   const coreSnapshot = useScope(scope)
   const interactionSnapshot = useScope(interactionScope)
   const [targetRevision, setTargetRevision] = useState(0)
   // A component switched below this configuration, on DSH's own list, changes the composition.
   const componentRevision = useSyncExternalStore(componentChanges.subscribe, componentChanges.getSnapshot, componentChanges.getSnapshot)
+  // DSH 0.2.0 and earlier list the Starter's grouping row below, always off; DSH 0.2.1 lists only the components.
+  const groupRowListed = useSyncExternalStore(componentList.subscribe, componentList.getSnapshot, componentList.getSnapshot) === true
   // Every term only grows, so the sum changes whenever any one does. The
   // settings revision covers saves to the same Host entry from another page
   // or window, which the View revision includes.
@@ -80,6 +89,19 @@ export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractio
   const viewClient = useMemo(() => connection === undefined ? undefined : new MnemonClient(connection, sessionId, workspaceId), [connection, sessionId, workspaceId])
   const view = useViewStore(viewClient, dataRevision)
   const pages = usePageTrail()
+  // A page elsewhere asked for one component's settings, such as 技能管理's gear: open its page here.
+  const entries = view.state.dashboard?.entries
+  const openPage = pages.open
+  useEffect(() => {
+    if (entries === undefined || component !== undefined) return
+    const take = (): void => {
+      const requested = takeComponentPage()
+      const entry = requested === undefined ? undefined : entries.find(candidate => candidate.packageName === requested)
+      if (entry !== undefined) openPage(entry.entryId, 'configuration')
+    }
+    take()
+    return subscribeComponentPage(take)
+  }, [entries, component, openPage])
   // A layer an earlier configuration turned off comes back on through its saved switch.
   const layerSettings = useMemo<LayerSettings>(() => ({
     set: async (layerId, enabled) => {
@@ -165,9 +187,10 @@ export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractio
           pages={pages} {...(settingsRenderer === undefined ? {} : { componentSettings: settingsRenderer })} />
 
         <MnemonStorageSection scope={scope} value={coreSnapshot.value} user={coreUser} disabled={coreDisabled} dashboard={view.state.dashboard} target={target}
+          {...(directoryPicker === undefined ? {} : { directoryPicker })}
           {...(connection === undefined ? {} : { connection })} {...(sessionId === undefined ? {} : { sessionId })} {...(workspaceId === undefined ? {} : { workspaceId })}
-          {...(pickDirectory === undefined ? {} : { pickDirectory })}
-          language={language} t={t} onOpen={entry => pages.open(entry.entryId, 'configuration')} onSaved={() => setTargetRevision(revision => revision + 1)} />
+          language={language} t={t} onOpen={entry => pages.open(entry.entryId, 'configuration')} onSaved={() => setTargetRevision(revision => revision + 1)}
+          onDataChanged={componentChanges.bump} />
 
         <section className={css.section} aria-labelledby="mnemon-interface-heading">
           <div className={css.sectionHeading}><h2 id="mnemon-interface-heading">{t('config.interfaceTitle')}</h2></div>
@@ -183,7 +206,7 @@ export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractio
         </section>
 
         {/* DSH draws the bundle's component list right below this configuration. */}
-        <p className={css.componentListNote}>{t('config.componentListNote')}</p>
+        {groupRowListed && <p className={css.componentListNote}>{t('config.componentListNote')}</p>}
 
         {feedbackToast}
       </>}

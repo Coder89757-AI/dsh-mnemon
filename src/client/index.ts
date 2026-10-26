@@ -1,26 +1,32 @@
 import {
   MNEMON_SETTINGS_NAMESPACE,
+  MNEMON_SKILLS_SETTINGS_NAMESPACE,
   MNEMON_UI_SETTINGS_NAMESPACE,
   normalizeDisplayMode,
+  STARTER_COMPONENT_ROWS,
   type ClientConnectionHandle,
   type Config,
   type InteractionConfig,
   type MnemonDisplayMode,
+  type SkillsConfig,
 } from "../host/protocol.ts"
 import { MnemonComponentRowHost, MnemonSettingsHost } from './MnemonSettingsHost.tsx'
 import { createComponentSettingsDirectory, type MemoryComponentSettingsProps, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT, renderComponentRegion } from './component-ui.tsx'
+import { directoryPicker } from './picker.ts'
+import { createComponentHosts } from './component-host.ts'
 import { installShippedComponentSettings } from './component-settings.tsx'
 import { installShippedComponentStatus } from './component-status.tsx'
-import { STARTER_COMPONENT_ROWS } from './starter-rows.ts'
 import { MnemonTurnTail } from './MnemonTurnTail.tsx'
+import { SkillTurnTail } from './SkillTurnTail.tsx'
+import { isSkillsPage, mountSkillsPanel, SkillsPanelSeat } from './skills-panel.tsx'
 import { MnemonPluginActions, MNEMON_PACKAGE_NAME } from './MnemonPluginActions.tsx'
 import { MnemonSaveAction } from './MnemonSaveAction.tsx'
 import { MnemonActionSeat } from './action-seat.ts'
+import { MnemonComponentListSeat } from './component-list-seat.ts'
 import { reopenAfterStarterUpdate } from './starter-update.ts'
 import { MnemonChangeSignal } from './change-signal.ts'
 import { en, zh, type MnemonKey } from './locales.ts'
 import { MnemonSettingsScope } from './settings.ts'
-import { directoryPicker } from './picker.ts'
 import type { MnemonClientContext } from "./dsh-context.ts"
 import {
   createMemorySourcePageDirectory,
@@ -102,13 +108,23 @@ function enabledOf(value: unknown, key: 'turnBar' | 'saveAction'): boolean {
 
 /**
  * What one surface offers or tells another: the configuration page under
- * Plugins, the workspace in its placement, and component changes made through
- * DSH's plugin manager, which Mnemon's own reads cannot see.
+ * Plugins, the workspace in its placement, and changes the workspace cannot
+ * see by itself: components switched through DSH's plugin manager, and memory
+ * a sync, a merge, an import or an applied plan on the configuration page wrote.
  */
 interface MnemonSeats {
   configuration: MnemonActionSeat
   workspace: MnemonActionSeat
   components: MnemonChangeSignal
+  componentList: MnemonComponentListSeat
+  /** 技能管理's settings, and whether it has a sidebar entry of its own. */
+  skills: { scope: MnemonSettingsScope<SkillsConfig>; panel: SkillsPanelSeat }
+}
+
+/** Whether an anchor opens 技能管理 in its own entry rather than in the Memory System. */
+function skillsApart(event: Event, seats: MnemonSeats): boolean {
+  const page = (event as CustomEvent<MnemonAnchor>).detail?.page
+  return page !== undefined && isSkillsPage(page) && seats.skills.panel.getSnapshot()
 }
 
 /** The DSH describe revision of one Host entry, as `ctx.configForms` reports it. */
@@ -122,7 +138,7 @@ interface HostSettingsRevision {
  * entry, such as a profile edit or another page's save. Pages without a Host
  * settings mirror (remote pages) never report one and keep their own reads.
  */
-function followHostSettings(form: HostSettingsRevision, scopes: ReadonlyArray<MnemonSettingsScope<Config> | MnemonSettingsScope<InteractionConfig>>): () => void {
+function followHostSettings(form: HostSettingsRevision, scopes: ReadonlyArray<MnemonSettingsScope<Config> | MnemonSettingsScope<InteractionConfig> | MnemonSettingsScope<SkillsConfig>>): () => void {
   let seen = form.getSnapshot().revision
   return form.subscribe(() => {
     const revision = form.getSnapshot().revision
@@ -167,6 +183,8 @@ function mountSidebarMemoryView(ctx: MnemonClientContext, settings: MnemonSettin
       nativeSidebarSeat,
       configuration: seats.configuration,
       componentChanges: seats.components,
+      skillsScope: seats.skills.scope,
+      skillsPanel: seats.skills.panel,
       t: translate,
     }),
   }, MnemonSidebarWorkspaceHost))
@@ -174,7 +192,7 @@ function mountSidebarMemoryView(ctx: MnemonClientContext, settings: MnemonSettin
   let withdrawWorkspace: (() => void) | undefined
   let listening = false
   let disposed = false
-  const openMemoryView = (): void => { navigation.open() }
+  const openMemoryView = (event?: Event): void => { if (event === undefined || !skillsApart(event, seats)) navigation.open() }
   const dispose = (): void => {
     if (disposed) return
     disposed = true
@@ -197,7 +215,7 @@ function mountSidebarMemoryView(ctx: MnemonClientContext, settings: MnemonSettin
       listening = true
       launcher = mountMnemonSidebarNavigation(ctx, translate, controller, nativeSidebarSeat)
     }
-    withdrawWorkspace = seats.workspace.provide(openMemoryView)
+    withdrawWorkspace = seats.workspace.provide(() => openMemoryView())
     return dispose
   } catch (error) {
     dispose()
@@ -226,6 +244,8 @@ function mountBuiltinMemoryView(ctx: MnemonClientContext, settings: MnemonSettin
       sourcePageDirectory,
       configuration: seats.configuration,
       componentChanges: seats.components,
+      skillsScope: seats.skills.scope,
+      skillsPanel: seats.skills.panel,
       t: translate,
     }),
   }, MnemonBuiltinWorkspaceHost))
@@ -245,6 +265,7 @@ function mountBuiltinMemoryView(ctx: MnemonClientContext, settings: MnemonSettin
     return true
   }
   const openView = (event: Event): void => {
+    if (skillsApart(event, seats)) return
     const sessionId = (event as CustomEvent<MnemonAnchor>).detail?.sessionId
     const mainSessionId = ctx.uiSession.adapter.current.getSnapshot().key
     if (mainSessionId === undefined || (sessionId !== undefined && sessionId !== mainSessionId)) return
@@ -294,7 +315,11 @@ export function apply(rawContext: unknown): void {
   const ctx = rawContext as MnemonClientContext
   const settings = new MnemonSettingsScope<Config>(ctx.connection, MNEMON_SETTINGS_NAMESPACE)
   const interactionSettings = new MnemonSettingsScope<InteractionConfig>(ctx.connection, MNEMON_UI_SETTINGS_NAMESPACE)
-  const seats: MnemonSeats = { configuration: new MnemonActionSeat(), workspace: new MnemonActionSeat(), components: new MnemonChangeSignal() }
+  const skillsSettings = new MnemonSettingsScope<SkillsConfig>(ctx.connection, MNEMON_SKILLS_SETTINGS_NAMESPACE)
+  const seats: MnemonSeats = {
+    configuration: new MnemonActionSeat(), workspace: new MnemonActionSeat(), components: new MnemonChangeSignal(), componentList: new MnemonComponentListSeat(),
+    skills: { scope: skillsSettings, panel: new SkillsPanelSeat() },
+  }
   const namespace: MnemonNamespace = 'mnemon'
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'dsh-mnemon: locale dictionaries')
   const translate = ctx.locale.bind(namespace)
@@ -316,7 +341,7 @@ export function apply(rawContext: unknown): void {
   // DSH mirrors the Host settings document on loopback pages; follow its
   // revision of the `mnemon` entry so edits made elsewhere show up live.
   ctx.inject(['configForms'], inner => {
-    inner.effect(() => followHostSettings(inner.configForms.get(MNEMON_SETTINGS_NAMESPACE), [settings, interactionSettings]), 'dsh-mnemon: DSH settings revisions')
+    inner.effect(() => followHostSettings(inner.configForms.get(MNEMON_SETTINGS_NAMESPACE), [settings, interactionSettings, skillsSettings]), 'dsh-mnemon: DSH settings revisions')
   })
   ctx.slots.inject(
     'conversation.session.header.lineage',
@@ -350,14 +375,18 @@ export function apply(rawContext: unknown): void {
   // closed the Memory System the update ran from; reopen it, and Status
   // reopens the version dialog.
   ctx.effect(() => reopenAfterStarterUpdate(seats.workspace), 'dsh-mnemon: reopen after a Starter update')
-  // DSH 0.1.7 edits a plugin's configuration on its own page under Plugins;
+  // DSH edits a plugin's configuration on its own page under Plugins;
   // Settings keeps only the read-only plugin inventory. The whole Mnemon
   // configuration is the dsh-mnemon bundle's page, between its description
   // and its components.
   // Components contribute their own settings to their pages there, keyed by package name.
   const componentSettingsDirectory = createComponentSettingsDirectory(ctx)
+  // A shipped component whose settings dsh-mnemon used to draw reads its configuration and Host operations through these.
+  const componentHost = createComponentHosts({ scope: settings, connection: ctx.connection, componentChanges: seats.components })
   const configurationServices = () => ({
     componentSettingsDirectory,
+    componentHost,
+    directoryPicker: directoryPicker(ctx),
     scope: settings,
     interactionScope: interactionSettings,
     connection: ctx.connection,
@@ -366,10 +395,8 @@ export function apply(rawContext: unknown): void {
     currentSession: ctx.uiSession.adapter.current,
     localeRuntime: ctx.locale,
     componentChanges: seats.components,
+    componentList: seats.componentList,
     t: translate,
-    // Where memory lives is the one setting a picker serves; the shell owns
-    // the chooser, and a Host without one still types the directory.
-    pickDirectory: directoryPicker(ctx),
   })
   // A child slot has one declaring entry, the configuration below. A page that
   // is not that entry's own render renders what a component registered there
@@ -397,13 +424,13 @@ export function apply(rawContext: unknown): void {
     }, MnemonComponentRowHost))
   }
   // The shipped components' own settings and Status cards arrive the way an installed component's do.
-  ctx.effect(() => installShippedComponentSettings(ctx, { scope: settings, connection: ctx.connection, t: translate }), 'dsh-mnemon: shipped component settings')
+  ctx.effect(() => installShippedComponentSettings(ctx, { scope: settings, skillsScope: skillsSettings, connection: ctx.connection, t: translate }), 'dsh-mnemon: shipped component settings')
   ctx.effect(() => installShippedComponentStatus(ctx), 'dsh-mnemon: shipped component status')
   ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
     name: 'plugins.detail.actions',
     id: 'dsh-mnemon/open-workspace',
     locale: namespace,
-    inject: () => ({ workspace: seats.workspace, t: translate }),
+    inject: () => ({ workspace: seats.workspace, componentList: seats.componentList, t: translate }),
   }, MnemonPluginActions))
 
   // In-conversation interaction surfaces default on and are bound live: each
@@ -432,4 +459,54 @@ export function apply(rawContext: unknown): void {
       active.clear()
     }
   }, 'dsh-mnemon: interaction surfaces')
+
+  // 技能管理's own surfaces follow its settings live, as the interaction surfaces do:
+  // the turn's skills line (on unless switched off) and its own sidebar entry (off unless switched on).
+  let skillTail: (() => void) | undefined
+  let skillsPanel: (() => void) | undefined
+  const sourcePageDirectory = createMemorySourcePageDirectory(ctx)
+  const reconcileSkills = (): void => {
+    const snapshot = skillsSettings.getSnapshot()
+    const ready = snapshot.status === 'ready'
+    const hints = ready && snapshot.value?.hints !== false
+    const sidebar = ready && snapshot.value?.sidebar === true
+    if (hints && skillTail === undefined) {
+      skillTail = ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+        name: 'conversation.chat.turnTail',
+        id: 'dsh-mnemon/skill-tail',
+        order: 100,
+        locale: namespace,
+        inject: (sessionId: unknown) => ({
+          ...(typeof sessionId === 'string' && sessionId !== '' ? { sessionId } : {}),
+          connection: ctx.connection,
+          localeRuntime: ctx.locale,
+          t: translate as (key: MnemonKey, params?: Record<string, unknown>) => string,
+        }),
+      }, SkillTurnTail))
+    } else if (!hints && skillTail !== undefined) {
+      skillTail()
+      skillTail = undefined
+    }
+    if (sidebar && skillsPanel === undefined) {
+      skillsPanel = mountSkillsPanel(ctx, {
+        connection: ctx.connection, settingsScope: settings, skillsScope: skillsSettings, sessions: ctx.sessions, workspaces: ctx.workspaces,
+        currentSession: ctx.uiSession.adapter.current, localeRuntime: ctx.locale, sourcePageDirectory,
+        configuration: seats.configuration, componentChanges: seats.components, t: translate,
+      }, seats.skills.panel)
+    } else if (!sidebar && skillsPanel !== undefined) {
+      skillsPanel()
+      skillsPanel = undefined
+    }
+  }
+  ctx.effect(() => {
+    const unsubscribe = skillsSettings.subscribe(reconcileSkills)
+    reconcileSkills()
+    return () => {
+      unsubscribe()
+      skillsPanel?.()
+      skillTail?.()
+      skillsPanel = undefined
+      skillTail = undefined
+    }
+  }, 'dsh-mnemon: skills surfaces')
 }

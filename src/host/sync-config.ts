@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import {
   MNEMON_SYNC_DEFAULT_AUTHOR_EMAIL, MNEMON_SYNC_DEFAULT_AUTHOR_NAME,
   MNEMON_SYNC_DEFAULT_BRANCH, MNEMON_SYNC_DEFAULT_SUBDIR,
-  MNEMON_SYNC_TOKEN_ENV, type MnemonSyncConfigView,
+  MNEMON_SYNC_TOKEN_ENV, syncBranchValid, syncDirectoryParts, syncEmailValid, syncRepositoryProblem, type MnemonSyncConfigView,
 } from './protocol.ts'
 import type { StorageRoot } from './storage-root.ts'
 
@@ -20,13 +20,6 @@ export const MNEMON_SYNC_MAX_AUTO_BACKUP_MINUTES = 10_080
 
 const STATE_DIRECTORY = 'state'
 const SETTING_KEYS = ['repoUrl', 'branch', 'subdir', 'token', 'authorName', 'authorEmail', 'autoBackupMinutes'] as const
-const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u
-const HTTPS = /^https:\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u
-const SSH = /^ssh:\/\/[^\s/]+(?::\d+)?\/[^\s]+$/u
-const SCP = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\s]+$/u
-const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//u
-const EMBEDDED_CREDENTIAL = /^https:\/\/[^/]*@/u
-const EMAIL = /^[^\s<>@]+@[^\s<>@]+$/u
 const REPOSITORY_HINT = 'sync repository must be an https:// or ssh:// URL, a git@host:path address, or an absolute local path'
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -37,40 +30,32 @@ function known(key: string): boolean {
   return (SETTING_KEYS as readonly string[]).includes(key)
 }
 
-/** A Git branch name: no revision syntax, no empty path segment, no trailing dot or lock suffix. */
+/** A Git branch name, by the rule the settings form checks too. */
 export function syncBranch(value: unknown): string {
   const name = String(value ?? '').trim()
-  if (name === '' || name.length > 200 || !BRANCH.test(name) || name.includes('..') || name.includes('//')
-    || name.includes('@{') || name.includes('\\') || name.startsWith('/') || name.endsWith('/')
-    || name.endsWith('.') || name.endsWith('.lock') || name === '@') {
-    throw new Error('sync branch must be a Git branch name')
-  }
+  if (!syncBranchValid(name)) throw new Error('sync branch must be a Git branch name')
   return name
 }
 
 /** The directory inside the branch the payload lives in, always relative and slash terminated. */
 export function syncSubdirectory(value: unknown): string {
-  const raw = String(value ?? '').trim().replaceAll('\\', '/')
-  if (raw === '' || raw.length > 400 || /^[A-Za-z]:/u.test(raw) || raw.includes('\0')) {
-    throw new Error('sync directory must be a relative path inside the branch')
-  }
-  const parts = raw.split('/').filter(part => part !== '')
-  if (parts.length === 0 || parts.some(part => part === '.' || part === '..' || part.includes(':'))) {
-    throw new Error('sync directory must be a relative path inside the branch')
-  }
+  const text = String(value ?? '')
+  // The settings form shares the rule but has never refused a NUL byte, which only the Host does.
+  const parts = text.includes('\0') ? undefined : syncDirectoryParts(text)
+  if (parts === undefined) throw new Error('sync directory must be a relative path inside the branch')
   return parts.join('/') + '/'
 }
 
-/** A remote this Host can run Git against, never carrying credentials in its own text. */
+/**
+ * A remote this Host can run Git against, never carrying credentials in its own text. A local path
+ * is absolute by this Host's platform, which the settings form cannot know; as with a directory,
+ * only the Host refuses a NUL byte.
+ */
 export function syncRepositoryUrl(value: unknown): string {
   const url = String(value ?? '').trim()
-  if (url === '' || url.length > 2000 || /\s/u.test(url) || url.includes('\0')) throw new Error(REPOSITORY_HINT)
-  if (SCHEME.test(url)) {
-    if (!HTTPS.test(url) && !SSH.test(url)) throw new Error(REPOSITORY_HINT)
-    if (EMBEDDED_CREDENTIAL.test(url)) throw new Error('sync repository must not embed credentials; set the token instead')
-  } else if (!SCP.test(url) && !isAbsolute(url)) {
-    throw new Error(REPOSITORY_HINT)
-  }
+  const problem = url.includes('\0') ? 'format' : syncRepositoryProblem(url, isAbsolute)
+  if (problem === 'credentials') throw new Error('sync repository must not embed credentials; set the token instead')
+  if (problem !== undefined) throw new Error(REPOSITORY_HINT)
   return url
 }
 
@@ -96,7 +81,7 @@ export function syncAuthorName(value: unknown): string {
 export function syncAuthorEmail(value: unknown): string {
   const email = String(value ?? '').trim()
   if (email === '') return ''
-  if (email.length > 320 || !EMAIL.test(email)) throw new Error('sync author email must be an email address')
+  if (!syncEmailValid(email)) throw new Error('sync author email must be an email address')
   return email
 }
 

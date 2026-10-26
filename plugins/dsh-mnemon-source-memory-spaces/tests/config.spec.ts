@@ -1,16 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { resolveMemorySpacesConfig as resolveConfig } from '../src/config.ts'
+import { MEMORY_PLACEMENT_CAPABILITIES } from '../src/contracts.ts'
 
 describe('Memory Spaces configuration rules', () => {
   it('validates configurable recall quality policy thresholds and expansion', () => {
     expect(resolveConfig({
-      recallQuality: { policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxUnknownResults: 1 },
-    }).recallQuality).toEqual({ policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxUnknownResults: 1 })
+      recallQuality: { policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxRankedResults: 3, maxUnknownResults: 1 },
+    }).recallQuality).toEqual({ policy: 'team-v2', lowScoreThreshold: 0.2, highScoreThreshold: 0.7, candidateMultiplier: 2, maxMediumResults: 5, maxRankedResults: 3, maxUnknownResults: 1 })
     expect(() => resolveConfig({ recallQuality: { lowScoreThreshold: 0.7, highScoreThreshold: 0.6 } })).toThrow('less than')
     expect(() => resolveConfig({ recallQuality: { candidateMultiplier: 1.5 } })).toThrow('integer')
     expect(() => resolveConfig({ recallQuality: { policy: '../unsafe' } })).toThrow('policy id')
     expect(() => resolveConfig({ recallQuality: { maxMediumResults: 51 } })).toThrow('max medium')
     expect(() => resolveConfig({ recallQuality: { maxUnknownResults: -1 } })).toThrow('max unknown')
+    expect(resolveConfig({}).recallQuality.maxRankedResults).toBe(4)
+    for (const maxRankedResults of [-1, 0.5, 51, Number.NaN]) {
+      expect(() => resolveConfig({ recallQuality: { maxRankedResults } })).toThrow('max ranked')
+    }
+  })
+
+  it('takes a store hint only as a space id', () => {
+    for (const store of ['default', 'A-1_b', '9lives']) expect(resolveConfig({ store }).store).toBe(store)
+    for (const store of ['../other', '-lead', '_lead', 'a.b', 'a/b', 'ä', 'a b']) {
+      expect(() => resolveConfig({ store }), store).toThrow('Memory Spaces store has an invalid identifier')
+    }
   })
 
   it('normalizes and validates DSH-managed Mnemon embedding settings', () => {
@@ -61,6 +73,17 @@ describe('Memory Spaces configuration rules', () => {
       },
       providerConnections: { openviking: { targetUri: 'viking://resources/team' } },
     })
+  })
+
+  it('takes exactly the placement capabilities its contracts list', () => {
+    // The Starter's settings schema offers the same list.
+    expect(MEMORY_PLACEMENT_CAPABILITIES).toEqual(['graph', 'entities', 'related', 'exact-write', 'link', 'forget'])
+    expect(resolveConfig({ persistenceStrategy: { mode: 'automatic', rules: { requiredCapabilities: [...MEMORY_PLACEMENT_CAPABILITIES] } } })
+      .persistenceStrategy.rules.requiredCapabilities).toEqual([...MEMORY_PLACEMENT_CAPABILITIES])
+    for (const capability of ['telepathy', 'search', 'Graph']) {
+      expect(() => resolveConfig({ persistenceStrategy: { rules: { requiredCapabilities: [capability as never] } } }), capability)
+        .toThrow(`dsh-mnemon: unsupported persistence capability: ${capability}`)
+    }
   })
 
   it('marks only an unchosen persistence provider as the default', () => {

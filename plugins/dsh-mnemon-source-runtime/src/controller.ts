@@ -34,7 +34,11 @@ import type {
   RuntimeMemoryTargetView,
   RuntimeMemoryUsage,
 } from './contracts.ts'
-import { RUNTIME_MEMORY_VERSION, RUNTIME_ENTRY_DELIMITER, RUNTIME_MEMORY_LIMITS, RUNTIME_BRANCH_NAME_MAX, RUNTIME_BRANCH_NAME_PATTERN, parseRuntimeBranches, type RuntimeMemoryLimits } from './contracts.ts'
+import {
+  RUNTIME_MEMORY_VERSION, RUNTIME_ENTRY_DELIMITER, RUNTIME_MEMORY_LIMITS, RUNTIME_BRANCH_NAME_MAX, RUNTIME_BRANCH_NAME_PATTERN,
+  RUNTIME_ARCHIVE_DIRECTORY, RUNTIME_DIRECTORY, RUNTIME_ENTRY_MAX_BYTES, RUNTIME_LOCK_FILE, RUNTIME_LOCK_STALE_MS, RUNTIME_MEMORIES_FILE, RUNTIME_PROJECTION_FILES,
+  parseRuntimeBranches, runtimeBytes, runtimeProjection, type RuntimeMemoryLimits,
+} from './contracts.ts'
 
 export { RUNTIME_BRANCH_NAME_MAX }
 
@@ -48,9 +52,7 @@ export interface RuntimeMemoryContextProjection {
 }
 
 const LOCK_TIMEOUT_MS = 5_000
-const LOCK_STALE_MS = 30_000
 const LOCK_RETRY_MS = 20
-const MAX_ENTRY_BYTES = 8 * 1024
 
 interface RuntimeMemoryFile {
   version: typeof RUNTIME_MEMORY_VERSION
@@ -153,7 +155,7 @@ function normalizeContent(value: string | undefined, field: string): string {
   if (content === '') throw new Error(`${field} is required`)
   if (content.includes('§')) throw new Error(`${field} must not contain the reserved § entry delimiter`)
   const bytes = Buffer.byteLength(content, 'utf8')
-  if (bytes > MAX_ENTRY_BYTES) throw new Error(`${field} is too large (${bytes} bytes; max ${MAX_ENTRY_BYTES})`)
+  if (bytes > RUNTIME_ENTRY_MAX_BYTES) throw new Error(`${field} is too large (${bytes} bytes; max ${RUNTIME_ENTRY_MAX_BYTES})`)
   return content
 }
 
@@ -184,16 +186,6 @@ function parseEntry(value: unknown): RuntimeMemoryEntry | undefined {
   }
 }
 
-function byteCount(entries: readonly RuntimeMemoryEntry[], target: RuntimeMemoryTarget): number {
-  const content = entries.filter(entry => entry.target === target).map(entry => entry.content).join(RUNTIME_ENTRY_DELIMITER)
-  return Buffer.byteLength(content, 'utf8')
-}
-
-function markdown(entries: readonly RuntimeMemoryEntry[], target: RuntimeMemoryTarget): string {
-  const content = entries.filter(entry => entry.target === target).map(entry => entry.content).join(RUNTIME_ENTRY_DELIMITER)
-  return content === '' ? '' : `${content}\n`
-}
-
 function age(timestamp: string, projectedAt: number): string {
   const time = Date.parse(timestamp)
   if (!Number.isFinite(time)) return 'unknown'
@@ -203,9 +195,15 @@ function age(timestamp: string, projectedAt: number): string {
 
 /** Prompt-only annotations; stored content, matching and capacity stay unchanged. */
 function contextMarkdown(entries: readonly RuntimeMemoryEntry[], target: RuntimeMemoryTarget, projectedAt: number): string {
-  return entries.filter(entry => entry.target === target).map(entry =>
-    `[importance=${entry.importance}; created=${age(entry.created_at, projectedAt)}; updated=${age(entry.updated_at, projectedAt)}]\n${entry.content}`,
-  ).join(RUNTIME_ENTRY_DELIMITER)
+  return entries.filter(entry => entry.target === target).map(entry => {
+    const annotations: string[] = []
+    if (entry.importance !== 'normal') annotations.push(`importance=${entry.importance}`)
+    for (const [name, timestamp] of [['created', entry.created_at], ['updated', entry.updated_at]] as const) {
+      const elapsed = age(timestamp, projectedAt)
+      if (elapsed !== '0d') annotations.push(`${name}=${elapsed}`)
+    }
+    return `${annotations.length === 0 ? '' : `[${annotations.join('; ')}]\n`}${entry.content}`
+  }).join(RUNTIME_ENTRY_DELIMITER)
 }
 
 function revision(file: RuntimeMemoryFile): string {
@@ -216,6 +214,7 @@ function prepareMutation(
   before: readonly RuntimeMemoryEntry[],
   request: RuntimeMemoryMutation,
   now: string,
+  preserveImportance = false,
 ): PreparedRuntimeMemoryMutation {
   if (!isTarget(request.target)) throw new Error('target must be memory or user')
   if (!['add', 'replace', 'remove'].includes(request.action)) throw new Error('action must be add, replace, or remove')
@@ -266,12 +265,15 @@ function prepareMutation(
   const compactableEntries = entries.filter((entry, entryIndex) => entry.target === request.target && entryIndex !== index)
 
   if (request.action === 'replace') {
+    const ranks = { low: 0, normal: 1, critical: 2 }
+    const requested = request.importance ?? previous.importance
+    const importance = preserveImportance && ranks[requested] < ranks[previous.importance] ? previous.importance : requested
     const content = normalizeContent(request.content, 'content')
     const pendingEntry: RuntimeMemoryEntry = {
       ...previous,
       content,
       updated_at: now,
-      importance: request.importance ?? previous.importance,
+      importance,
     }
     if (branchScope !== undefined) {
       if (branchScope.length === 0) delete pendingEntry.branches
@@ -284,7 +286,7 @@ function prepareMutation(
       compactableEntries,
       pendingEntry,
       excludedEntry: previous,
-      fields: { message: 'Entry replaced.', replaced: { from: previous.content, to: content } },
+      fields: { message: importance === requested ? 'Entry replaced.' : 'Entry replaced; original importance preserved.', replaced: { from: previous.content, to: content } },
     }
   }
 
@@ -388,14 +390,14 @@ export class RuntimeMemoryController {
       }
     }
     this.limits = { memory: limits.memory, user: limits.user }
-    this.directory = join(runner.effectiveDataDir(), 'runtime')
-    this.sourcePath = join(this.directory, 'memories.json')
-    this.memoryPath = join(this.directory, 'MEMORY.md')
-    this.localUserPath = join(this.directory, 'USER.md')
-    this.lockPath = join(this.directory, '.memories.lock')
-    this.archivePath = join(this.directory, 'archived', 'MEMORY.md')
-    this.archiveSourcePath = join(this.directory, 'archived', 'memories.jsonl')
-    const userDirectory = userRunner === undefined ? this.directory : join(userRunner.effectiveDataDir(), 'runtime')
+    this.directory = join(runner.effectiveDataDir(), RUNTIME_DIRECTORY)
+    this.sourcePath = join(this.directory, RUNTIME_MEMORIES_FILE)
+    this.memoryPath = join(this.directory, RUNTIME_PROJECTION_FILES.memory)
+    this.localUserPath = join(this.directory, RUNTIME_PROJECTION_FILES.user)
+    this.lockPath = join(this.directory, RUNTIME_LOCK_FILE)
+    this.archivePath = join(this.directory, RUNTIME_ARCHIVE_DIRECTORY, 'MEMORY.md')
+    this.archiveSourcePath = join(this.directory, RUNTIME_ARCHIVE_DIRECTORY, 'memories.jsonl')
+    const userDirectory = userRunner === undefined ? this.directory : join(userRunner.effectiveDataDir(), RUNTIME_DIRECTORY)
     this.userController = userDirectory === this.directory || userRunner === undefined
       ? undefined
       : new RuntimeMemoryController(userRunner, now, this.limits)
@@ -452,8 +454,6 @@ export class RuntimeMemoryController {
             user: { ...visibleUser, markdownPath: this.userPath },
           },
         } satisfies RuntimeMemorySnapshot
-    const storeMemory = this.targetView(entries, 'memory')
-    const storeUser = this.targetView(entries, 'user')
     const visibleEntries = branchScope === undefined
       ? entries
       : entries.filter(entry => entry.target === 'user' || entryMatchesBranch(entry, branchScope))
@@ -465,15 +465,14 @@ export class RuntimeMemoryController {
       entries: visibleEntries.map(entry => ({ ...entry, ...(entry.branches === undefined ? {} : { branches: [...entry.branches] }) })),
       totalEntries: entries.length,
       text: `MNEMON RUNTIME MEMORY SNAPSHOT
-Revision: ${snapshot.revision}${branchLine}
-Metadata lines are annotations; created/updated are ages at projection in whole days (future/unknown for future/invalid timestamps). Current instructions win. For old_text/oldText, use entry content only.
+Entry annotations default to importance=normal and ages=0d (whole days at projection; future/unknown for future/invalid timestamps). Current instructions win. For old_text/oldText, use entry content only.${branchLine}
 
-Contents of USER.md (user profile; entries: ${visibleUser.entryCount}; UTF-8 bytes: ${storeUser.used}/${storeUser.limit})
+USER.md (user profile)
 <runtime-memory-file name="USER.md">
 ${user || '(empty)'}
 </runtime-memory-file>
 
-Contents of MEMORY.md (working reference; entries: ${visibleMemory.entryCount}; UTF-8 bytes: ${storeMemory.used}/${storeMemory.limit})
+MEMORY.md (working reference)
 <runtime-memory-file name="MEMORY.md">
 ${memory || '(empty)'}
 </runtime-memory-file>`,
@@ -508,21 +507,21 @@ ${memory || '(empty)'}
     })
   }
 
-  mutate(request: RuntimeMemoryMutation): Promise<RuntimeMemoryMutationResult> {
-    if (request.target === 'user' && this.userController !== undefined) return this.userController.mutate(request)
-    const operation = this.queue.then(() => this.withLock(() => this.mutateLocked(request)))
+  mutate(request: RuntimeMemoryMutation, options: { preserveImportance?: boolean } = {}): Promise<RuntimeMemoryMutationResult> {
+    if (request.target === 'user' && this.userController !== undefined) return this.userController.mutate(request, options)
+    const operation = this.queue.then(() => this.withLock(() => this.mutateLocked(request, options.preserveImportance)))
     this.queue = operation.catch(() => undefined)
     return operation
   }
 
   /** Resolve exactly which committed entries survive a blocked mutation and are safe to compact. */
-  planMaintenance(request: RuntimeMemoryMutation): Promise<RuntimeMemoryMaintenancePlan> {
-    if (request.target === 'user' && this.userController !== undefined) return this.userController.planMaintenance(request)
+  planMaintenance(request: RuntimeMemoryMutation, options: { preserveImportance?: boolean } = {}): Promise<RuntimeMemoryMaintenancePlan> {
+    if (request.target === 'user' && this.userController !== undefined) return this.userController.planMaintenance(request, options)
     const operation = this.queue.then(() => this.withLock(() => {
       const file = this.readSource()
-      const prepared = prepareMutation(file.entries, request, this.now().toISOString())
-      const used = byteCount(file.entries, request.target)
-      const projected = byteCount(prepared.projectedEntries, request.target)
+      const prepared = prepareMutation(file.entries, request, this.now().toISOString(), options.preserveImportance)
+      const used = runtimeBytes(file.entries, request.target)
+      const projected = runtimeBytes(prepared.projectedEntries, request.target)
       const limit = this.limits[request.target]
       return {
         revision: revision(file),
@@ -554,17 +553,17 @@ ${memory || '(empty)'}
     request: RuntimeMemoryMutation,
     compacted: RuntimeMemoryCompactedEntry[],
     maxCompactedBytes?: number,
-    options: { archive?: 'local' } = {},
+    options: { archive?: 'local'; preserveImportance?: boolean } = {},
   ): Promise<RuntimeMemoryMutationResult> {
     if (request.target === 'user' && this.userController !== undefined) {
-      return this.userController.compactAndMutate(expectedRevision, request, compacted, maxCompactedBytes)
+      return this.userController.compactAndMutate(expectedRevision, request, compacted, maxCompactedBytes, options)
     }
     const operation = this.queue.then(() => this.withLock(() => {
       const file = this.readSource()
       const beforeRevision = revision(file)
       if (beforeRevision !== expectedRevision) throw new RuntimeMemoryConflictError()
       const now = this.now().toISOString()
-      const prepared = prepareMutation(file.entries, request, now)
+      const prepared = prepareMutation(file.entries, request, now, options.preserveImportance)
       const compactedByteBudget = maxCompactedBytes ?? this.limits[request.target]
       if (!Number.isInteger(compactedByteBudget) || compactedByteBudget < 0 || compactedByteBudget > this.limits[request.target]) {
         throw new Error('compaction byte budget is invalid')
@@ -584,9 +583,9 @@ ${memory || '(empty)'}
       const fitted = packCompactionCandidates(replacements, request.target, compactedByteBudget)
       const targetEntries = [...fitted, ...(prepared.pendingEntry === undefined ? [] : [prepared.pendingEntry])]
       const entries = [...file.entries.filter(entry => entry.target !== request.target), ...targetEntries]
-      const used = byteCount(entries, request.target)
+      const used = runtimeBytes(entries, request.target)
       const limit = this.limits[request.target]
-      if (used > limit) throw new RuntimeMemoryCapacityError(request.target, byteCount(file.entries, request.target), used, limit)
+      if (used > limit) throw new RuntimeMemoryCapacityError(request.target, runtimeBytes(file.entries, request.target), used, limit)
       const next: RuntimeMemoryFile = { version: RUNTIME_MEMORY_VERSION, entries }
       const kept = new Set(fitted.map(entry => entry.content))
       const archived = options.archive === 'local' && request.target === 'memory'
@@ -607,7 +606,7 @@ ${memory || '(empty)'}
 
   /** Append entries to the local archive: JSON Lines to restore from, and Markdown to read. */
   private archiveLocally(entries: readonly RuntimeMemoryEntry[], fromRevision: string, archivedAt: string): void {
-    const directory = join(this.directory, 'archived')
+    const directory = join(this.directory, RUNTIME_ARCHIVE_DIRECTORY)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     // The data directory can sit in a workspace: an archive never follows a link out of it.
     const stat = lstatSync(directory)
@@ -631,13 +630,13 @@ ${memory || '(empty)'}
     })
   }
 
-  private mutateLocked(request: RuntimeMemoryMutation): RuntimeMemoryMutationResult {
+  private mutateLocked(request: RuntimeMemoryMutation, preserveImportance = false): RuntimeMemoryMutationResult {
     const file = this.readSource()
-    const prepared = prepareMutation(file.entries, request, this.now().toISOString())
+    const prepared = prepareMutation(file.entries, request, this.now().toISOString(), preserveImportance)
     if (!prepared.changed) return this.result(request.target, prepared.projectedEntries, prepared.fields)
-    const used = byteCount(prepared.projectedEntries, request.target)
+    const used = runtimeBytes(prepared.projectedEntries, request.target)
     const limit = this.limits[request.target]
-    if (used > limit) throw new RuntimeMemoryCapacityError(request.target, byteCount(file.entries, request.target), used, limit)
+    if (used > limit) throw new RuntimeMemoryCapacityError(request.target, runtimeBytes(file.entries, request.target), used, limit)
     this.persist({ version: RUNTIME_MEMORY_VERSION, entries: prepared.projectedEntries })
     return this.result(request.target, prepared.projectedEntries, prepared.fields)
   }
@@ -652,7 +651,7 @@ ${memory || '(empty)'}
       message: fields.message,
       target,
       entryCount: entries.filter(entry => entry.target === target).length,
-      usage: { used: byteCount(entries, target), limit: this.limits[target] },
+      usage: { used: runtimeBytes(entries, target), limit: this.limits[target] },
       ...(fields.added === undefined ? {} : { added: fields.added }),
       ...(fields.replaced === undefined ? {} : { replaced: fields.replaced }),
       ...(fields.removed === undefined ? {} : { removed: fields.removed }),
@@ -663,7 +662,7 @@ ${memory || '(empty)'}
     return {
       target,
       entryCount: entries.filter(entry => entry.target === target).length,
-      used: byteCount(entries, target),
+      used: runtimeBytes(entries, target),
       limit: this.limits[target],
       markdownPath: target === 'memory' ? this.memoryPath : this.userPath,
     }
@@ -704,8 +703,8 @@ ${memory || '(empty)'}
     mkdirSync(this.directory, { recursive: true, mode: 0o700 })
     const nonce = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`
     const writes: Array<[string, string]> = [
-      [this.localUserPath, markdown(file.entries, 'user')],
-      [this.memoryPath, markdown(file.entries, 'memory')],
+      [this.localUserPath, runtimeProjection(file.entries, 'user')],
+      [this.memoryPath, runtimeProjection(file.entries, 'memory')],
       [this.sourcePath, `${JSON.stringify(file, null, 2)}\n`],
     ]
     const temporaries = writes.map(([path]) => join(this.directory, `.${basename(path)}.${nonce}.tmp`))
@@ -720,7 +719,7 @@ ${memory || '(empty)'}
 
   private repairProjections(file: RuntimeMemoryFile): void {
     for (const [path, target] of [[this.localUserPath, 'user'], [this.memoryPath, 'memory']] as const) {
-      const expected = markdown(file.entries, target)
+      const expected = runtimeProjection(file.entries, target)
       let current: string | undefined
       try {
         current = readFileSync(path, 'utf8')
@@ -748,7 +747,7 @@ ${memory || '(empty)'}
         const code = isRecord(error) && typeof error.code === 'string' ? error.code : undefined
         if (code !== 'EEXIST') throw error
         try {
-          if (Date.now() - statSync(this.lockPath).mtimeMs > LOCK_STALE_MS) {
+          if (Date.now() - statSync(this.lockPath).mtimeMs > RUNTIME_LOCK_STALE_MS) {
             rmSync(this.lockPath, { force: true })
             continue
           }

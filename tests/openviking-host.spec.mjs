@@ -52,12 +52,14 @@ describe('OpenViking writes through composed Host and Sources', () => {
     const turn = await f.graph.composableTurns.beginTurn(f.agent.id + ':1', agentScope(f.agent, f.config))
     f.graph.composableTurns.pinTurn(child.id + ':1', agentScope(child, f.config), turn.view.id)
     const content = 'Synthetic work release canary.\n逐字读回。'
-    const receipt = await tools.get('mnemon_remember').execute({ memoryBodyId: f.work.id, content, category: 'decision' }, { agent: child, signal: new AbortController().signal })
+    const receipt = await tools.get('mnemon_remember').execute({ memoryBodyId: f.work.id, content, category: 'decision', importance: 3 }, { agent: child, signal: new AbortController().signal })
     expect(receipt).toMatchObject({ action: 'stored', id: expect.stringContaining('viking://user/default/memories/experiences/'), memoryBodyId: f.work.id })
     expect(await f.spaces.read('search', { query: 'work release canary', memoryBodyIds: [f.work.id] }))
       .toMatchObject({ results: [{ id: receipt.id, content, memoryBodyId: f.work.id }] })
     expect(await f.spaces.read('search', { query: 'work release canary', memoryBodyIds: [f.personal.id] })).toMatchObject({ results: [] })
     expect([...f.backend.files.values()].map(file => file.account)).toEqual(['work'])
+    // The content API takes the memory alone (OpenViking 0.4.16 refuses tags there); the tags follow in their own call.
+    expect([...f.backend.files.values()].map(file => file.tags)).toEqual([['source=mnemon', 'category=decision', 'importance=3']])
     expect((await f.spaces.read('body-directory')).items.find(item => item.id === f.work.id).active).toBe(true)
     expect((await f.spaces.read('body-directory')).items.find(item => item.id === f.personal.id).active).toBe(f.personal.active)
     expect((await f.graph.source('runtime').read('snapshot')).entries).toEqual([])

@@ -35,7 +35,7 @@ follow an exact cold reference when full text is required
 
 共享不意味着广播对话或文件。多个 Agent 都集成 Mnemon，且能够访问相同存储根与可识别的 Store 时，可以共享 Native 长期事实。三方 Provider 通过自己的 workspace、user、bank、project 或 container 范围共享；Runtime 与 Documents 不会自动进入其他 Agent 的上下文。
 
-`global` 适合本机公共根，`custom` 适合显式约定的目录，`workspace` 将共享限制在项目。多进程并发依赖 Provider 自身的一致性保证；离线复制或直接修改本地数据库前，应停止所有使用者，参见[运维指南](../guides/operations.md#备份与恢复)。
+哪种共享适合哪个范围，见[选择跨 Agent 共享范围](./configuration.md#选择跨-agent-共享范围)。多进程并发依赖 Provider 自身的一致性保证；离线复制或直接修改本地数据库前，应停止所有使用者，参见[运维指南](../guides/operations.md#备份与恢复)。
 
 ## 统一根目录
 
@@ -52,12 +52,19 @@ follow an exact cold reference when full text is required
 |   +-- index.json
 |   +-- active/
 |   +-- archived/
++-- skills/                        # 技能管理；不进入 Mnemon Pack
+|   +-- ledger.json
+|   +-- evals.json
+|   +-- trajectories/
+|   +-- versions/
+|   +-- market/
+|   +-- trash/
 +-- data/
 |   +-- .dsh-memory-bodies.json
 |   +-- <memory-space-id>/
 |       +-- mnemon.db
 +-- state/
-    +-- machine.json              # 本机标识，0600，不进入 Mnemon Pack
+    +-- machine.json              # 本机标识与名称，0600，不进入 Mnemon Pack
     +-- tombstones.json           # 本机已导出过的删除记录，不进入 Mnemon Pack
     +-- runtime-index.json        # 上次导出携带的 Runtime 条目，不进入 Mnemon Pack
     +-- review-ledger.json        # 待决策的整理建议，0600，不进入 Mnemon Pack
@@ -67,10 +74,19 @@ follow an exact cold reference when full text is required
         +-- git/                  # 同步分支的可丢弃 Git 镜像；不属于任何数据组件
 ```
 
-`storageScope` 决定整个根，而不只是 Mnemon 数据库。`workspace` 范围会为每个已登记 DSH 工作区解析独立的 `<workspace>/.mnemon`。显式启用的 `runtimeUserScope=global` 是唯一的分根例外：Runtime 从全局根读取 USER.md，MEMORY.md 与其他所有组件仍留在所选根。工作台任务使用查看工作区；对话工具与生命周期使用所属会话的 cwd 和已固定的 View。`state/memory-providers.json` 保存第三方 endpoint、目标 URI、身份和可选凭据；文件权限为 `0600`，Host 只返回已配置字段名，不回传凭据值。`state/sync-git.json` 保存 Git 同步配置：仓库地址、分支、远端目录、组件选择、提交身份、自动备份间隔（分钟，`0` 为关闭），以及供 HTTPS 远端使用的可选 token。它遵循同样的 `0600` 权限与脱敏规则，既不属于 Config，也不进入 Mnemon Pack。`state/sync/git` 下的镜像是同步分支的可丢弃 Git 工作树：push 与 pull 都在其中工作，存储根本身永远不会成为 Git 工作树；删除镜像只多一次 fetch，不会丢数据。 `state/machine.json` 记录每个导出包都会带上的本机标识：生成的 id、默认取自主机名（用户改名后则为新名字）的标签，以及创建时间。`state/tombstones.json` 记录本机已经导出过的删除，`state/runtime-index.json` 记录上次导出携带的 Runtime 条目；两者一起让合并能区分“本机删除了它”与“本机从来没有过它”，因此旧包不会把删除复活。`state/review-ledger.json` 保存整理建议与留在其上的意见，最新在前，上限 200 条。这四个文件都不属于任何 Pack 组件，因此都不会同步：机器的身份与审查历史留在产生它的机器上。
+`storageScope` 选择的是整个根，而不只是 Mnemon 数据库；每个范围解析到哪个根，见[存储范围](./configuration.md#存储范围)。显式启用的 `runtimeUserScope=global` 是唯一的分根例外：Runtime 从全局根读取 USER.md，MEMORY.md 与其他所有组件仍留在所选根。工作台任务使用查看工作区；对话工具与生命周期使用所属会话的 cwd 和已固定的 View。Host 解析目录时不创建文件，也不修改旧根。
 
-`workspaces` 布局把四个 area 集中在 `<集中根>/workspaces/<工作区路径哈希>/`；Host 解析目录时不创建文件或修改旧根。只有显式 `runtimeUserScope: global` 会把 USER.md 放在该工作区子目录之外。
+`state/` 下的文件：
 
+- `memory-providers.json` 保存第三方 endpoint、目标 URI、身份和可选凭据；文件权限为 `0600`，Host 只返回已配置字段名，不回传凭据值。
+- `sync-git.json` 保存 Git 同步配置：仓库地址、分支、远端目录、提交身份、自动同步间隔（分钟，`autoBackupMinutes`，`0` 为关闭），以及供 HTTPS 远端使用的可选令牌。它遵循同样的 `0600` 权限与脱敏规则，既不属于 Config，也不进入 Mnemon Pack。
+- `sync/git` 下的镜像是同步分支的可丢弃 Git 工作树：push 与 pull 都在其中工作，存储根本身永远不会成为 Git 工作树；删除镜像只多一次 fetch，不会丢数据。镜像在自己的 Git 配置里记录它取自哪个仓库（`mnemon.origin`），换成另一个仓库时会重建，因此一个仓库的历史不会进入另一个仓库。
+- `sync/last-run.json` 记录上一次同步或合并完成的时间，重启后页面仍能说明。
+- `machine.json` 记录每个导出包都会带上的本机标识：生成的 id、默认取自主机名（用户改名后则为新名字）的标签，以及创建时间。
+- `tombstones.json` 记录本机已经导出过的删除，`runtime-index.json` 记录上次导出携带的 Runtime 条目；两者一起让合并能区分“本机删除了它”与“本机从来没有过它”，因此旧包不会把删除复活。
+- `review-ledger.json` 保存整理建议与留在其上的意见，最新在前，上限 200 条。
+
+`machine.json`、`tombstones.json`、`runtime-index.json` 与 `review-ledger.json` 都不属于任何 Pack 组件，因此都不会同步：机器的身份与审查历史留在产生它的机器上。
 
 <a id="runtime-memory"></a>
 
@@ -102,14 +118,16 @@ branches（可选）
 
 `USER.md` 和 `MEMORY.md` 是完整事实源的确定性派生文件。每个条目被归一成单行，条目之间使用单独一行的 `§` 分隔；`§` 是保留字符。启动和 prompt 组装时，控制层会从 JSON 修复缺失或被手工修改的投影。分支过滤只作用于 prompt 投影，不作用于这两个文件。
 
-Runtime Source 会在面向模型的快照中，为每条正文添加一行元数据：
+Runtime Source 在面向模型的快照中，只为含非默认注释的条目添加元数据行：
 
 ```text
 [importance=critical; created=14d; updated=2d]
 偏好简洁回复。
 ```
 
-`created` 和 `updated` 表示距存储时间戳经过的完整 24 小时天数，在捕获投影时统一计算。不到一天显示 `0d`；未来时间戳显示 `future`，无法解析的时间戳显示 `unknown`。用户档案位于全局根时，两个根使用同一个捕获时间。当前回合保持已捕获的天数；下一回合会重新计算，即使存储 revision 没有变化。
+`created` 和 `updated` 表示距存储时间戳经过的完整 24 小时天数，在捕获投影时统一计算。不到一天默认为 `0d` 并省略，`importance=normal` 也省略；没有剩余注释时，不生成元数据行。未来时间戳仍显示 `future`，无法解析的时间戳仍显示 `unknown`。用户档案位于全局根时，两个根使用同一个捕获时间。当前回合保持已捕获的天数；下一回合会重新计算，即使存储 revision 没有变化。
+
+面向模型的文本省略 revision 哈希、条目计数和存储配额统计；版本校验仍由 Source 协议承担，管理接口与 UI 保留监控信息。文件边界和所有可见条目（包括低重要性条目）均保留。本次格式调整不做内容分类或延迟召回。
 
 这些行是正文之外的注释。`old_text` / `oldText` 只能匹配正文，不包含元数据行。记录的重要性和时间跨度不会覆盖当前指令。JSON、磁盘 Markdown、正文匹配、条目顺序和存储容量均保持不变。注释计入已有的模型投影字符预算，因此短条目较多时，即使默认 Strategy 也可能截断或省略条目。其指引明确说明快照受预算限制，缺失不代表删除；light-context 可以进一步降低预算。
 
@@ -125,11 +143,11 @@ Runtime Source 会在面向模型的快照中，为每条正文添加一行元�
 | 目标 | 默认上限 | 维护方式 |
 |---|---:|---|
 | `USER.md` | 4 KiB | 本地、无工具 worker 保守合并，不进入 Memory Space |
-| `MEMORY.md` | 10 KiB | Host 精确归档已提交条目，再确定性装填热记忆余量；没有能接收它们的记忆空间时，未保留的条目移入 `runtime/archived/` |
+| `MEMORY.md` | 10 KiB | Host 精确归档已提交条目，再确定性装填保留在运行时记忆中的余量；没有能接收它们的记忆空间时，未保留的条目移入 `runtime/archived/` |
 
-两个上限都可以通过 `runtimeMemory.userLimitBytes` 与 `runtimeMemory.memoryLimitBytes` 调整，见 [Runtime Memory 容量与维护预算](./configuration.md#runtime-memory-容量与维护预算)。分层策略下，合法写入超过上限时才触发容量维护；其他策略会直接拒绝该写入。具名工具、通用 Action、后台子 Agent 和 Web 管理共用同一 Host 流程；Web 写入按所选存储范围执行，不要求打开用户会话。归档失败会保留热记忆并返回错误。完全没有能接收归档的记忆空间时，Runtime Source 改为在同一把锁内、提交之前，把未保留的条目移入 `runtime/archived/`。底层 Source 独立使用时仍只执行自己的存储操作，自定义 Strategy 不会隐式继承默认归档。
+两个上限都可以通过 `runtimeMemory.userLimitBytes` 与 `runtimeMemory.memoryLimitBytes` 调整，见 [Runtime Memory 容量与维护预算](./configuration.md#runtime-memory-容量与维护预算)。分层策略下，合法写入超过上限时才触发容量维护；其他策略会直接拒绝该写入。具名工具、通用 Action、后台子 Agent 和 Web 管理共用同一 Host 流程；Web 写入按所选存储范围执行，不要求打开用户会话。归档失败会保留运行时记忆并返回错误。完全没有能接收归档的记忆空间时，Runtime Source 改为在同一把锁内、提交之前，把未保留的条目移入 `runtime/archived/`。底层 Source 独立使用时仍只执行自己的存储操作，自定义 Strategy 不会隐式继承默认归档。
 
-容量按存储正文和条目分隔符的实际 UTF-8 字节计算，不包含仅用于 prompt 的元数据。单条内容最大 8 KiB。当 `add`、`replace` 或 `remove` 遇到容量溢出时，Host 会在任何 Provider 写入前重新检查源 revision。只有一个可写 Memory Space 时完全不调用模型；存在多个空间时，worker 只读取有界路由摘录并返回目标 id，不重写记忆内容。Mnemon Native 先从只读命名空间快照复用完全相同的原文，合并批内相同条目，再按目标空间通过 schema-v1 draft 和 `--no-diff` 各导入一次剩余原文，避免内容相似但不同的事实被跳过或相互覆盖。其他 Provider 继续使用适配器定义的写入语义。Host 要求每个源条目都有一条精确终态回执（跳过的重复项还必须有精确 Recall 证据），随后按重要性和字节预算选择热记忆保留项，并在原 revision fence 下把余量与待处理变更一次提交。Provider 无法与本地文件共享同一事务，因此稍后的 revision 冲突或并发外部写入可能留下已经归档的重复项；现有热记忆仍受修订检查保护。
+容量按存储正文和条目分隔符的实际 UTF-8 字节计算，不包含仅用于 prompt 的元数据。单条内容最大 8 KiB。当 `add`、`replace` 或 `remove` 遇到容量溢出时，Host 会在任何 Provider 写入前重新检查源 revision。只有一个可写 Memory Space 时完全不调用模型；存在多个空间时，worker 只读取有界路由摘录并返回目标 id，不重写记忆内容。Mnemon Native 先从只读命名空间快照复用完全相同的原文，合并批内相同条目，再按目标空间通过 schema-v1 draft 和 `--no-diff` 各导入一次剩余原文，避免内容相似但不同的事实被跳过或相互覆盖。其他 Provider 继续使用适配器定义的写入语义。Host 要求每个源条目都有一条精确终态回执（跳过的重复项还必须有精确 Recall 证据），随后按重要性和字节预算选择运行时记忆的保留项，并在原 revision fence 下把余量与待处理变更一次提交。Provider 无法与本地文件共享同一事务，因此稍后的 revision 冲突或并发外部写入可能留下已经归档的重复项；现有的运行时记忆条目仍受修订检查保护。
 
 <a id="project-documents"></a>
 
@@ -223,6 +241,21 @@ location      本地 Store/CLI 作用域，或远程 endpoint + Provider 作用�
 
 三方可见性由各自 Provider 作用域决定，例如服务与 URI、workspace/peers、bank、project/user、知识目录或 container。任何 Provider 的共享都不延伸到 `runtime/` 或 `documents/`；不能把“共享第三层记忆”表述为自动共享完整 DSH 上下文。
 
+## 技能管理
+
+技能管理管理的是 DSH 本来就会读取的文件，它从不进入回合的 View。技能本身留在 DSH 的技能目录里——`<project>/.dsh/skills`、`<project>/.agents/skills`、`$DSH_HOME/skills`（`~/.dsh/skills`）和 `$DSH_AGENTS_HOME/skills`（`~/.agents/skills`）——每次写入都以文件的 SHA-256 为准。技能管理为它们保存的内容放在存储根目录的 `skills/` 文件夹中：
+
+| 路径 | 内容 | 保留 |
+|---|---|---|
+| `ledger.json` | 建议、草案、复盘日志、记录对话的摘要、版本索引和市场安装记录 | 最近 200 条复盘、60 份草案 |
+| `evals.json` | 测试用例与回测记录 | 每个技能 40 个用例、20 次回测 |
+| `trajectories/<id>.json` | 一段记录下来的对话：编号步骤及复盘在其上的标注，机密已替换 | 最近 100 段；置顶的、被建议或用例引用的最后清理 |
+| `versions/<skill>/<id>.md` | 每个旧版本的 `SKILL.md`，用于对比和恢复 | 每个技能 30 个 |
+| `market/registries.json`、`market/cache/<id>.json` | 市场里添加的来源，以及每个来源最近一次发布的列表 | 直到移除；六小时后刷新 |
+| `trash/` | 被删除、或被更新与恢复替换下来的技能文件夹 | 直到手动删除 |
+
+该文件夹在存储锁内以原子替换方式写入，和其他 Source 一样跟随存储范围。它不属于 Mnemon Pack，因此 ZIP 备份和 Git 同步都不包含它；技能本身就是各技能目录里的普通文件。它的设置属于配置，保存在 `mnemon` 条目的 `skills` 下，见[技能管理设置](./configuration.md#技能管理设置)。
+
 ## 四类关系
 
 Mnemon Native 保留 `temporal`、`semantic`、`causal` 和 `entity` 关系；Hindsight 投影 Provider 图谱，Holographic 生成本地实体/语义关系。没有图谱边的 Provider 只贡献有界无边节点，适配器不会伪造关系。记忆空间页会按能力隐藏不适用的关联、链接、浏览与遗忘动作。
@@ -231,13 +264,15 @@ Mnemon Native 保留 `temporal`、`semantic`、`causal` 和 `entity` 关系；Hi
 
 | 数据 | 权威源 | 派生/缓存 |
 |---|---|---|
-| 热记忆 | `runtime/memories.json` | `USER.md`、`MEMORY.md` |
+| 运行时记忆 | `runtime/memories.json` | `USER.md`、`MEMORY.md` |
 | Documents | `documents/index.json` + 托管 Markdown | excerpt、搜索排序、状态聚合 |
 | Mnemon Native 目录 | `data/.dsh-memory-bodies.json` + 磁盘 Store | Web 状态聚合 |
 | 第三方 Provider 连接 | `state/memory-providers.json` | 脱敏的 Provider 能力与状态 |
 | Git 同步配置 | `state/sync-git.json` | `state/sync/git` 镜像与所配置的远端分支 |
-| 机器标识 | `state/machine.json` | 导出包与同步状态中的 `machine` 字段 |
+| 机器标识 | `state/machine.json`：id、名称与 `labelSource`（`hostname` 跟随主机名，`custom` 为手动填写） | 导出包与同步状态中的 `machine` 字段 |
 | 跨机删除 | `state/tombstones.json` | `state/runtime-index.json`，后续导出以它作为比对基准 |
 | 整理建议 | `state/review-ledger.json` | 审查卡片；被接受的建议作用于各 Source，而不是账本本身 |
+| 技能 | DSH 技能目录中的 `SKILL.md` 文件夹 | 技能管理页面展示的目录；`skills/` 中的版本、安装记录与市场缓存 |
+| 技能进化 | `skills/ledger.json`、`skills/evals.json`、`skills/trajectories/` | “进化”上的计数、状态卡片与回合下方的提示行 |
 | 长期记忆 | Mnemon `mnemon.db` 或远程 Provider | 图谱投影、跨 Provider 排名融合 |
 | 审查水位 | Host 进程内存 | 状态页快照；尚未持久化 |

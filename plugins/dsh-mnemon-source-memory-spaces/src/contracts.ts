@@ -9,6 +9,18 @@ import type { MemoryReadGrant } from 'dsh-mnemon/contracts'
 
 export type MemoryProviderId = string
 
+/**
+ * The Mnemon Native Provider's id. Its package names its descriptor and driver
+ * with it, the Starter installs it under it, and a stored space that names no
+ * Provider belongs to it.
+ */
+export const NATIVE_PROVIDER_ID = 'mnemon-native'
+
+/** Whether a Provider is Mnemon Native: by its implementation type, else by its id. */
+export function isNativeProvider(provider: { readonly id: MemoryProviderId; readonly typeId?: string | undefined }): boolean {
+  return (provider.typeId ?? provider.id) === NATIVE_PROVIDER_ID
+}
+
 export type MemoryProviderConnectionValue = string | number | boolean
 export type MemoryProviderConnection = Record<string, MemoryProviderConnectionValue>
 
@@ -50,7 +62,9 @@ export interface MemoryProviderConfigField {
   options?: MemoryProviderConfigOption[]
 }
 
-export type MemoryPlacementCapability = 'graph' | 'entities' | 'related' | 'exact-write' | 'link' | 'forget'
+/** What a persistence strategy's rules can require of a Provider; the Starter's settings schema takes the same list. */
+export const MEMORY_PLACEMENT_CAPABILITIES = ['graph', 'entities', 'related', 'exact-write', 'link', 'forget'] as const
+export type MemoryPlacementCapability = (typeof MEMORY_PLACEMENT_CAPABILITIES)[number]
 export type MemoryPlacementPreference = 'balanced' | 'local-first' | 'shared-first'
 
 export interface MemoryPlacementRules {
@@ -258,7 +272,7 @@ export const EDGE_TYPES = ['temporal', 'semantic', 'causal', 'entity'] as const 
 export type Intent = 'WHY' | 'WHEN' | 'ENTITY' | 'GENERAL'
 export const INTENTS = ['WHY', 'WHEN', 'ENTITY', 'GENERAL'] as const satisfies readonly Intent[]
 
-export type RecallRelevanceTier = 'high' | 'medium' | 'low' | 'unknown'
+export type RecallRelevanceTier = 'high' | 'medium' | 'ranked' | 'low' | 'unknown'
 
 /**
  * One spelling-insensitive key per entity. The Host's entity index and the Client's graph
@@ -319,6 +333,7 @@ export interface SearchRequest {
 export interface RememberRequest {
   content: string
   category?: Category
+  /** Integer 1..5 when supplied. Omission uses the Provider's default. */
   importance?: number
   tags?: string[]
   entities?: string[]
@@ -372,6 +387,31 @@ export interface MemorySpaceCatalog {
   generatedAt: string
   /** Present only when body-directory receives a supported writeScope request. Older Sources omit it. */
   writeScope?: MemorySpaceWriteScope
+  /** Provider namespaces asked for again in this process: whether a pass is running, and the last one. Older Sources omit it. */
+  rediscovery?: { running: boolean; last?: MemorySpaceRediscovery }
+}
+
+/** What one Provider answered when its namespaces were asked for again. */
+export interface MemorySpaceRediscoveryResult {
+  providerId: MemoryProviderId
+  label: string
+  /** Namespaces the Provider reported. */
+  found: number
+  /** Spaces mounted for namespaces this directory had never held. They start inactive. */
+  added: Array<{ id: string; name: string }>
+  /** Reported namespaces a person disconnected here; they stay disconnected. */
+  disconnected: number
+  /** Why the Provider could not be asked, as it said. Its spaces stay as they were. */
+  error?: string
+  /** The Provider said nothing within the time it was given. */
+  timedOut?: boolean
+}
+
+/** One pass over every enabled Provider service, when the Host starts or from the Memory Spaces page. */
+export interface MemorySpaceRediscovery {
+  at: string
+  trigger: 'startup' | 'manual'
+  results: MemorySpaceRediscoveryResult[]
 }
 
 export interface MemoryGraphNode extends Insight {
@@ -440,6 +480,10 @@ export interface RecallQualityStats {
   droppedInvalidScore: number
   unscored: number
   unscaled: number
+  /** Finite native or out-of-range scores retained by Provider rank, not confidence. */
+  ranked?: number
+  /** A normalized-relevance Provider returned a score above its declared maximum of 1. */
+  outOfRange?: number
 }
 
 export interface MemoryListRequest {
@@ -509,7 +553,9 @@ export interface RecallQualityConfig {
   candidateMultiplier?: number
   /** Maximum medium-relevance rows admitted by the strict policy. */
   maxMediumResults?: number
-  /** Maximum unknown-scale or unscored rows admitted by the strict policy. */
+  /** Maximum Provider-ranked rows without calibrated relevance admitted by the strict policy. */
+  maxRankedResults?: number
+  /** Maximum undeclared-scale or unscored rows admitted by the strict policy. */
   maxUnknownResults?: number
 }
 
@@ -520,6 +566,7 @@ export interface ResolvedRecallQualityConfig {
   highScoreThreshold: number
   candidateMultiplier: number
   maxMediumResults: number
+  maxRankedResults: number
   maxUnknownResults: number
 }
 
@@ -551,9 +598,40 @@ export interface MnemonEmbeddingStatus {
   model: string
   /** Protocol Mnemon resolved for the embedding endpoint; omitted when the CLI does not report one. */
   protocol?: string
+  /** Across the spaces in `spaces` that could be counted; 0 when no space has a database. */
   totalInsights: number
   embedded: number
   coverage: string
+  /** Each Mnemon Native space with a database, as `mnemon --store <id> embed --status` counts it (#392). */
+  spaces?: MnemonEmbeddingSpaceStatus[]
+}
+
+/** One Mnemon Native space's vector coverage. */
+export interface MnemonEmbeddingSpaceStatus {
+  memoryBodyId: string
+  name: string
+  active: boolean
+  totalInsights: number
+  embedded: number
+  coverage: string
+  /** Why the space could not be counted; its counts are then 0 and stay out of the total. */
+  error?: string
+}
+
+/** What one fill of a Mnemon Native space's missing vectors did (#392). */
+export interface MnemonEmbeddingFill {
+  memoryBodyId: string
+  /** Vectors the fill wrote. */
+  filled: number
+  /** Memories of the space still without a vector when it stopped. */
+  remaining: number
+  /** The embedding model Mnemon used. */
+  model: string
+  /**
+   * Why it stopped while memories remain: its minute ran out (`time`), or a step wrote no vector,
+   * so the embedding service returned none for the memories left (`refused`).
+   */
+  stopped?: 'time' | 'refused'
 }
 
 
@@ -572,6 +650,11 @@ export interface MemorySpacesStatus {
   timeoutMs: number
   defaultRecallLimit: number
   recallQuality: ResolvedRecallQualityConfig
+  /**
+   * Whether DSH manages Mnemon Native's embedding settings (`embedding.enabled`). While it does
+   * not, Mnemon keeps the Host environment and its own defaults. Memory Spaces 0.5.21 and earlier omit it.
+   */
+  embeddingManaged?: boolean
   memoryBodyDirectory: string
   memoryBodies: MemorySpaceView[]
   providerServices?: MemoryProviderRuntimeStatus[]
@@ -611,6 +694,113 @@ export interface EntityRelatedView {
   entity: string
   items: Insight[]
   sources: MemoryReadSource[]
+}
+
+// The files below are this Source's own: Mnemon Native's stores, the registry beside them and the
+// third-party Provider registry. A Host that copies them, as a Mnemon Pack or a sync does, or
+// counts them for a storage inventory, reads their names and rules from here instead of keeping
+// a copy that drifts when the Source changes.
+
+/** The directory under a storage root that holds Mnemon's stores, one per Native space, and their registry. */
+export const MEMORY_SPACES_DIRECTORY = 'data'
+/** The registry of Native spaces. The published v1 name and its `bodies` key stay for existing stores and Packs. */
+export const MEMORY_SPACE_REGISTRY_FILE = '.dsh-memory-bodies.json'
+/** A Native space's Mnemon store, in the directory its space id names. */
+export const MEMORY_SPACE_DATABASE_FILE = 'mnemon.db'
+/** A space id, which also names its store's directory. */
+export const MEMORY_SPACE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
+/** The most characters a space's name holds. */
+export const MEMORY_SPACE_NAME_MAX_LENGTH = 100
+/** The most characters a space's routing description holds. */
+export const MEMORY_SPACE_DESCRIPTION_MAX_LENGTH = 1000
+/** Mnemon's own record of its default store, one space id, at the storage root. */
+export const MNEMON_ACTIVE_STORE_FILE = 'active'
+/** Third-party Provider services and the spaces they serve, in the storage root's `state` directory. No Pack carries it. */
+export const MEMORY_PROVIDER_REGISTRY_FILE = 'memory-providers.json'
+
+/** One Native space as a copy of the registry, such as a Mnemon Pack, carries it. */
+export interface MemorySpaceRegistryEntry {
+  id: string
+  name: string
+  description: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MemorySpaceRegistryFile {
+  version: 1
+  bodies: MemorySpaceRegistryEntry[]
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Read a registry as a copy of it carries it: each id unique and usable as a directory name,
+ * every name, description and time present, or the whole registry is refused. Only the fields of
+ * the entry above are kept, so a copy holds nothing else, and a registry written back from one
+ * no longer holds what else an entry recorded, such as a Native space's `placement` decision or
+ * `metadataSource`.
+ */
+export function parseMemorySpaceRegistry(value: unknown): MemorySpaceRegistryFile {
+  const registry = isObject(value) ? value : undefined
+  if (registry?.version !== 1 || !Array.isArray(registry.bodies)) throw new Error('Memory Space registry is invalid')
+  const ids = new Set<string>()
+  const bodies = registry.bodies.map((raw): MemorySpaceRegistryEntry => {
+    const body = isObject(raw) ? raw : undefined
+    if (typeof body?.id !== 'string' || !MEMORY_SPACE_ID_PATTERN.test(body.id) || ids.has(body.id)) throw new Error('Memory Space registry contains an invalid or duplicate id')
+    if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > MEMORY_SPACE_NAME_MAX_LENGTH
+      || typeof body.description !== 'string' || body.description.length > MEMORY_SPACE_DESCRIPTION_MAX_LENGTH) throw new Error('Memory Space registry contains invalid metadata')
+    if (typeof body.createdAt !== 'string' || typeof body.updatedAt !== 'string') throw new Error('Memory Space registry contains invalid timestamps')
+    ids.add(body.id)
+    return { id: body.id, name: body.name, description: body.description, active: body.active === true, createdAt: body.createdAt, updatedAt: body.updatedAt }
+  })
+  return { version: 1, bodies }
+}
+
+/** What a stored registry holds, counted without judging each space. */
+export interface MemorySpaceRegistrySummary {
+  /** Whether it is the version 1 registry this Source writes; a legacy version 2 file, migrated when the Source next loads it, is not. */
+  valid: boolean
+  /** Every listed space that is an object, whichever version lists it. */
+  spaces: number
+  active: number
+}
+
+/** Count the spaces of a parsed registry for a read-only inventory. It never throws. */
+export function summarizeMemorySpaceRegistry(value: unknown): MemorySpaceRegistrySummary {
+  const registry = isObject(value) ? value : undefined
+  const listed = registry?.bodies
+  const spaces = Array.isArray(listed) ? listed.filter(isObject) : []
+  return {
+    valid: registry?.version === 1 && Array.isArray(listed),
+    spaces: spaces.length,
+    active: spaces.filter(space => space.active === true).length,
+  }
+}
+
+/** What a stored Provider registry holds, counted without judging each entry. */
+export interface MemoryProviderRegistrySummary {
+  /** Whether the file is an object at all. Without one, every count is 0. */
+  valid: boolean
+  /** Provider services with saved settings, enabled or not. */
+  services: number
+  /** Spaces a third-party Provider serves: every entry of the list, well-formed or not. */
+  connections: number
+}
+
+/** Count a parsed Provider registry for a read-only inventory. It never throws. */
+export function summarizeMemoryProviderRegistry(value: unknown): MemoryProviderRegistrySummary {
+  const registry = isObject(value) ? value : undefined
+  const services = registry?.services
+  const listed = registry?.bodies
+  return {
+    valid: registry !== undefined,
+    services: isObject(services) ? Object.keys(services).length : 0,
+    connections: Array.isArray(listed) ? listed.length : 0,
+  }
 }
 
 // Published type spellings retained for independently installed v0.5.x consumers.

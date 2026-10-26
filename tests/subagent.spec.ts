@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HostAgent, HostContextShape, HostSubagentsService, ToolDefinition, ToolExecution } from "../src/host/dsh.ts"
-import type { RememberRequest, MemoryBodyCatalog as MemorySpaceCatalog, SearchRequest, Insight, MemoryPlacementCandidate, PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
+import type { HostAgent, HostContextShape, HostSubagentStartRequest, HostSubagentsService, ToolDefinition, ToolExecution } from "../src/host/dsh.ts"
+import type { RememberRequest, MemorySpaceCatalog, SearchRequest, Insight, MemoryPlacementCandidate, PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { DocumentMutationResult, DocumentView, DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
 import type { RuntimeMemoryMaintenancePlan, RuntimeMemoryMutation, RuntimeMemoryMutationResult, RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
 import type { MemoryEvidence, MemoryJsonValue } from 'dsh-mnemon/contracts'
@@ -17,13 +17,14 @@ import { SourceSession } from '../src/host/source-session.ts'
 import type { ComposableMemoryTurn } from '../src/core/turns.ts'
 import { sourceFixture } from './fixtures/sources.ts'
 import { compositionFixture } from './fixtures/composition.ts'
-import { assertDshOutputSchema, MnemonSubagentCoordinator } from "../src/host/subagent.ts"
+import { assertDshOutputSchema, MnemonSubagentCoordinator, spaceWriteGuard, type RuntimeMaintenanceTaskRunner } from "../src/host/subagent.ts"
 import { CONTINUATION_TEXT } from '../src/host/continuation-turn.ts'
 import { DEFAULT_THREE_TIER_VIEW_STRATEGY } from 'dsh-mnemon-strategy-default-three-tier'
 import { registerTools } from "../src/host/tools.ts"
 import { resolveConfig } from "../src/host/config.ts"
 import { sessionLog } from './fixtures/session-log.ts'
 
+/** A DSH 0.2.0 provider, which takes the child's persona and tool filter in the start request. */
 const capabilities = { outputSchema: true, depthLimit: true, toolFilter: true, persona: true }
 const temporaryDirectories: string[] = []
 
@@ -121,7 +122,7 @@ function addSecondWritableBody(memoryService: SpaceData): void {
 
 function subagents(structured: unknown, stopReason = 'completed', providers = ['spawn'], localAgent?: HostAgent, diagnostic?: string) {
   const dispose = vi.fn(async () => {})
-  const start = vi.fn(async (_provider?: string, _request?: Parameters<HostSubagentsService['start']>[1]) => ({
+  const start = vi.fn(async (_provider?: string, _request?: HostSubagentStartRequest) => ({
     id: 'child-run-1',
     result: Promise.resolve({ output: [], structured, stopReason, ...(diagnostic === undefined ? {} : { diagnostic }) }),
     dispose,
@@ -133,6 +134,49 @@ function subagents(structured: unknown, stopReason = 'completed', providers = ['
     start,
   } as unknown as HostSubagentsService
   return { value, start, dispose }
+}
+
+type HostActivationSpec = Parameters<NonNullable<HostSubagentsService['startActivation']>>[0]
+
+/** DSH 0.2.1's providers: none takes a persona or tool filter. */
+const DSH_021_CAPABILITIES = { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true }
+
+/**
+ * DSH 0.2.1 starts every child as a managed activation (#356), and a child joins its parent's
+ * composition; its spawn and fork providers prepare local activations. As there, the result settles
+ * only after the child has left the Agent registry (`release`), at least one turn after
+ * startActivation resolves.
+ */
+function activations(structured: unknown, stopReason = 'completed', providers = ['spawn'], publish?: (spec: HostActivationSpec) => void, release?: () => void) {
+  const dispose = vi.fn(async () => {})
+  const startActivation = vi.fn(async (spec: HostActivationSpec) => {
+    publish?.(spec)
+    const result = new Promise<{ output: []; structured: unknown; stopReason: string }>(settle => setTimeout(() => {
+      release?.()
+      settle({ output: [], structured, stopReason })
+    }, 0))
+    return { childId: 'child-run-1', messageId: 'message-1', result, dispose }
+  })
+  const value = {
+    list: vi.fn(() => providers),
+    getProvider: vi.fn((name: string) => providers.includes(name)
+      ? { capabilities: DSH_021_CAPABILITIES, inheritsParentContext: name === 'fork', prepareContinuable: () => {} }
+      : undefined),
+    startActivation,
+  } as unknown as HostSubagentsService
+  return { value, startActivation, dispose }
+}
+
+/** A child as DSH 0.2.1 publishes it, recording what is registered in its own scope. */
+function composableChild(id: string) {
+  const sections: Array<{ name: string; order: number; text: string }> = []
+  const restrictions: Array<{ allow?: string[]; deny?: string[] }> = []
+  const guard = vi.fn(() => () => {})
+  const child = { ...parent('subagent'), id, ctx: {
+    systemPrompt: { section: (section: { name: string; order: number; text: string }) => { sections.push(section) }, getSectionOrder: () => 0 },
+    tools: { guard, restrict: (filter: { allow?: string[]; deny?: string[] }) => { restrictions.push(filter) } },
+  } } as unknown as HostAgent
+  return { child, sections, restrictions, guard }
 }
 
 function resultArguments(request: { persona?: string }, result: unknown) {
@@ -169,19 +213,29 @@ function toolRegistry() {
     for (const listener of listeners.get(name) ?? []) listener(...args)
   }
   const owners = new Map<string, HostAgent>()
-  const agents = { isOwnedBy: (id: string, owner: HostAgent) => owners.get(id) === owner }
-  const publish = (child: HostAgent, owner: HostAgent) => { owners.set(child.id, owner); emit('agent/created', { agent: child }) }
+  const live = new Map<string, HostAgent>()
+  const agents = { get: (id: string) => live.get(id), isOwnedBy: (id: string, owner: HostAgent) => owners.get(id) === owner }
+  const publish = (child: HostAgent, owner: HostAgent) => { owners.set(child.id, owner); live.set(child.id, child); emit('agent/created', { agent: child }) }
+  const unpublish = (id: string) => { owners.delete(id); live.delete(id) }
+  const reviewChild = (id: string, owner: HostAgent) => {
+    const child = { ...parent('subagent'), id, ctx: { tools: { guard: () => () => {} } } } as unknown as HostAgent
+    publish(child, owner)
+    return child
+  }
+  // DSH publishes a review child while the start call is still pending, as these wrappers do.
   const withReviewPublication = (host: HostSubagentsService): HostSubagentsService => ({ ...host,
-    async start(provider, request) {
-      const run = await host.start(provider, request)
+    ...(host.start === undefined ? {} : { async start(provider: string, request: HostSubagentStartRequest) {
+      const run = await host.start!(provider, request)
       if (request.label !== 'Mnemon idle checkpoint review') return run
-      const child = { ...parent('subagent'), id: run.id, ctx: { tools: { guard: () => () => {} } } } as unknown as HostAgent
-      owners.set(child.id, request.parent)
-      emit('agent/created', { agent: child })
-      return { ...run, localAgent: child }
-    },
+      return { ...run, localAgent: reviewChild(run.id, request.parent) }
+    } }),
+    ...(host.startActivation === undefined ? {} : { async startActivation(spec: HostActivationSpec) {
+      const activation = await host.startActivation!(spec)
+      if (spec.label === 'Mnemon idle checkpoint review') reviewChild(activation.childId, spec.request.parent)
+      return activation
+    } }),
   })
-  return { value: { tools: { register }, on, agents }, register, on, emit, publish, definitions, disposers, withReviewPublication }
+  return { value: { tools: { register }, on, agents }, register, on, emit, publish, unpublish, reviewChild, definitions, disposers, withReviewPublication }
 }
 
 interface SpaceData {
@@ -820,7 +874,8 @@ describe('Mnemon memory subagent coordinator', () => {
       ],
       hint: expect.stringContaining('Recall refinement is complete'),
     })
-    expect(exhausted).toMatchObject({ results: refinement.results, hint: expect.stringContaining('budget is exhausted') })
+    // Past the budget a new query runs nothing; the refinement's evidence never reads as its answer (#389).
+    expect(exhausted).toMatchObject({ query: 'tenant recovery', results: [], notRun: true, budgetExhausted: true, hint: expect.stringContaining('budget is exhausted') })
     expect(nextTurn.results.map(result => result.id)).toEqual(['duplicate-first', 'rollback-1', 'medium-refinement', 'unknown-refinement'])
     expect(memoryService.search).toHaveBeenCalledTimes(3)
     expect(coordinator.snapshot()).toMatchObject({ recalls: 3, failures: 0 })
@@ -1103,8 +1158,8 @@ describe('Mnemon memory subagent coordinator', () => {
 
     expect(coordinator.scopeRecallRequest(child, { query: 'database choice' })).toEqual({ query: 'database choice', memoryBodyIds: ['project'] })
     expect(() => coordinator.scopeRecallRequest(child, { query: 'database choice', memoryBodyIds: ['outside'] })).toThrow('outside pinned Source')
-    expect(coordinator.scopeRelatedMemoryBody(child)).toBe('project')
-    expect(() => coordinator.scopeRelatedMemoryBody(child, 'outside')).toThrow('outside pinned Source')
+    expect(coordinator.scopeRelatedMemorySpace(child)).toBe('project')
+    expect(() => coordinator.scopeRelatedMemorySpace(child, 'outside')).toThrow('outside pinned Source')
     await expect(coordinator.recall(child, { query: 'database choice' }, new AbortController().signal)).resolves.not.toHaveProperty('selectedMemoryBodyIds')
     expect(composableTurns.activeTurn).toHaveBeenCalledWith('child')
     expect(host.start).not.toHaveBeenCalled()
@@ -1165,10 +1220,10 @@ describe('Mnemon memory subagent coordinator', () => {
 
   it('isolates concurrent result capabilities and rejects stale or foreign submissions', async () => {
     const resultTools = toolRegistry()
-    const starts: Array<{ request: Parameters<HostSubagentsService['start']>[1]; child: HostAgent; done: ReturnType<typeof Promise.withResolvers<{ output: []; stopReason: string }>> }> = []
+    const starts: Array<{ request: HostSubagentStartRequest; child: HostAgent; done: ReturnType<typeof Promise.withResolvers<{ output: []; stopReason: string }>> }> = []
     const host = {
       list: () => ['spawn'], getProvider: () => ({ capabilities }),
-      start: vi.fn(async (_provider: string, request: Parameters<HostSubagentsService['start']>[1]) => {
+      start: vi.fn(async (_provider: string, request: HostSubagentStartRequest) => {
         const child = { ...parent('subagent'), id: 'child-' + starts.length }
         const done = Promise.withResolvers<{ output: []; stopReason: string }>()
         starts.push({ request, child, done })
@@ -1219,7 +1274,7 @@ describe('Mnemon memory subagent coordinator', () => {
     const child = { ...parent('subagent'), id: 'result-owner' }
     const host = {
       list: () => ['spawn'], getProvider: () => ({ capabilities }),
-      start: vi.fn(async (_provider: string, request: Parameters<HostSubagentsService['start']>[1]) => {
+      start: vi.fn(async (_provider: string, request: HostSubagentStartRequest) => {
         const definition = resultTools.definitions[0]!
         const outer = Symbol('outer')
         const execution = { name: definition.name, agent: child, signal: new AbortController().signal, concludeTurn: vi.fn(), token: Symbol('first'), ...(failure === 'outer' ? { parent: outer } : {}) }
@@ -1361,6 +1416,8 @@ describe('Mnemon memory subagent coordinator', () => {
       }) as never, { ...execution, token: Symbol('duplicate') })).rejects.toThrow('already recorded')
       resultTools.emit('tools/result', execution, { isError: false })
       resultTools.emit('tools/result', { name: 'run_code', token: outerToken, signal: execution.signal, agent: child }, { isError: false })
+      // Where the memory went comes from the Source receipt (#387).
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Use SQLite.', memoryBodyId: 'project' }, { action: 'added', memoryBodyId: 'project' })
       return { id: child.id, result: Promise.resolve({ output: [], stopReason: 'completed' }), dispose }
     })
     const host = {
@@ -1370,9 +1427,10 @@ describe('Mnemon memory subagent coordinator', () => {
     } as unknown as HostSubagentsService
     const coordinator = new MnemonSubagentCoordinator(host, runtimeSource(), resultTools.value)
 
+    // The Source receipt's action is what happened.
     await expect(coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)).resolves.toMatchObject({
       delegated: true,
-      action: 'stored',
+      action: 'added',
       memoryBodyIds: ['project'],
     })
     expect(concludeTurn).toHaveBeenCalledOnce()
@@ -1448,6 +1506,47 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(coordinator.snapshot()).toMatchObject({ writes: 1, failures: 0 })
   })
 
+  it.each([false, true])('says whether a write saved its memory without a vector (embedded: %s, #388)', async embedded => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, {
+        action: 'added', id: 'memory-1', embedded, message: 'Stored durable project memory.', memoryBodyId: 'project', memoryBodyName: 'Project',
+      })
+    })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, new AbortController().signal)
+    expect(result).toMatchObject({ delegated: true, action: 'added', memoryBodyIds: ['project'] })
+    if (embedded) {
+      expect(result).not.toHaveProperty('unembedded')
+      expect(result).not.toHaveProperty('hint')
+    } else {
+      expect(result).toMatchObject({ unembedded: [{ memoryBodyId: 'project', id: 'memory-1' }], hint: expect.stringContaining('Saved without a vector') })
+      // The next step goes through DSH's own storage root and embedding settings, never a terminal command.
+      expect((result as { hint: string }).hint).toContain('Test status in the Mnemon Native embedding settings')
+      expect((result as { hint: string }).hint).not.toContain('--store')
+    }
+  })
+
+  it('lists only the memories a run saved without a vector, and none for a skipped duplicate (#388)', async () => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, {
+        action: 'added', id: 'memory-1', embedded: true, memoryBodyId: 'project',
+      })
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Prometheus runs on port 9090.', memoryBodyId: 'ops' }, {
+        action: 'added', id: 'memory-2', embedded: false, memoryBodyId: 'ops',
+      })
+      // A duplicate skip carries no embedded field at all.
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Grafana runs on port 3300.', memoryBodyId: 'project' }, {
+        action: 'skipped', memoryBodyId: 'project',
+      })
+    }, 'completed', { action: 'stored', summary: 'Saved two memories.', memoryBodyIds: ['project', 'ops'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Monitoring ports.' }, new AbortController().signal)
+    expect(result).toMatchObject({ unembedded: [{ memoryBodyId: 'ops', id: 'memory-2' }] })
+    expect((result as { unembedded: unknown[] }).unembedded).toHaveLength(1)
+  })
+
   it.each(['accepted', 'candidate', 'partial', 'unknown', 'failed'])('does not recover %s completion as stored', async completion => {
     const resultTools = toolRegistry()
     const host = observedSubagents(resultTools, child => {
@@ -1505,6 +1604,91 @@ describe('Mnemon memory subagent coordinator', () => {
     await expect(coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)).rejects.toThrow('completed without recording its result')
   })
 
+  it('names the space a write inside a failed Code Mode program went to, not the one the writer claims (#387)', async () => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      const outerToken = Symbol('run-code')
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Use SQLite.', memoryBodyId: 'project' }, {
+        action: 'added', id: 'memory-1', memoryBodyId: 'project', memoryBodyName: 'Project',
+      }, outerToken)
+      resultTools.emit('tools/result', {
+        name: 'run_code', arguments: {}, token: outerToken, agent: child, signal: new AbortController().signal,
+      }, { isError: true })
+    }, 'completed', { action: 'stored', summary: 'Saved in Elsewhere.', memoryBodyIds: ['elsewhere'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)
+    expect(result).toMatchObject({ action: 'stored', memoryBodyIds: ['project'] })
+  })
+
+  it.each([
+    ['stored', 'unknown'],
+    ['skipped', 'skipped'],
+  ])('lands nowhere when no receipt shows a write, and reports a claimed %s as %s (#387)', async (claimed, reported) => {
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, () => {}, 'completed', { action: claimed, summary: 'Saved in Trials.', memoryBodyIds: ['trials'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
+    const result = await coordinator.remember(parent(), { content: 'Use SQLite.' }, new AbortController().signal)
+    expect(result).toMatchObject({ action: reported, memoryBodyIds: [] })
+    expect(result).not.toHaveProperty('activatedMemoryBodyIds')
+  })
+
+  it('checks a named space before any writer runs, and switches one on only for the user (#387)', async () => {
+    const spaces = service()
+    const catalog = spaces.bodyDirectory()
+    const archive = { ...catalog.items[0]!, id: 'archive', name: 'Archive', active: false }
+    const remote = { ...catalog.items[0]!, id: 'remote', name: 'Remote', providerEnabled: false, provider: { id: 'mem0', label: 'Mem0', capabilities: { remember: true } } }
+    const readOnly = { ...catalog.items[0]!, id: 'readonly', name: 'Read only', provider: { id: 'openviking', label: 'OpenViking', capabilities: { remember: false } } }
+    vi.mocked(spaces.bodyDirectory).mockReturnValue({ ...catalog, items: [...catalog.items, archive, remote, readOnly] } as never)
+    const host = subagents({ action: 'stored', summary: 'Saved.', memoryBodyIds: ['archive'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(undefined, spaces), toolRegistry().value)
+    const signal = new AbortController().signal
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'missing' }, signal)).rejects.toThrow(
+      'Memory Space "missing" does not exist. Name one by its id: "project" (项目记忆空间), "archive" (Archive, switched off), "remote" (Remote), "readonly" (Read only).')
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'remote' }, signal)).rejects.toThrow('Memory Space "remote" uses Mem0, which is turned off on the dsh-mnemon page under Plugins.')
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'readonly' }, signal)).rejects.toThrow('Memory Space "readonly" (OpenViking) does not take writes.')
+    await expect(coordinator.remember(parent(), { content: 'x', memoryBodyId: 'archive' }, signal)).rejects.toThrow(
+      'Memory Space "archive" (Archive) is switched off, and a write would switch it back on. If the user wants it back, switch it on first with mnemon_memory_body_update (active: true); otherwise name an active space.')
+    expect(host.start).not.toHaveBeenCalled()
+    await coordinator.remember(parent(), { content: 'x', memoryBodyId: 'archive' }, signal, { activateTarget: true })
+    expect(host.start).toHaveBeenCalledOnce()
+  })
+
+  it('writes nothing when it cannot read the Memory Space directory (#387)', async () => {
+    const spaces = service()
+    vi.mocked(spaces.bodyDirectory).mockImplementation(() => { throw new Error('registry unreadable') })
+    const host = subagents({ action: 'stored', summary: 'Saved.', memoryBodyIds: ['project'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(undefined, spaces), toolRegistry().value)
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('The Memory Space directory could not be read, so nothing was saved: registry unreadable')
+    expect(host.start).not.toHaveBeenCalled()
+  })
+
+  it('holds a write to its named space, and keeps a write without one off switched-off spaces (#387)', () => {
+    const call = (name: string, args: Record<string, unknown>) => ({ name, arguments: args }) as unknown as ToolExecution
+    const named = spaceWriteGuard('project', new Set(['archive']))
+    expect(named(call('mnemon_remember', { memoryBodyId: 'project' }))).toBeUndefined()
+    expect(named(call('mnemon_remember', { memoryBodyId: 'archive' }))).toBe(
+      'This write was requested for Memory Space "project". Call mnemon_remember with memoryBodyId "project", or finish without writing and say why it does not fit.')
+    expect(named(call('mnemon_link', { sourceId: 'a', targetId: 'b' }))).toContain('Call mnemon_link with memoryBodyId "project"')
+    expect(named(call('mnemon_link', { sourceId: 'a', targetId: 'b', memoryBodyId: 'project' }))).toBeUndefined()
+    expect(named(call('mnemon_memory_body_create', { name: 'New' }))).toContain('so it creates or changes no space')
+    expect(named(call('mnemon_memory_body_update', { memoryBodyId: 'project', description: 'x' }))).toContain('so it creates or changes no space')
+    expect(named(call('mnemon_recall', { query: 'x' }))).toBeUndefined()
+    const open = spaceWriteGuard(undefined, new Set(['archive']))
+    expect(open(call('mnemon_remember', { memoryBodyId: 'project' }))).toBeUndefined()
+    // Without an id the Source writes only to the one active space.
+    expect(open(call('mnemon_remember', {}))).toBeUndefined()
+    expect(open(call('mnemon_remember', { memoryBodyId: 'archive' }))).toBe(
+      'Memory Space "archive" is switched off, and a write would switch it on. Write to an active space, or finish without writing and say which space would fit.')
+    expect(open(call('mnemon_link', { sourceId: 'a', targetId: 'b', memoryBodyId: 'archive' }))).toContain('Memory Space "archive" is switched off')
+    expect(open(call('mnemon_memory_body_update', { memoryBodyId: 'archive', active: true }))).toBe('Memory Space "archive" is switched off; only the user switches it on.')
+    expect(open(call('mnemon_memory_body_update', { memoryBodyId: 'archive', description: 'Older trials.' }))).toBeUndefined()
+    // Saving a memory never merges spaces: a merge switches spaces on and off.
+    for (const guard of [named, open]) {
+      expect(guard(call('mnemon_memory_body_merge', { targetMemoryBodyId: 'project', sourceMemoryBodyIds: ['other'] }))).toBe(
+        'Saving a memory never merges Memory Spaces; a merge is a request of its own. Write the memory, or finish without writing.')
+    }
+  })
+
   it('does not recover partial or failed child runs from unrelated successful tools', async () => {
     const resultTools = toolRegistry()
     const partial = observedSubagents(resultTools, child => {
@@ -1533,11 +1717,14 @@ describe('Mnemon memory subagent coordinator', () => {
   })
 
   it('delegates writes with mutation tools and returns a compact receipt', async () => {
-    const host = subagents({ summary: 'Stored in project.', action: 'stored', memoryBodyIds: ['project'] })
-    const coordinator = createCoordinator(host.value)
+    const resultTools = toolRegistry()
+    const host = observedSubagents(resultTools, child => {
+      emitSuccessfulToolResult(resultTools, child, 'mnemon_remember', { content: 'Durable choice', memoryBodyId: 'project' }, { action: 'added', memoryBodyId: 'project' })
+    }, 'completed', { summary: 'Stored in project.', action: 'stored', memoryBodyIds: ['project'] })
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value)
     await expect(coordinator.remember(parent(), { content: 'Durable choice' }, new AbortController().signal)).resolves.toMatchObject({
       delegated: true,
-      action: 'stored',
+      action: 'added',
       memoryBodyIds: ['project'],
     })
     expect(host.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
@@ -1568,7 +1755,7 @@ describe('Mnemon memory subagent coordinator', () => {
     // DSH publishes the child while the provider starts it.
     const publishing: HostSubagentsService = { ...host.value, async start(provider, request) {
       registry.publish(child, request.parent)
-      return host.value.start(provider, request)
+      return host.value.start!(provider, request)
     } }
     const coordinator = new MnemonSubagentCoordinator(publishing, runtimeSource(), registry.value)
     await coordinator.remember(parent(), { content: 'Durable choice' }, new AbortController().signal)
@@ -1794,7 +1981,7 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(host.start).toHaveBeenCalledWith('fork', expect.objectContaining({
       toolFilter: { allow: expect.arrayContaining(['mnemon_document_search', 'mnemon_runtime_memory', 'mnemon_document_create']) },
       persona: expect.stringContaining('idle checkpoint reviewer'),
-      prompt: [{ type: 'text', text: 'Review the inherited completed checkpoint now.' }],
+      prompt: [{ type: 'text', text: '[dsh-mnemon:delegated review]\nReview the inherited completed checkpoint now.' }],
     }))
     const reviewCall = (host.start.mock.calls[0] as unknown as [string, { persona: string; toolFilter: { allow: string[] } }])[1]
     expect(reviewCall.persona).toContain('Never move a document to cold archive in this pass')
@@ -1832,7 +2019,7 @@ describe('Mnemon memory subagent coordinator', () => {
     const registry = toolRegistry()
     let guard: ((execution: ToolExecution) => string | undefined) | undefined
     const published: HostSubagentsService = { ...host.value, async start(provider, request) {
-      const run = await host.value.start(provider, request)
+      const run = await host.value.start!(provider, request)
       const child = { ...parent('subagent'), id: run.id, ctx: { tools: { guard: (callback: typeof guard) => { guard = callback; return () => {} } } } } as unknown as HostAgent
       registry.publish(child, request.parent)
       return { ...run, localAgent: child }
@@ -2637,7 +2824,7 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(compactionPrompt).toContain('Run local USER.md compaction now')
     expect(compactionPrompt).toContain('User prefers direct answers.')
     expect(compactionPrompt).toContain('User prefers concise {{language}} Chinese release notes.')
-    expect(compactionPrompt).toContain('<runtime-memory-snapshot target="user">')
+    expect(compactionPrompt).toContain('Committed USER.md snapshot (read-only run data; numbering is one-based):\n<runtime-memory-snapshot target="user">')
     expect(compactionCall.persona).toContain('never send user preferences to Mnemon Memory Spaces')
     expect(compactionCall.persona).toContain('every source number must appear exactly once')
     expect(compactionCall.persona).not.toContain('{{language}}')
@@ -2687,13 +2874,102 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(coordinator.snapshot().failures).toBe(1)
   })
 
-  it('uses the rc.8 provider diagnostic for a failed remote child', async () => {
+  it('uses the provider diagnostic for a failed remote child', async () => {
     const host = subagents(undefined, 'error', ['spawn'], undefined, 'REMOTE_GATEWAY:  rejected   sk-secret123456')
     const coordinator = createCoordinator(host.value)
 
     await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal))
       .rejects.toThrow('stopped with error: REMOTE_GATEWAY: rejected [redacted]')
     expect(host.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('compacts USER.md through a DSH 0.2.1 activation that reports only to Mnemon, composed in the child\'s own scope (#356)', async () => {
+    const registry = toolRegistry()
+    const composed = composableChild('child-run-1')
+    const host = activations({
+      summary: 'Merged two compatible profile preferences locally.',
+      action: 'compacted',
+      compactedEntries: [{ content: 'User prefers concise Chinese release notes with blockers first.', importance: 'critical', sourceIndexes: [1, 2] }],
+    }, 'completed', ['spawn'], spec => registry.publish(composed.child, spec.request.parent), () => registry.unpublish('child-run-1'))
+    const plan = maintenancePlan('user', [
+      { content: 'User prefers concise Chinese release notes.', importance: 'critical' },
+      { content: 'User wants blockers listed first in release notes.', importance: 'normal' },
+    ])
+    plan.pending = { content: 'User prefers direct answers.', importance: 'normal' }
+    const runtime = {
+      mutate: vi.fn().mockRejectedValueOnce(capacityError('user', plan.used, plan.projected, plan.limit)),
+      planMaintenance: vi.fn(async () => plan),
+      compactAndMutate: vi.fn(async () => ({ success: true, message: 'Entry added.', target: 'user', entryCount: 2, usage: { used: 180, limit: 4_096 }, added: plan.pending!.content })),
+    } as unknown as RuntimeOperations
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(runtime), registry.value)
+
+    await expect(coordinator.runtime(parent(), { action: 'add', target: 'user', content: 'User prefers direct answers.' }, new AbortController().signal)).resolves.toMatchObject({
+      added: 'User prefers direct answers.',
+      maintenance: { kind: 'local-compaction', runId: 'child-run-1', provider: 'spawn' },
+    })
+    expect(host.startActivation).toHaveBeenCalledOnce()
+    const spec = host.startActivation.mock.calls[0]![0]
+    expect(spec).toMatchObject({ provider: 'spawn', label: 'Consolidate local user profile', delivery: 'caller' })
+    const request = spec.request
+    expect(request).toMatchObject({ maxDepth: 1, agentOptions: { maxTokens: 8_192 } })
+    for (const key of ['toolFilter', 'persona', 'label', 'signal']) expect(request).not.toHaveProperty(key)
+    expect(composed.restrictions).toEqual([{ allow: ['mnemon_subagent_result'] }])
+    expect(composed.sections).toEqual([{ name: 'deployment:persona-prefix', order: 0, text: expect.stringContaining('local USER.md compactor') }])
+    expect(composed.sections[0]!.text).toMatch(/requestId `[^`]+`/u)
+    expect(host.dispose).toHaveBeenCalledOnce()
+    expect(coordinator.snapshot()).toMatchObject({ compactions: 1, failures: 0 })
+  })
+
+  it('reviews a checkpoint through a DSH 0.2.1 fork activation that carries both the review guard and its own composition (#356)', async () => {
+    const registry = toolRegistry()
+    const composed = composableChild('child-run-1')
+    const host = activations({ summary: 'No mutation needed.', action: 'skipped', memoryBodyIds: [] }, 'completed', ['spawn', 'fork'],
+      spec => registry.publish(composed.child, spec.request.parent), () => registry.unpublish('child-run-1'))
+    const runtime = runtimeSource()
+    runtime.config.idleReview.provider = 'fork'
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtime, registry.value)
+
+    await expect(coordinator.review(parent(), new AbortController().signal)).resolves.toMatchObject({ delegated: true, provider: 'fork', action: 'skipped' })
+    expect(host.startActivation).toHaveBeenCalledWith(expect.objectContaining({ provider: 'fork', label: 'Mnemon idle checkpoint review', delivery: 'caller' }))
+    expect(host.startActivation.mock.calls[0]![0].request).not.toHaveProperty('toolFilter')
+    expect(composed.guard).toHaveBeenCalledOnce()
+    expect(composed.restrictions).toEqual([{ allow: expect.arrayContaining(['mnemon_document_search', 'mnemon_document_create', 'mnemon_subagent_result']) }])
+    expect(composed.sections).toHaveLength(1)
+    expect(host.dispose).toHaveBeenCalledOnce()
+    expect(coordinator.snapshot()).toMatchObject({ reviews: 1, failures: 0 })
+  })
+
+  it('starts no memory subagent through a DSH 0.2.1 provider that runs children elsewhere', async () => {
+    const host = activations({ summary: 'unused' })
+    vi.mocked(host.value.getProvider).mockImplementation(() => ({ capabilities: DSH_021_CAPABILITIES }) as never)
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), toolRegistry().value)
+
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider that limits depth and gives each child its own instructions and tools')
+    expect(host.startActivation).not.toHaveBeenCalled()
+  })
+
+  it('selects no provider on a DSH whose providers decline a persona and tool filter', async () => {
+    const host = activations({ summary: 'unused' })
+    vi.mocked(host.value.getProvider).mockImplementation(() => ({ capabilities: { outputSchema: true, depthLimit: true, toolFilter: false, persona: false } }) as never)
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), toolRegistry().value)
+
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('requires a non-inheriting DSH subagent provider that limits depth and gives each child its own instructions and tools')
+    expect(host.startActivation).not.toHaveBeenCalled()
+  })
+
+  it('reports the bounded error of a failed activation child found in the Agent registry (#356)', async () => {
+    const registry = toolRegistry()
+    const failedChild = {
+      ...composableChild('child-run-1').child,
+      session: { header: { origin: 'subagent' as const }, ...sessionLog([{ type: 'turn/end', data: { reason: { kind: 'error', error: { code: 'MODEL_ROUTE', message: 'provider rejected sk-secret123456' } } } }]) },
+    } as unknown as HostAgent
+    const host = activations(undefined, 'error', ['spawn'], spec => registry.publish(failedChild, spec.request.parent), () => registry.unpublish(failedChild.id))
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), registry.value)
+
+    // The child has left the registry by the time its result settles; the detail comes from the child found at start.
+    await expect(coordinator.remember(parent(), { content: 'x' }, new AbortController().signal)).rejects.toThrow('stopped with error: MODEL_ROUTE: provider rejected [redacted]')
+    expect(host.dispose).toHaveBeenCalledOnce()
+    expect(coordinator.snapshot().failures).toBe(1)
   })
 
   it('pins a fixed task Agent model onto the bounded idle review delegation', async () => {
@@ -2819,5 +3095,256 @@ describe('Mnemon root/child tool split', () => {
     await expect(registered.find(tool => tool.name === 'mnemon_memory_bodies')!.execute({} as never, { agent: parent(), signal })).rejects.toThrow('does not allow automatic maintenance')
     expect(coordinator.recall).not.toHaveBeenCalled()
     expect(coordinator.runtime).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * What one delegated child reads, as SHA-256 hashes: its persona, the completion protocol after it,
+ * which names its result schema, with the run's requestId left out, and its task.
+ */
+function childText(call: unknown[]) {
+  const request = call[1] as HostSubagentStartRequest
+  const persona = request.persona ?? ''
+  const protocol = persona.indexOf('\n\nCompletion protocol: ')
+  const requestId = /requestId `([^`]+)`/u.exec(persona)?.[1] ?? ''
+  const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
+  return {
+    label: request.label,
+    persona: sha256(persona.slice(0, protocol)),
+    completion: sha256(persona.slice(protocol).replaceAll(requestId, '<requestId>')),
+    task: sha256(request.prompt[0]!.text),
+  }
+}
+
+describe('What delegated children read', () => {
+  it('gives every kind of delegated child the persona, result schema and task it has always read', async () => {
+    const signal = new AbortController().signal
+    const read: Record<string, Array<ReturnType<typeof childText>>> = {}
+
+    const writes: Array<[string, string, unknown]> = [
+      ['remember', 'remember', { content: 'The release train leaves on Thursdays.', category: 'decision', importance: 4, tags: ['release', 'schedule'], entities: ['DSH'], source: 'agent',
+        metadata: { ticket: 'REL-12', reviewed: true } }],
+      ['remember in a named space', 'remember', { content: 'The release train leaves on Thursdays.', memoryBodyId: 'project' }],
+      ['supervised writeback', 'supervised-writeback', { content: 'I prefer short status updates.\nBlockers first.' }],
+      ['link', 'link', { sourceId: 'm1', targetId: 'm2', type: 'causal', weight: 0.8, reason: 'The red gate caused the rollback.', memoryBodyId: 'project' }],
+      ['forget', 'forget', { id: 'm1', memoryBodyId: 'project' }],
+      ['create a space', 'create-memory-body', { name: 'Release', description: 'Release gates and rollbacks.', providerId: 'mnemon-native', reason: 'Local exact memory.', confidence: 'high' }],
+      ['update a space', 'update-memory-body', { memoryBodyId: 'project', description: 'Project decisions and their reasons.', active: true }],
+      ['merge spaces', 'merge-memory-bodies', { targetMemoryBodyId: 'project', sourceMemoryBodyIds: ['release'], deactivateSources: true }],
+    ]
+    for (const [name, operation, request] of writes) {
+      const host = subagents({ summary: 'Saved.', action: 'stored', memoryBodyIds: ['project'] })
+      await createCoordinator(host.value).write(parent(), operation, request, signal)
+      read[name] = host.start.mock.calls.map(childText)
+    }
+
+    const answering = subagents({ answer: 'SQLite.', citations: ['project/m1'] })
+    await createCoordinator(answering.value).answer(parent(), 'Which database do we use?', [
+      { id: 'm1', content: 'The project uses SQLite.\nMigrations run on boot.', memoryBodyId: 'project', memoryBodyName: 'Project', category: 'decision' },
+      { id: 'm2', content: 'Backups run nightly.', memoryBodyId: 'project' },
+    ], signal)
+    read.answer = answering.start.mock.calls.map(childText)
+
+    const placing = subagents({ providerId: 'mnemon-native', reason: 'Local exact memory fits.', confidence: 'high' })
+    await createCoordinator(placing.value).placeProvider(parent(), { name: 'Release', description: 'Release gates and rollbacks.' }, {
+      prompt: 'Keep team knowledge local.', appliedRules: [], selectorBrief: 'Choose an eligible local or shared store.',
+      candidates: [{
+        id: 'mnemon-native', label: 'Mnemon Native', kind: 'local', configured: true, summary: 'Local exact memory.',
+        capabilities: { search: true, browse: true, graph: true, entities: true, related: true, remember: true, link: true, forget: true, writeMode: 'exact', deletionMode: 'soft' },
+      }, {
+        id: 'work-account', label: 'Work Vector Store', kind: 'remote', configured: true, summary: 'Shared extracting memory.',
+        capabilities: { search: true, browse: true, graph: false, entities: false, related: false, remember: true, link: false, forget: false, writeMode: 'async-extracting', deletionMode: 'hard' },
+      }],
+    }, signal)
+    read.placement = placing.start.mock.calls.map(childText)
+
+    const curating = subagents({ summary: 'Updated two scopes.', updates: [
+      { memoryBodyId: 'product', title: 'Product decisions', description: 'Stable product scope and trade-offs, recalled when planning.' },
+      { memoryBodyId: 'release', title: 'Release gates', description: 'Release gates and rollback notes, recalled before shipping.' },
+    ] })
+    await createCoordinator(curating.value).maintainMetadata(parent(), ['product', 'release'], signal)
+    read['metadata maintenance'] = curating.start.mock.calls.map(childText)
+
+    for (const provider of ['spawn', 'fork'] as const) {
+      for (const runtimeMemory of [true, false]) {
+        const reviewing = subagents({ summary: 'Nothing to keep.', action: 'skipped', memoryBodyIds: [] }, 'completed', ['spawn', 'fork'])
+        const runtime = runtimeSource()
+        Object.assign(runtime.config.idleReview, { provider, runtimeMemory })
+        await createCoordinator(reviewing.value, runtime).review(parent(), signal)
+        read[`review through ${provider}${runtimeMemory ? '' : ' without runtime memory'}`] = reviewing.start.mock.calls.map(childText)
+      }
+    }
+
+    // Four entries make two routing batches; the second is longer than a routing excerpt keeps.
+    const plan = maintenancePlan('memory', [
+      { content: `Release checks require a canary. ${'Watch the canary for an hour. '.repeat(10)}`, importance: 'critical' },
+      { content: `Rollback notes: ${'roll back on a red gate. '.repeat(30)}`, importance: 'normal' },
+      { content: `The project uses pnpm. ${'Pin the lockfile. '.repeat(18)}`, importance: 'normal' },
+      { content: `Deploys go through staging. ${'Stage before production. '.repeat(12)}`, importance: 'normal' },
+    ])
+    plan.entries[3]!.branches = ['release/1.2', 'release/1.3']
+    const routing = subagents(undefined)
+    routing.start.mockImplementation(async (_provider, request) => {
+      const indexes = /Allowed source indexes for this batch: ([\d, ]+)\./u.exec(request!.prompt[0]!.text)![1]!.split(', ').map(Number)
+      const structured = { summary: 'Routed the batch.', action: 'planned', routes: [{ sourceIndexes: indexes, memoryBodyId: 'release' }] }
+      return { id: 'child-run-1', result: Promise.resolve({ output: [], structured, stopReason: 'completed' }), dispose: routing.dispose }
+    })
+    const archiveRuntime = {
+      mutate: vi.fn().mockRejectedValueOnce(capacityError('memory', plan.used, plan.projected, plan.limit)),
+      planMaintenance: vi.fn(async () => plan),
+      compactAndMutate: vi.fn(async () => ({ success: true, target: 'memory', added: plan.pending!.content, usage: { used: 30, limit: plan.limit } })),
+    } as unknown as RuntimeOperations
+    const archiveSpaces = service()
+    addSecondWritableBody(archiveSpaces)
+    await new MnemonSubagentCoordinator(routing.value, runtimeSource(archiveRuntime, archiveSpaces), toolRegistry().value)
+      .runtime(parent(), { action: 'add', target: 'memory', content: plan.pending!.content }, signal)
+    read['MEMORY.md archive routing'] = routing.start.mock.calls.map(childText)
+
+    const compacting = subagents({ summary: 'Merged two preferences.', action: 'compacted', compactedEntries: [
+      { content: 'User prefers concise Chinese release notes with blockers first.', importance: 'critical', sourceIndexes: [1, 2] },
+    ] })
+    const profile = maintenancePlan('user', [
+      { content: 'User prefers concise Chinese release notes.', importance: 'critical' },
+      { content: 'User wants blockers listed first in release notes.', importance: 'normal' },
+    ])
+    const profileRuntime = {
+      mutate: vi.fn().mockRejectedValueOnce(capacityError('user', profile.used, profile.projected, profile.limit)),
+      planMaintenance: vi.fn(async () => profile),
+      compactAndMutate: vi.fn(async () => ({ success: true, target: 'user', added: profile.pending!.content, usage: { used: 180, limit: profile.limit } })),
+    } as unknown as RuntimeOperations
+    await createCoordinator(compacting.value, profileRuntime).runtime(parent(), { action: 'add', target: 'user', content: profile.pending!.content }, signal)
+    read['USER.md compaction'] = compacting.start.mock.calls.map(childText)
+
+    const content = 'Canary before production.\nKeep the exact original.'
+    const document = {
+      id: 'release-design', title: 'Release design', description: 'Release gates and rollbacks', status: 'active', revision: 2,
+      filename: 'release-design-0a1b2c3d.md', relativePath: '.mnemon/documents/active/release-design-0a1b2c3d.md', sourcePaths: ['docs/release.md', 'docs/rollback.md'],
+      content, contentHash: createHash('sha256').update(content).digest('hex'),
+    } as unknown as DocumentView
+    const controller = {
+      forGeneration() { return this },
+      read: vi.fn(async () => document),
+      mutate: vi.fn(async () => ({ action: 'archived', document: { ...document, status: 'archived' } })),
+    } as unknown as SourceSession
+    const archiving = subagents({ summary: 'Release design: release gates and rollbacks.', action: 'planned', memoryBodyId: 'project' })
+    const indexSpaces = service()
+    vi.mocked(indexSpaces.search).mockResolvedValue({ query: '', mode: 'keyword', results: [] })
+    await new MnemonSubagentCoordinator(archiving.value, runtimeSource(undefined, indexSpaces, controller), toolRegistry().value).archiveDocument(parent(), document.id, signal)
+    read['document archive'] = archiving.start.mock.calls.map(childText)
+
+    // Reconciliation runs as a maintenance task, through the task runner, over evidence it reads from the graph.
+    const reconciling = subagents({ title: 'Memory is coherent', summary: 'Nothing to change.', action: 'none', operations: [] })
+    const local = (content: string, overrides: object = {}) => ({ content, target: 'memory', importance: 'normal', created_at: '2026-08-14T12:00:00.000Z', updated_at: '2026-08-14T12:00:00.000Z', ...overrides })
+    const usage = (target: 'memory' | 'user') => ({ target, used: 120, limit: 1_024, entryCount: 1, markdownPath: `/fixture/${target}.md` })
+    const desktop = { id: 'machine-b', label: 'desktop', createdAt: '2026-08-14T12:00:00.000Z' }
+    const reconcileGraph = {
+      directory: '/fixture',
+      packs: { identity: () => ({ id: 'machine-a', label: 'laptop', createdAt: '2026-08-14T12:00:00.000Z' }) },
+      memoryComposition: { acquire: () => ({ generation: {}, release: () => {} }) },
+      source: (type: string) => ({ forGeneration: () => ({ read: async () => type === 'runtime'
+        ? { entries: [
+          local('Release notes go out on Thursdays.'),
+          local('Release notes ship every Thursday.', { origin: { machine: 'machine-b', label: 'desktop' } }),
+          local('Pin the lockfile.\nNever float it.', { importance: 'critical', branches: ['main', 'release'] }),
+          local('Prefers short answers.', { target: 'user' }),
+        ], targets: { memory: usage('memory'), user: usage('user') } }
+        : { activeBytes: 400, limitBytes: 1_024, documents: [
+          { id: 'release-design', title: 'Release design', status: 'active', sizeBytes: 400, description: 'Release gates\nand rollbacks' },
+          { id: 'old-design', title: 'Old design', status: 'archived', sizeBytes: 100, description: '' },
+        ] } }) }),
+      sync: { readRemoteForEvidence: async () => ({
+        remoteOnly: [{ target: 'memory', importance: 'normal', content: 'Canary first.', origin: { machine: 'machine-b', label: 'desktop' } }],
+        conflicts: [{ target: 'memory', similarity: 0.8,
+          local: { target: 'memory', importance: 'normal', content: 'Deploy on Fridays.' }, remote: { target: 'memory', importance: 'normal', content: 'Never deploy on Fridays.' } }],
+        truncated: false, remoteTombstones: [{ target: 'user', contentHash: 'removed-entry', deletedAt: '2026-08-15T12:00:00.000Z' }],
+        branch: 'mnemon/sync', remote: { machine: desktop },
+      }) },
+      reviews: { list: () => [{ status: 'pending', opinions: [{ author: 'user', text: 'Keep the Thursday rule.', createdAt: '2026-08-16T12:00:00.000Z' }] }], create: vi.fn() },
+    } as unknown as MnemonRuntimeGraph
+    const maintenanceTask: RuntimeMaintenanceTaskRunner = (_scope, _signal, operation) => operation(parent())
+    await new MnemonSubagentCoordinator(reconciling.value, runtimeSource(), toolRegistry().value, undefined, undefined, maintenanceTask)
+      .reconcile(reconcileGraph, { storage: 'global' }, signal, { guidance: 'Merge the two Thursday rules.' })
+    read.reconcile = reconciling.start.mock.calls.map(childText)
+
+    expect(read).toEqual({
+      remember: [
+        { label: 'Mnemon remember', persona: 'c2ef08b302b643b680f1e7d7e953981027d0e780d15ec931282a20fc4e20eeb6',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '1751ae61c39e985c6bd27da78fae45834a688eb7c33325675c7d92417ed341a4' },
+      ],
+      'remember in a named space': [
+        { label: 'Mnemon remember', persona: 'c2ef08b302b643b680f1e7d7e953981027d0e780d15ec931282a20fc4e20eeb6',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'fbe048318b4e53edd70fc79bd7a5ebc2c63e8f74d70bef18d9e731bcaec64076' },
+      ],
+      'supervised writeback': [
+        { label: 'Mnemon supervised-writeback', persona: '052eed66fc4e7743491fdba64bf4e2ed894bf9d3265070769cb8c3e1d44f2ebf',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '973f143b101ae2ad3926f6a808be6419020fed3644c5cb7e60dc681ca02fdae3' },
+      ],
+      link: [
+        { label: 'Mnemon link', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'd5938f682627e3d836a12325e815b17cfe7d3343e782bb490c188fa88b518e9f' },
+      ],
+      forget: [
+        { label: 'Mnemon forget', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '3274d890fed46556e1f6fcdc0eeba4d1b29b0e71a65113e3ee57ec8fd1ae0b57' },
+      ],
+      'create a space': [
+        { label: 'Mnemon create-memory-body', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '96a0f34ffb8273c8fceb1c1109db7650db0fe4d217895a2929eeec599e753e8f' },
+      ],
+      'update a space': [
+        { label: 'Mnemon update-memory-body', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'e076721d8b7495ae45dcb1887c804e8b9326cc94470bf4d452dce0ee7b882ee0' },
+      ],
+      'merge spaces': [
+        { label: 'Mnemon merge-memory-bodies', persona: '382f5a3272f33fc0a8d9899160f7c329d92f98b9132b5cc7ff66deb4e8761dbc',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '87044cdaa67c1cdda9bd633b5781f8e4eccdd5d933b7f3f2a371e331713fab54' },
+      ],
+      answer: [
+        { label: 'Memory evidence answer', persona: 'd0cfab8b646850fac2d9dc5d5ce1ca9ecd789b8d43654743910f7cbb715be475',
+          completion: '030905cf315a12196f0f3acb8cd584dba44d54542362b2ad2ff8e2b01ce93501', task: 'b0b8b50b6427d5f104ce0b615605dd415bda3fcf04a686ddef8ad7f10592b050' },
+      ],
+      placement: [
+        { label: 'Choose Memory Space provider', persona: 'd048f9a8b8de95e54b086cf3c3dc02132d35258df99145c0dd05167f967b8b24',
+          completion: '1d35cba9734203d541b877412e5eee64b3717e59449eb2a70f1c518941fe846f', task: 'aa2554b0478b6197e39dea08a97815e20f5ba07bcff9a8efeeb93eb38de1ca2c' },
+      ],
+      'metadata maintenance': [
+        { label: 'Maintain Memory Space metadata', persona: '66baf435b42607d4b31856010c359e1b977fdbe17392f448b97781b49c917116',
+          completion: '6bb6e81add90d78da8a883e03ff53094484b7111e8af57f71f87270ccb55ea07', task: 'd3bc8fd4ade16995f03ec1256db7ed61b2e5949f037517d883d27bb3218783b8' },
+      ],
+      'review through spawn': [
+        { label: 'Mnemon idle checkpoint review', persona: '0557258a9e2fe882869bcdc5165c0bdade2020d811a292f8940e9703202c2fcd',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '970af4c615d54aecdb62770ba4e1548982ff945e8c44d1a3eee301e848c99715' },
+      ],
+      'review through spawn without runtime memory': [
+        { label: 'Mnemon idle checkpoint review', persona: '39ed4aaacc757ba9650c9fed5344ddc7ddebcfc40748be75cef2e2f048d8b744',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: '970af4c615d54aecdb62770ba4e1548982ff945e8c44d1a3eee301e848c99715' },
+      ],
+      'review through fork': [
+        { label: 'Mnemon idle checkpoint review', persona: 'b5b2550f1c6a2930288dbd0d495daf54ea8dfb8e433b05b1c59fb198015a4ec7',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'd9ea7e7313d5f106117fa055829b396755f497c0b2636f48eb3008eb0b0178f9' },
+      ],
+      'review through fork without runtime memory': [
+        { label: 'Mnemon idle checkpoint review', persona: '88b3f6472f3effce4156cbd94bd50aa38e1d031303eed3624689f5484998f1f2',
+          completion: '38065238201793debab4801435af9b4521d9fb8f8ad87e5beca43986bc35ee51', task: 'd9ea7e7313d5f106117fa055829b396755f497c0b2636f48eb3008eb0b0178f9' },
+      ],
+      'MEMORY.md archive routing': [
+        { label: 'Route runtime memory archive batch 1/2', persona: '4d53843ba45153bce9650aa3b15569e55b0d07f822b171c1a122c365be9f65ed',
+          completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: 'fda9ce8daf3e1fac2f4037dc241f45f04b799ff8b94a43fc524be18de9de77ac' },
+        { label: 'Route runtime memory archive batch 2/2', persona: '4d53843ba45153bce9650aa3b15569e55b0d07f822b171c1a122c365be9f65ed',
+          completion: '8996e0709ba6f6a0e4a3cf63c7ea35bfac2167eb18955a2a52ffd8623164eb01', task: '1fdd3fa010d4969e2767ec1bcfe8c68a2c4a5c4692beda0458873dbc51f957a4' },
+      ],
+      'USER.md compaction': [
+        { label: 'Consolidate local user profile', persona: '101adc0217657b569b62f9b4593db4b6c05c9b99d5b50f4bce00ff7c88b03f96',
+          completion: '5b352d739e2cc4e8bc22391b5ccc3bb9b929df77a9cd2c9945f572f85eef40c9', task: '0bb7e05d90746ad863088a86330efcc5d63ab90eee2f0d4fe7b75f57e1f4a830' },
+      ],
+      'document archive': [
+        { label: 'Plan managed document archive', persona: '079d9b022c83a76432b2e30df74c2ab0645ab9ad0699d9d97ad16200dc9b3193',
+          completion: '9143f4291d02cb26cc81397c7d938749873a632e191c879609f59d6bb52cf788', task: 'a99518a38c81da67924e77e8a3952e62cda37231f50d20753eb93b3c04761561' },
+      ],
+      reconcile: [
+        { label: 'Reconcile merged local memory', persona: '93c711b3dc920e849710fae0dc4e70106e1721d650bfd220a384b9140ab0631f',
+          completion: '21d623ec8e8b59dd4c1ec2f11569c1395f86180dd92d8fb905a70cf1edda0e7d', task: 'de45a175f4d54a02d45fb2d80e3de6457e71d631a098d968de5fe962e5d3f826' },
+      ],
+    })
   })
 })

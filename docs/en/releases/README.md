@@ -1,11 +1,21 @@
 # Release history
 
-**English** | [简体中文](../../zh-CN/releases/README.md) | [Documentation](../README.md)
+[简体中文](../../zh-CN/releases/README.md) | **English** | [Documentation](../README.md)
 
 For an existing installation, start with [Compatibility and upgrades](../reference/compatibility.md). Notes below describe their named releases; old UI and benchmark results are not current capability claims.
 
 ## v0.5
 
+- [v0.5.35: Safer Memory Updates and Skill Evals](./v0.5.35.md)
+- [v0.5.34: Skills That Improve With Use](./v0.5.34.md)
+- [v0.5.33: Git Sync Finds Its Token, and Memory Tasks Leave No Empty Conversations](./v0.5.33.md)
+- [v0.5.32: A Clearer Save Receipt and Memory Spaces' Own Settings](./v0.5.32.md)
+- [v0.5.31: DSH 0.2.1-rc.1 Support and Task Agent Model Choice](./v0.5.31.md)
+- [v0.5.30: Write Targets, Vector Coverage and Sync Fixes](./v0.5.30.md)
+- [v0.5.29: Git Sync, Provider and Pack Fixes](./v0.5.29.md)
+- [v0.5.28: Git Sync Usability and Reliability](./v0.5.28.md)
+- [v0.5.27: DSH 0.2.1-alpha.2 Support and Memory Sources Beside dshmarket](./v0.5.27.md)
+- [v0.5.26: Git Sync Across Machines and Memory Subagents on DSH 0.2.1](./v0.5.26.md)
 - [v0.5.25: Memory Without a Memory Space and a Choice of Where to Save](./v0.5.25.md)
 - [v0.5.24: Complete Entity Counts and Related Memories on Demand](./v0.5.24.md)
 - [v0.5.23: Faster Memory Compaction, Queries and Multi-Space Recall](./v0.5.23.md)
@@ -29,14 +39,47 @@ For an existing installation, start with [Compatibility and upgrades](../referen
 - [v0.5.5: Remote RPC Routing and Light Media](./v0.5.5.md)
 - [v0.5.4: Memory Space Terminology](./v0.5.4.md)
 - [v0.5.3: Actionable Version Maintenance](./v0.5.3.md)
-
+- [v0.5.2: Atomic Starter Disable and Independent Releases](./v0.5.2.md)
+- [v0.5.1: Desktop and Turn Reliability](./v0.5.1.md)
+- [v0.5.0: Composable Memory Plugins](./v0.5.0.md)
+- [v0.5.0-rc.1: Composable Memory Plugins](./v0.5.0-rc.1.md)
 
 ## v0.4
 
-
+- [v0.4.7: DSH 0.1.2-rc.1 compatibility](./v0.4.7.md)
+- [v0.4.6: DSH Session event API compatibility](./v0.4.6.md)
+- [v0.4.5: Better Sidebar compatibility](./v0.4.5.md)
+- [v0.4.4: DSH session projection compatibility](./v0.4.4.md)
+- [v0.4.3: Aligned collapsed sidebar icon](./v0.4.3.md)
+- [v0.4.2: Shared Builtin placement and canonical settings](./v0.4.2.md)
+- [v0.4.1: Reliable settings subscriptions and timezone-safe Packs](./v0.4.1.md)
+- [v0.4.0: Sidebar-only Memory System](./v0.4.0.md)
 
 ## v0.3
 
-
+- [v0.3.6: Reliable Async Recall and Web Workflows](./v0.3.6.md)
+- [v0.3.5: Dual DSH Host Compatibility](./v0.3.5.md)
+- [v0.3.4: Scoped Runtime Memory and Capacity Controls](./v0.3.4.md)
+- [v0.3.3: Correct Checkpoint Subagent Usage](./v0.3.3.md)
+- [v0.3.2: Deterministic Runtime and Managed Embeddings](./v0.3.2.md)
+- [v0.3.1: Entity Explorer and Sidebar Polish](./v0.3.1.md)
+- [v0.3.0: Composable Memory Kernel](./v0.3.0.md)
 
 ## v0.2
+
+- [v0.2.16: Atomic Runtime Memory Capacity Maintenance](./v0.2.16.md)
+- [v0.2.15: DSH rc.2 Compatibility and Resilient Task Agents](./v0.2.15.md)
+- [v0.2.14: Readable Sidebar Surfaces](./v0.2.14.md)
+- [v0.2.13: DSH rc.8 Compatibility](./v0.2.13.md)
+- [v0.2.12: Top-Layer Mobile Sheets](./v0.2.12.md)
+- [v0.2.11: Responsive and Reliable Dialogs](./v0.2.11.md)
+- [v0.2.10: Reliable Updates and Subagent Handoffs](./v0.2.10.md)
+- [v0.2.9: Literal Runtime Memory](./v0.2.9.md)
+- [v0.2.8: Bounded Recall Quality](./v0.2.8.md)
+- [v0.2.7: Isolated Subagent Results](./v0.2.7.md)
+- [v0.2.6: Remote-Safe UI Reliability](./v0.2.6.md)
+- [v0.2.5: Cache-Stable Runtime Memory](./v0.2.5.md)
+- [v0.2.4: Trusted Remote Settings](./v0.2.4.md)
+- [v0.2.2: Remote Memory Space Activation](./v0.2.2.md)
+- [v0.2.1: Literal Braces in Runtime Memory](./v0.2.1.md)
+- [v0.2.0: A Pluggable Three-tier Memory System](./v0.2.0.md)

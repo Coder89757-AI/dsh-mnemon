@@ -6,100 +6,150 @@ Starter 固定经过测试的官方插件组合。下表记录验证范围，不
 
 | 组件 | 基线 | 已验证的范围 |
 |---|---|---|
-| DSH | `0.2.0-rc.2`（npm `latest` 与 `next`）、`0.1.7-rc.2` | 两个受支持的宿主；`0.2.0-rc.1` 也可安装。0.1.7-rc.2 是锁定的开发基线：正式发布的契约、WebUI 与隔离 Headless 激活、profile 设置与旧设置恢复、Session V4 中的生产者专属消息、插件管理器激活以及 Agent Teams 审查矩阵。DSH 0.2 的验证范围见[下文](#dsh-02) |
-| Node.js | `22.19`、`24` | 分别用于源码 CI 与打包制品 CI；开发要求 `^22.19.0 || >=24.0.0` |
+| DSH | `0.2.1-rc.2`（npm `latest` 与 `next`）、`0.2.0-rc.2` | 受支持的宿主。0.2.1-rc.2 是锁定的开发基线，CI 还会在已安装的 0.2.0-rc.2 上运行全部根测试。两者都经过 WebUI、Headless 与 Starter 激活契约的检查，见 [DSH 0.2.0 与 0.2.1](#dsh-020-与-021)。支持范围也包含 v0.5.31 发布时的基线 0.2.1-rc.1 |
+| Node.js | `22.19`、`24` | 分别用于源码 CI 与打包制品 CI；开发要求 `^22.19.0 \|\| >=24.0.0` |
 | Node.js 20 | 仅公开包入口导入 | 不代表 DSH Host 能在 Node 20 运行 |
 | Mnemon Native CLI | `0.2.9` | 显式启用的真实 CLI 与临时数据测试；CLI 需要另外安装 |
 | 三方 Provider | 适配契约与夹具 | 不代表真实云账号一致性或上游服务可用性已验证 |
 
-Root 的 DSH peer（`dsh-app-boot` 为可选）与记忆空间 Source 的 `dsh-client-ui-primitives` peer 均为 `^0.1.7-rc.2 || ^0.2.0-rc.1`。五个 Strategy 包使用新的扩展 SDK，要求 `dsh-mnemon ^0.5.17`；各 Source 保持 `^0.5.1`，Provider 则依赖记忆空间 Source。不再支持更早的 DSH：升级宿主前，请继续使用 dsh-mnemon `v0.5.16`，它是最后一个在 DSH `0.1.5-rc.1` 至 `0.1.7-alpha.1` 上验证的版本。较早的 Headless 和 WebUI 记录仅保留为历史证据。
+dsh-mnemon 支持 `>=0.2.0-rc.2 <0.2.1-0 || >=0.2.1-rc.1 <0.3.0-0`：DSH 0.2.0 从 0.2.0-rc.2 起，DSH 0.2.1 及之后的 0.2 版本从 0.2.1-rc.1 起，正式版也在其中。DSH 0.2.1 从 Starter 的 `engines.dsh` 读取这个范围；DSH 0.2.0 从 Starter 的 DSH peer（可选的 `dsh-app-boot` 与 `dsh-typert-protocol`）读取，两者写的是同一个范围。DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查这个范围，预发布版本也参与比较；不包含当前 DSH 的版本会被拒绝安装或停用。`tests/dsh-host-compatibility.spec.ts` 对全部 19 个包的清单执行 DSH 自己的检查，既覆盖受支持的版本，也覆盖已不再支持的版本。五个 Strategy 包使用新的扩展 SDK，要求 `dsh-mnemon ^0.5.17`；三个 Source 要求 `^0.5.19`，Provider 则依赖记忆空间 Source。
 
-“本回合记忆”以稳定 ID 注册到 DSH 的 `conversation.chat.turnTail` list 插槽，并在读取或展示活动前检查回合是否已完成。侧栏入口与**插件 → 可组合记忆**页面跟随 DSH 公开的默认／主会话 binding；会话标签页入口和 Better Sidebar 保留显式所属会话。DSH 0.1.7 将动态设置保存在 profile Config 中，并在“插件”中每个插件的页面编辑其配置；Mnemon 的配置页通过它写入，并按下述流程恢复保留的旧偏好。记忆数据和 Provider 格式不变。
+<a id="首次安装时的宿主行为"></a>
 
-参见[DSH 0.1.7 设置验证](../../pr-assets/issue-267-settings-migration/README.zh-CN.md)、[RC/alpha 验证与前后对比截图](../../pr-assets/issue-261-dsh-slots/README.zh-CN.md)、[DSH 0.1.5 验证](../../pr-assets/issue-223-dsh-015/README.zh-CN.md)、[宿主兼容证据](../../pr-assets/dsh-rc1-compat/README.md)、[升级证据](../../pr-assets/main-rebase-20260904/README.md)与[当前开发检查](../development/README.md)。机制测试通过不是 LLM 质量评测通过；特定 OS 与真实 CLI 检查在没有对应环境时可能跳过。
+第一次安装？DSH 如何选择安装源、安装结果卡片为什么显示软件包的英文简介，见[安装与启动](../guides/installation.md#3-安装并启用-dsh-mnemon)；发布不足 24 小时的版本为什么会装成较早的版本，见[常见问题](../guides/installation.md#常见问题)。
 
-[v0.5.19 浅色图集](../../assets/webui-v0.5.19/README.md)覆盖双语桌面页面、插件页，以及 390 × 844 下的对话、记忆空间与记忆组合面板，该宽度下较长的名称会截断。它没有复测所有 Host 设置页或真实手机，因此不宣称完整支持手机；历史 v0.5.2 在 390px 下的布局问题保留[原版本证据](../../pr-assets/documentation-refresh/README.md)。
+<a id="更早的-dsh"></a>
 
-## DSH 0.2
+**更早的 DSH。** 升级宿主之前，请继续使用支持你的 DSH 的 dsh-mnemon 版本：
 
-DSH 在安装插件前，以及每次启动 profile 时，都会用自身版本检查插件所有 `@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` peer 范围，预发布版本也参与比较。`^0.1.7-rc.2` 不包含 0.2.0，因此 dsh-mnemon 0.5.18 及更早的版本在 DSH 0.2 上安装时会被判为不兼容而拒绝，已安装的会在启动时停用。0.5.19 起，这些 peer 同时接受 `^0.2.0-rc.1`；`tests/dsh-host-compatibility.spec.ts` 对全部 18 个包的清单执行 DSH 自己的检查，覆盖 0.1.7-rc.2、0.2.0-rc.1 与 0.2.0-rc.2。
+| DSH | dsh-mnemon |
+|---|---|
+| `0.1.7-rc.2`、`0.2.0-rc.1`、`0.2.1-alpha.2` | `0.5.30` |
+| `0.2.1-alpha.3` 及之后的 alpha | 没有完全可用的版本：在 0.5.30 中记忆子 Agent 与**检查版本 → 更新**都会失败。请把 DSH 升级到 `0.2.1-rc.2`（npm `latest` 与 `next`） |
+| `0.1.5-rc.1` 至 `0.1.7-alpha.1` | `0.5.16` |
 
-**升级顺序。** 先在现有 DSH 中把 dsh-mnemon 更新到 0.5.19 或更新的版本，再升级 DSH。若先升级了 DSH，旧版本会被停用，记忆数据不受影响；更新插件后即可恢复。不要用 `allow-version` 为旧版本放行。
+这些宿主需要的内容保留在[旧版 DSH 宿主](#旧版-dsh-宿主)。各版本如何验证，以及仅保留为历史证据的较早 Headless 和 WebUI 记录，见[验证与证据](#验证与证据)。
 
-**已验证的范围（0.2.0-rc.2）。** [v0.5.22 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)在全新的 0.2.0-rc.2 profile 上通过**添加插件**安装发布包，无需重启即可启用，并检查状态页、运行时记忆、Native 空间以及 CLI 与 WebUI 共享的检索。[侧栏入口记录](../../pr-assets/issue-318-sidebar-entry/README.zh-CN.md)显示其面板行与图标尺寸与 0.1.7-rc.2 相同。
+## 升级默认安装
 
-**已验证的范围（0.2.0-rc.1）。** 全局安装正式 DSH 0.2.0-rc.1 后，从空白 profile 通过命令行与插件页两种方式安装、界面中“立即启用”无需重启、状态页、运行时记忆写入、真实模型的首轮对话与存入记忆、Headless 任务，以及桌面版窗口与远程页面的读写路由；另将全部 DSH 开发依赖切换到 0.2.0-rc.1：类型检查、构建、全部插件测试与 Headless 验证通过，根测试中只有核对锁定开发基线本身的断言不同。截图见[安装图集](../../assets/install-v0.5.19/README.md)。
+1. 导出 Mnemon Pack；需要保留 Provider 连接时，按[运维指南](../guides/operations.md#备份与恢复)保护额外备份。
+2. 在每个使用它的 DSH Profile 中升级 `dsh-mnemon`，可以用**检查版本 → 更新**，也可以用[安装与启动中的命令](../guides/installation.md#更新与卸载)。Starter 安装精确的插件版本；不要单独更新其子包后，就假定混合组合已经验证。同时要换用另一个 DSH 版本时，请按[升级顺序](#升级顺序)操作。
+3. 安装新包代码后重启 DSH。检查“记忆系统 → 状态”，再读取一条已有 Runtime、档案及已激活记忆空间。
+4. 写入前确认存储范围。切换范围只是选择另一份数据权威，不会迁移数据。
 
-**首次安装时的宿主行为。**
+### 升级顺序
 
-- 插件页的**添加插件**会在用户未选择过时测速，在中国大陆通常默认使用**中国大陆镜像源**，其他地区使用 **npm 官方源**。
-- pnpm 11 默认不选用发布不足 24 小时的版本。新版本发布当天，直接安装 `dsh-mnemon` 可能装上旧版本，并在 DSH 0.2 上被判为不兼容；此时安装带版本号的 `dsh-mnemon@<版本>`，或等待 24 小时，见[安装与启动](../guides/installation.md#常见问题)。带版本号安装会固定版本，之后用 `dsh plugin --profile web update --latest dsh-mnemon` 升级。在同样的 24 小时内，`update` 与 `update --latest` 都会停留在已安装的版本，已有安装也要带版本号安装新版本。
-- 安装结果卡片显示软件包的英文简介；插件列表中的名称与说明跟随界面语言。
-- `desktop` profile 归桌面版所有，DSH 0.2 的命令行拒绝管理它；桌面版用户在应用的插件页中安装和管理插件。
+先在现有 DSH 中更新 dsh-mnemon，再升级 DSH。在 DSH 0.1.7-rc.2 上，先把 dsh-mnemon 更新到 0.5.30（`dsh plugin --profile web add dsh-mnemon@0.5.30`），然后安装 DSH 0.2.0-rc.2 或 0.2.1-rc.2，再更新一次 dsh-mnemon。若先升级了 DSH，DSH 0.2 会停用 0.5.19 之前的版本，记忆数据不受影响，更新插件后即可恢复；在 DSH 0.2.1 上，0.5.30 及更早的版本仍会运行，但记忆子 Agent 与**检查版本 → 更新**都会失败，直到更新为止。不要用 `allow-version` 为不受支持的版本放行。
+
+在 DSH 0.2.1 上，dsh-mnemon 0.5.30 及更早版本的**检查版本 → 更新**会停在 `already-installed`。请退出 DSH，运行 `dsh plugin --profile web add dsh-mnemon@<版本>`，再启动 DSH。命令行不管理桌面版的 `desktop` profile：在桌面版中，请在插件页**卸载** dsh-mnemon，再通过**添加插件**以 `dsh-mnemon@<版本>` 重新安装，然后完全退出并重新打开应用。记忆数据与设置都会保留。之后的更新照常通过**检查版本**完成。
+
+### 从 v0.4 升级
+
+v0.5 保留默认 v0.4 的存储、配置与侧栏工作流。可选的会话标签页入口（`builtin`）使用同一组 Source 页面，旧 `buildin` 拼写会规范化。通用策略与三个记忆增强默认关闭。插件页中的记忆组合负责列出、开关和配置已安装的组件；没有单独的 View 页。
+
+### 独立插件
+
+独立插件作者使用声明的 peer 范围与公开出口；旧的私有控制器导入不属于受支持的升级表面。自定义组合需要独立于 Starter 验证，参见[插件开发](../development/extensions.md)与[v0.5.0 发布边界](../releases/v0.5.0.md)。
+
+<a id="dsh-02"></a>
+
+## DSH 0.2.0 与 0.2.1
+
+dsh-mnemon 在两个版本上运行方式相同，使用同一份记忆数据。
+
+“本回合记忆”以稳定 ID 注册到 DSH 的 `conversation.chat.turnTail` list 插槽，并在读取或展示活动前检查回合是否已完成。侧栏入口与**插件 → 可组合记忆**页面跟随 DSH 公开的默认／主会话 binding；会话标签页入口和 Better Sidebar 保留显式所属会话。DSH 将动态设置保存在 profile Config 中，并在“插件”中每个插件的页面编辑其配置；Mnemon 的配置页通过它写入。记忆数据和 Provider 格式不变。
+
+两者不同的地方，dsh-mnemon 走各自提供的路径：
+
+- **记忆子 Agent。** DSH 0.2.0 用一次性的 `subagents.start` 启动子 Agent，它的 spawn 与 fork provider 从启动请求中接受子 Agent 的指令和工具过滤。DSH 0.2.1 把所有子 Agent 都作为托管 activation 启动（`startActivation`，[#356](https://github.com/omdsh-dev/dsh-mnemon/issues/356)），两者都不再接受：子 Agent 要么沿用父 Agent 的工具与指令，要么使用为它指定的 Agent 预设。在 DSH 0.2.1 上，dsh-mnemon 以 caller 方式交付每个记忆子 Agent 的结果，所以结果回到 Mnemon，对话不会收到完成通知；并在 DSH 发布子 Agent 时、它的第一步之前，也在其他插件看到它之前，把它的指令和工具清单注册在它自己的作用域里。无论哪个版本，子 Agent 都只看到记忆工具和结果工具。这涵盖存入记忆、`mnemon_remember` 等记忆空间写入、USER.md 压缩、工作记忆归档、空闲审查、项目档案归档以及 Git 同步的核对审查。在 DSH 0.2.1 上，只有由 DSH 在本进程中创建子 Agent 的 provider（例如它的 spawn 与 fork）才会这样使用；其他 provider 在启动前就被拒绝，所以记忆任务不会带着对话的工具运行。
+- **DSH 0.2.1 上可续接的记忆任务。** 在那里所有本地子 Agent 都可以续接：
+  - 在对话之下启动的子 Agent，例如委派写入或空闲审查，会以“可继续”出现在对话的子 Agent 列表中。之后模型发来的消息，或你在该列表中发给它的消息，会在 Mnemon 的委派之外续接它，并带着对话自己的工具和指令。任务结束后，Mnemon 拒绝它使用任何记忆工具，它只能回复（[#387](https://github.com/omdsh-dev/dsh-mnemon/issues/387)）。Mnemon 无法移除这些条目，请不要续接它们，有需要时直接在对话中提出；
+  - 它运行期间会占用对话的一个子 Agent 名额（`maxActiveSubagents`，默认 8 个）。名额用满时，记忆任务会因 `subagent limit reached` 失败。
+
+  在 DSH 0.2.0 上，记忆任务无法续接。
+- **工作目录。** 每一步之前，如果当前目录已不存在，DSH 0.2.1 会把 Agent 退回会话的原始目录；原始目录也不存在时就停止该 Agent。因此工作区文件夹被删除或移动后，该工作区的后台记忆任务仍然以这个工作区为准（它操作的正是这个工作区的记忆），并在第一个仍存在的工作区或 DSH 的启动目录中运行。DSH 0.2.0 不为每个会话保存工作目录。
+- **检查版本 → 更新。** DSH 0.2.0 用自己的安装器安装新版本。开启热重载时，DSH 0.2.1 不再覆盖安装 profile 中已有的插件：要换成另一个版本，只能先移除再安装，这会让 dsh-mnemon 在更新自己时中途停止，安装失败还会让 profile 失去它。因此在 DSH 0.2.1 上，dsh-mnemon 对新版本运行 DSH 自己的 `dsh plugin add`（[更新如何进行](../guides/operations.md#版本检查与更新)）：它持有 profile 的锁，使用 DSH 启动时的包管理器，并在安装任何东西之前拒绝与当前 DSH 不兼容的版本。DSH 没有提供这个命令时，错误信息会给出应在 DSH 停止时运行的 `dsh plugin` 命令。两个版本上更新都在重启后生效。dsh-mnemon 0.5.30 及更早版本在 DSH 0.2.1 上会停在 `DSH could not install dsh-mnemon@<版本>: already-installed`；请按[升级顺序](#升级顺序)中的方法更新一次。
+- **不兼容的版本。** DSH 以不兼容为由拒绝更新时，错误信息会写明该版本的要求：DSH 0.2.1 报告版本的 requirements，显示为 `requires DSH ^0.3.0`；DSH 0.2.0 报告它的 peer，显示为 `requires @deepseek-ai/dsh ^0.3.0`。
+- **插件页。** DSH 0.2.0 会把 Starter 的分组行列为已关闭的组件，见 [DSH 0.2.0 上的 bundle 组件列表](#dsh-020-上的-bundle-组件列表)。DSH 0.2.1 只列出各组件。
+
+这些路径在代码中的位置，以及 DSH 0.2.0 一侧何时可以移除，与其他兼容代码一起列在[兼容登记表](../development/compatibility-register.md)中。
 
 ## 桌面版窗口
 
-DSH 桌面版窗口从应用自己的 `dsh-app://app/` 地址加载，而不是回环地址；DSH 0.1.7 桌面版也不为页面声明传输方式。dsh-mnemon 0.5.18 及更早的版本因此把桌面窗口当成远程页面：所有调用经 API Gateway，默认的 `remoteAccess: read-only` 使运行时记忆、记忆空间与插件设置在界面中只读，而 Agent 工具仍可写入（[#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)）。
-
-0.5.19 起，应用自己提供的页面（非 `http:` / `https:` 地址）使用 Mnemon 的本地通道；只有 DSH 为页面声明了不持有 Host 的传输方式时，才仍按远程页面处理。DSH 0.2 桌面版声明 `ownsHost: true`，同样使用本地通道。从其他设备打开的页面继续经 API Gateway、默认只读，并在记忆系统与插件设置中写明需要 `remoteAccess: trusted-host` 与重启 DSH。本地通道与 `/api` 使用 DSH 相同的 Host/Origin 校验与浏览器会话认证。
-
-验证方式：模拟桌面壳的 Electron 窗口注册与官方桌面版相同的 `dsh-app` 标准安全协议，把请求代理到只监听 127.0.0.1 的 Host。已发布的 0.5.18 在 DSH 0.1.7-rc.2 上复现了只读（13 次 Mnemon 调用全部经 API Gateway）；修复后在 DSH 0.1.7-rc.2 与 0.2.0-rc.1（`ownsHost: true`）上均可添加运行时记忆，写入经本地 `/dsh-mnemon-write`，记忆空间与插件设置可编辑；通过可信 authority 打开的远程页面仍然只读并显示原因。
-
-## Desktop profile generation
-
-Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用宿主自己的框架版本。Mnemon 使用宿主公开的 Volatile API 构建动态设置 schema，DSH `0.1.7-rc.2` 通过 Cosmokit `1.8.5` 提供这些 API。宿主若携带不含这些 API 的旧版 Cosmokit（例如 `1.8.3`），即属于不受支持的宿主，请在该环境继续使用 dsh-mnemon `v0.5.16`。
-
-受影响的 `0.5.13` 安装中，Desktop 的回退分支会将缺少 `createVolatile` 导出的真实错误隐藏为 `Cannot find package 'dsh-mnemon'`。平铺 `mnemon-bundle` 不能修复该导入失败。Starter 保留 group、根停用总开关、独立 Source/Strategy 选择、私有 Provider 子项和已有设置命名空间。在所属 profile 更新 Mnemon 后重启即可；本修复不需要迁移记忆或配置。
-
-参见[原版 Desktop 复现与验收记录](../../pr-assets/issue-274-profile-generation/README.zh-CN.md)。
+DSH 桌面版窗口从应用自己的 `dsh-app://app/` 地址加载，而不是回环地址。应用自己提供的页面（非 `http:` / `https:` 地址）使用 Mnemon 的本地通道；只有 DSH 为页面声明了不持有 Host 的传输方式时，才按远程页面处理。DSH 桌面版声明 `ownsHost: true`。从其他设备打开的页面继续经 API Gateway、默认只读，并在记忆系统与插件设置中写明需要 `remoteAccess: trusted-host` 与重启 DSH。本地通道与 `/api` 使用 DSH 相同的 Host/Origin 校验与浏览器会话认证。0.5.18 及更早版本在桌面窗口中显示的只读状态见 [DSH 0.1.7 上的桌面版窗口](#dsh-017-上的桌面版窗口)。
 
 ## 安装后直接启用 Starter
 
-DSH `0.1.7-rc.2` 的 Desktop generation 目录和 pnpm 安装可能只在 profile 中暴露 `dsh-mnemon` 根包。各组件已在它的依赖树中安装，但如果宿主启动时未选中该 bundle，首次启用仍可能使用启动时的包解析表，导致 Runtime、Documents、Memory Spaces 和默认 Strategy 抛出 `ERR_MODULE_NOT_FOUND`。
+Desktop generation 目录和 pnpm 安装可能只在 profile 中暴露 `dsh-mnemon` 根包，最早见于 DSH `0.1.7-rc.2`。各组件已在它的依赖树中安装，但如果宿主启动时未选中该 bundle，首次启用仍可能使用启动时的包解析表，导致 Runtime、Documents、Memory Spaces 和默认 Strategy 抛出 `ERR_MODULE_NOT_FOUND`。
 
 Starter 的组件组 `mnemon-bundle`（模块 `dsh-mnemon/bundle`）先准备依赖解析，再用 DSH 自己的 `cordis:group` 挂载子组件。它调用宿主公开的包解析服务，保留其他 bundle 启动时的依赖路径，并由宿主拒绝不兼容的模块重绑定；不平铺组件包、不改写 profile 链接、不修改 DSH。已有 Entry ID、核心停用总开关、各组件的独立选择和记忆数据均保持不变。0.5.18 与 0.5.19 由单独的就绪条目 `dsh-mnemon/starter`（`mnemon-starter`）完成这一步，组件组等它提供 `mnemonStarterReady`；0.5.20 起两者合为一个条目，插件页不再显示单独的就绪行，组件组也不会因为它被关闭而一直等待。
 
-Mnemon 同时在自己的传输注入作用域内注册 Web RPC，已运行的官方 Connection 无需重启。使用 bundle 或核心开关控制整套组合。在 0.5.18 与 0.5.19 中关闭 `dsh-mnemon/starter`，`mnemon-bundle` 会一直等待 `mnemonStarterReady`：`dsh web` 照常启动但没有记忆系统，桌面版则按启动失败处理，见[安装与启动](../guides/installation.md#dsh-提示waiting-for-service-mnemonstarterready)。更新到 0.5.20 后，profile patch 中残留的 `- id: mnemon-starter` 不再对应任何条目，宿主会忽略它（桌面版日志提示 `patch: entry "mnemon-starter" not found`），可以删除这两行。
+Mnemon 同时在自己的传输注入作用域内注册 Web RPC，已运行的官方 Connection 无需重启。使用 bundle 或核心开关控制整套组合。在 0.5.18 与 0.5.19 中关闭 `dsh-mnemon/starter`，`mnemon-bundle` 会一直等待 `mnemonStarterReady`：`dsh web` 照常启动但没有记忆系统，桌面版则按启动失败处理，见[安装与启动](../guides/installation.md#dsh-提示waiting-for-service-mnemonstarterready)。更新到 0.5.20 或之后的版本后，profile patch 中残留的 `- id: mnemon-starter` 不再对应任何条目，宿主会忽略它（桌面版日志提示 `patch: entry "mnemon-starter" not found`），可以删除这两行。
 
 代价在 DSH 的配置 schema 导出：`dsh web --dump-config-schema` 只识别原生 `cordis:group` 与 `cordis:include`，会把 `mnemon-bundle` 报告为无法识别的树载体，并略去其中各组件的 schema，与 DSH 自带的 agent preset 相同。运行时配置、插件页与 profile patch 不受影响。
 
-官方 WebUI 首次安装后，可以在同一宿主进程中点击“立即启用”；已安装但停用的 bundle 也可直接启动。更新或卸载 Node 已加载过的包时，仍须遵循 DSH 的正常重启要求，本修复不替换已加载模块。例如原地更新后不重启就启用组件，会提示新版本才有的入口未导出（`ERR_PACKAGE_PATH_NOT_EXPORTED`）：从 0.5.17 或更早的版本更新时是 `./starter`，从 0.5.18 或 0.5.19 更新时是 `./bundle`。加载器不会为运行中的条目更换模块，因此从 0.5.18 或 0.5.19 更新时，也可能是运行中的旧组件组一直等待已移除的 `mnemonStarterReady`（`mnemon-bundle (dsh-mnemon/bundle): pending …`）。重启后两者都会恢复，见[升级验收记录](../../pr-assets/starter-group-upgrade/README.zh-CN.md)。参见[安装与启用验收记录](../../pr-assets/desktop-live-activation/README.zh-CN.md)与[组件组验收记录](../../pr-assets/starter-group-readiness/README.zh-CN.md)。
+官方 WebUI 首次安装后，可以在同一宿主进程中点击“立即启用”；已安装但停用的 bundle 也可直接启动。更新或卸载 Node 已加载过的包时，仍须遵循 DSH 的正常重启要求，这一机制不替换已加载模块。例如原地更新后不重启就启用组件，会提示新版本才有的入口未导出（`ERR_PACKAGE_PATH_NOT_EXPORTED`）：从 0.5.17 或更早的版本更新时是 `./starter`，从 0.5.18 或 0.5.19 更新时是 `./bundle`。加载器不会为运行中的条目更换模块，因此从 0.5.18 或 0.5.19 更新时，也可能是运行中的旧组件组一直等待已移除的 `mnemonStarterReady`（`mnemon-bundle (dsh-mnemon/bundle): pending …`）。重启后两者都会恢复，见[升级验收记录](../../pr-assets/starter-group-upgrade/README.zh-CN.md)。参见[安装与启用验收记录](../../pr-assets/desktop-live-activation/README.zh-CN.md)与[组件组验收记录](../../pr-assets/starter-group-readiness/README.zh-CN.md)。
 
-## DSH 0.1.7 bundle 组件列表
+<a id="dsh-017-bundle-组件列表"></a>
 
-DSH `0.1.7-rc.2` 的“插件 → dsh-mnemon”详情页会把 `mnemon-bundle` 内部容器列为“已关闭”的组件（0.5.20 起显示为 `dsh-mnemon/bundle`，此前为 `cordis:group`），DSH `0.2.0-rc.1` 的显示相同。9 个实际组件全部运行时，列表显示“共 10 个 · 9 运行中 · 1 已停用”；0.5.18 与 0.5.19 多一行就绪条目，对应为“共 11 个 · 10 运行中 · 1 已停用”。点击容器开关会返回 `unknown-plugin`，中文界面提示“组件启用失败：找不到该插件”。参见[原始截图](../../pr-assets/sidebar-native-20260926/before-bundle-toggle-error.jpg)与[上游问题 #649](https://github.com/dsh-external/issues/issues/649)。
+## DSH 0.2.0 上的 bundle 组件列表
+
+与 0.1.7 一样，DSH 0.2.0 的“插件 → 可组合记忆”详情页会把 `mnemon-bundle` 内部容器列为“已关闭”的组件（0.5.20 起显示为 `dsh-mnemon/bundle`，此前为 `cordis:group`）。9 个实际组件全部运行时，列表显示“共 10 个 · 9 运行中 · 1 已停用”。点击容器开关会返回 `unknown-plugin`，中文界面提示“组件启用失败：找不到该插件”。参见[原始截图](../../pr-assets/sidebar-native-20260926/before-bundle-toggle-error.jpg)与[上游问题 #649](https://github.com/dsh-external/issues/issues/649)。DSH 0.2.1 不再列出这个容器。
 
 这是宿主的展示与管理清单不一致：bundle 声明列表包含原生 group，但可管理插件清单明确排除了 group。该行的“已关闭”不代表 Mnemon 核心或其子插件已停用，也不能据此判断记忆读写是否正常。
 
 遇到这一现象时：
 
 1. 查看“记忆系统 → 状态”以及实际 Source、Strategy 组件的状态。如果只有内部容器误显示关闭，而所需组件和读写正常，可以继续使用；实际组件报错或读写失败仍需单独排查。
-2. 停用或恢复整套组合时，使用顶层 `dsh-mnemon` bundle 开关，或对应 `mnemon` 条目的核心组件开关；不要使用 `mnemon-bundle` 容器行的开关。可组合记忆配置页在组件列表上方也注明了这一点。
+2. 停用或恢复整套组合时，使用顶层 `dsh-mnemon` bundle 开关，或对应 `mnemon` 条目的核心组件开关；不要使用 `mnemon-bundle` 容器行的开关。DSH 列出该行时，可组合记忆配置页会在组件列表上方注明这一点。
 3. 保留已有配置和记忆。此显示问题不需要重置数据，也不需要迁移配置或记忆。
 
 Starter 保留稳定的 group ID 和已有 `mnemon` 配置目标。停用核心会停止其 Source、Strategy 和私有 Provider 子项；重新启用后，各组件恢复各自的独立选择。移除 group 会让仍启用的依赖项等待缺失的核心；将 group 改为匿名条目则可能在 profile 重载后留下旧实例。不要通过删除容器、稳定 ID 或修改分组声明来隐藏这一行。[正式宿主生命周期回归](../development/README.md#测试归属与覆盖)在不修改已安装宿主的前提下，验证管理器持久化、重启及旧版字面值／表达式停用标志。
 
-已在独立环境验证的[上游候选补丁](../../pr-assets/sidebar-native-20260926/upstream-fix.patch)会过滤容器展示并保留实际子插件；它未包含在正式 DSH `0.1.7-rc.2` 或 Mnemon `v0.5.17` 中。本地管理适配器方案需要接管 DSH 全局插件管理服务，把它内置于 Mnemon 会影响 Mnemon 的独立停用，因此未随插件提供。修复进展以 [#649](https://github.com/dsh-external/issues/issues/649) 及后续 DSH 发布说明为准；候选环境的截图不代表正式宿主已修复。
+<a id="dsh-017-设置恢复"></a>
 
-## DSH 0.1.7 设置恢复
+## 来自旧宿主的设置
 
-DSH 0.1.7 用基于 Config 的表单替代了 `settings.register()` 和 `settings-file`。Mnemon 提供动态 Config 字段，现有界面操作通过宿主检查 revision 的 profile 写入器持久化；修改传输权限仍需正常重载插件。
+DSH 0.1.7 用基于 Config 的表单替代了 `settings.register()` 和 `settings-file`，之后的版本沿用这一方式。Mnemon 提供动态 Config 字段，现有界面操作通过宿主检查 revision 的 profile 写入器持久化；修改传输权限仍需正常重载插件。
 
-Mnemon 消息使用 Session V3、V4 均接受的生产者专属来源 `dsh-mnemon`。过滤和去重仍识别历史包装，以及 DSH 迁移后的 `plugin:dsh-mnemon` 消息；本改动不会重写已有 Session 文件。
+Mnemon 消息使用 Session V3、V4 均接受的生产者专属来源 `dsh-mnemon`。过滤和去重仍识别历史包装，以及 DSH 迁移后的 `plugin:dsh-mnemon` 消息；本改动不会重写已有 Session 文件。委派的子 Agent 收到的任务则是一条用户消息，以它的首行标记；见[委派的子会话](./workflows.md#委派的子会话)。
 
-启动时，Mnemon 可将 `<profile home>/settings.yaml.imported` 中保留的备份恢复到可编辑的根 `mnemon` 条目，包括根设置、`mnemon-ui` 对话开关，以及仅属于当前 profile 的精确 `mnemon-view-*` / `mnemon-plugins-*` 命名空间。当前 profile 的显式值优先，包括显式清空的插件选择；已有 Source 和 Strategy 条目保持原样；Strategy 条目使用动态表达式时，会保留原表达式并跳过该条目的旧覆盖值，避免将当前求值固定下来。恢复后会在根 Config 中记录 `legacySettingsImported: true`，备份文件保持不变。
+旧宿主留下的 `settings.yaml` 会由 DSH 一次性导入 profile，并保留为 `<profile home>/settings.yaml.imported`。启动时，Mnemon 可将这份备份恢复到可编辑的根 `mnemon` 条目，包括根设置、`mnemon-ui` 对话开关，以及仅属于当前 profile 的精确 `mnemon-view-*` / `mnemon-plugins-*` 命名空间。当前 profile 的显式值优先，包括显式清空的插件选择；已有 Source 和 Strategy 条目保持原样；Strategy 条目使用动态表达式时，会保留原表达式并跳过该条目的旧覆盖值，避免将当前求值固定下来。恢复后会在根 Config 中记录 `legacySettingsImported: true`，备份文件保持不变。
 
 若 Mnemon 启动时原 `settings.yaml` 仍存在，由 DSH 执行导入；完成后再重启一次该 profile，恢复 Mnemon 专属偏好。DSH 未公开导入完成信号，因此 Mnemon 等待新宿主进程，避免并发写入。只读或归属不明确的根条目不会被修改；相关旧设置节损坏时，不做部分导入，也不标记完成。请保留备份，参考启动诊断后再修复；不会猜测自定义根 ID 或其他 profile 的 hash。
 
-回滚 DSH 时，保留 profile patch 和旧设置备份，并随旧宿主重新安装 dsh-mnemon `v0.5.16`。0.1.7 上后来修改的设置不会自动反向导出到旧设置文件，需要恢复对应备份或在旧宿主重新设置；Runtime、档案、记忆空间与 Provider 数据不受影响。
+回滚到这样的旧宿主时，保留 profile patch 和旧设置备份，并重新安装支持该宿主的 dsh-mnemon 版本（见[更早的 DSH](#更早的-dsh)）。此后修改的设置不会自动反向导出到旧设置文件，需要恢复对应备份或在旧宿主重新设置；Runtime、档案、记忆空间与 Provider 数据不受影响。参见 [DSH 0.1.7 设置验证](../../pr-assets/issue-267-settings-migration/README.zh-CN.md)。
 
-## 升级默认安装
+## 旧版 DSH 宿主
 
-1. 导出 Mnemon Pack；需要保留 Provider 连接时，按[运维指南](../guides/operations.md#备份与恢复)保护额外备份。
-2. 在每个使用它的 DSH Profile 中升级 `dsh-mnemon`。Starter 安装精确的插件版本；不要单独更新其子包后，就假定混合组合已经验证。
-3. 安装新包代码后重启 DSH。检查“记忆系统 → 状态”，再读取一条已有 Runtime、档案及已激活记忆空间。
-4. 写入前确认存储范围。切换范围只是选择另一份数据权威，不会迁移数据。
+以下内容只适用于[上表](#更早的-dsh)中由较早 dsh-mnemon 版本支持的宿主。
 
-v0.5 保留默认 v0.4 的存储、配置与侧栏工作流。可选的会话标签页入口（`builtin`）使用同一组 Source 页面，旧 `buildin` 拼写会规范化。通用策略与三个记忆增强默认关闭。插件页中的记忆组合负责列出、开关和配置已安装的组件；没有单独的 View 页。
+### DSH 0.1.7 上的桌面版窗口
 
-独立插件作者使用声明的 peer 范围与公开出口；旧的私有控制器导入不属于受支持的升级表面。自定义组合需要独立于 Starter 验证，参见[插件开发](../development/extensions.md)与[v0.5.0 发布边界](../releases/v0.5.0.md)。
+DSH 0.1.7 桌面版不为 `dsh-app://app/` 页面声明传输方式。dsh-mnemon 0.5.18 及更早的版本因此把桌面窗口当成远程页面：所有调用经 API Gateway，默认的 `remoteAccess: read-only` 使运行时记忆、记忆空间与插件设置在界面中只读，而 Agent 工具仍可写入（[#310](https://github.com/omdsh-dev/dsh-mnemon/issues/310)）。0.5.19 起这样的页面使用本地通道，见[桌面版窗口](#桌面版窗口)。
+
+验证方式：模拟桌面壳的 Electron 窗口注册与官方桌面版相同的 `dsh-app` 标准安全协议，把请求代理到只监听 127.0.0.1 的 Host。已发布的 0.5.18 在 DSH 0.1.7-rc.2 上复现了只读（13 次 Mnemon 调用全部经 API Gateway）；修复后在 DSH 0.1.7-rc.2 与 0.2.0-rc.1（`ownsHost: true`）上均可添加运行时记忆，写入经本地 `/dsh-mnemon-write`，记忆空间与插件设置可编辑；通过可信 authority 打开的远程页面仍然只读并显示原因。
+
+### 桌面版的 Profile generation
+
+Desktop 可能删除插件 generation 内的私有 `@deepseek-ai/*` 包，改用宿主自己的框架版本。Mnemon 使用宿主公开的 Volatile API 构建动态设置 schema，DSH `0.1.7-rc.2` 通过 Cosmokit `1.8.5` 提供这些 API。宿主若携带不含这些 API 的旧版 Cosmokit（例如 `1.8.3`），即属于不受支持的宿主，请在该环境继续使用 dsh-mnemon `v0.5.16`。
+
+受影响的 `0.5.13` 安装中，Desktop 的回退分支会将缺少 `createVolatile` 导出的真实错误隐藏为 `Cannot find package 'dsh-mnemon'`。平铺 `mnemon-bundle` 不能修复该导入失败。Starter 保留 group、根停用总开关、独立 Source/Strategy 选择、私有 Provider 子项和已有设置命名空间。在所属 profile 更新 Mnemon 后重启即可；本修复不需要迁移记忆或配置。参见[原版 Desktop 复现与验收记录](../../pr-assets/issue-274-profile-generation/README.zh-CN.md)。
+
+## 验证与证据
+
+### 受支持的宿主
+
+根测试在锁定的 0.2.1-rc.2 上运行，CI 还会在从 npm 安装的 DSH 0.2.0-rc.2 上运行（`pnpm run test:installed-dsh`，见[开发指南](../development/README.md#环境与命令)）；真实宿主测试组合的是它所运行的那个 DSH。在两个版本上，启用与不启用可选策略的 Headless、Starter 的激活契约以及 Git 同步检查都通过；只有 `--check-declared-rows` 在 0.2.0-rc.2 上因分组行列表失败。[DSH 0.2.1-rc.2 记录](../../pr-assets/dsh-021-rc2/README.zh-CN.md)包含 0.2.1-rc.2 上的检查，[DSH 0.2.1-rc.1 记录](../../pr-assets/dsh-021-rc1/README.zh-CN.md)包含 0.2.1-rc.1 与 0.2.0-rc.2 上的 WebUI 检查。更早的记录：[0.2.0-rc.2 发布验收](../../pr-assets/release-v0.5.22/README.zh-CN.md)、[activation（#356）](../../pr-assets/issue-356-subagent-activation/README.zh-CN.md)、[0.2.1-alpha.2](../../pr-assets/dsh-021-alpha2/README.zh-CN.md)与 [0.2.1-alpha.3](../../pr-assets/dsh-021-alpha3/README.zh-CN.md)。
+
+另见[升级证据](../../pr-assets/main-rebase-20260904/README.md)与[当前开发检查](../development/README.md)。机制测试通过不是 LLM 质量评测通过；特定 OS 与真实 CLI 检查在没有对应环境时可能跳过。
+
+### 产品素材
+
+[v0.5.32 浅色图集](../../assets/webui-v0.5.32/README.md)在 DSH 0.2.1-rc.2 上截取，覆盖双语桌面页面、DSH 的插件页与可组合记忆的页面，以及 390 × 844 下的对话、记忆空间与记忆组合面板；该宽度下较长的名称会截断，英文界面中当前的记忆系统标签可能位于屏幕之外。它没有复测所有 Host 设置页、DSH 0.2.0 或真实手机，因此不宣称完整支持手机；历史 v0.5.2 在 390px 下的布局问题保留[原版本证据](../../pr-assets/documentation-refresh/README.md)。
+
+<a id="其他记录"></a>
+
+### 旧版宿主
+
+[DSH 0.1.5 验证](../../pr-assets/issue-223-dsh-015/README.zh-CN.md)、[RC/alpha 验证与前后对比截图](../../pr-assets/issue-261-dsh-slots/README.zh-CN.md)、[宿主兼容证据](../../pr-assets/dsh-rc1-compat/README.md)与 [DSH 0.2.0-rc.1 安装图集](../../assets/install-v0.5.19/README.md)记录了这些宿主。已在独立环境验证的 bundle 组件列表[上游候选补丁](../../pr-assets/sidebar-native-20260926/upstream-fix.patch)会过滤容器展示并保留实际子插件；它从未包含在正式发布的 DSH 0.1.7 中。

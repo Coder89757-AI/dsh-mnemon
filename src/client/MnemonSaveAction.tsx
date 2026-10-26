@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { Button, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { isDefaultSourceInstance, type ClientConnectionHandle, type ClientSettingsScope, type Config, type StatusView } from "../host/protocol.ts"
+import { isDefaultSourceInstance, type ClientConnectionHandle, type ClientSettingsScope, type ClientSettingsSnapshot, type Config, type StatusView } from "../host/protocol.ts"
 import { MnemonClient } from './api.ts'
 import { dispatchMnemonAnchor } from './anchor.ts'
 import type { MnemonKey } from './locales.ts'
@@ -8,6 +8,7 @@ import type { MnemonClientContext } from './dsh-context.ts'
 import { MemoryIcon } from './memory-icon.tsx'
 import { humanBytes, message } from './page-kit.tsx'
 import { SelectField, TaskAgentTag, WriteReceipt, writeOutcome, type FieldOption } from './page-controls.tsx'
+import { NATIVE_PROVIDER_ID } from './memory-spaces-client.ts'
 import css from './MnemonSaveAction.module.css'
 
 interface MnemonSaveActionProps {
@@ -40,6 +41,10 @@ interface SaveOutcome {
   action?: string
   summary?: string
   note?: SaveNote
+  /** A memory was saved without a vector (#388). */
+  unembedded?: boolean
+  /** Whether DSH managed the embedding settings when the write answered, which words a missing vector. */
+  embeddingManaged?: boolean
   error?: string
 }
 
@@ -73,7 +78,7 @@ function saveDestinations(status: Partial<StatusView> | undefined, taskAgent: bo
   const spacesOn = takes('memory-spaces')
   // Active spaces, as the Agent sees them. A Mnemon Native space takes writes only while its CLI is found.
   const spaces = spacesOn ? (status?.memoryBodies ?? []).filter(body => body.active !== false && body.providerEnabled !== false && body.provider.capabilities.remember
-    && ((body.provider.typeId ?? body.provider.id) !== 'mnemon-native' || status?.commandFound !== false)) : []
+    && ((body.provider.typeId ?? body.provider.id) !== NATIVE_PROVIDER_ID || status?.commandFound !== false)) : []
   // The task Agent writes to Memory Spaces only: it needs one, or a ready Provider to create one with.
   const providerReady = spaces.length > 0 || status?.commandFound !== false || (status?.providerServices ?? []).some(provider => provider.enabled && provider.configured)
   return [
@@ -83,6 +88,15 @@ function saveDestinations(status: Partial<StatusView> | undefined, taskAgent: bo
   ]
 }
 
+/**
+ * Whether DSH managed the Mnemon Native embedding settings when a write
+ * answered, as the settings say. While they are not read it says nothing, and
+ * the receipt keeps the caution.
+ */
+function embeddingManagement(snapshot: ClientSettingsSnapshot<Config>): Pick<SaveOutcome, 'embeddingManaged'> {
+  return snapshot.value === undefined ? {} : { embeddingManaged: snapshot.value.embedding?.enabled === true }
+}
+
 /** The default instance of a Source type, as the workbench picks it, else the first. */
 function placeSource<Source extends { sourceInstanceKey: string; sourceTypeId: string }>(catalog: { sources: readonly Source[] }, sourceTypeId: string): Source | undefined {
   const sources = catalog.sources.filter(source => source.sourceTypeId === sourceTypeId)
@@ -90,7 +104,7 @@ function placeSource<Source extends { sourceInstanceKey: string; sourceTypeId: s
 }
 
 /** Write the text to the place the user chose, through that Source's own operation, with a fresh revision. */
-async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDestination, 'agent'>, place: string, content: string, t: Translate): Promise<{ action: string; note: SaveNote }> {
+async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDestination, 'agent'>, place: string, content: string, t: Translate): Promise<{ action: string; note: SaveNote; unembedded?: boolean }> {
   const source = placeSource(await client.sourceManagementCatalog(), isRuntimePlace(destination) ? 'runtime' : 'memory-spaces')
   if (source === undefined) throw new Error(t('saveAction.unavailable'))
   if (isRuntimePlace(destination)) {
@@ -106,7 +120,7 @@ async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDesti
     return { action: 'added', note: { key: result.maintenance === undefined ? 'saveAction.saved.runtime' : 'saveAction.saved.runtimeMaintained', params: { count: result.entryCount }, place: RUNTIME_PLACES[destination] } }
   }
   const result = (await client.mutateSourceManagement(source.sourceInstanceKey, 'remember',
-    { content, memoryBodyId: destination.slice('space:'.length), source: 'user' }, source.revision, true)).value as { action?: unknown }
+    { content, memoryBodyId: destination.slice('space:'.length), source: 'user' }, source.revision, true)).value as { action?: unknown; embedded?: unknown }
   const answered = typeof result.action === 'string' ? result.action : 'stored'
   // A Provider that queues its writes confirms them later.
   const action = answered === 'queued' ? 'accepted' : answered
@@ -114,7 +128,7 @@ async function saveDirectly(client: MnemonClient, destination: Exclude<SaveDesti
   const key: MnemonKey = outcome === 'skipped' ? 'saveAction.saved.duplicate'
     : outcome === 'pending' ? 'saveAction.saved.spacePending'
       : outcome === 'written' || outcome === 'updated' ? 'saveAction.saved.space' : 'saveAction.saved.spaceOther'
-  return { action, note: { key, params: { space: place, action: answered } } }
+  return { action, note: { key, params: { space: place, action: answered } }, ...(result.embedded === false ? { unembedded: true } : {}) }
 }
 
 /**
@@ -280,10 +294,11 @@ export const MnemonSaveAction = memo(function MnemonSaveAction({ messageId, sess
     setOutcome(null)
     const client = new MnemonClient(connection, sessionId)
     const written: Promise<Omit<SaveOutcome, 'content' | 'destination'>> = target === 'agent'
-      ? client.supervise(content, messageId).then(result => ({ action: result.action, summary: result.summary }))
+      ? client.supervise(content, messageId).then(result => ({ action: result.action, summary: result.summary, unembedded: (result.unembedded ?? []).length > 0 }))
       : saveDirectly(client, target, selected?.label ?? target, content, t)
     void written
-      .then(result => ({ content, destination: target, ...result }), (reason: unknown) => ({ content, destination: target, error: message(reason) }))
+      .then(result => ({ content, destination: target, ...result, ...embeddingManagement(settingsScope.getSnapshot()) }),
+        (reason: unknown) => ({ content, destination: target, error: message(reason) }))
       .then((result: SaveOutcome) => {
         inFlightRef.current = undefined
         // The task Agent's request is keyed by its reply and can be sent again
@@ -366,7 +381,7 @@ export const MnemonSaveAction = memo(function MnemonSaveAction({ messageId, sess
             {writeEnabled === true && status !== undefined && usable.length === 0 && <small className={css.placeNote} data-tone="blocked">{t('saveAction.noPlace')}</small>}
           </div>
         )}
-        {outcome !== null && <WriteReceipt t={t} action={outcome.action} summary={receiptSummary} error={outcome.error} onView={viewMemory}
+        {outcome !== null && <WriteReceipt t={t} action={outcome.action} summary={receiptSummary} error={outcome.error} unembedded={outcome.unembedded} embeddingManaged={outcome.embeddingManaged} onView={viewMemory}
           {...(isRuntimePlace(outcome.destination) ? { viewLabel: t('receipt.viewRuntime') } : {})} />}
       </Modal>
     </div>

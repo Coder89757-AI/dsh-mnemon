@@ -21,7 +21,7 @@ interface SlotOptions {
 
 function makeCtx(initialValue: unknown, coreValue: Record<string, unknown> = {}) {
   const core = new SlotCore()
-  // Exercise the published registry with the DSH 0.1.7 slot declarations.
+  // Exercise the published registry with the slot declarations DSH's own client plugins make.
   const registerSlot = (options: SlotOptions, component: unknown = () => null): (() => void) =>
     (core.register as (options: SlotOptions, component: unknown) => () => void)(options, component)
   const disposeOwner = registerSlot({
@@ -144,11 +144,13 @@ describe('interaction surfaces binding', () => {
     for (const id of peerIds) registerSlot({ name: slot, id, priority: 1 })
     const peers = [...core.entriesOfSlot(slot)]
     const ids = () => core.entriesOfSlot(slot).map(entry => entry.options.id)
+    // The memory line, then the skills line: each follows its own settings.
+    const tails = ['dsh-mnemon/turn-tail', 'dsh-mnemon/skill-tail']
 
     apply(ctx)
-    // The default-on entry must wait for the Host settings snapshot.
+    // The default-on entries must wait for the Host settings snapshot.
     expect(core.entriesOfSlot(slot)).toEqual(peers)
-    await waitFor(() => expect(ids()).toEqual(['dsh-mnemon/turn-tail', ...peerIds]))
+    await waitFor(() => expect(ids()).toEqual([...tails, ...peerIds]))
     // A list entry renders for every Turn; the component itself waits for the closing Turn.
     expect(core.entriesOfSlot(slot)[0]!.select).toBeUndefined()
 
@@ -156,16 +158,16 @@ describe('interaction surfaces binding', () => {
       interactionScope: { mutate: (ops: unknown[]) => Promise<void> }
     }
     await settings.interactionScope.mutate([{ op: 'set', path: ['turnBar'], value: false }])
-    expect(core.entriesOfSlot(slot)).toEqual(peers)
+    expect(ids()).toEqual(['dsh-mnemon/skill-tail', ...peerIds])
     await settings.interactionScope.mutate([{ op: 'set', path: ['turnBar'], value: true }])
-    expect(ids()).toEqual(['dsh-mnemon/turn-tail', ...peerIds])
-    expect(core.entries(slot)).toHaveLength(3)
+    expect(ids()).toEqual([...tails, ...peerIds])
+    expect(core.entries(slot)).toHaveLength(4)
 
     dispose()
     expect(core.entriesOfSlot(slot)).toEqual(peers)
     apply(ctx)
-    await waitFor(() => expect(ids()).toEqual(['dsh-mnemon/turn-tail', ...peerIds]))
-    expect(core.entries(slot)).toHaveLength(3)
+    await waitFor(() => expect(ids()).toEqual([...tails, ...peerIds]))
+    expect(core.entries(slot)).toHaveLength(4)
     dispose()
     expect(core.entriesOfSlot(slot)).toEqual(peers)
   })

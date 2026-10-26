@@ -1,6 +1,6 @@
 # Storage and the Memory Model
 
-[简体中文](../../zh-CN/reference/storage-model.md) | **English** | [Documentation Center](../README.md)
+[简体中文](../../zh-CN/reference/storage-model.md) | **English** | [Documentation](../README.md)
 
 ## Why three kinds of memory
 
@@ -35,7 +35,7 @@ follow an exact cold reference when full text is required
 
 Sharing does not broadcast conversations or files. Mnemon-enabled agents can share durable Native facts when each integrates Mnemon and can access the same storage root and recognized Stores. Third-party Providers share through their own workspace, user, bank, project or container scope. Runtime and Documents do not automatically enter other agents' context.
 
-Use `global` for a common local root, `custom` for an explicitly agreed root, or `workspace` to constrain sharing to a project. Concurrent processes rely on the Provider's own consistency guarantees; stop all users before offline copying or directly modifying local databases. See [Operations](../guides/operations.md#backup-and-recovery).
+[Choose a cross-agent sharing scope](./configuration.md#choose-a-cross-agent-sharing-scope) says which scope suits which kind of sharing. Concurrent processes rely on the Provider's own consistency guarantees; stop all users before offline copying or directly modifying local databases. See [Operations](../guides/operations.md#backup-and-recovery).
 
 ## Unified Root Directory
 
@@ -52,12 +52,19 @@ Use `global` for a common local root, `custom` for an explicitly agreed root, or
 |   +-- index.json
 |   +-- active/
 |   +-- archived/
++-- skills/                        # Skills; never a Mnemon Pack component
+|   +-- ledger.json
+|   +-- evals.json
+|   +-- trajectories/
+|   +-- versions/
+|   +-- market/
+|   +-- trash/
 +-- data/
 |   +-- .dsh-memory-bodies.json
 |   +-- <memory-space-id>/
 |       +-- mnemon.db
 +-- state/
-    +-- machine.json              # this machine's identity; 0600; excluded from Mnemon Packs
+    +-- machine.json              # this machine's identity and name; 0600; excluded from Mnemon Packs
     +-- tombstones.json           # deletions this machine has already exported; excluded from Mnemon Packs
     +-- runtime-index.json        # the runtime entries the last export carried; excluded from Mnemon Packs
     +-- review-ledger.json        # reconciliation proposals awaiting a decision; 0600; excluded from Mnemon Packs
@@ -67,10 +74,19 @@ Use `global` for a common local root, `custom` for an explicitly agreed root, or
         +-- git/                  # disposable Git mirror of the sync branch; never a Pack component
 ```
 
-`storageScope` determines the entire root, not just the Mnemon databases. The `workspace` scope resolves an independent `<workspace>/.mnemon` for every registered DSH workspace. The opt-in `runtimeUserScope=global` is the sole split-root exception: Runtime reads USER.md from the global root while MEMORY.md and every other component remain under the selected root. Workbench tasks use the inspected workspace; conversation tools and lifecycle hooks use their owning session's cwd and pinned View. `state/memory-providers.json` stores third-party endpoints, target URIs, identities, and optional credentials. Its mode is `0600`; the Host returns configured field names, never saved credential values. `state/sync-git.json` holds the Git sync configuration: repository URL, branch, remote directory, component selection, commit identity, the automatic backup interval in minutes (`0` is off) and an optional token that HTTPS remotes use. It follows the same mode `0600` rule and the same redaction, and it is part of neither Config nor a Mnemon Pack. The mirror under `state/sync/git` is a disposable Git work tree of the sync branch: push and pull work there so the storage root is never made a Git work tree, and deleting the mirror costs one fetch, never data. `state/machine.json` records the identity every export is stamped with: a generated id, a label taken from the hostname unless the user renamed the machine, and the creation time. `state/tombstones.json` records deletions this machine has already exported, and `state/runtime-index.json` records the runtime entries the last export carried; together they let a merge distinguish "this machine deleted it" from "this machine never had it", so an older pack cannot resurrect a deletion. `state/review-ledger.json` holds reconciliation proposals and the opinions left on them, newest first, and is capped at 200 entries. None of these four files is a Pack component, so none of them syncs: a machine's identity and its review history stay on the machine that produced them.
+`storageScope` selects this whole root, not just the Mnemon databases; [Storage scopes](./configuration.md#storage-scopes) gives the root each scope resolves to. The opt-in `runtimeUserScope=global` is the sole split-root exception: Runtime reads USER.md from the global root while MEMORY.md and every other component remain under the selected root. Workbench tasks use the inspected workspace; conversation tools and lifecycle hooks use their owning session's cwd and pinned View. Host path resolution never creates files or changes old roots.
 
-The `workspaces` layout keeps all four areas under `<central-root>/workspaces/<workspace-path-hash>/`; Host path resolution never creates files or changes old roots. Only explicit `runtimeUserScope: global` places USER.md outside that workspace subtree.
+The files under `state/`:
 
+- `memory-providers.json` stores third-party endpoints, target URIs, identities, and optional credentials. Its mode is `0600`; the Host returns configured field names, never saved credential values.
+- `sync-git.json` holds the Git sync configuration: repository URL, branch, remote directory, commit identity, the automatic sync interval in minutes (`autoBackupMinutes`, `0` is off) and an optional token that HTTPS remotes use. It follows the same mode `0600` rule and the same redaction, and it is part of neither Config nor a Mnemon Pack.
+- The mirror under `sync/git` is a disposable Git work tree of the sync branch: push and pull work there so the storage root is never made a Git work tree, and deleting the mirror costs one fetch, never data. The mirror names the repository it was filled from in its own Git config (`mnemon.origin`) and is rebuilt for another one, so one repository's history never reaches another.
+- `sync/last-run.json` records when the last sync or merge finished, so the page can still say so after a restart.
+- `machine.json` records the identity every export is stamped with: a generated id, a label taken from the hostname unless the user renamed the machine, and the creation time.
+- `tombstones.json` records deletions this machine has already exported, and `runtime-index.json` records the runtime entries the last export carried; together they let a merge distinguish "this machine deleted it" from "this machine never had it", so an older pack cannot resurrect a deletion.
+- `review-ledger.json` holds reconciliation proposals and the opinions left on them, newest first, and is capped at 200 entries.
+
+None of `machine.json`, `tombstones.json`, `runtime-index.json` and `review-ledger.json` is a Pack component, so none of them syncs: a machine's identity and its review history stay on the machine that produced them.
 
 ## Runtime Memory
 
@@ -100,14 +116,16 @@ branches (optional)
 
 `USER.md` and `MEMORY.md` are deterministic derived files of the complete store. Each item is normalized to one line, and items are separated by a line containing only `§`; `§` is a reserved character. During startup and prompt assembly, the control layer repairs missing or manually modified projections from the JSON source. Branch filtering applies only to the prompt projection, never to these files.
 
-The Runtime Source adds a metadata line before each entry in the model-facing snapshot:
+The Runtime Source adds a metadata line before an entry only when it has non-default annotations in the model-facing snapshot:
 
 ```text
 [importance=critical; created=14d; updated=2d]
 Prefer concise replies.
 ```
 
-`created` and `updated` are elapsed whole 24-hour days since the stored timestamps, computed once when the projection is captured. Ages below one day are `0d`; future timestamps show `future`, and unparseable timestamps show `unknown`. One capture time covers both roots when the user profile is global. The current turn retains its captured ages; the next turn recalculates them even if the storage revision has not changed.
+`created` and `updated` are elapsed whole 24-hour days since the stored timestamps, computed once when the projection is captured. Ages below one day default to `0d` and are omitted, as is `importance=normal`; an entry with no remaining annotations has no metadata line. Future timestamps still show `future`, and unparseable timestamps show `unknown`. One capture time covers both roots when the user profile is global. The current turn retains its captured ages; the next turn recalculates them even if the storage revision has not changed.
+
+The model-facing text omits the revision hash, entry counts and storage-quota statistics; revision checks remain in the Source protocol and monitoring stays available through management/UI. File boundaries and all visible entries, including low-importance entries, remain. This format change does not classify or defer memory content.
 
 These lines annotate the unchanged entry content. `old_text` / `oldText` must match content only, excluding the metadata line. Recorded importance and age never outrank current instructions. JSON, on-disk Markdown, content matching, entry order and storage capacity remain unchanged. Annotations count toward the existing model projection character budget, so even the default Strategy can truncate or omit entries when there are many short records. Its guidance states that snapshots are budget-limited and that absence does not mean deletion; light-context can impose a smaller budget.
 
@@ -123,11 +141,11 @@ These lines annotate the unchanged entry content. `old_text` / `oldText` must ma
 | Target | Default limit | Maintenance method |
 |---|---:|---|
 | `USER.md` | 4 KiB | A local no-tool worker merges conservatively; content never enters a Memory Space |
-| `MEMORY.md` | 10 KiB | The Host archives exact committed entries, then deterministically packs the hot remainder; with no Memory Space that can take them, the entries it does not keep go to `runtime/archived/` |
+| `MEMORY.md` | 10 KiB | The Host archives exact committed entries, then deterministically packs the remainder it keeps in runtime memory; with no Memory Space that can take them, the entries it does not keep go to `runtime/archived/` |
 
-Both limits are configurable as `runtimeMemory.userLimitBytes` and `runtimeMemory.memoryLimitBytes`; see [Runtime Memory budgets](./configuration.md#runtime-memory-budgets). With the Layered strategy, capacity maintenance starts when an authorized write would exceed the limit; other strategies reject that write instead. Named tools, generic Actions, background child Agents and browser management share the same Host workflow. Browser writes use the selected storage scope without requiring an open user conversation. Archive failures preserve hot memory and return an error. With no Memory Space that could take the archive at all, the Runtime Source moves the entries it does not keep to `runtime/archived/` instead, under the same lock and before it commits. Standalone Sources retain their own storage semantics; custom Strategies do not implicitly inherit default archival.
+Both limits are configurable as `runtimeMemory.userLimitBytes` and `runtimeMemory.memoryLimitBytes`; see [Runtime Memory budgets](./configuration.md#runtime-memory-budgets). With the Layered strategy, capacity maintenance starts when an authorized write would exceed the limit; other strategies reject that write instead. Named tools, generic Actions, background child Agents and browser management share the same Host workflow. Browser writes use the selected storage scope without requiring an open user conversation. Archive failures preserve runtime memory and return an error. With no Memory Space that could take the archive at all, the Runtime Source moves the entries it does not keep to `runtime/archived/` instead, under the same lock and before it commits. Standalone Sources retain their own storage semantics; custom Strategies do not implicitly inherit default archival.
 
-Capacity is measured from the stored content and entry delimiters in UTF-8 bytes, excluding prompt-only metadata. A single item is limited to 8 KiB. On an overflowing `add`, `replace`, or `remove`, the Host rechecks the source revision before any Provider write. With one eligible writable Memory Space it routes without a model; with several spaces, workers see only bounded routing excerpts and return destination ids, never rewritten memory. Mnemon Native reuses exact content from a readonly namespace snapshot, groups identical pending entries, and imports the remaining originals once per destination through a schema-v1 draft with `--no-diff`. Similar but distinct facts cannot be skipped or semantically replace each other during archival. Other Providers use their adapter write semantics. The Host requires one exact terminal receipt per source (and exact Recall evidence for a skipped duplicate), then selects the retained entries by importance within a byte budget and commits that remainder together with the pending mutation under the original revision fence. A Provider cannot share the local filesystem transaction, so a later revision conflict or concurrent external write may leave already archived duplicates; existing hot facts remain protected by the revision fence.
+Capacity is measured from the stored content and entry delimiters in UTF-8 bytes, excluding prompt-only metadata. A single item is limited to 8 KiB. On an overflowing `add`, `replace`, or `remove`, the Host rechecks the source revision before any Provider write. With one eligible writable Memory Space it routes without a model; with several spaces, workers see only bounded routing excerpts and return destination ids, never rewritten memory. Mnemon Native reuses exact content from a readonly namespace snapshot, groups identical pending entries, and imports the remaining originals once per destination through a schema-v1 draft with `--no-diff`. Similar but distinct facts cannot be skipped or semantically replace each other during archival. Other Providers use their adapter write semantics. The Host requires one exact terminal receipt per source (and exact Recall evidence for a skipped duplicate), then selects the retained entries by importance within a byte budget and commits that remainder together with the pending mutation under the original revision fence. A Provider cannot share the local filesystem transaction, so a later revision conflict or concurrent external write may leave already archived duplicates; existing runtime memory entries remain protected by the revision fence.
 
 ## Project Documents
 
@@ -215,6 +233,21 @@ location      local store/CLI scope, or remote endpoint + provider scope
 
 Third-party visibility is determined by its provider scope, such as service plus URI, workspace/peers, bank, project/user, knowledge directory, or container. No provider extends sharing to `runtime/` or `documents/`; “shared third-tier memory” must not be presented as automatic sharing of the complete DSH context.
 
+## Skills
+
+Skills manages files DSH already reads; it never joins a turn's View. The skills themselves stay in DSH's skill roots — `<project>/.dsh/skills`, `<project>/.agents/skills`, `$DSH_HOME/skills` (`~/.dsh/skills`) and `$DSH_AGENTS_HOME/skills` (`~/.agents/skills`) — and every write to them is fenced by the file's SHA-256. What Skills keeps about them lives in the storage root's `skills/` folder:
+
+| Path | Holds | Kept |
+|---|---|---|
+| `ledger.json` | Suggestions, drafts, the review log, the summaries of recorded conversations, the version index and market installs | The newest 200 reviews and 60 drafts |
+| `evals.json` | Test cases and backtest runs | 40 cases and 20 runs per skill |
+| `trajectories/<id>.json` | One recorded conversation: its numbered steps and the review's notes on them, with secrets redacted | The newest 100; pinned records and those a suggestion or case cites go last |
+| `versions/<skill>/<id>.md` | Each earlier `SKILL.md`, for comparing and restoring | 30 per skill |
+| `market/registries.json`, `market/cache/<id>.json` | The sources added in the market and the last list each published | Until removed; refreshed after six hours |
+| `trash/` | Skill folders that were deleted, or replaced by an update or a restore | Until you delete them by hand |
+
+The folder is written under the storage lock with atomic replacement, and it follows the storage scope like the other Sources. It is not part of a Mnemon Pack, so neither ZIP backup nor Git sync carries it; the skills themselves are ordinary files in their roots. Its settings are configuration, under `skills` in the `mnemon` entry; see [Skills settings](./configuration.md#skills-settings).
+
 ## Four Relationship Types
 
 Mnemon Native preserves `temporal`, `semantic`, `causal`, and `entity` relationships. Hindsight projects its provider graph, and Holographic derives local entity/semantic relationships. Providers without graph edges contribute bounded disconnected nodes; adapters never invent unsupported relationships. The UI hides Related, Link, Browse, and Forget where the selected provider does not support them.
@@ -223,13 +256,15 @@ Mnemon Native preserves `temporal`, `semantic`, `causal`, and `entity` relations
 
 | Data | Authoritative source | Derived/cache |
 |---|---|---|
-| Hot memory | `runtime/memories.json` | `USER.md`, `MEMORY.md` |
+| Runtime memory | `runtime/memories.json` | `USER.md`, `MEMORY.md` |
 | Documents | `documents/index.json` + managed Markdown | excerpts, search ranking, status aggregation |
 | Mnemon Native catalog | `data/.dsh-memory-bodies.json` + on-disk Stores | Web status aggregation |
 | Third-party connections | `state/memory-providers.json` | redacted provider capabilities and status |
 | Git sync configuration | `state/sync-git.json` | `state/sync/git` mirror; the configured remote branch |
-| Machine identity | `state/machine.json` | the `machine` field of an export and of a sync status |
+| Machine identity | `state/machine.json`: the id, the name, and `labelSource` (`hostname` follows the host name, `custom` was typed) | the `machine` field of an export and of a sync status |
 | Cross-machine deletions | `state/tombstones.json` | `state/runtime-index.json`, which is what a later export diffs against |
 | Reconciliation proposals | `state/review-ledger.json` | the review card; an accepted proposal is applied to the Sources, never to the ledger |
 | Long-term memory | Mnemon `mnemon.db` or remote provider | graph projection and cross-provider rank fusion |
+| Skills | The `SKILL.md` folders in DSH's skill roots | the catalog the Skills page shows; `skills/` versions, installs and market caches |
+| Skill evolution | `skills/ledger.json`, `skills/evals.json`, `skills/trajectories/` | the Evolution count, the Status card and the line under each turn |
 | Review watermark | Host process memory | status-page snapshot; not yet persisted |

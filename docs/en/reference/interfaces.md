@@ -1,6 +1,6 @@
 # Web, Headless, Tools, Commands, and RPC
 
-[简体中文](../../zh-CN/reference/interfaces.md) | **English** | [Documentation hub](../README.md)
+[简体中文](../../zh-CN/reference/interfaces.md) | **English** | [Documentation](../README.md)
 
 This page is an integration reference. For daily use, start with the [Sidebar and conversation UI guide](../guides/ui-guide.md).
 
@@ -53,11 +53,13 @@ Model tools, lifecycle hooks, and system scheduling use an `automatic` trigger. 
 
 “Read only” means managed bodies and durable semantics do not change. `mnemon_document_search` still updates `lastAccessedAt` for LRU ordering, so feature read-only is not disk read-only.
 
+`mnemon_recall` searches the memories in Memory Spaces and `mnemon_document_search` searches Documents; each tool says so, and that of a cold-archived Document recall finds only the index memory the archive left in a space. In a Mnemon Native space `mnemon_related` names the edge each neighbor came through (`edgeType`); temporal and entity edges are added automatically and outnumber the others, so pass `edge` to follow one kind. Other Providers name no edge type and do not filter by `edge`. `mnemon_status` sums its `aggregate` over the active, healthy spaces whose Provider reports statistics, counts them in `aggregate.spaces` and says so in `aggregate.scope`; `totalInsights` counts live memories and `deletedInsights` the forgotten ones a Provider keeps, as Mnemon Native does.
+
 ### Tools available with `writeEnabled=true`
 
 | Tool | Purpose | Root Agent path |
 |---|---|---|
-| `mnemon_runtime_memory` | `add` / `replace` / `remove` hot memory | Deterministic control; add overflow may start a worker |
+| `mnemon_runtime_memory` | `add` / `replace` / `remove` runtime memory | Deterministic control; add overflow may start a worker |
 | `mnemon_document_manage` | Create, update, or archive a Document | Create/update deterministic; archive uses a worker, or archives locally without one when no Memory Space can take the index |
 | `mnemon_document_create` | Create a separate Document without updating or archiving existing ones | Deterministic Source `create` Action; available to idle review |
 | `mnemon_remember` | Retain one insight under Provider semantics; distinguish acceptance from durable completion | `spawn` write worker |
@@ -68,6 +70,8 @@ Model tools, lifecycle hooks, and system scheduling use an `automatic` trigger. 
 | `mnemon_memory_body_merge` | Non-destructively merge Mnemon Native spaces | `spawn` write worker |
 
 When a worker invokes the same tool name, it reaches the service directly and is not delegated recursively.
+
+A Document write returns to the model the Document it wrote, with its `contentHash` and without the body it just sent or a path, and the layer's totals in `documents`: the active and archived counts, the active bytes and the limit. The catalog of every Document, with excerpts and paths, stays on the control plane the WebUI reads; a Document write through `mnemon_view_action` returns the same. `mnemon_view_route` and `mnemon_view_action` refuse an id the View does not offer by naming the tool that offers that operation, the exact id a short one stands for, or the ids `MNEMON VIEW ROUTES` lists, and never an id it does not show. `mnemon_forget` refused for a space this turn's View does not read names the space and why: it is switched off, which stays the user's choice and reaches a forget from the next turn; its Provider is turned off or not installed; or it was switched on after the turn began.
 
 Autonomous write workers — distillation and supervised writeback runs — decide content on their own, so the host excludes `mnemon_forget` from their hard tool allowlist: a duplicate or conflict is resolved by skipping or storing a corrected entry, never by deleting the existing one. Operations whose request names an exact target supplied by the user or a user-facing flow (`/mnemon forget`, `mnemon_link`, and Memory Space management) keep the full write toolset.
 
@@ -83,6 +87,28 @@ Idle review can search Documents and call `mnemon_document_create`, but cannot c
 - **Skip**: questions, guesses, temporary progress, completion logs, raw output, secrets, and ordinary repository facts that are easy to rediscover.
 
 `mnemon_forget` is a destructive semantic action. Use it only on explicit request or after confirming that content is wrong or obsolete. The host enforces this for autonomous workers by excluding the tool from their allowlist; the main agent can still call it when the user explicitly asks.
+
+## Model tools and the Mnemon CLI
+
+The model tools and the Mnemon CLI reach the same Mnemon Native memory along different paths. A tool works on the spaces the current View pins, with dsh-mnemon's storage root and, when DSH manages the embedding, its endpoint, model and key. The CLI works on one Store: `--store <id>`, else `MNEMON_STORE`, else its active file, in the data directory `--data-dir` names, else `MNEMON_DATA_DIR`, else `~/.mnemon`. dsh-mnemon's Global scope uses the same directory, so a terminal command reaches its memory while both see the same `MNEMON_DATA_DIR`; a Workspace scope or a custom data directory needs that directory as `--data-dir`. A memory of another Store is found only with its `--store`.
+
+| Task | Model tool | Mnemon CLI |
+|---|---|---|
+| Recall memories | `mnemon_recall`: every active space in the View | `mnemon recall` or `search`: one Store |
+| Search Documents | `mnemon_document_search` | None: Documents are dsh-mnemon's own layer |
+| Follow graph neighbors | `mnemon_related`: in a Mnemon Native space each result names its `edgeType`, and `edge` follows one kind | `mnemon related <id>` |
+| Save a memory | `mnemon_remember`, through a write worker | `mnemon remember` |
+| Link two memories | `mnemon_link` | `mnemon link` |
+| Forget a memory | `mnemon_forget`: spaces the View reads; a switched-off space from the turn after the user switches it on | `mnemon forget <id>` in the Store named |
+| Create a space | `mnemon_memory_body_create`: a Store and its dsh-mnemon entry | `mnemon store create`: a Store only, which dsh-mnemon lists as a switched-off space when it is in dsh-mnemon's data directory |
+| Rename, describe, switch on or off | `mnemon_memory_body_update` | None: these belong to dsh-mnemon |
+| Merge spaces | `mnemon_memory_body_merge` | `mnemon import` of a draft |
+| Delete a space | None: the Memory Spaces page in the WebUI | `mnemon store remove`, which leaves dsh-mnemon's entry behind; its next status check creates an empty Store in its place |
+| Check health and counts | `mnemon_status`: sums over the active, healthy spaces whose Provider reports statistics | `mnemon status`: one Store |
+| Vector coverage | None: Test status in the Mnemon Native embedding settings | `mnemon embed --status` and `--all`: one Store |
+| Choose the active Store | None: the View pins spaces per turn | `mnemon store set`: the CLI's own default |
+
+A model never deletes a space or switches Mnemon's active Store; those stay with the user.
 
 ## `/mnemon` commands
 
@@ -109,11 +135,13 @@ Everything Mnemon shows inside DSH is registered into DSH's own UI regions. The 
 | DSH region | Registration | Behavior |
 |---|---|---|
 | `conversation.chat.turnTail` | list, `id=dsh-mnemon/turn-tail` | `turn-activity` summarizes `mnemon_*` calls from completed turns, with the items each call read or wrote from the tools' activity metadata; open turns and turns without activity render nothing |
+| `conversation.chat.turnTail` | list, `id=dsh-mnemon/skill-tail` | While `skills.hints` is on: `skill-activity` names the skills each completed turn used and the state of the review that followed, with its waiting suggestions; a turn with nothing to say renders nothing |
 | `conversation.chat.assistant-actions` | list, `id=mnemon-save` | `assistant-message` reads finalized text; `supervise` runs only after confirmation |
 | `conversation.session.header.lineage` | lower-priority copy of DSH's own entry | A task Agent's session header counts that Agent's own tokens, not the log it was forked from |
 | `plugins.bundle.config` | keyed, `dsh-mnemon` | The whole configuration on dsh-mnemon's page under Plugins |
 | `plugins.row.config` | keyed, `dsh-mnemon#<row>` | The page each shipped component's row opens, with the settings that component contributed |
 | `plugins.detail.actions` | list, `id=dsh-mnemon/open-workspace` | Opens the Memory System from the plugin's detail page |
+| `sidebar.panellist` and `main` | `id=mnemon-skills` | While `skills.sidebar` is on: Skills' own sidebar entry and page, after the Memory System, which then leaves the Skills page out |
 
 Mnemon declares two keyed regions of its own, both keyed by a component's package name: `mnemon.component.settings`, rendered on that component's page, and `mnemon.component.status`, its card on the Status page. Official and third-party components contribute through the same regions; see [Plugin development](../development/extensions.md).
 
@@ -141,7 +169,7 @@ RPC is an internal Host-to-client bridge, not a stable external HTTP API. Pages 
 | `/dsh-mnemon-write` | Every other mutation | Needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-pack` | Backup export and import | Needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-sync` | Git repository sync: configuration, push, preview and pull | Needs `remoteAccess: trusted-host` |
-| `/dsh-mnemon-review` | Reconciliation proposals, review opinions and applying an accepted plan | Reads allowed; `reconcile` and `apply` need `remoteAccess: trusted-host` |
+| `/dsh-mnemon-review` | Reconciliation proposals, review opinions and applying an accepted plan | Needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-settings` | Host and interface settings | `get` allowed; `mutate` needs `remoteAccess: trusted-host` |
 | `/dsh-mnemon-view` | Memory composition reads | Allowed |
 | `/dsh-mnemon-view-settings` | Saving memory composition, installing a component | Needs `remoteAccess: trusted-host` |
@@ -163,10 +191,11 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 | `graph` / `bodies` / `body-directory` | Active multi-space graph projection, provider-capability catalog, and fast directory projection |
 | `body-reconnect` | Invalidate transient health state and refresh one Memory Space without changing persistent data |
 | `provider-services` | Redacted Provider service catalog; configured-secret names may be present, secret values never are |
-| `embedding-status` | Mnemon's embedding model, availability and default-store coverage |
+| `embedding-status` | Mnemon's embedding model and availability, and the vector coverage of each Mnemon Native space with its total |
 | `list` / `entities` | Durable content list and entity aggregation |
 | `search` / `agent-search` / `related` | Direct retrieval, evidence answer, and relation traversal |
 | `turn-activities` / `turn-activity` | Session-wide or single-turn memory-tool activity |
+| `skill-activity` | One conversation's skills by turn and the state of each review that followed (scheduled, reviewing, suggested, nothing, error), with the suggestions still waiting; answered from the live Agent, or from the stored session for a conversation reopened from history |
 | `assistant-message` | Finalized assistant text by messageId |
 | `source-management-catalog` / `source-management-read` / `source-assistance` | Generic Source management: instance catalog, declared read operations, and a read-only assisted search |
 
@@ -178,14 +207,15 @@ The Gateway reaches these handlers through Mnemon's `mnemonRemote` Typert servic
 
 | Endpoint | Behavior |
 |---|---|
-| `runtime-memory` | Hot-memory mutation |
+| `runtime-memory` | Runtime memory mutation |
 | `document` | create / update / archive |
 | `supervise` | Process a candidate under an independent task Agent and return a settled receipt |
 | `remember` / `link` / `forget` | Durable semantic write, relation, and soft deletion |
 | `body-create` / `body-update` / `body-delete` / `body-merge` | Create or connect, edit, confirm Native deletion or remote disconnection, and merge Memory Spaces |
 | `body-metadata-maintain` | Let a task Agent refresh names and descriptions of 1 to 20 active Memory Spaces |
 | `provider-service-update` | Update one Provider service; credentials remain on the Host and the response is redacted |
-| `source-management-mutate` / `source-assistance` | Generic Source management mutation, and Host-assisted operations confirmed against the Source's current revision |
+| `embedding-fill` | Fill in the vectors one Mnemon Native space lacks, through the Host's storage root and embedding settings; runs for at most a minute, in steps of at most ten seconds, and returns how many it filled in and how many remain |
+| `source-management-mutate` / `source-assistance` | Generic Source management mutation, and Host-assisted operations confirmed against the Source's current revision; Skills' are `skill-draft`, `skill-backtest`, `skill-derive-cases` and `skill-review-now`, each run by a task Agent |
 | `version-update` | Update a named component with Host-fixed commands and arguments |
 
 `provider-services` returns a redacted catalog through the read channel. The settings editor knows which credential fields are configured; it can replace or explicitly clear them without reading saved values back.
@@ -200,8 +230,6 @@ With `writeEnabled=false`, the activation and write channels stay registered but
 | `export` | Export a complete ZIP with manifest and SHA-256 checksums |
 | `inspect` | Parse and verify an import ZIP, returning component and occupancy preview |
 | `import` | Safely merge into the effective root; rejected in read-only mode. Its `runtime` answer reports how many entries the merge added and how many stayed out because this installation had deleted them, and an optional `revive: true` overrules those deletions for this import |
-| `storage-plan` | Inspect a proposed data directory: what it holds, how many files and bytes would move, and why the move is impossible; read-only, and it never requires `writeEnabled` |
-| `storage-migrate` | Copy the whole data directory to the proposed path, verify every file by SHA-256, and only then delete the original; on success the Host records the new path as the `custom` data directory and rebuilds its runtime on it, so later calls never read the removed one; requires `confirmed: true`, `writeEnabled`, and a writable settings profile, which is checked before anything is copied |
 
 Backups contain private memory, so callers must treat the authenticated DSH browser session as a full Host authority and protect exported archives separately.
 
@@ -226,9 +254,15 @@ Backups contain private memory, so callers must treat the authenticated DSH brow
 
 The sync payload is always a full Mnemon Pack: a pack manifest's `scope` is either `full` or exactly one component, so a persistent component selection cannot be represented. Component filtering exists only as the optional `pull` parameter. A repository URL is the only configuration value without a default: a blank `branch`, `subdir`, `authorName` or `authorEmail` is answered with the default branch, the default directory, or the commit identity this machine's Git already carries. `configure`, `push`, `pull` and every `github-` endpoint that changes something require `writeEnabled: true` and otherwise answer the same read-only refusal pack import uses.
 
-Tokens never appear in a response or an error message. The channel resolves one credential per network operation, in this order: `MNEMON_SYNC_GIT_TOKEN`, the token stored in `state/sync-git.json` (mode `0600`), then the grant GitHub sign-in wrote into DSH's credentials store under the key `dsh-mnemon/github`. `credentialSource` names the winner — `environment`, `token`, `github` or `none` — and `hasToken` is `true` for the first three, so a signed-in account needs no token field at all. GitHub calls go through the ambient `fetch` first, the same seam the version check uses, so a launcher's proxy policy applies to them. When that request cannot connect at all, the channel retries it once through a proxy discovered from `HTTPS_PROXY`, `http_proxy` or `all_proxy` and, on Windows, from the system proxy settings, over a CONNECT tunnel built from Node's own modules; the proxy that answered is reused and a proxy that stops answering is dropped, so a machine that changes networks recovers without a restart. A failure reports GitHub's error code and the HTTP status only, never a response body; a request that never reached GitHub reports the transport reason and, when no proxy was found, names `HTTPS_PROXY` as what to set.
+Credentials and the network:
 
-Configuration, credentials and the failure semantics are described under [Backup and recovery](../guides/operations.md#git-repository-sync).
+- Tokens never appear in a response or an error message. The channel resolves one credential per network operation, in this order: `MNEMON_SYNC_GIT_TOKEN`, the token stored in `state/sync-git.json` (mode `0600`), then the grant GitHub sign-in wrote into DSH's credentials store under the key `dsh-mnemon/github`.
+- `credentialSource` names the winner — `environment`, `token`, `github` or `none` — and `hasToken` is `true` for the first three, so a signed-in account needs no token field at all. A failure carries its kind as `details.reason`, so the page states it in its own language; `remote-auth` while a credential is available means the host rejected it.
+- Git gets the token from a credential store that exists for one command, under the user name the repository address names, else `oauth2` for `gitee.com` and `x-access-token` for any other host. Git 2.26 and later are given that name on the command line, where it wins over every `credential.username` the machine configures, with `credential.useHttpPath` off and the address without a user name. An earlier Git gets the command it always got, unless `git config --get-urlmatch credential <address>`, read in the command's own environment, names a user for the address other than the store's, which then carries the store's name, or turns `credential.useHttpPath` on, which the command turns off.
+- GitHub calls go through the ambient `fetch` first, the same seam the version check uses, so a launcher's proxy policy applies to them. When that request cannot connect at all, the channel retries it once through a proxy discovered from `HTTPS_PROXY`, `http_proxy` or `all_proxy` and, on Windows, from the system proxy settings, over a CONNECT tunnel built from Node's own modules; the proxy that answered is reused and a proxy that stops answering is dropped, so a machine that changes networks recovers without a restart.
+- A failure reports GitHub's error code and the HTTP status, never the rest of a response body; a device code answer that cannot be used also names its content type and field names, without their values. GitHub answers form-encoded when the `accept: application/json` header does not reach it, for example when another plugin's `fetch` patch drops it, and the channel reads that answer the same way. A request that never reached GitHub reports the transport reason and, when no proxy was found, names `HTTPS_PROXY` as what to set.
+
+How to connect a repository, what each sync does and what happens when one fails are described under [Git repository sync](../guides/operations.md#git-repository-sync).
 
 ### Review channel
 
@@ -245,7 +279,7 @@ A reconciliation never writes memory by itself: the model returns a plan, the pl
 
 ### Settings channel
 
-`/dsh-mnemon-settings` offers `get` and `mutate` for two namespaces: `mnemon` owns Host and storage settings, and `mnemon-ui` owns `turnBar` and `saveAction`, saved as `conversationInteraction`. Mutations carry settings revisions so concurrent edits are not overwritten. dsh-mnemon's page under Plugins (`plugins.bundle.config`) reads and writes through this channel on loopback and remote pages alike. On loopback pages it also follows DSH's `ctx.configForms` revision of the `mnemon` entry and re-reads the channel when another page or a profile reload changes it.
+`/dsh-mnemon-settings` offers `get` and `mutate` for three namespaces: `mnemon` owns Host and storage settings, `mnemon-ui` owns `turnBar` and `saveAction`, saved as `conversationInteraction`, and `mnemon-skills` owns Skills' settings, saved as `skills` (see [Skills settings](./configuration.md#skills-settings)); a `mnemon-skills` change applies without rebuilding the memory runtime. Mutations carry settings revisions so concurrent edits are not overwritten. dsh-mnemon's page under Plugins (`plugins.bundle.config`) reads and writes through this channel on loopback and remote pages alike. On loopback pages it also follows DSH's `ctx.configForms` revision of the `mnemon` entry and re-reads the channel when another page or a profile reload changes it.
 
 ### Memory composition channels
 
@@ -274,7 +308,7 @@ Core publishes `ctx.mnemonMemory: MnemonMemoryService`; the actual service expos
 | `dsh-mnemon-source-memory-spaces/provider-sdk` | Memory Spaces' own Provider child-module contract |
 | `dsh-mnemon-source-memory-spaces/testing` | Provider driver fixture |
 
-Generic model tools `mnemon_view_route` and `mnemon_view_action` execute only routes/offers present in the current View. Existing named tools preserve the default workflow. Browser management uses `source-management-catalog`, `source-management-read`, `source-management-mutate` and optional `source-assistance`; instance identity, confirmation, revision and current authority are checked by the Host/Source. Internal RPC names are not the plugin SDK: use the scoped page client. See [Plugin development](../development/extensions.md).
+Generic model tools `mnemon_view_route` and `mnemon_view_action` execute only routes/offers present in the current View. Existing named tools preserve the default workflow. A named tool works on the Starter instance of its Source type, the Entry `mnemon-source-<type>` also when nested under an include, or on the only Source of that type. `mnemon_runtime_memory` writes to the Starter runtime Source when several runtime Sources offer `mutate`, and otherwise to the only one the View lets it write to. The View lists the offers of every other instance for `mnemon_view_action`. Browser management uses `source-management-catalog`, `source-management-read`, `source-management-mutate` and optional `source-assistance`; instance identity, confirmation, revision and current authority are checked by the Host/Source. Internal RPC names are not the plugin SDK: use the scoped page client. See [Plugin development](../development/extensions.md).
 
 ## Internationalization
 

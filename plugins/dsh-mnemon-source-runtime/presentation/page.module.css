@@ -11,7 +11,7 @@
 .runtimeComposerActions { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .runtimeComposerActions label { display: grid; gap: 6px; color: var(--mn-muted); font-size: 12px; font-weight: 500; line-height: 18px; }
 .runtimeChoice button { min-width: 136px; }
-.runtimeReadOnly { margin-bottom: 12px; padding: 8px 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-fill); font-size: 12px; line-height: 18px; }
+.runtimeReadOnly { margin-bottom: 12px; padding: 8px 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-block-fill, var(--mn-fill)); font-size: 12px; line-height: 18px; }
 .runtimeSummaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
 .runtimeSummaryCard { min-width: 0; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
 .runtimeBrowser { overflow: hidden; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }

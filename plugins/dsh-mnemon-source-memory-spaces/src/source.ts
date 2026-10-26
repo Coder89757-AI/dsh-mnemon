@@ -19,6 +19,7 @@ import { MemoryProviderCatalog } from './providers/catalog.ts'
 import { finalizeLlmPlacement, rulesOnlyPlacement } from './provider-placement.ts'
 import { resolveMemorySpacesConfig, type MemorySpacesConfig } from './config.ts'
 import { MemorySpaceProviderSnapshot } from './providers/host.ts'
+import { CATEGORIES, EDGE_TYPES, INTENTS, isNativeProvider, MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH, SOURCES } from './contracts.ts'
 import type {
   Category,
   CreateMemorySpaceRequest,
@@ -35,10 +36,10 @@ import type {
   UpdateMemorySpaceRequest,
 } from './contracts.ts'
 
-const CATEGORIES = new Set<Category>(['preference', 'decision', 'fact', 'insight', 'context', 'general'])
-const SOURCES = new Set<Source>(['user', 'agent', 'external'])
-const INTENTS = new Set<Intent>(['WHY', 'WHEN', 'ENTITY', 'GENERAL'])
-const EDGES = new Set<EdgeType>(['temporal', 'semantic', 'causal', 'entity'])
+const CATEGORY_SET = new Set<Category>(CATEGORIES)
+const SOURCE_SET = new Set<Source>(SOURCES)
+const INTENT_SET = new Set<Intent>(INTENTS)
+const EDGE_SET = new Set<EdgeType>(EDGE_TYPES)
 
 function grantIds(grant: MemoryReadGrant): string[] {
   return stringArray(record(grant.value, 'Memory Spaces ReadGrant').memoryBodyIds, 'memoryBodyIds', 10_000) ?? []
@@ -89,8 +90,8 @@ function createSpaceRequest(value: MemoryJsonValue): CreateMemorySpaceRequest {
     }),
   }
   return {
-    name: text(input.name, 'name', 100)!,
-    description: text(input.description, 'description', 1_000)!,
+    name: text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH)!,
+    description: text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)!,
     ...(typeof input.active !== 'boolean' ? {} : { active: input.active }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(connection === undefined ? {} : { connection }),
@@ -105,8 +106,8 @@ function updateSpaceRequest(value: MemoryJsonValue): { memoryBodyId: string; req
   return {
     memoryBodyId: text(input.memoryBodyId, 'memoryBodyId', 300)!,
     request: {
-      ...(text(input.name, 'name', 100, false) === undefined ? {} : { name: text(input.name, 'name', 100, false)! }),
-      ...(text(input.description, 'description', 1_000, false) === undefined ? {} : { description: text(input.description, 'description', 1_000, false)! }),
+      ...(text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH, false) === undefined ? {} : { name: text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH, false)! }),
+      ...(text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, false) === undefined ? {} : { description: text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, false)! }),
       ...(typeof input.active !== 'boolean' ? {} : { active: input.active }),
       ...(connection === undefined ? {} : { connection }),
       ...(stringArray(input.clearSecrets, 'clearSecrets', 100) === undefined ? {} : { clearSecrets: stringArray(input.clearSecrets, 'clearSecrets', 100)! }),
@@ -129,6 +130,31 @@ function placementDecision(value: MemoryJsonValue | undefined): MemoryPlacementD
     ...(text(input.runId, 'placement decision runId', 500, false) === undefined ? {} : { runId: text(input.runId, 'placement decision runId', 500, false)! }),
     ...(text(input.subagentProvider, 'placement decision subagentProvider', 500, false) === undefined ? {} : { subagentProvider: text(input.subagentProvider, 'placement decision subagentProvider', 500, false)! }),
   }
+}
+
+/**
+ * Why this turn's View cannot forget from a Memory Space it does not read (#390). The View is
+ * pinned for the turn, so switching a space on reaches a forget from the next turn only, and
+ * whether a space is on stays the user's choice.
+ */
+function outsideView(service: MemorySpacesService, memoryBodyId: string): string {
+  const catalog = service.spaceDirectory()
+  const body = catalog.items.find(candidate => candidate.id === memoryBodyId)
+  if (body === undefined) return `Memory Space ${JSON.stringify(memoryBodyId)} does not exist`
+  const space = `Memory Space ${JSON.stringify(memoryBodyId)} (${body.name})`
+  if (!body.active) return `${space} is switched off, so this turn's View does not read it and cannot forget from it. Whether it is on is the user's choice, on the Memory Spaces page; once it is on, a forget there works from the next turn`
+  if (body.providerEnabled === false) return `${space} uses ${body.provider.label}, which is turned off on the dsh-mnemon page under Plugins`
+  const provider = catalog.providers.find(candidate => candidate.id === body.provider.id)
+  if (provider?.serviceConfigured === false) return `${space} uses ${body.provider.label}, which is not available here${isNativeProvider(provider) ? ': the Mnemon CLI is not installed' : ''}`
+  return `${space} was switched on after this turn began, so this turn's View does not read it yet; a forget there works from the next turn`
+}
+
+/** The switched-off spaces a forget cannot reach this turn, named only when there are some (#390). */
+function switchedOffSpaces(service: MemorySpacesService): string {
+  const off = service.spaceDirectory().items.filter(body => !body.active)
+  if (off.length === 0) return ''
+  const names = off.slice(0, 5).map(body => JSON.stringify(body.name)).join(', ')
+  return `. Switched-off spaces (${names}${off.length > 5 ? ` and ${off.length - 5} more` : ''}) are outside this View; one the user switches on is read from the next turn`
 }
 
 function managementResult(service: MemorySpacesService, value: unknown): MemorySourceManagementResult {
@@ -208,6 +234,7 @@ async function manageMemorySpaces(service: MemorySpacesService, request: MemoryS
 
   if (!request.confirmed) throw new Error('Memory Spaces management mutation requires explicit confirmation')
   switch (request.operation) {
+    case 'embedding-fill': return managementResult(service, await service.embedMissing(text(input.memoryBodyId, 'memoryBodyId', 300)!, request.signal))
     case 'provider-service-update': {
       const providerId = text(input.providerId, 'providerId', 128)!
       await service.updateProviderService(
@@ -277,6 +304,8 @@ async function manageMemorySpaces(service: MemorySpacesService, request: MemoryS
       input.deactivateSources !== false, request.signal,
     ))
     case 'reload': service.memorySpaces.reload(); return managementResult(service, { reloaded: true })
+    // Namespaces a Provider gained since its settings were saved, mounted inactive (#373).
+    case 'provider-rediscover': return managementResult(service, await service.rediscoverProviders(input.trigger === 'startup' ? 'startup' : 'manual', request.signal))
     case 'body-delete': return managementResult(service, await service.deleteSpace(text(input.memoryBodyId, 'memoryBodyId', 300)!, request.signal))
     default: throw new Error(`unsupported Memory Spaces management mutation operation: ${request.operation}`)
   }
@@ -542,9 +571,9 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           const category = text(input.category, 'category', 30, false) as Category | undefined
           const source = text(input.source, 'source', 30, false) as Source | undefined
           const intent = text(input.intent, 'intent', 30, false) as Intent | undefined
-          if (category !== undefined && !CATEGORIES.has(category)) throw new Error(`unsupported category: ${category}`)
-          if (source !== undefined && !SOURCES.has(source)) throw new Error(`unsupported source: ${source}`)
-          if (intent !== undefined && !INTENTS.has(intent)) throw new Error(`unsupported intent: ${intent}`)
+          if (category !== undefined && !CATEGORY_SET.has(category)) throw new Error(`unsupported category: ${category}`)
+          if (source !== undefined && !SOURCE_SET.has(source)) throw new Error(`unsupported source: ${source}`)
+          if (intent !== undefined && !INTENT_SET.has(intent)) throw new Error(`unsupported intent: ${intent}`)
           const requestedSpaces = stringArray(input.memoryBodyIds, 'memoryBodyIds', 10_000) ?? allowedBodies
           if (requestedSpaces.some(id => !allowedBodies.includes(id))) throw new Error('Recall requested a Memory Space outside this View ReadGrant')
           const mode = text(input.mode, 'mode', 20, false) as 'smart' | 'keyword' | 'basic' | undefined
@@ -564,7 +593,7 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           if (owner === undefined) throw new Error('related-memory traversal requires evidence already admitted by this View, or an id found in a Memory Space it can read')
           if (!allowedBodies.includes(owner)) throw new Error('related-memory owner is outside this View ReadGrant')
           const edge = text(input.edge, 'edge', 30, false) as EdgeType | undefined
-          if (edge !== undefined && !EDGES.has(edge)) throw new Error(`unsupported edge: ${edge}`)
+          if (edge !== undefined && !EDGE_SET.has(edge)) throw new Error(`unsupported edge: ${edge}`)
           const results = await service.related(id, integer(input.depth, 2, 1, 5), edge, request.signal, owner)
           return evidence(request, results)
         }
@@ -597,8 +626,8 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
             bodyId = text(input.memoryBodyId, 'memoryBodyId', 300)!
             if (!writableBodies.includes(bodyId)) throw new Error('Memory Space update is outside this View scope')
             const body = service.updateSpace(bodyId, {
-              ...(input.name === undefined ? {} : { name: text(input.name, 'name', 100)! }),
-              ...(input.description === undefined ? {} : { description: text(input.description, 'description', 1_000)! }),
+              ...(input.name === undefined ? {} : { name: text(input.name, 'name', MEMORY_SPACE_NAME_MAX_LENGTH)! }),
+              ...(input.description === undefined ? {} : { description: text(input.description, 'description', MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)! }),
               ...(typeof input.active === 'boolean' ? { active: input.active } : {}),
             })
             result = { action: 'updated', memoryBodyId: body.id, name: body.name, description: body.description, active: body.active }
@@ -619,8 +648,8 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           if (!writableBodies.includes(bodyId)) throw new Error('remember destination is outside this View scope')
           const category = text(input.category, 'category', 30, false) as Category | undefined
           const source = text(input.source, 'source', 30, false) as Source | undefined
-          if (category !== undefined && !CATEGORIES.has(category)) throw new Error(`unsupported category: ${category}`)
-          if (source !== undefined && !SOURCES.has(source)) throw new Error(`unsupported source: ${source}`)
+          if (category !== undefined && !CATEGORY_SET.has(category)) throw new Error(`unsupported category: ${category}`)
+          if (source !== undefined && !SOURCE_SET.has(source)) throw new Error(`unsupported source: ${source}`)
           result = await service.remember({
             content: text(input.content, 'content', 100_000)!,
             ...(category === undefined ? {} : { category }), ...(source === undefined ? {} : { source }),
@@ -639,14 +668,17 @@ export function createMemorySpacesSource(providerSnapshot: MemorySpaceProviderSn
           }
           bodyId = sourceSpace
           const edge = text(input.type, 'type', 30, false) as EdgeType | undefined
-          if (edge !== undefined && !EDGES.has(edge)) throw new Error(`unsupported edge: ${edge}`)
+          if (edge !== undefined && !EDGE_SET.has(edge)) throw new Error(`unsupported edge: ${edge}`)
           const weight = typeof input.weight === 'number' ? input.weight : 0.5
           result = await service.link(sourceId, targetId, edge, weight, text(input.reason, 'reason', 1_000, false), request.signal, bodyId) as MemoryJsonValue
         } else if (request.offer.sourceActionId === 'forget') {
           const id = text(input.id, 'id', 2_000)!
+          // A space this View does not read says why, rather than looking like a missing memory (#390).
+          const named = text(input.memoryBodyId, 'memoryBodyId', 300, false)
+          if (named !== undefined && !allowedBodies.includes(named)) throw new Error(outsideView(service, named))
           bodyId = await admittedOwner(id)
           if (bodyId === undefined || !allowedBodies.includes(bodyId)) {
-            throw new Error('forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it')
+            throw new Error(`forget requires evidence already admitted by this View, or an id found in one Memory Space it can read; name the space (memoryBodyId) when several hold it${switchedOffSpaces(service)}`)
           }
           result = await service.forget(id, request.signal, bodyId) as MemoryJsonValue
         } else {

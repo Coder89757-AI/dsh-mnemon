@@ -6,12 +6,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_MEMORY_VIEW_BUDGET, MemoryCompositionRunner } from 'dsh-mnemon/testing'
+import * as spaces from '../src/index.ts'
 import { installMemorySpaces } from '../src/index.ts'
 import { MemorySpaceRegistry } from '../src/memory-spaces.ts'
 import { createRunner } from '../src/runner.ts'
 import { resolveMemorySpacesConfig } from '../src/config.ts'
 import { defineMemorySpaceProvider, MEMORY_SPACE_PROVIDER_API_VERSION, NORMALIZED_RELEVANCE_SCORE } from '../src/provider-sdk.ts'
 import { MemoryProviderCatalog } from '../src/providers/catalog.ts'
+import { MEMORY_SPACE_DESCRIPTION_MAX_LENGTH, MEMORY_SPACE_NAME_MAX_LENGTH } from '../src/contracts.ts'
 
 describe('standalone Memory Spaces Source', () => {
   it('admits only evidence actually returned under the View budget, not all Provider search hits', async () => {
@@ -128,7 +130,8 @@ describe('standalone Memory Spaces Source', () => {
       await expect(turn.executeAction(offer('forget'), { id: 'written' }, () => true)).resolves.toMatchObject({ completion: 'committed' })
       expect(forget.mock.calls.at(-1)?.slice(0, 2)).toEqual([expect.objectContaining({ id: notes }), 'written'])
       // An id no authorized space holds, or one two spaces hold, is not guessed.
-      await expect(turn.executeAction(offer('forget'), { id: 'missing' }, () => true)).rejects.toThrow('already admitted')
+      // With no space switched off, the refusal names none (#390).
+      await expect(turn.executeAction(offer('forget'), { id: 'missing' }, () => true)).rejects.toThrow(/already admitted.*when several hold it$/u)
       await expect(turn.executeAction(offer('forget'), { id: 'twin' }, () => true)).rejects.toThrow('already admitted')
       expect(forget).toHaveBeenCalledOnce()
       // Naming the space settles it.
@@ -141,6 +144,26 @@ describe('standalone Memory Spaces Source', () => {
       expect(link.mock.calls.at(-1)?.slice(0, 3)).toEqual([expect.objectContaining({ id: notes }), 'written', 'twin'])
       await expect(turn.executeAction(offer('link'), { sourceId: 'written', targetId: 'twin', memoryBodyId: archive }, () => true)).rejects.toThrow('link requires two evidence items')
       turn.release()
+      // A switched-off space is outside the next View, and a forget there says so rather than looking like a missing memory (#390).
+      await runner.executeManagement({ scope, sourceInstanceKey: source.sourceInstanceKey, mode: 'mutate', confirmed: true,
+        expectedRevision: (await runner.managementCatalog(scope)).sources[0]!.revision, operation: 'body-update', input: { memoryBodyId: archive, active: false } })
+      const later = await runner.beginTurn({ scope })
+      const forgetOffer = later.view.actionOffers.find(action => action.sourceActionId === 'forget')!.id
+      // Whether a space is on stays the user's choice, and the View is pinned for the turn.
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: archive }, () => true)).rejects.toThrow(`Memory Space ${JSON.stringify(archive)} (Archive) is switched off, so this turn's View does not read it and cannot forget from it. Whether it is on is the user's choice, on the Memory Spaces page; once it is on, a forget there works from the next turn`)
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: 'nowhere' }, () => true)).rejects.toThrow('Memory Space "nowhere" does not exist')
+      await expect(later.executeAction(forgetOffer, { id: 'missing' }, () => true)).rejects.toThrow('when several hold it. Switched-off spaces ("Archive") are outside this View; one the user switches on is read from the next turn')
+      // Switched on again during the turn, the space is still outside the pinned View until the next one.
+      await runner.executeManagement({ scope, sourceInstanceKey: source.sourceInstanceKey, mode: 'mutate', confirmed: true,
+        expectedRevision: (await runner.managementCatalog(scope)).sources[0]!.revision, operation: 'body-update', input: { memoryBodyId: archive, active: true } })
+      await expect(later.executeAction(forgetOffer, { id: 'twin', memoryBodyId: archive }, () => true))
+        .rejects.toThrow(`Memory Space ${JSON.stringify(archive)} (Archive) was switched on after this turn began, so this turn's View does not read it yet; a forget there works from the next turn`)
+      expect(forget).toHaveBeenCalledTimes(2)
+      later.release()
+      const next = await runner.beginTurn({ scope })
+      await next.executeAction(next.view.actionOffers.find(action => action.sourceActionId === 'forget')!.id, { id: 'twin', memoryBodyId: archive }, () => true)
+      expect(forget).toHaveBeenCalledTimes(3)
+      next.release()
     } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
   })
 
@@ -176,6 +199,35 @@ describe('standalone Memory Spaces Source', () => {
     } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
   })
 
+  it('limits a space name and description by one rule wherever a request sets them', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mnemon-spaces-limits-'))
+    const runner = new MemoryCompositionRunner()
+    const scope = { storage: 'custom' as const }
+    const name = 'n'.repeat(MEMORY_SPACE_NAME_MAX_LENGTH)
+    const description = 'd'.repeat(MEMORY_SPACE_DESCRIPTION_MAX_LENGTH)
+    try {
+      await runner.mount(strategy, { instanceId: 'strategy' })
+      await runner.mount({ inject: ['mnemonMemory'], async apply(ctx: Context) {
+        await installMemorySpaces(ctx, [{ instanceId: 'fixture', module: provider, config: undefined }], { config: { dataDir: directory } })
+      } }, { instanceId: 'spaces' })
+      const client = await runner.managementClient('source:spaces', scope)
+      await client.mutate('provider-service-update', { providerId: 'fixture', settings: {}, enabled: true }, { confirmed: true })
+      const body = ((await client.read('body-directory')).value as unknown as { items: Array<{ id: string }> }).items[0]!
+      // The management operations.
+      await expect(client.mutate('body-create', { name: `${name}n`, description: 'Facts' }, { confirmed: true })).rejects.toThrow('name is too long (max 100 characters)')
+      await expect(client.mutate('body-create', { name, description: `${description}d` }, { confirmed: true })).rejects.toThrow('description is too long (max 1000 characters)')
+      await expect(client.mutate('body-update', { memoryBodyId: body.id, name: `${name}n` }, { confirmed: true })).rejects.toThrow('name is too long (max 100 characters)')
+      await expect(client.mutate('body-update', { memoryBodyId: body.id, description: `${description}d` }, { confirmed: true })).rejects.toThrow('description is too long (max 1000 characters)')
+      expect((await client.mutate('body-update', { memoryBodyId: body.id, name, description }, { confirmed: true })).value).toMatchObject({ name, description })
+      // The model's manage-spaces Action.
+      const turn = await runner.beginTurn({ scope })
+      const manage = turn.view.actionOffers.find(offer => offer.sourceActionId === 'manage-spaces')!
+      await expect(turn.executeAction(manage.id, { operation: 'update', memoryBodyId: body.id, name: `${name}n` }, () => true)).rejects.toThrow('name is too long (max 100 characters)')
+      await expect(turn.executeAction(manage.id, { operation: 'update', memoryBodyId: body.id, description: `${description}d` }, () => true)).rejects.toThrow('description is too long (max 1000 characters)')
+      turn.release()
+    } finally { await runner.dispose(); rmSync(directory, { recursive: true, force: true }) }
+  })
+
   it('observes durable metadata changed by another generation', () => {
     const directory = mkdtempSync(join(tmpdir(), 'mnemon-spaces-authority-'))
     try {
@@ -208,6 +260,16 @@ describe('standalone Memory Spaces Source', () => {
       } }, { instanceId: 'failed' })).rejects.toThrow('fixture child failed')
       expect(released).toBe(true)
       expect(runner.inspect().evaluation.sourceInstanceKeys).toHaveLength(0)
+    } finally { await runner.dispose() }
+  })
+
+  it('stays inert under a dshmarket client-only shim Entry, which carries no Providers (#359)', async () => {
+    const runner = new MemoryCompositionRunner()
+    try {
+      await runner.mount(strategy, { instanceId: 'strategy' })
+      await runner.mount(spaces, { instanceId: 'include:dsh-market:mkt-client-dsh-mnemon-source-memory-spaces' })
+      expect(runner.inspect().evaluation.sourceInstanceKeys).toHaveLength(0)
+      await expect(runner.mount(spaces, { instanceId: 'spaces' })).rejects.toThrow('at least one explicit Provider child')
     } finally { await runner.dispose() }
   })
 })

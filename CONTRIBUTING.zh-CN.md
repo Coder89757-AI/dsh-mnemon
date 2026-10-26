@@ -18,7 +18,7 @@
 
 ## 开发前置
 
-- Node.js `^22.19.0 || >=24.0.0`；DSH 0.1.1-rc.2 使用 Node 20 缺失的宿主原语，CI 使用 pnpm 10.13.1 覆盖 Node.js 22.19 与 24；
+- Node.js `^22.19.0 || >=24.0.0`，这是锁定的 DSH 开发 Profile 所需（已发布的入口仍可在 Node 20 导入）；CI 使用 pnpm 10.13.1 覆盖 Node.js 22.19 与 24；
 - 仅使用正式发布的 `@deepseek-ai/*` NPM 契约，禁止修改 DSH 源码或让 tsconfig 指向 DSH 源码 checkout；
 - 不要在仓库配置、测试夹具、日志、截图或 PR 描述中提交 token、凭据、私有记忆、敏感路径或未脱敏日志；
 - `lib/` 是构建生成物，不进入版本库，也不得手工编辑。
@@ -65,7 +65,7 @@ fix(client): honor trusted remote management grant
 
 ## 文档和持久化约束
 
-- 修改用户可见行为时检查 `ui-guide.md`、`getting-started.md`、`configuration.md` 和 `operations.md` 的中英文版本；
+- 修改用户可见行为时检查 `installation.md`、`getting-started.md`、`ui-guide.md`、`configuration.md`、`operations.md` 和 `compatibility.md`（受支持的 DSH 版本在此说明）的中英文版本；
 - 命令、配置键、路径和代码符号在两种语言中必须一致；
 - Runtime、Documents 和 Memory Space registry 的格式变更不得静默发生，必须提供旧格式处理和损坏输入测试；
 - 不得把用户偏好发送到长期 Memory Space，也不得在测试或文档示例中使用真实私有数据。

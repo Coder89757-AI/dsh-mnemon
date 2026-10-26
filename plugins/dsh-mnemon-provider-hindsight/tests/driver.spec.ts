@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemorySpaceProviderFixture } from 'dsh-mnemon-source-memory-spaces/testing'
 import type { MemoryProviderConnection, MemoryProviderId } from 'dsh-mnemon-source-memory-spaces/provider-sdk'
-import { HindsightProvider, descriptor } from '../src/index.ts'
+import { HindsightProvider, descriptor, definition } from '../src/index.ts'
 
 const temporaryDirectories: string[] = []
 afterEach(() => { for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true }) })
@@ -60,6 +60,9 @@ describe('standalone hindsight data plane', () => {
     })
     const provider = new HindsightProvider(registry, { fetch: fetchMock })
 
+    expect(definition.manifest.scoreSemantics).toBe('provider-native')
+    expect(provider.scoreSemantics).toEqual({ kind: 'provider-native' })
+
     await expect(provider.search(body, { query: 'language', limit: 3 })).resolves.toEqual({
       results: [expect.objectContaining({ id: 'hs-1', category: 'world', score: 0.93, entities: ['Alice'] })],
     })
@@ -82,5 +85,19 @@ describe('standalone hindsight data plane', () => {
       async: true,
     })
     expect(JSON.parse(String(requests[7]?.init?.body))).toEqual({ state: 'invalidated', reason: 'Forgotten from dsh-mnemon' })
+  })
+  it('reads entity names without their notes, and a name of many "(" at once', async () => {
+    const notes = 'x' + '('.repeat(120_000)
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ results: [
+      { id: 'hs-1', text: 'Alice ships TypeScript.', type: 'world', entities: 'Alice (person),  TypeScript (language) , Node.js, (only a note), Atlas ((nested), Beta (a) (b)' },
+      { id: 'hs-2', text: 'A name the server garbled.', type: 'world', entities: notes },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const { registry, body } = await providerBody('hindsight', { endpoint: 'https://api.hindsight.vectorize.io', apiKey: 'hs-secret', bankId: 'alice/profile', budget: 'high' })
+    const provider = new HindsightProvider(registry, { fetch: fetchMock })
+    const found = await provider.search(body, { query: 'language', limit: 3 })
+    expect(found.results.map(result => result.entities)).toEqual([
+      ['Alice', 'TypeScript', 'Node.js', 'Atlas', 'Beta (a)'],
+      [notes],
+    ])
   })
 })

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ResolvedConfig } from './config.ts'
 import type {
@@ -14,23 +15,26 @@ import type {
 import type { Insight, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { RuntimeMemoryMutation } from 'dsh-mnemon-source-runtime/contracts'
 import type { DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
-import { IdleReviewError, MnemonSubagentCoordinator, type DelegatedWriteResult } from './subagent.ts'
+import { IdleReviewError, MnemonSubagentCoordinator } from './subagent.ts'
 import { scoreReviewActivity } from './review-activity.ts'
 import { idleReviewBlockReason } from './review-tools.ts'
 import { TurnActivityProjection, type TurnMemoryActivity, type TurnMemoryActivitySnapshot } from './activity.ts'
 import { applyMemoryViewGuidance } from './guidance.ts'
 import { modelMemoryWake } from './view-presentation.ts'
+import { strategyDrives, viewStrategy } from './strategy-workflows.ts'
+import { mainStrategyTypeId } from './main-strategy.ts'
 import { AgentMemoryTurn, openAgentTurn, type DelegatedMemoryView } from './agent-memory-turn.ts'
-import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, TaskAgentModelCatalog } from "./protocol.ts"
+import type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, ReviewActivityScore, SkillActivitySnapshot, SupervisedWritebackResult, TaskAgentModelCatalog } from "./protocol.ts"
 import type { PreparedMemoryPlacement } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { MemoryWake } from "../core/contracts/index.ts"
 import { agentScope, type MnemonAgentRuntimeSource } from './runtime.ts'
 import { createPluginMessage, MNEMON_PLUGIN_SOURCE } from './plugin-message.ts'
+import type { SkillEvolution } from './skill-evolution.ts'
 
 type AgentRuntimeSource = Pick<MnemonAgentRuntimeSource, 'forAgent' | 'executions'>
 
 interface HostDefaultModelService {
-  currentSelection(): { provider: string; model: string }
+  currentSelection(): { provider: string; model: string; reasoningEffort?: string }
 }
 
 interface HostAgentPresetService {
@@ -54,11 +58,9 @@ function llmService(value: unknown): HostLlmService | undefined {
 }
 
 export type { TurnMemoryActivity, TurnMemoryActivitySnapshot } from './activity.ts'
-export type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot } from "./protocol.ts"
+export type { AssistantMessageText, LifecycleAgentSnapshot, LifecycleCounters, LifecyclePhase, LifecycleSnapshot, SupervisedWritebackResult } from "./protocol.ts"
 
 export { MNEMON_PLUGIN_SOURCE }
-
-export interface SupervisedWritebackResult extends DelegatedWriteResult { sessionId: string }
 
 interface AgentEventPayload {
   agent: HostAgent
@@ -229,7 +231,7 @@ class MnemonAgentLifecycle {
   private lastPhase: LifecyclePhase = 'idle'
   private lastAt: string | undefined
   private lastError: string | undefined
-  private composedTurn: { turn: number; strategyTypeId: string } | undefined
+  private composedTurn: { turn: number; typeId: string; idleReview: boolean } | undefined
 
   constructor(
     readonly agent: HostAgent,
@@ -416,7 +418,8 @@ class MnemonAgentLifecycle {
 
   private scheduleIdleReview(turn: number): void {
     this.cancelIdleReview(true)
-    if (!this.idleReviewAllowed() || !this.composedByDefault(turn)) return
+    this.recordComposedTurn(turn)
+    if (!this.idleReviewAllowed()) return
     const activity = this.ensureTurnActivity(turn)
     const tools = completedToolActivity(this.agent.session.snapshotEvents(), turn)
     activity.toolCallCount = tools.count
@@ -436,25 +439,35 @@ class MnemonAgentLifecycle {
     }, Math.max(this.config.idleReviewMs, (this.lastReviewAttemptAt ?? -Infinity) + this.config.idleReview.minIntervalMs - Date.now()))
   }
 
-  /**
-   * Automatic three-tier maintenance belongs to the default product, not to
-   * every third-party View Strategy, and only to turns that Strategy actually
-   * composed: a turn served by a fallback Strategy, or run without memory, has
-   * nothing for it to maintain. Explicit management remains available.
-   */
-  private composedByDefault(turn: number): boolean {
-    if (this.memoryTurn === undefined) return true
+  /** Which Strategy composed the turn, while its View is still pinned, and whether it declares idle review. */
+  private recordComposedTurn(turn: number): void {
+    if (this.memoryTurn === undefined) return
     const pinned = this.memoryTurn.current
-    if (pinned?.turn === turn) this.composedTurn = { turn, strategyTypeId: pinned.context.view.strategyTypeId }
-    else if (this.composedTurn?.turn !== turn) this.composedTurn = undefined
-    return this.composedTurn?.strategyTypeId === 'default-three-tier'
+    if (pinned?.turn === turn) {
+      const strategy = viewStrategy(pinned.graph.memoryComposition.generation(pinned.context.view.runtimeGeneration), pinned.context.view)
+      this.composedTurn = { turn, typeId: strategy.typeId, idleReview: strategyDrives(strategy, 'idle-review') }
+    } else if (this.composedTurn?.turn !== turn) this.composedTurn = undefined
+  }
+
+  /**
+   * Idle review belongs to a Strategy that declares it, as the Layered
+   * strategy does, not to every third-party View Strategy: the configured
+   * one, and only after a turn it actually composed. A turn served by a
+   * fallback Strategy, or run without memory, has nothing for it to maintain,
+   * and a Strategy selected since has its own say. Explicit management
+   * remains available.
+   */
+  private strategyDrivesIdleReview(): boolean {
+    const typeId = mainStrategyTypeId(this.config)
+    if (this.memoryTurn === undefined) return strategyDrives({ typeId }, 'idle-review')
+    return this.composedTurn?.typeId === typeId && this.composedTurn.idleReview
   }
 
   private idleReviewAllowed(): boolean {
     return this.config.lifecycleEnabled && this.config.writeEnabled && this.config.writebackMode === 'guided'
       && this.config.idleReview.enabled && this.idleReviewAttempts < this.config.idleReview.maxPerSession
       && idleReviewBlockReason(this.agent, this.config.idleReview.agentTeams) === undefined
-      && this.config.memoryTopology.strategyId === 'default-three-tier'
+      && this.strategyDrivesIdleReview()
   }
 
   private async runIdleReview(): Promise<void> {
@@ -585,6 +598,15 @@ class MnemonAgentLifecycle {
 
 }
 
+function isDirectory(path: string): Promise<boolean> {
+  return stat(path).then(info => info.isDirectory(), () => false)
+}
+
+/** DSH 0.2.1's per-session working directory; earlier hosts have none. */
+interface WorkingDirectoryService {
+  set(agent: HostAgent, path: string, signal?: AbortSignal): Promise<string>
+}
+
 /** DSH-native owner for per-agent Mnemon lifecycle hooks and UI-triggered LLM work. */
 export class MnemonLifecycle {
   private readonly owners = new Map<HostAgent, { lifecycle: MnemonAgentLifecycle; dispose: () => unknown }>()
@@ -595,6 +617,7 @@ export class MnemonLifecycle {
   private readonly taskAgentIds = new Set<string>()
   /** Bounded process-local replay fence for finalized-message write actions: the latest text per message. */
   private readonly supervisedWritebacks = new Map<string, { content: string; result: Promise<SupervisedWritebackResult> }>()
+  private skillEvolution: SkillEvolution | undefined
 
   constructor(
     private readonly ctx: HostContextShape,
@@ -602,6 +625,46 @@ export class MnemonLifecycle {
     private readonly config: ResolvedConfig,
     private readonly runtimeSource?: AgentRuntimeSource,
   ) {}
+
+  /** Skill evolution observes the same root conversations; set it before `start`. */
+  useSkillEvolution(evolution: SkillEvolution): void {
+    this.skillEvolution = evolution
+  }
+
+  get skills(): SkillEvolution | undefined {
+    return this.skillEvolution
+  }
+
+  /** Model work for skill evolution under a fresh task Agent, outside any conversation. */
+  runSkillTask<T>(workspaceRoot: string | undefined, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>): Promise<T> {
+    return this.runTaskAgent('', workspaceRoot, signal, operation)
+  }
+
+  /**
+   * What one conversation did with skills, for the bars under its turns. A
+   * conversation reopened from history has no live Agent until it continues,
+   * so its stored log answers instead, read through DSH without making it live.
+   */
+  async skillActivity(sessionId: string): Promise<SkillActivitySnapshot> {
+    const id = sessionId.trim()
+    const unavailable: SkillActivitySnapshot = { available: false, turns: [], reviews: [] }
+    if (id === '' || this.skillEvolution === undefined) return unavailable
+    const agent = this.ctx.agents.get(id)
+    if (agent !== undefined) return this.skillEvolution.activity(agent)
+    const query = this.ctx.get('sessionQuery') as { readSession(sessionId: string): Promise<{ session: HostAgent['session']['header']; events: HostSessionEvent[] }> } | undefined
+    if (query === undefined) return unavailable
+    let log
+    try { log = await query.readSession(id) } catch { return unavailable }
+    // The Skills Source resolves through the conversation's own workspace, as it does for a live Agent.
+    const stored = { id, session: { header: log.session } } as unknown as HostAgent
+    return this.skillEvolution.activity(stored, log.events)
+  }
+
+  /** Review a live conversation's skills now, whatever its score. */
+  reviewSkills(sessionId: string) {
+    if (this.skillEvolution === undefined) throw new Error('skill evolution is unavailable')
+    return this.skillEvolution.reviewNow(this.liveAgent(sessionId))
+  }
 
   start(): () => void {
     // DSH creates a new Agent for startup, resume, clear and compaction alike.
@@ -636,9 +699,16 @@ export class MnemonLifecycle {
     }
   }
 
-  /** Provider/model directory used by Settings without requiring a live session. */
-  async taskAgentModels(includeCatalog = true): Promise<TaskAgentModelCatalog> {
-    const route = this.taskAgentModelRoute('', undefined)
+  /**
+   * Provider/model directory used by Settings. A session id is the conversation
+   * the page was opened from: the catalog reports the route its own delegated
+   * work takes, the route an inherited setting takes without following it, and
+   * the effective route a task asked from it takes now.
+   */
+  async taskAgentModels(includeCatalog = true, sessionId?: string): Promise<TaskAgentModelCatalog> {
+    const route = this.taskAgentModelRoute(sessionId ?? '', undefined)
+    const conversation = this.conversationRoute(sessionId ?? '')
+    const inherited = this.inheritedRoute(this.routeFallback(sessionId ?? '', undefined))
     let defaultSelection: { provider: string; model: string } | undefined
     try {
       const selected = modelService(this.ctx.get('agentDefaultModel'))?.currentSelection()
@@ -650,6 +720,8 @@ export class MnemonLifecycle {
     const base = {
       ...(route === undefined ? {} : { effective: { provider: route.options.provider!, model: route.options.model!, source: route.source } }),
       ...(defaultSelection === undefined ? {} : { defaultSelection }),
+      ...(conversation === undefined ? {} : { session: { provider: conversation.provider, model: conversation.model } }),
+      ...(inherited === undefined ? {} : { inherited: { provider: inherited.provider, model: inherited.model, source: inherited.source } }),
     }
     if (!includeCatalog) return { ...base, groups: [], failures: [] }
     const llm = llmService(this.ctx.get('llm'))
@@ -748,8 +820,9 @@ export class MnemonLifecycle {
     return this.runTaskAgent(sessionId, root, signal, agent => this.coordinator.answer(agent, query, evidence, signal))
   }
 
+  /** A write the user sent from the page: a space they picked that is switched off comes back on (#387). */
   remember(sessionId: string, request: RememberRequest, signal = new AbortController().signal) {
-    return this.coordinator.remember(this.liveAgent(sessionId), request, signal)
+    return this.coordinator.remember(this.liveAgent(sessionId), request, signal, { activateTarget: true })
   }
 
   runtime(sessionId: string, request: RuntimeMemoryMutation, signal = new AbortController().signal) {
@@ -761,7 +834,7 @@ export class MnemonLifecycle {
   }
 
   runRuntimeMaintenanceTask<T>(scope: import('../core/contracts/index.ts').MemoryOperationScope, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>): Promise<T> {
-    return this.runTaskAgent('', scope.workspaceId, signal, operation)
+    return this.runTaskAgent(scope.sessionId ?? '', scope.workspaceId, signal, operation)
   }
 
   /**
@@ -925,7 +998,7 @@ export class MnemonLifecycle {
     let handle: HostAgentHandle | undefined
     let failure: unknown
     try {
-      const creation = await this.taskAgentCreation(fallbackSessionId, workspaceRoot)
+      const creation = await this.taskAgentCreation(fallbackSessionId, workspaceRoot, signal)
       handle = await this.ctx.agents.create({
         sessionId,
         ...creation,
@@ -943,63 +1016,138 @@ export class MnemonLifecycle {
     }
   }
 
-  /** Resolve the same model route and preset composition as an ordinary fresh DSH Agent. */
+  /**
+   * Resolve the same model route and preset composition as an ordinary fresh DSH Agent.
+   *
+   * DSH persists a task Agent's session like any other. Its sidebar and ACP session
+   * list leave out a session whose header has `origin: 'subagent'`, the origin DSH
+   * gives its own subagents. Without it the sidebar hides a session that never started
+   * a turn only while DSH's projection cache holds a record of it, so a finished task
+   * could stay listed as an untitled Ungrouped conversation (#435). No `parentSession`
+   * or `delegationDepth`: the task belongs to no conversation, and its children stay
+   * one level deep.
+   */
   private async taskAgentCreation(
     fallbackSessionId: string,
     workspaceRoot: string | undefined,
+    signal: AbortSignal,
   ): Promise<Pick<CreateHostAgentOptions, 'meta' | 'agentOptions' | 'setup'>> {
     const agentOptions = this.taskAgentModelOptions(fallbackSessionId, workspaceRoot)
     if (agentOptions === undefined) throw new Error('no default provider/model is available for a clean task Agent')
-    const cwd = this.taskAgentCwd(workspaceRoot)
+    const { cwd, workFrom } = await this.taskAgentDirectories(workspaceRoot)
     const presets = presetService(this.ctx.get('agentPresets'))
-    if (presets === undefined) return { meta: { cwd }, agentOptions }
-
-    const presetId = (await presets.resolve()).id
+    const presetId = presets === undefined ? undefined : (await presets.resolve()).id
+    const workingDirectory = workFrom === undefined ? undefined : this.ctx.get('workingDirectory') as WorkingDirectoryService | undefined
+    const meta = { cwd, origin: 'subagent' as const, ...(presetId === undefined ? {} : { agentPreset: presetId }) }
+    if (presets === undefined && typeof workingDirectory?.set !== 'function') return { meta, agentOptions }
     return {
-      meta: { cwd, agentPreset: presetId },
+      meta,
       agentOptions,
-      setup: async agentCtx => { await presets.mount(agentCtx, presetId) },
+      setup: async (agentCtx, agent) => {
+        if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
+        if (workFrom !== undefined && agent !== undefined && typeof workingDirectory?.set === 'function') await workingDirectory.set(agent, workFrom, signal)
+      },
     }
   }
 
   /**
    * A task Agent runs outside any conversation, so its caller may hold no
-   * workspace at all. DSH's Web persona renders `{{cwd}}`, and an Agent created
-   * without one fails prompt assembly before its first step, so the registry's
-   * default workspace stands in; a profile that mounts no registry keeps the
-   * directory the Host was started in.
+   * workspace at all. DSH 0.2.0's Web persona renders `{{cwd}}`, and an Agent
+   * created without one fails prompt assembly before its first step, so the
+   * registry's first workspace stands in; a profile that mounts no registry
+   * keeps the directory the Host was started in.
+   *
+   * The `cwd` is also the workspace whose memory Mnemon reads, so it stays
+   * even when its folder is gone. DSH 0.2.1 checks the working directory
+   * before every step and fails once it and the session's original directory
+   * are gone, so the task then works from the first existing workspace, or the
+   * Host's directory, as DSH's own subagents do; its children inherit both.
    */
-  private taskAgentCwd(workspaceRoot: string | undefined): string {
+  private async taskAgentDirectories(workspaceRoot: string | undefined): Promise<{ cwd: string; workFrom?: string }> {
     const requested = workspaceRoot?.trim()
-    if (requested !== undefined && requested !== '') return resolve(requested)
-    const registry = this.ctx.get('workspaceRegistry') as { list?: () => Array<{ path?: unknown }> } | undefined
-    const listed = typeof registry?.list === 'function' ? registry.list() : []
-    for (const workspace of listed) {
-      if (typeof workspace?.path === 'string' && workspace.path.trim() !== '') return resolve(workspace.path)
+    const cwd = requested !== undefined && requested !== '' ? resolve(requested) : this.registeredWorkspaces()[0] ?? process.cwd()
+    return await isDirectory(cwd) ? { cwd } : { cwd, workFrom: await this.existingWorkspace() }
+  }
+
+  private async existingWorkspace(): Promise<string> {
+    for (const workspace of this.registeredWorkspaces()) {
+      if (await isDirectory(workspace)) return workspace
     }
     return process.cwd()
   }
 
+  private registeredWorkspaces(): string[] {
+    const registry = this.ctx.get('workspaceRegistry') as { list?: () => Array<{ path?: unknown }> } | undefined
+    const listed = typeof registry?.list === 'function' ? registry.list() : []
+    return listed.flatMap(workspace => typeof workspace?.path === 'string' && workspace.path.trim() !== '' ? [resolve(workspace.path)] : [])
+  }
+
   /** Resolve a complete task route for both status admission and actual creation. */
-  private taskAgentModelRoute(fallbackSessionId: string, workspaceRoot: string | undefined): { options: NonNullable<CreateHostAgentOptions['agentOptions']>; source: 'fixed' | 'dsh-default' | 'active-agent' } | undefined {
-    const fallback = this.ctx.agents.get(fallbackSessionId.trim()) ?? this.availableAgent(workspaceRoot) ?? this.availableAgent()
+  private taskAgentModelRoute(fallbackSessionId: string, workspaceRoot: string | undefined): { options: NonNullable<CreateHostAgentOptions['agentOptions']>; source: 'fixed' | 'session' | 'dsh-default' | 'active-agent' } | undefined {
+    const fallback = this.routeFallback(fallbackSessionId, workspaceRoot)
+    const maxTokens = fallback?.options?.maxTokens === undefined ? {} : { maxTokens: fallback.options.maxTokens }
     if (this.config.taskAgentModel.mode === 'fixed') {
       const provider = this.config.taskAgentModel.provider?.trim()
       const model = this.config.taskAgentModel.model?.trim()
       if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
-      return {
-        source: 'fixed',
-        options: { provider, model, ...(fallback?.options?.maxTokens === undefined ? {} : { maxTokens: fallback.options.maxTokens }) },
-      }
+      return { source: 'fixed', options: { provider, model, ...maxTokens } }
     }
-    let selected: { provider: string; model: string } | undefined
+    // With the switch on, an inherited route takes the route of the conversation
+    // the work belongs to, as that conversation's own delegated work does. Without
+    // it, or while that conversation is closed, the route is the DSH new-session
+    // default as before.
+    const conversation = this.config.taskAgentModel.followConversation === true ? this.conversationRoute(fallbackSessionId) : undefined
+    if (conversation !== undefined) return { source: 'session', options: { ...conversation, ...maxTokens } }
+    const inherited = this.inheritedRoute(fallback)
+    if (inherited === undefined) return undefined
+    const { source, ...options } = inherited
+    return { source, options: { ...options, ...maxTokens } }
+  }
+
+  /** The asking conversation's Agent, else an open one to borrow creation options from. */
+  private routeFallback(sessionId: string, workspaceRoot: string | undefined): HostAgent | undefined {
+    return this.ctx.agents.get(sessionId.trim()) ?? this.availableAgent(workspaceRoot) ?? this.availableAgent()
+  }
+
+  /**
+   * The route an inherited setting takes without following a conversation: the
+   * DSH new-session default, which DSH sets to the model last picked in any
+   * conversation, else an open Agent's creation route when DSH keeps none.
+   */
+  private inheritedRoute(fallback: HostAgent | undefined): { provider: string; model: string; reasoningEffort?: string; source: 'dsh-default' | 'active-agent' } | undefined {
+    let selected: ReturnType<HostDefaultModelService['currentSelection']> | undefined
     try { selected = modelService(this.ctx.get('agentDefaultModel'))?.currentSelection() } catch {}
     const selectedProvider = selected?.provider.trim()
     const selectedModel = selected?.model.trim()
     const provider = selectedProvider || fallback?.options?.provider?.trim()
     const model = selectedModel || fallback?.options?.model?.trim()
     if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
-    return { source: selectedProvider !== undefined && selectedProvider !== '' && selectedModel !== undefined && selectedModel !== '' ? 'dsh-default' : 'active-agent', options: { provider, model, ...(fallback?.options?.maxTokens === undefined ? {} : { maxTokens: fallback.options.maxTokens }) } }
+    const fromDefault = selectedProvider !== undefined && selectedProvider !== '' && selectedModel !== undefined && selectedModel !== ''
+    // Effort belongs to its provider/model; never borrow it from another route.
+    const matchesFallback = provider === fallback?.options?.provider?.trim() && model === fallback?.options?.model?.trim()
+    const effort = fromDefault ? selected?.reasoningEffort : matchesFallback ? fallback?.options?.reasoningEffort : undefined
+    return { provider, model, ...(typeof effort === 'string' && effort.trim() !== '' ? { reasoningEffort: effort } : {}), source: fromDefault ? 'dsh-default' : 'active-agent' }
+  }
+
+  /**
+   * The route DSH gives a conversation's own delegated work, idle review
+   * included: the provider, model and reasoning effort of its last request,
+   * or the route it was created with before its first one. It exists only
+   * while the conversation's Agent is loaded; another open conversation never
+   * stands in for it.
+   */
+  private conversationRoute(sessionId: string): { provider: string; model: string; reasoningEffort?: string } | undefined {
+    const normalized = sessionId.trim()
+    if (normalized === '') return undefined
+    const agent = this.ctx.agents.get(normalized)
+    if (agent === undefined) return undefined
+    const config = agent.session.requestHeader?.()?.config ?? agent.options
+    const provider = config?.provider?.trim()
+    const model = config?.model?.trim()
+    // A half-filled route is no route at all, so both halves travel together.
+    if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
+    const effort = config?.reasoningEffort
+    return { provider, model, ...(typeof effort === 'string' && effort !== '' ? { reasoningEffort: effort } : {}) }
   }
 
   private taskAgentModelOptions(fallbackSessionId: string, workspaceRoot: string | undefined): NonNullable<CreateHostAgentOptions['agentOptions']> | undefined {
@@ -1018,8 +1166,10 @@ export class MnemonLifecycle {
     let dispose: () => unknown
     dispose = agent.ctx.effect(() => {
       const stop = lifecycle.start()
+      const stopSkills = this.skillEvolution?.watch(agent)
       return () => {
         try {
+          stopSkills?.()
           stop()
         } finally {
           memoryTurn?.dispose()

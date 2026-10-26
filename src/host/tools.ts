@@ -1,13 +1,13 @@
 import type { HostContextShape, ToolDefinition, ToolExecution } from './dsh.ts'
 import type { DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
 import type { RuntimeMemoryImportance, RuntimeMemoryTarget } from 'dsh-mnemon-source-runtime/contracts'
-import type { Category, EdgeType, Source } from 'dsh-mnemon-source-memory-spaces/contracts'
-import { CATEGORIES, EDGE_TYPES, SOURCES } from './protocol.ts'
+import { CATEGORIES, EDGE_TYPES, SOURCES, type Category, type EdgeType, type Source } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { assertParticipation } from './access.ts'
-import type { MemoryCapability, MemoryJsonValue } from '../core/contracts/index.ts'
+import type { MemoryCapability, MemoryJsonValue, MemoryMutationReceipt } from '../core/contracts/index.ts'
+import { unofferedViewId } from './view-presentation.ts'
 import { agentScope, type MnemonAgentRuntimeSource, type MnemonRuntimeGraph } from './runtime.ts'
 import { isSubagent, MnemonSubagentCoordinator } from './subagent.ts'
-import { memoryReadPresentation, memoryWritePresentation } from './activity-presentation.ts'
+import { memoryReadPresentation, memoryWritePresentation, namedToolPresentation } from './activity-presentation.ts'
 
 const text = (value: unknown): Array<{ type: 'text'; text: string }> => [{
   type: 'text',
@@ -27,8 +27,55 @@ function requireAgent(exec: ToolExecution) {
   return exec.agent
 }
 
-/** Named product tools are views over the same Source Route/Action protocol. */
+/**
+ * The fields of a written Document the model needs to refer to it: never its body, which it just
+ * wrote, nor a path under the storage root, which it could read as one in the workspace. The
+ * content hash is what an archive's lineage names.
+ */
+const DOCUMENT_RECEIPT_FIELDS = ['id', 'title', 'description', 'status', 'revision', 'contentHash', 'sizeBytes', 'sourcePaths', 'memoryBodyIds', 'archivedAt', 'archiveSummary'] as const
+
+/**
+ * A Document write as the model reads it: the Document written and the layer's totals. The
+ * snapshot of every Document, with their excerpts and paths, grows with the layer and stays on
+ * the control plane the WebUI reads (#390).
+ */
+export function documentReceipt(value: unknown): unknown {
+  const result = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+  const snapshot = result?.snapshot
+  if (result === undefined || typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) return value
+  const { snapshot: _snapshot, document, ...rest } = result
+  const totals = snapshot as Record<string, unknown>
+  const written = typeof document === 'object' && document !== null && !Array.isArray(document) ? document as Record<string, unknown> : undefined
+  return {
+    ...rest,
+    ...(written === undefined ? {} : { document: Object.fromEntries(DOCUMENT_RECEIPT_FIELDS.filter(key => written[key] !== undefined).map(key => [key, written[key]])) }),
+    documents: { active: totals.activeCount, archived: totals.archivedCount, activeBytes: totals.activeBytes, limitBytes: totals.limitBytes },
+  }
+}
+
+/** A generic Action's receipt for a Document write, compacted as the named Document tools return it (#390). */
+function documentActionReceipt(receipt: MemoryMutationReceipt): MemoryMutationReceipt {
+  const details = receipt.details
+  if (typeof details !== 'object' || details === null || Array.isArray(details)) return receipt
+  return { ...receipt, details: ('result' in details ? { ...details, result: documentReceipt(details.result) } : documentReceipt(details)) as MemoryJsonValue }
+}
+
+/**
+ * Named product tools are views over the same Source Route/Action protocol. Each family registers its tools in the
+ * order the model has always been given them, which puts Memory Spaces' reads before the Documents tools and its
+ * writes after the runtime memory tool.
+ */
 export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentRuntimeSource, coordinator: MnemonSubagentCoordinator): void {
+  const helpers = toolHelpers(runtimeSource)
+  registerViewTools(ctx, helpers, coordinator)
+  registerMemorySpaceReadTools(ctx, helpers, coordinator)
+  registerDocumentTools(ctx, helpers, coordinator)
+  registerRuntimeTools(ctx, helpers, coordinator)
+  registerMemorySpaceWriteTools(ctx, helpers, coordinator)
+}
+
+/** What the handlers of every family share: the calling Agent's runtime graph and Sources, its checks, and a Source Action call. */
+function toolHelpers(runtimeSource: MnemonAgentRuntimeSource) {
   const runtimeFor = (exec: ToolExecution): MnemonRuntimeGraph => runtimeSource.forAgent(requireAgent(exec))
   const sourceFor = (exec: ToolExecution, typeId: string) => {
     const graph = runtimeFor(exec)
@@ -58,7 +105,13 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       memoryReceipt: { status: receipt.status, completion: receipt.completion, ...(receipt.committedAt === undefined ? {} : { committedAt: receipt.committedAt }) },
     }
   }
+  return { runtimeFor, sourceFor, requireSource, config, composableTurn, sourceAction }
+}
 
+type ToolHelpers = ReturnType<typeof toolHelpers>
+
+/** The two generic View tools, which run whichever Route or Action of the turn's View a call names. */
+function registerViewTools(ctx: HostContextShape, { runtimeFor, config, composableTurn }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_view_route',
     description: 'Execute one exact Route offered in the current MNEMON VIEW ROUTES envelope. Use only ids present in that envelope; the Host binds the request to its hidden ReadGrant, enforces call/result/character budgets, and returns Evidence.',
@@ -74,6 +127,9 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       presentationMeta: memoryReadPresentation(undefined, 'view-route', 'routeId') },
     execute: async (args: { routeId: string; input: MemoryJsonValue }, exec: ToolExecution) => {
       const { manager, turn } = composableTurn(exec)
+      // An id the View does not offer names only what the envelope shows (#390).
+      const refusal = unofferedViewId(runtimeFor(exec), turn, 'route', args.routeId)
+      if (refusal !== undefined) throw new Error(refusal)
       const evidence = await manager.executeRoute(turn.turnId, args.routeId, args.input, exec.signal)
       return evidence.output ?? evidence
     },
@@ -96,12 +152,25 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       presentationMeta: memoryWritePresentation(undefined, 'view-action', 'offerId') },
     execute: (args: { offerId: string; input: MemoryJsonValue }, exec: ToolExecution) => {
       if (!config.writeEnabled) throw new Error('dsh-mnemon is configured read-only (writeEnabled: false)')
-      return coordinator.action(requireAgent(exec), args.offerId, args.input, exec.signal)
+      const agent = requireAgent(exec)
+      const graph = runtimeFor(exec)
+      // The turn the coordinator acts in; an id it does not offer names only what the envelope shows (#390).
+      const turn = graph.composableTurns.activeTurn(agent.id)
+      const refusal = turn === undefined ? undefined : unofferedViewId(graph, turn, 'action', args.offerId)
+      if (refusal !== undefined) throw new Error(refusal)
+      const offer = turn?.view.actionOffers.find(candidate => candidate.id === args.offerId)
+      const source = offer === undefined ? undefined : graph.memoryComposition.generation(turn!.view.runtimeGeneration)?.sourceInstances()
+        .find(candidate => candidate.sourceInstanceKey === offer.sourceInstanceKey)
+      const receipt = coordinator.action(agent, args.offerId, args.input, exec.signal)
+      return source?.sourceTypeId === 'documents' ? receipt.then(documentActionReceipt) : receipt
     },
     presentCall: (args: { offerId: string }) => ({ card: 'generic', title: 'Apply composable memory action', kind: 'edit', rawInput: args.offerId }),
     presentResult: () => ({ card: 'generic', title: 'Composable memory receipt ready' }),
   } as never))
+}
 
+/** Memory Spaces' catalog, Recall, Related and health. */
+function registerMemorySpaceReadTools(ctx: HostContextShape, { sourceFor, requireSource }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_memory_bodies',
     description: 'Inspect a bounded Memory Space catalog with ids, routing, capabilities, activation, and health; paths, settings, and statistics are omitted. Use only for explicit space inspection or management, or before a capability-dependent write. Never call it to route Recall: omit memoryBodyIds and mnemon_recall searches every pinned active space.',
@@ -118,7 +187,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_recall',
-    description: 'Recall bounded durable evidence from this turn\'s pinned MemorySource only when the current question needs history. The Host allows one initial query plus one LLM-chosen different-query refinement, shares one evidence envelope, validates Memory Spaces, ignores brittle semantic filters, and replays duplicate queries. Omit memoryBodyIds to search every pinned active space.',
+    description: 'Recall bounded durable evidence from this turn\'s pinned MemorySource only when the current question needs history. The Host allows one initial query plus one LLM-chosen different-query refinement, shares one evidence envelope, validates Memory Spaces, ignores brittle semantic filters, and replays duplicate queries. Omit memoryBodyIds to search every pinned active space. It searches the memories in Memory Spaces, not project Documents, which mnemon_document_search searches; of a cold-archived Document it finds only the index memory the archive left in a space.',
     parameters: {
       type: 'object',
       properties: {
@@ -132,7 +201,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     output: {
       schema: JSON_OBJECT_OUTPUT,
       render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryReadPresentation('memory-spaces', 'recall'),
+      presentationMeta: namedToolPresentation('mnemon_recall'),
     },
     async execute(args: { query: string; mode?: 'smart' | 'keyword' | 'basic'; limit?: number; memoryBodyIds?: string[] }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'recall')
@@ -145,7 +214,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
 
   ctx.tools.register(definition({
     name: 'mnemon_related',
-    description: 'Traverse one insight admitted by this turn\'s mnemon_recall. At most one traversal is allowed per turn; use it only when the owning Memory Space reports capabilities.related=true and graph neighbors materially help. OpenViking does not currently support this operation.',
+    description: 'Traverse one insight admitted by this turn\'s mnemon_recall. At most one traversal is allowed per turn; use it only when the owning Memory Space reports capabilities.related=true and graph neighbors materially help. OpenViking does not currently support this operation. In a Mnemon Native space each neighbor names the edge it came through (edgeType): Mnemon adds temporal edges between memories written close in time and entity edges between memories that share an entity, so those are many; pass edge to follow one kind, such as semantic or causal. Other Providers name no edge type and do not filter by edge.',
     parameters: {
       type: 'object',
       properties: {
@@ -157,7 +226,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['id'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryReadPresentation('memory-spaces', 'related') },
+      presentationMeta: namedToolPresentation('mnemon_related') },
     async execute(args: { id: string; depth?: number; edge?: EdgeType; memoryBodyId?: string }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'related')
       const agent = requireAgent(exec)
@@ -184,10 +253,13 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     presentCall: () => ({ card: 'generic', title: 'Check Mnemon status', kind: 'other' }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon status checked' }),
   } as never))
+}
 
+/** The project Documents tools. */
+function registerDocumentTools(ctx: HostContextShape, { requireSource, config, sourceAction }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_document_search',
-    description: 'Run one focused search over project-scoped managed Documents before durable Recall. The Host admits only one Documents query per executing Agent turn; parallel calls share that slot, while child turns have independent budgets. Results contain bounded query-local evidence, not complete records. Cold archives are excluded unless a known archive reference requires them.',
+    description: 'Run one focused search over project-scoped managed Documents before durable Recall. The Host admits only one Documents query per executing Agent turn; parallel calls share that slot, while child turns have independent budgets. Results contain bounded query-local evidence, not complete records. Cold archives are excluded unless a known archive reference requires them. It searches Documents only: memories in Memory Spaces are never in its results, so recall those with mnemon_recall.',
     parameters: {
       type: 'object',
       properties: {
@@ -198,7 +270,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['query'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryReadPresentation('documents', 'search') },
+      presentationMeta: namedToolPresentation('mnemon_document_search') },
     async execute(args: { query: string; includeArchived?: boolean; limit?: number }, exec: ToolExecution) {
       const agent = requireAgent(exec)
       requireSource(exec, 'documents', 'search')
@@ -222,10 +294,10 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['title', 'content'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('documents', 'create') },
+      presentationMeta: namedToolPresentation('mnemon_document_create') },
     execute: (args: { title: string; description?: string; content: string; sourcePaths?: string[] }, exec: ToolExecution) => {
       requireSource(exec, 'documents', 'write')
-      return sourceAction(exec, 'documents', 'create', { ...args, sessionIds: [requireAgent(exec).id] })
+      return sourceAction(exec, 'documents', 'create', { ...args, sessionIds: [requireAgent(exec).id] }).then(documentReceipt)
     },
     presentCall: (args: { title: string }) => ({ card: 'generic', title: 'Create Mnemon Document', kind: 'edit', rawInput: args.title }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon Document created' }),
@@ -247,7 +319,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['action'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('documents', 'manage') },
+      presentationMeta: namedToolPresentation('mnemon_document_manage') },
     execute: (args: { action: 'create' | 'update' | 'archive'; id?: string; title?: string; description?: string; content?: string; sourcePaths?: string[] }, exec: ToolExecution) => {
       if (!config.writeEnabled) throw new Error('dsh-mnemon is configured read-only (writeEnabled: false)')
       const agent = requireAgent(exec)
@@ -256,18 +328,21 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
         requireSource(exec, 'documents', 'archive')
         if (isSubagent(agent)) throw new Error('idle document workers cannot cold-archive directly')
         if (args.id === undefined) throw new Error('document id is required for archive')
-        return coordinator.archiveDocument(agent, args.id, exec.signal)
+        return Promise.resolve(coordinator.archiveDocument(agent, args.id, exec.signal)).then(documentReceipt)
       }
       requireSource(exec, 'documents', 'write')
       const request: DocumentMutation = args.action === 'create'
         ? { action: 'create', title: args.title ?? '', content: args.content ?? '', ...(args.description === undefined ? {} : { description: args.description }), ...(args.sourcePaths === undefined ? {} : { sourcePaths: args.sourcePaths }), sessionIds: [agent.id] }
         : { action: 'update', id: args.id ?? '', ...(args.title === undefined ? {} : { title: args.title }), ...(args.description === undefined ? {} : { description: args.description }), ...(args.content === undefined ? {} : { content: args.content }), ...(args.sourcePaths === undefined ? {} : { sourcePaths: args.sourcePaths }), sessionIds: [agent.id] }
-      return isSubagent(agent) ? sourceAction(exec, 'documents', 'manage', request) : coordinator.document(agent, request, exec.signal)
+      return Promise.resolve(isSubagent(agent) ? sourceAction(exec, 'documents', 'manage', request) : coordinator.document(agent, request, exec.signal)).then(documentReceipt)
     },
     presentCall: (args: { action: string; title?: string }) => ({ card: 'generic', title: `${args.action} Mnemon Document`, kind: 'edit', ...(args.title === undefined ? {} : { rawInput: args.title }) }),
     presentResult: () => ({ card: 'generic', title: 'Mnemon Document processed' }),
   } as never))
+}
 
+/** The runtime memory tool, which writes USER.md and MEMORY.md. */
+function registerRuntimeTools(ctx: HostContextShape, { requireSource, config, composableTurn }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_runtime_memory',
     description: 'Maintain compact hot memory injected into future turns. Write only new reusable facts supplied or corrected by the user, or information the user explicitly asks to save. Never copy, promote, or summarize evidence returned by Documents, Recall, or Related unless the user explicitly asks to save that exact evidence; answering a read question must stay read-only. add creates one independent fact; replace corrects or consolidates one uniquely matched entry; remove is only for an explicitly withdrawn, obsolete, or wrong entry. target=user is only for who the user is; target=memory is for project/environment/decisions/lessons. Skip questions, guesses, assistant-authored claims, temporary progress, completed-work logs, raw dumps, secrets, rediscoverable facts, and skill-covered guidance. This tool exclusively writes runtime MEMORY.md and USER.md; capacity archival and compaction are automatic. Optional branches (git branch names, target=memory only) project an entry only in sessions on those branches: use them for branch-specific decisions and experiments, tag new branch-scoped entries with the git branch reported in the snapshot header, omit for cross-branch facts; on replace an empty list clears the scope, and an omitted list keeps the current scope.',
@@ -284,7 +359,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['action', 'target'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('runtime', 'mutate') },
+      presentationMeta: namedToolPresentation('mnemon_runtime_memory') },
     execute: (args: { action: 'add' | 'replace' | 'remove'; target: RuntimeMemoryTarget; content?: string; old_text?: string; importance?: RuntimeMemoryImportance; branches?: string[] }, exec: ToolExecution) => {
       if (!config.writeEnabled) throw new Error('dsh-mnemon is configured read-only (writeEnabled: false)')
       requireSource(exec, 'runtime', 'write')
@@ -302,7 +377,10 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
     presentCall: (args: { action: string; target: string }) => ({ card: 'generic', title: `${args.action} runtime ${args.target} memory`, kind: 'edit' }),
     presentResult: () => ({ card: 'generic', title: 'Runtime memory updated' }),
   } as never))
+}
 
+/** Memory Spaces' writes: remember, link and forget, and creating, updating and merging spaces. */
+function registerMemorySpaceWriteTools(ctx: HostContextShape, { requireSource, sourceAction }: ToolHelpers, coordinator: MnemonSubagentCoordinator): void {
   ctx.tools.register(definition({
     name: 'mnemon_remember',
     description: 'Archive one durable insight in a selected provider-backed Memory Space. Ordinary new hot memory belongs in mnemon_runtime_memory; use direct archival only for explicit long-term persistence or runtime capacity migration. Choose the narrowest existing space, search it first, verify capabilities.remember=true, and wait for the provider receipt. Exact writes require confirmed persistence; providers using semantic extraction may truthfully return skipped. Do not dump transcripts, temporary progress, routine observations, or repository-obvious facts.',
@@ -315,12 +393,12 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
         tags: { type: 'array', items: { type: 'string' }, description: 'At most 20 concise tags.' },
         entities: { type: 'array', items: { type: 'string' }, description: 'At most 50 named entities.' },
         source: { type: 'string', enum: [...SOURCES], description: 'Defaults to agent for model-authored writeback.' },
-        memoryBodyId: { type: 'string', description: 'Target Memory Space id. Required unless exactly one space is active.' },
+        memoryBodyId: { type: 'string', description: 'Target Memory Space id; the write goes there or nowhere. Name a switched-off space only when the user wants it back, after switching it on with mnemon_memory_body_update. Required unless exactly one space is active.' },
       },
       required: ['content'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'remember') },
+      presentationMeta: namedToolPresentation('mnemon_remember') },
     async execute(args: { content: string; category?: Category; importance?: number; tags?: string[]; entities?: string[]; source?: Source; memoryBodyId?: string }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'write')
       const request = { ...args, source: args.source ?? 'agent' }
@@ -348,7 +426,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['sourceId', 'targetId'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'link') },
+      presentationMeta: namedToolPresentation('mnemon_link') },
     async execute(args: { sourceId: string; targetId: string; type?: EdgeType; weight?: number; reason?: string; memoryBodyId?: string }, exec: ToolExecution) {
       requireSource(exec, 'memory-spaces', 'link')
       return isSubagent(exec.agent)
@@ -368,7 +446,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['id'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'forget') },
+      presentationMeta: namedToolPresentation('mnemon_forget') },
     execute: (args: { id: string; memoryBodyId?: string }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'forget')
       return isSubagent(exec.agent)
@@ -394,7 +472,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['name', 'description'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'manage-spaces') },
+      presentationMeta: namedToolPresentation('mnemon_memory_body_create') },
     execute: (args: { name: string; description: string; providerId?: string; reason?: string; confidence?: string }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'write')
       return isSubagent(exec.agent)
@@ -419,7 +497,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['memoryBodyId'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'manage-spaces') },
+      presentationMeta: namedToolPresentation('mnemon_memory_body_update') },
     execute: (args: { memoryBodyId: string; name?: string; description?: string; active?: boolean }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'write')
       return isSubagent(exec.agent)
@@ -443,7 +521,7 @@ export function registerTools(ctx: HostContextShape, runtimeSource: MnemonAgentR
       required: ['targetMemoryBodyId', 'sourceMemoryBodyIds'],
     },
     output: { schema: JSON_OBJECT_OUTPUT, render: (_args: unknown, value: unknown) => text(value),
-      presentationMeta: memoryWritePresentation('memory-spaces', 'manage-spaces') },
+      presentationMeta: namedToolPresentation('mnemon_memory_body_merge') },
     execute: (args: { targetMemoryBodyId: string; sourceMemoryBodyIds: string[]; deactivateSources?: boolean }, exec: ToolExecution) => {
       requireSource(exec, 'memory-spaces', 'write')
       return isSubagent(exec.agent)

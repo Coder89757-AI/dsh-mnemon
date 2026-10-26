@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { Config as PlainConfig, InteractionConfig, resolveConfig, resolveInteractionConfig, type Config as MnemonConfig } from './config.ts'
+import { Config as PlainConfig, InteractionConfig, resolveConfig, resolveInteractionConfig, SkillsConfig, type Config as MnemonConfig } from './config.ts'
 import { MnemonAutoBackupScheduler } from './auto-backup.ts'
 import { registerCommands } from './commands.ts'
 import type { HostContextShape, HostCredentialsService, HostWorkspaceRegistry } from './dsh.ts'
@@ -7,8 +7,12 @@ import { githubGrantFromRecord, MNEMON_SYNC_GITHUB_CREDENTIAL_KEY, MnemonGitHubA
 import { registerGuidance } from './guidance.ts'
 import { createRuntimeGraph, LiveMnemonRuntime } from './runtime.ts'
 import { MnemonLifecycle } from './lifecycle.ts'
+import { SkillEvolution } from './skill-evolution.ts'
+import { DEFAULT_SKILLS_CONFIG, type ResolvedSkillsConfig } from './protocol.ts'
+import { skillsSourceFor } from './skill-source.ts'
 import { registerRpc } from './rpc.ts'
-import { migrateLegacyDisplayMode, MNEMON_SETTINGS_NAMESPACE, registerSettingsRpc } from './settings.ts'
+import { hasNativeDirectoryPicker } from './directory-picker.ts'
+import { migrateLegacyDisplayMode, registerSettingsRpc } from './settings.ts'
 import { MnemonSubagentCoordinator } from './subagent.ts'
 import { registerTools } from './tools.ts'
 import { registerMnemonSubagentTokenUsageProjection } from './subagent-token-usage.ts'
@@ -19,7 +23,7 @@ import { MemoryPluginInstallation } from './plugin-installation.ts'
 import { MnemonRemoteService } from './remote-rpc.ts'
 import { plainHostConfig, type LiveHostConfig } from './live-config.ts'
 import { ProfileMnemonSettings } from './settings-service.ts'
-import { VersionUpdateManager, type DshBundleInstaller } from './version-updates.ts'
+import { dshPluginCommand, VersionUpdateManager, type DshBundleInstaller } from './version-updates.ts'
 
 export const name = 'dsh-mnemon'
 export const provide = ['mnemonMemory']
@@ -116,6 +120,11 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
     base: resolveInteractionConfig(resolved.conversationInteraction),
     applies: 'live',
   })
+  // 技能管理's settings: read at every turn and review, so a change applies at once.
+  const skillSettings = hostSettings.register<ResolvedSkillsConfig>('mnemon-skills', SkillsConfig, {
+    base: { ...DEFAULT_SKILLS_CONFIG },
+    applies: 'live',
+  })
   ctx.effect(() => {
     let disposed = false
     const migrate = (): void => {
@@ -151,6 +160,13 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
   }, () => runtime.config.runtimeMemory.maintenanceMaxTokens,
   (scope, signal, operation) => lifecycle.runRuntimeMaintenanceTask(scope, signal, operation))
   const lifecycle = new MnemonLifecycle(ctx, coordinator, runtime.config, runtime)
+  const skills = new SkillEvolution({
+    settings: () => skillSettings.get(),
+    source: agent => skillsSourceFor(runtime, agent),
+    runTask: (workspaceRoot, signal, operation) => lifecycle.runSkillTask(workspaceRoot, signal, operation),
+    skillTask: (parent, label, prompt, schema, persona, signal) => coordinator.skillTask(parent, label, prompt, schema, persona, signal),
+  })
+  lifecycle.useSkillEvolution(skills)
   // Registered before the lifecycle root so teardown runs the other way round:
   // the timer stops first, and only then does the runtime it reads go away.
   ctx.effect(() => {
@@ -161,6 +177,7 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
     const stop = lifecycle.start()
     return async () => {
       stop()
+      skills.dispose()
       await coordinator.dispose()
       runtime.dispose()
     }
@@ -187,22 +204,9 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
         const profile = ctx.get('profileContext') as { dir?: unknown; packageManager?: unknown } | undefined
         return typeof profile?.dir === 'string' ? { dir: profile.dir, packageManager: profile.packageManager !== undefined } : undefined
       },
+      pluginCommand: () => dshPluginCommand(ctx.get('profileContext')),
     })
-    // A completed data-directory move has to reach the live runtime, or every
-    // later call keeps reading the directory that was just removed. Writing the
-    // location back through the settings service is what does it: the write
-    // publishes a new 'mnemon' generation, and the subscription above swaps in
-    // a graph built on the new root.
-    const relocation = {
-      get writable(): boolean { return hostSettings.writable },
-      relocate: async (directory: string): Promise<void> => {
-        await hostSettings.mutate(MNEMON_SETTINGS_NAMESPACE, [
-          { op: 'set', path: ['storageScope'], value: 'custom' },
-          { op: 'set', path: ['dataDir'], value: directory },
-        ])
-      },
-    }
-    const rpc = registerRpc(connection, runtime, lifecycle, versions, () => autoBackup.refresh(), relocation)
+    const rpc = registerRpc(connection, runtime, lifecycle, versions, () => autoBackup.refresh(), () => hasNativeDirectoryPicker(ctx))
     const settings = registerSettingsRpc(connection, hostSettings)
     const view = registerViewRpc(connection, runtime, extensions, memoryPlugins, lifecycle, pluginInstallation)
     if (Context.is(webContext)) {

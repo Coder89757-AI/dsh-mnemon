@@ -45,6 +45,8 @@ export interface VersionUpdateDependencies {
   bundleInstaller?: () => DshBundleInstaller | undefined
   /** The profile this Host runs in (`ctx.profileContext`). */
   runningProfile?: () => DshRunningProfile | undefined
+  /** DSH's own `dsh plugin` command for that profile; see {@link dshPluginCommand}. */
+  pluginCommand?: () => Promise<DshPluginCommand | undefined>
 }
 
 export interface DshRunningProfile {
@@ -54,17 +56,89 @@ export interface DshRunningProfile {
 }
 
 /**
+ * DSH's `dsh plugin` command, bound to the profile this Host runs in: pnpm under the profile's write
+ * lock, with the launcher's package manager, and DSH's compatibility check before and after the install,
+ * which restores the profile manifest and lockfile when it refuses.
+ */
+export type DshPluginCommand = (args: readonly string[]) => Promise<DshPluginCommandResult>
+
+export interface DshPluginCommandResult {
+  exitCode: number | null
+  output: string
+  logPath?: string
+  kind?: string
+  timedOut?: boolean
+  /** The packages the running DSH refused, with the DSH they need. */
+  incompatible?: ReadonlyArray<DshIncompatibility>
+}
+
+/** What a DSH launcher records about the profile it runs (`ctx.profileContext`). */
+interface DshProfileContext {
+  name: string
+  dir: string
+  installAnchor: string
+  cwd: string
+  home: string
+  packageManager?: { command: string; args: readonly string[]; env: Readonly<Record<string, string>> }
+}
+
+function profileContextOf(value: unknown): DshProfileContext | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const profile = value as Partial<DshProfileContext>
+  return ['name', 'dir', 'installAnchor', 'cwd', 'home'].every(key => typeof profile[key as keyof DshProfileContext] === 'string') ? profile as DshProfileContext : undefined
+}
+
+/**
+ * The `dsh plugin` command of the DSH this Host runs in, from `@deepseek-ai/dsh-plugin-manager/operations`,
+ * which DSH's runtime resolution supplies to every profile. Undefined where the launcher records no
+ * profile or the installation does not export the command.
+ */
+export async function dshPluginCommand(profileContext: unknown): Promise<DshPluginCommand | undefined> {
+  const profile = profileContextOf(profileContext)
+  if (profile === undefined) return undefined
+  // A variable specifier keeps the bundler from resolving the module at build time.
+  const specifier = '@deepseek-ai/dsh-plugin-manager/operations'
+  let operations: { runPluginCommand?: (context: object, args: readonly string[], options: object) => Promise<DshPluginCommandResult> }
+  try {
+    operations = await import(specifier) as typeof operations
+  } catch {
+    return undefined
+  }
+  const run = operations.runPluginCommand
+  if (typeof run !== 'function') return undefined
+  return args => run(
+    { profile: profile.name, dir: profile.dir, installAnchor: profile.installAnchor, cwd: profile.cwd, home: profile.home },
+    args,
+    // As DSH's plugin manager runs it: no secrets in the environment, bounded output, the bundle selection left alone.
+    { execution: 'service', ...(profile.packageManager ?? {}), outputBytes: MAX_UPDATE_OUTPUT_BYTES, activateNewBundles: false, idleTimeoutMs: UPDATE_TIMEOUT_MS, signal: AbortSignal.timeout(UPDATE_TIMEOUT_MS) },
+  )
+}
+
+/**
  * The part of DSH's plugin manager that updates the Starter. `installBundle` runs
  * `pnpm add <spec>` as `dsh plugin` does, with the profile's own package manager
  * (a packaged app's bundled pnpm), registry fallbacks and lock. It checks the new
  * version's DSH peers and restores the profile files when it fails. Upgrading an
  * installed bundle reports `restart-required` without reloading it, and
- * `enabled: false` leaves the profile's bundle selection alone. Identical in DSH
- * 0.1.7-rc.2 and 0.2.
+ * `enabled: false` leaves the profile's bundle selection alone. On DSH 0.2.1 a
+ * profile with hot reload refuses to install over a package it has
+ * (`already-installed`): there another version
+ * replaces it only after it is removed, which would stop this plugin mid-update,
+ * so the update runs DSH's own `dsh plugin add` instead.
  */
 export interface DshBundleInstaller {
   installBundle(spec: string, options?: { enabled?: boolean }): Promise<DshBundleChange>
   listBundles(): Promise<ReadonlyArray<{ name: string; version?: string }>>
+}
+
+/**
+ * A package the running DSH refused. DSH 0.2.1 names what it needs `requirements`,
+ * keyed `engines.dsh` or by DSH peer package; DSH 0.2.0 names the peers alone `peers`.
+ */
+export interface DshIncompatibility {
+  runtimeVersion?: string
+  requirements?: Readonly<Record<string, string>>
+  peers?: Readonly<Record<string, string>>
 }
 
 export interface DshBundleChange {
@@ -72,7 +146,7 @@ export interface DshBundleChange {
   error?: {
     code?: string
     diagnostic?: string
-    incompatible?: ReadonlyArray<{ runtimeVersion?: string; peers?: Readonly<Record<string, string>> }>
+    incompatible?: ReadonlyArray<DshIncompatibility>
   }
   packageResult?: { output?: string; logPath?: string; kind?: string }
 }
@@ -92,6 +166,16 @@ const PACKAGE_MANIFEST_PATH = [new URL('../package.json', import.meta.url), new 
  * these same files while the loaded modules stay in memory until DSH restarts.
  */
 const LOADED_VERSION = manifest(PACKAGE_MANIFEST_PATH)?.version
+/**
+ * The version of the package this process loaded, for anything that has to name the build it came
+ * from — a Pack manifest, a backup a person keeps. Resolving `package.json` relative to this
+ * module is what makes it work from `src/` under a test runner and from `lib/` once built: the
+ * candidate list steps up to the root that holds the manifest either way. A harness that imports
+ * these sources without a package root reads none, so `0.0.0` stands in rather than failing.
+ */
+export function pluginPackageVersion(): string {
+  return LOADED_VERSION ?? '0.0.0'
+}
 const CHECK_TIMEOUT_MS = 10_000
 const UPDATE_TIMEOUT_MS = 10 * 60_000
 /** A check waits this long for an update that is finishing, within the browser's 15 s check deadline. */
@@ -299,7 +383,8 @@ async function resultOrThrow(runner: ProcessRunner, command: string, args: reado
 function dshFailure(change: DshBundleChange): string {
   const reason = change.error?.code ?? change.application
   const incompatible = change.error?.incompatible ?? []
-  const peers = incompatible.flatMap(plugin => Object.entries(plugin.peers ?? {}).map(([name, range]) => `${name} ${range}`))
+  const peers = incompatible.flatMap(plugin => Object.entries(plugin.requirements ?? plugin.peers ?? {})
+    .map(([name, range]) => `${name === 'engines.dsh' ? 'DSH' : name} ${range}`))
   if (peers.length > 0) {
     const runtime = incompatible.find(plugin => plugin.runtimeVersion !== undefined)?.runtimeVersion
     return `${reason} (requires ${peers.join(', ')}${runtime === undefined ? '' : `; this DSH is ${runtime}`})`
@@ -350,6 +435,7 @@ export class VersionUpdateManager {
   private readonly fetchMnemonLatest: () => Promise<string | undefined>
   private readonly bundleInstallerOf: () => DshBundleInstaller | undefined
   private readonly runningProfile: () => DshRunningProfile | undefined
+  private readonly pluginCommand: () => Promise<DshPluginCommand | undefined>
   /** What Check versions updated while this Host runs, each with the version it replaced. */
   private readonly pendingRestart = new Map<VersionComponentId, string | undefined>()
   private inFlight: Promise<VersionUpdateResult> | undefined
@@ -367,6 +453,7 @@ export class VersionUpdateManager {
     this.fetchMnemonLatest = dependencies.fetchMnemonLatest ?? (() => this.fetchNpmLatest(MNEMON_NPM_PACKAGE))
     this.bundleInstallerOf = dependencies.bundleInstaller ?? (() => undefined)
     this.runningProfile = dependencies.runningProfile ?? (() => undefined)
+    this.pluginCommand = dependencies.pluginCommand ?? (async () => undefined)
   }
 
   /**
@@ -678,7 +765,12 @@ export class VersionUpdateManager {
     }
     // DSH's own installer replaces a DSH bundle: the Starter, or a Strategy the profile added on its own.
     const installer = child === undefined || child.updateHint === 'dsh' ? this.bundleInstaller(install) : undefined
-    if (installer !== undefined) return this.updateThroughDsh(installer, component, previousVersion, latest)
+    if (installer !== undefined) {
+      const result = await this.updateThroughDsh(installer, component, previousVersion, latest)
+      if (result !== undefined) return result
+      // Where DSH refuses to install over the package, its own `dsh plugin add` replaces it.
+      if (install.mode === 'npm' && install.profileDir !== undefined) return this.updateThroughPluginCommand(install.profileDir, install.profileName, component, previousVersion, latest)
+    }
     const pnpm = this.executable('pnpm')
     if (install.mode !== 'npm' || install.profileDir === undefined || pnpm === undefined) throw new Error('This dsh-mnemon installation cannot be updated automatically')
     const output = await resultOrThrow(this.processRunner, pnpm, ['add', `${component}@${latest}`, '--save-exact'], UPDATE_TIMEOUT_MS, { cwd: install.profileDir })
@@ -700,10 +792,53 @@ export class VersionUpdateManager {
   }
 
   /**
+   * DSH 0.2.1 with hot reload replaces an installed package only after removing it, which would
+   * stop this plugin mid-update. `dsh plugin add` replaces it in place under the profile's lock, after
+   * DSH's compatibility check; the new version loads at the next restart, or at DSH's next profile
+   * recomposition, which replaces plugins whose files changed.
+   */
+  private async updateThroughPluginCommand(profileDir: string, profileName: string | undefined, component: VersionComponentId, previousVersion: string, latest: string): Promise<VersionUpdateResult> {
+    const spec = `${component}@${latest}`
+    const command = await this.pluginCommand().catch(() => undefined)
+    if (command === undefined) {
+      throw new Error(`This DSH does not install over an installed plugin and offers no plugin command here; quit DSH, run \`dsh plugin --profile ${profileName ?? '<profile>'} add ${spec}\`, then start DSH again`)
+    }
+    let result: DshPluginCommandResult
+    try {
+      result = await command(['add', spec, '--save-exact'])
+    } catch (error) {
+      throw new Error(`DSH could not install ${spec}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    const refused = (result.incompatible?.length ?? 0) > 0
+    if (refused || result.exitCode !== 0 || result.timedOut === true) {
+      throw new Error(`DSH could not install ${spec}: ${dshFailure({
+        application: 'failed',
+        error: { code: refused ? 'incompatible-version' : 'operation-error', diagnostic: result.output, ...(refused ? { incompatible: result.incompatible! } : {}) },
+        packageResult: { output: result.output, ...(result.logPath === undefined ? {} : { logPath: result.logPath }), ...(result.kind === undefined ? {} : { kind: result.kind }) },
+      })}`)
+    }
+    // The running module may still reside in pnpm's old versioned directory; read the profile's public link.
+    const installedVersion = manifest(join(profileDir, 'node_modules', component, 'package.json'))?.version
+    if (installedVersion !== latest) throw new Error(`${component} update did not install the requested version ${latest}; found ${installedVersion ?? 'no package'}`)
+    if (component === DSH_MNEMON_PACKAGE) this.dshMnemonVersion = installedVersion
+    this.remember(component, previousVersion)
+    const output = result.output.trim()
+    return {
+      component,
+      previousVersion,
+      currentVersion: installedVersion,
+      updated: true,
+      restartRequired: true,
+      ...(output === '' ? {} : { output: output.slice(-4_000) }),
+    }
+  }
+
+  /**
    * An exact version installs at once, outside pnpm's release-age window, and for the Starter pins
    * its tested components. The update replaces the package only; which bundles run stays as it was.
+   * Undefined when DSH refuses to install over the installed package, before it runs pnpm.
    */
-  private async updateThroughDsh(installer: DshBundleInstaller, component: VersionComponentId, previousVersion: string, latest: string): Promise<VersionUpdateResult> {
+  private async updateThroughDsh(installer: DshBundleInstaller, component: VersionComponentId, previousVersion: string, latest: string): Promise<VersionUpdateResult | undefined> {
     const spec = `${component}@${latest}`
     let change: DshBundleChange
     try {
@@ -712,6 +847,7 @@ export class VersionUpdateManager {
       throw new Error(`DSH could not install ${spec}: ${error instanceof Error ? error.message : String(error)}`)
     }
     const output = change.packageResult?.output?.trim()
+    if (change.application === 'failed' && change.error?.code === 'already-installed') return undefined
     if (change.application === 'failed' || change.application === 'cancelled') throw new Error(`DSH could not install ${spec}: ${dshFailure(change)}`)
     const installedVersion = (await installer.listBundles()).find(bundle => bundle.name === component)?.version
     if (installedVersion !== latest) throw new Error(`${component} update did not install the requested version ${latest}; found ${installedVersion ?? 'no package'}`)

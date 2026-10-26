@@ -1,8 +1,8 @@
 import type { HostConnectionHandle, HostRpcHandler, HostSettingsService, RpcResult } from "./dsh.ts"
-import { MNEMON_SETTINGS_CHANNEL, MNEMON_SETTINGS_NAMESPACE, MNEMON_UI_SETTINGS_NAMESPACE } from "./protocol.ts"
+import { DEFAULT_SKILLS_CONFIG, MNEMON_SETTINGS_CHANNEL, MNEMON_SETTINGS_NAMESPACE, MNEMON_SKILLS_SETTINGS_NAMESPACE, MNEMON_UI_SETTINGS_NAMESPACE } from "./protocol.ts"
 import { normalizeDisplayMode } from './display-mode.ts'
 
-export { MNEMON_SETTINGS_CHANNEL, MNEMON_SETTINGS_NAMESPACE, MNEMON_UI_SETTINGS_NAMESPACE } from "./protocol.ts"
+export { MNEMON_SETTINGS_CHANNEL, MNEMON_SETTINGS_NAMESPACE, MNEMON_SKILLS_SETTINGS_NAMESPACE, MNEMON_UI_SETTINGS_NAMESPACE } from "./protocol.ts"
 
 function success(value: unknown): RpcResult<unknown> {
   return { ok: true, value }
@@ -91,17 +91,19 @@ const INTERACTION_PATHS: string[][] = [
 ]
 
 const UI_FIELDS = ['turnBar', 'saveAction']
+const SKILLS_FIELDS = Object.keys(DEFAULT_SKILLS_CONFIG)
 const MEMORY_LAYER_ID = /^[a-z][a-z0-9-]{0,127}$/u
 
 function namespaceOf(payload: Record<string, unknown>): string {
   const namespace = payload.namespace === undefined ? MNEMON_SETTINGS_NAMESPACE : String(payload.namespace)
-  if (namespace !== MNEMON_SETTINGS_NAMESPACE && namespace !== MNEMON_UI_SETTINGS_NAMESPACE) throw new Error(`unsupported Mnemon settings namespace: ${namespace}`)
+  if (namespace !== MNEMON_SETTINGS_NAMESPACE && namespace !== MNEMON_UI_SETTINGS_NAMESPACE && namespace !== MNEMON_SKILLS_SETTINGS_NAMESPACE) throw new Error(`unsupported Mnemon settings namespace: ${namespace}`)
   return namespace
 }
 
 /** Whether one mutation path targets a supported Mnemon settings field. */
 function mutablePath(namespace: string, path: string[]): boolean {
   if (namespace === MNEMON_UI_SETTINGS_NAMESPACE) return path.length === 1 && UI_FIELDS.includes(path[0]!)
+  if (namespace === MNEMON_SKILLS_SETTINGS_NAMESPACE) return path.length === 1 && SKILLS_FIELDS.includes(path[0]!)
   if (path.length === 1) return MUTABLE_FIELDS.includes(path[0]!)
   if (path.length === 4 && path[0] === 'memoryTopology' && path[1] === 'layers' && path[3] === 'enabled') {
     return MEMORY_LAYER_ID.test(path[2]!)

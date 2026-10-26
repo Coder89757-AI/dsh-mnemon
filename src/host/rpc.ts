@@ -7,14 +7,12 @@ import { assertParticipation } from './access.ts'
 import { sourceFailure } from './source-session.ts'
 import { isVersionComponentId, VersionUpdateManager } from './version-updates.ts'
 import type { MemoryCapability, MemoryJsonValue, MemoryOperationScope, MemorySourceManagementInstance, MemorySourceManagementRequest } from '../core/contracts/index.ts'
-import type { CreateMemoryBodyRequest as CreateMemorySpaceRequest, Insight, MemoryBodyCatalog as MemorySpaceCatalog, PreparedMemoryPlacement, RememberRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
+import type { CreateMemorySpaceRequest, Insight, MemorySpaceCatalog, PreparedMemoryPlacement, RememberRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { RuntimeMemoryMutation } from 'dsh-mnemon-source-runtime/contracts'
 import type { DocumentMutation } from 'dsh-mnemon-source-documents/contracts'
-import { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL, type MemoryCompositionStatus, type MnemonPackComponent, type MnemonPackImportMode } from './protocol.ts'
+import { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL, type MemoryCompositionStatus, type MnemonPackComponent, type MnemonPackImportMode, type SkillsStatusSummary } from './protocol.ts'
 import { MNEMON_PACK_COMPONENTS } from './protocol.ts'
 import { applyReconcileOperations, selectReconcileOperations, sourceApplier, type MnemonReconcileSessions } from './reconcile.ts'
-import { migrateStorageRoot, planMigration } from './storage-migration.ts'
-import { withMemoryStorageLock } from '../sdk/storage-lock.ts'
 export { MNEMON_ACTIVATION_CHANNEL, MNEMON_PACK_CHANNEL, MNEMON_READ_CHANNEL, MNEMON_REVIEW_CHANNEL, MNEMON_SYNC_CHANNEL, MNEMON_WRITE_CHANNEL } from './protocol.ts'
 
 function object(value: unknown): Record<string, unknown> {
@@ -87,7 +85,10 @@ function requestedLimit(value: unknown): number | undefined {
 }
 function success(value: unknown): RpcResult<unknown> { return { ok: true, value } }
 function failure(error: unknown): RpcResult<unknown> {
-  return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} } }
+  // A named failure, such as a sync remote that refused the credentials, carries its
+  // reason so the page can state it in its own language; the message stays as written.
+  const reason = error instanceof Error ? (error as { reason?: unknown }).reason : undefined
+  return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: typeof reason === 'string' ? { reason } : {} } }
 }
 function badRequest(message: string): RpcResult<unknown> {
   return { ok: false, error: { code: 'bad-request', message, details: { issues: [] } } }
@@ -99,7 +100,7 @@ const SPACE_READ_CAPABILITIES: Record<string, MemoryCapability> = {
 }
 const SPACE_WRITE_CAPABILITIES: Record<string, MemoryCapability> = {
   remember: 'write', link: 'link', forget: 'forget', 'body-create': 'write', 'body-update': 'write',
-  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain',
+  'body-delete': 'forget', 'body-merge': 'write', 'provider-service-update': 'maintain', 'embedding-fill': 'maintain',
 }
 
 // Optional product workflows. They are not Source or Core operations and are
@@ -108,6 +109,7 @@ const ASSISTANCE: Record<string, readonly string[]> = {
   'runtime': ['mutate'],
   'documents': ['mutate', 'archive'],
   'memory-spaces': ['agent-search', 'supervise', 'body-create', 'body-metadata-maintain'],
+  'skills': ['skill-draft', 'skill-backtest', 'skill-derive-cases', 'skill-review-now'],
 }
 function assistance(source: MemorySourceManagementInstance, lifecycle?: MnemonLifecycle, runtime?: ScopedRuntime): readonly string[] {
   const controls = source.sourceTypeId === 'memory-spaces' ? ['activation'] : []
@@ -170,6 +172,7 @@ async function assisted(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, type
       }
     }
   }
+  if (typeId === 'skills') return skillAssistance(runtime, lifecycle, operation, input, signal)
   if (typeId !== 'memory-spaces') throw new Error('unsupported Source assistance operation')
   const source = runtime.source(typeId)
   switch (operation) {
@@ -213,6 +216,58 @@ async function assisted(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, type
   }
 }
 
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw new Error(label + ' must be a string')
+  return value.trim() === '' ? undefined : value.trim()
+}
+
+/** Skill evolution's model work: drafts and backtests run in the background, cases and reviews answer here. */
+async function skillAssistance(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, operation: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  const skills = lifecycle.skills
+  if (skills === undefined) throw new Error('skill evolution is unavailable')
+  const source = runtime.source('skills')
+  const workspaceRoot = runtime.scope.workspaceId
+  switch (operation) {
+    case 'skill-draft': {
+      const root = optionalString(input.targetRoot, 'targetRoot')
+      if (root !== undefined && !['project-dsh', 'project-agents', 'user-dsh', 'user-agents'].includes(root)) throw new Error('unknown skill root: ' + root)
+      const suggestionId = optionalString(input.suggestionId, 'suggestionId')
+      const skill = optionalString(input.skill, 'skill')
+      if (suggestionId === undefined && skill === undefined) throw new Error('a draft needs a suggestion or a skill')
+      const guidance = optionalString(input.guidance, 'guidance')
+      if (guidance !== undefined && guidance.length > 4_000) throw new Error('guidance is too long (max 4000 characters)')
+      return skills.draft(source, workspaceRoot, {
+        ...(suggestionId === undefined ? {} : { suggestionId }), ...(skill === undefined ? {} : { skill }),
+        ...(guidance === undefined ? {} : { guidance }), ...(root === undefined ? {} : { targetRoot: root as never }),
+      })
+    }
+    case 'skill-backtest': {
+      const skillName = optionalString(input.skillName, 'skillName')
+      if (skillName === undefined) throw new Error('skillName is required')
+      const target = object(input.target)
+      if (!['current', 'draft', 'version', 'none'].includes(String(target.kind))) throw new Error('target kind must be current, draft, version or none')
+      const caseIds = input.caseIds === undefined ? undefined : input.caseIds
+      if (caseIds !== undefined && (!Array.isArray(caseIds) || caseIds.some(id => typeof id !== 'string'))) throw new Error('caseIds must be a string array')
+      return skills.backtest(source, workspaceRoot, { skillName, target: target as never, ...(caseIds === undefined ? {} : { caseIds: caseIds as string[] }) })
+    }
+    case 'skill-derive-cases': {
+      const trajectoryId = optionalString(input.trajectoryId, 'trajectoryId')
+      const skillName = optionalString(input.skillName, 'skillName')
+      if (trajectoryId === undefined || skillName === undefined) throw new Error('trajectoryId and skillName are required')
+      const steps = input.steps
+      if (steps !== undefined && (!Array.isArray(steps) || steps.some(step => !Number.isInteger(step)))) throw new Error('steps must be an integer array')
+      return skills.deriveCases(source, workspaceRoot, { trajectoryId, skillName, ...(steps === undefined ? {} : { steps: steps as number[] }) }, signal ?? new AbortController().signal)
+    }
+    case 'skill-review-now': {
+      const sessionId = runtime.scope.sessionId
+      if (sessionId === undefined || !runtime.liveSession) throw new Error('open the conversation to review, and run it once, before reviewing its skills')
+      return lifecycle.reviewSkills(sessionId)
+    }
+    default: throw new Error('unsupported Source assistance operation: ' + operation)
+  }
+}
+
 export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLifecycle, versions?: VersionUpdateManager): HostRpcHandler {
   return async (endpoint, rawPayload, signal) => {
     try {
@@ -223,7 +278,10 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
       }
       if (endpoint === 'task-agent-models') {
         if (lifecycle === undefined) throw new Error('Mnemon task Agent model directory is unavailable')
-        return success(await lifecycle.taskAgentModels(payload.includeCatalog !== false))
+        // The settings page asks from one conversation, so its effective route
+        // is that conversation's route rather than a session-less guess.
+        const requested = requestedScope(payload)
+        return success(await lifecycle.taskAgentModels(payload.includeCatalog !== false, requested.sessionId))
       }
       const runtime = scoped(input, payload, lifecycle)
       if (Object.hasOwn(SPACE_READ_CAPABILITIES, endpoint)) {
@@ -269,6 +327,14 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
           // Every Memory System page reads this status, so each one can say what a restart would load.
           let restartPending
           try { restartPending = versions?.restartStatus() } catch { /* The reminder is optional; the status is not. */ }
+          // 技能管理's card: how many skills there are and what waits for the user.
+          let skills: SkillsStatusSummary | undefined
+          if (composition.sources.some(source => source.sourceTypeId === 'skills')) {
+            try {
+              const overview = await runtime.source('skills').read<{ counts: { skills: number; pending: number; drafts: number } }>('overview', null, signal)
+              skills = { evolution: lifecycle?.skills?.config().evolution ?? false, skills: overview.counts.skills, waiting: overview.counts.pending + overview.counts.drafts }
+            } catch { /* The card falls back to its own note. */ }
+          }
           const hasSpaces = composition.sources.some(source => source.sourceTypeId === 'memory-spaces')
           const status = hasSpaces ? await runtime.source('memory-spaces').read<Record<string, unknown>>(endpoint, payload, signal) : {
             healthy: composition.evaluation.state === 'ready', commandFound: false, cliPath: runtime.graph.config.cliPath ?? '',
@@ -281,6 +347,7 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
             ...(restartPending === undefined ? {} : { restartPending }),
             ...(lifecycle === undefined ? {} : { lifecycle: lifecycle.snapshot(runtime.scope.sessionId, isWorkspaceStorageScope(runtime.graph.config.storageScope) ? runtime.scope.workspaceId : undefined) }),
             ...(documents === undefined ? {} : { documents }),
+            ...(skills === undefined ? {} : { skills }),
             memorySystem: composition,
             storage: runtime.graph.storage.catalog(runtime.scope.workspaceId),
             workspaceContext: {
@@ -299,6 +366,9 @@ export function createReadHandler(input: LiveMnemonRuntime, lifecycle?: MnemonLi
           const snapshot = lifecycle.turnActivities(String(payload.sessionId ?? ''))
           return success(endpoint === 'turn-activities' ? snapshot : snapshot.activities.find(activity => activity.turn === Number(payload.turn)) ?? null)
         }
+        case 'skill-activity':
+          if (lifecycle === undefined) throw new Error('Mnemon skill activity is unavailable')
+          return success(await lifecycle.skillActivity(String(payload.sessionId ?? '')))
         case 'assistant-message':
           if (lifecycle === undefined) throw new Error('Mnemon assistant message is unavailable')
           return success(lifecycle.assistantMessage(String(payload.sessionId ?? ''), String(payload.messageId ?? '')))
@@ -410,67 +480,19 @@ export function createWriteHandler(input: LiveMnemonRuntime, lifecycle?: MnemonL
   }
 }
 
-/**
- * What follows a completed data-directory move. The Pack handler owns the files
- * and the settings service owns the recorded location, so the Host wires the
- * two together here: it is asked whether a new location could be persisted
- * before anything is copied, and it is what rebuilds the live runtime on it.
- */
-export interface MnemonStorageRelocation {
-  /** Whether the profile can record a new location; asked before any file moves. */
-  readonly writable: boolean
-  /** Record the new location and rebuild the live runtime on it. */
-  relocate(directory: string): Promise<void>
-}
-
 /** Pack data stays inside the selected storage root and DSH authentication. */
-export function createPackHandler(input: LiveMnemonRuntime, relocation?: MnemonStorageRelocation): HostRpcHandler {
+export function createPackHandler(input: LiveMnemonRuntime, nativeDirectoryPicker: () => boolean = () => false): HostRpcHandler {
   return async (endpoint, rawPayload) => {
     try {
       const payload = object(rawPayload)
       const runtime = scoped(input, payload)
       const manager = runtime.graph.packs
-      if (endpoint === 'target') return success(manager.target())
-      // Moving the data directory is the same kind of operation as Pack: it acts
-      // on the storage root itself, so it takes that root's lock and nothing else.
-      if (endpoint === 'storage-plan') {
-        const to = String(payload.dataDir ?? '').trim()
-        if (to === '') throw new Error('dataDir must be a non-empty directory')
-        return success(planMigration(runtime.graph.directory, to))
-      }
-      if (endpoint === 'storage-migrate') {
-        requireWritable(runtime)
-        const to = String(payload.dataDir ?? '').trim()
-        if (to === '') throw new Error('dataDir must be a non-empty directory')
-        const from = runtime.graph.directory
-        const plan = planMigration(from, to)
-        if (plan.blocked !== undefined) throw new Error('cannot move the Mnemon data directory: ' + plan.blocked)
-        if (payload.confirmed !== true) throw new Error('Moving the Mnemon data directory requires confirmation')
-        // Refuse before the original directory is removed: a Host that cannot
-        // record the new location would keep reading a path that no longer
-        // exists, which is worse than not moving at all.
-        if (relocation !== undefined && !relocation.writable) throw new Error('DSH settings are read-only, so the Mnemon data directory was not moved')
-        const moved = await withMemoryStorageLock(from, () => migrateStorageRoot(from, to, { remove: true }))
-        if (relocation !== undefined) {
-          try {
-            await relocation.relocate(to)
-          } catch (reason) {
-            // The files are already at the new root and the old one is gone, so
-            // this is the one failure the user has to finish by hand. Say which
-            // directory to set instead of reporting a plain move failure.
-            const detail = reason instanceof Error ? reason.message : String(reason)
-            throw new Error(`the data directory was moved to ${to}, but the new location could not be recorded (${detail}); set it as the data directory to keep using this memory`)
-          }
-        }
-        return success(moved)
-      }
+      if (endpoint === 'target') return success({ ...manager.target(), nativeDirectoryPicker: nativeDirectoryPicker() })
       if (endpoint === 'export') return success(await manager.exportPack('full'))
       if (endpoint === 'inspect') return success(manager.inspectPack(String(payload.base64 ?? ''), payload.fileName === undefined ? undefined : String(payload.fileName)))
       if (endpoint === 'import') {
         requireWritable(runtime)
-        const mode: MnemonPackImportMode = payload.mode === 'replace' ? 'replace' : 'merge'
-        const components = requestedComponents(payload.components)
-        const result = await manager.importPack(String(payload.base64 ?? ''), { mode, ...(components === undefined ? {} : { components }) })
+        const result = await manager.importPack(String(payload.base64 ?? ''), { mode: 'merge' })
         if ((await catalog(runtime)).sources.some(source => source.sourceTypeId === 'memory-spaces')) await runtime.source('memory-spaces').mutate('reload', {})
         return success(result)
       }
@@ -634,7 +656,7 @@ export function createReviewHandler(input: LiveMnemonRuntime, lifecycle?: Mnemon
   }
 }
 
-export function registerRpc(connection: HostConnectionHandle, input: LiveMnemonRuntime, lifecycle?: MnemonLifecycle, versions?: VersionUpdateManager, onSyncConfigured?: () => void, relocation?: MnemonStorageRelocation): {
+export function registerRpc(connection: HostConnectionHandle, input: LiveMnemonRuntime, lifecycle?: MnemonLifecycle, versions?: VersionUpdateManager, onSyncConfigured?: () => void, nativeDirectoryPicker?: () => boolean): {
   read: HostRpcHandler
   activation: HostRpcHandler
   write: HostRpcHandler
@@ -648,7 +670,7 @@ export function registerRpc(connection: HostConnectionHandle, input: LiveMnemonR
   const writeHandler = createWriteHandler(input, lifecycle, versionManager)
   const syncHandler = createSyncHandler(input, onSyncConfigured)
   const reviewHandler = createReviewHandler(input, lifecycle)
-  const packHandler = createPackHandler(input, relocation)
+  const packHandler = createPackHandler(input, nativeDirectoryPicker)
   connection.rpc.handle(MNEMON_READ_CHANNEL, readHandler)
   connection.rpc.handle(MNEMON_ACTIVATION_CHANNEL, activationHandler)
   connection.rpc.handle(MNEMON_WRITE_CHANNEL, writeHandler)

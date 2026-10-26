@@ -1,10 +1,10 @@
 /**
- * QoderWork 0.9.12's deterministic post-turn review gate.
+ * The deterministic post-turn review gate.
  *
- * The upstream implementation scores user text length rather than provider
- * token usage, which keeps the gate stable when an adapter omits usage data.
+ * It scores user text length rather than provider token usage, which keeps
+ * the gate stable when an adapter omits usage data.
  */
-export const QODERWORK_REVIEW_POLICY = Object.freeze({
+export const POST_TURN_REVIEW_POLICY = Object.freeze({
   reviewThreshold: 5,
   textLengthScoreUnit: 50,
   textLengthScoreCap: 3,
@@ -16,7 +16,7 @@ export const QODERWORK_REVIEW_POLICY = Object.freeze({
 })
 
 export function scoreReviewActivity(activity: ReviewActivity): ReviewActivityScore {
-  const policy = QODERWORK_REVIEW_POLICY
+  const policy = POST_TURN_REVIEW_POLICY
   const textLengthScore = Math.min(
     Math.floor(activity.totalUserTextLength / policy.textLengthScoreUnit),
     policy.textLengthScoreCap,

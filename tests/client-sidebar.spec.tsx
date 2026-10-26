@@ -36,8 +36,10 @@ import {
   MnemonWorkspaceHost,
   MnemonSidebarWorkspaceHost,
   MnemonBuiltinWorkspaceHost,
-  mountMnemonSidebarLauncher,
 } from '../src/client/workspace-mount.tsx'
+import { mountMnemonSidebarNavigation } from '../src/client/native-sidebar.tsx'
+import { MnemonNativeSidebarSeat } from '../src/client/native-sidebar-seat.ts'
+import type { MnemonTranslate } from '../src/client/locales.ts'
 
 import { MnemonWorkspaceController } from '../src/client/workspace-controller.ts'
 import { MnemonBetterSidebarSeat } from '../src/client/better-sidebar-seat.ts'
@@ -116,7 +118,14 @@ function context(locale?: { getSnapshot(): { active: 'zh' | 'en'; locales: reado
     sessions: { list: { getSnapshot: () => snapshot, subscribe: () => () => {} } },
     currentSession: { getSnapshot: () => ({ key: 'session-1', hooks: {}, keyedHooks: {}, props: {} }), subscribe: () => () => {} },
     workspaces: { list: { getSnapshot: () => workspaceSnapshot, subscribe: () => () => {} } },
+    // A shell that never declares DSH's native panel seats: navigation falls back to Mnemon's own entry.
+    slots: { inject: () => () => {} },
   }
+}
+
+/** The sidebar entry the product mounts where the layout offers no native panel seat. */
+function mountFallbackEntry(ctx: unknown, t: MnemonTranslate, controller: MnemonWorkspaceController): () => void {
+  return mountMnemonSidebarNavigation(ctx as never, t as never, controller, new MnemonNativeSidebarSeat()).dispose
 }
 
 function receiverSensitiveStore<T>(snapshot: T) {
@@ -160,7 +169,7 @@ describe('Mnemon canonical workspace launcher', () => {
     const memoryTab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(tab => tab.textContent === 'Memory')!
     const clicked = vi.fn()
     memoryTab.addEventListener('click', clicked)
-    currentDispose = mountMnemonSidebarLauncher(context() as never, t as never, new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, t as never, new MnemonWorkspaceController())
 
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     expect(entry.previousElementSibling?.hasAttribute('data-dsh-ssh-entry')).toBe(true)
@@ -177,7 +186,7 @@ describe('Mnemon canonical workspace launcher', () => {
     sidebar.setAttribute('data-slot', 'sidebar')
     const newSession = sidebar.querySelector('button.newSession')!
     sidebar.querySelector('.logoRow')!.after(newSession)
-    currentDispose = mountMnemonSidebarLauncher(context() as never, t as never, new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, t as never, new MnemonWorkspaceController())
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     // ORCA LINK applies its hidden New Session artwork to this exact selector.
     const artworkTargets = sidebar.querySelectorAll(":scope > :first-child > button:not([data-dsh-part='sidebar-entry'])")
@@ -225,7 +234,7 @@ describe('Mnemon canonical workspace launcher', () => {
     const column = document.querySelector<HTMLElement>('[data-pane="conversation"]')!
     column.inert = false
     vi.spyOn(column, 'getBoundingClientRect').mockReturnValue({ left: 280, top: 0, width: 1_000, height: 720 } as DOMRect)
-    currentDispose = mountMnemonSidebarLauncher(ctx as never, t as never, controller)
+    currentDispose = mountFallbackEntry(ctx as never, t as never, controller)
     const view = render(<MnemonSidebarWorkspaceHost
       connection={ctx.connection as never} settingsScope={settings} sessions={sessions as never} workspaces={ctx.workspaces as never} currentSession={{ getSnapshot: () => ({ key: undefined, hooks: {}, keyedHooks: {}, props: {} }), subscribe: () => () => {} }}
       localeRuntime={ctx.locale as never} sourcePageDirectory={sourcePageDirectory} navigation={navigation}
@@ -285,7 +294,7 @@ describe('Mnemon canonical workspace launcher', () => {
   it('retains the workspace subtree when a peer panel takes over and the user returns', async () => {
     const ctx = context()
     const controller = new MnemonWorkspaceController()
-    currentDispose = mountMnemonSidebarLauncher(ctx as never, t as never, controller)
+    currentDispose = mountFallbackEntry(ctx as never, t as never, controller)
     const view = render(<MnemonSidebarWorkspaceHost
       connection={ctx.connection as never} settingsScope={settings} sessions={ctx.sessions as never} workspaces={ctx.workspaces as never} currentSession={ctx.currentSession}
       localeRuntime={ctx.locale as never} sourcePageDirectory={sourcePageDirectory}
@@ -334,7 +343,7 @@ describe('Mnemon canonical workspace launcher', () => {
 
   it.each(['taskboard', 'ssh'] as const)('returns in one click after %s takes over without an activation announcement', name => {
     const panel = mountSiblingPanel(name, false)
-    currentDispose = mountMnemonSidebarLauncher(context() as never, key => String(key), new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, key => String(key), new MnemonWorkspaceController())
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
 
     fireEvent.click(entry)
@@ -353,7 +362,7 @@ describe('Mnemon canonical workspace launcher', () => {
   })
 
   it('reclaims a hidden workspace even before DOM-state synchronization has run', () => {
-    currentDispose = mountMnemonSidebarLauncher(context() as never, key => String(key), new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, key => String(key), new MnemonWorkspaceController())
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     fireEvent.click(entry)
     document.documentElement.removeAttribute('data-dsh-mnemon-active')
@@ -366,7 +375,7 @@ describe('Mnemon canonical workspace launcher', () => {
   })
 
   it.each(['taskboard', 'ssh'] as const)('synchronizes its entry when %s takes over programmatically without an event', async name => {
-    currentDispose = mountMnemonSidebarLauncher(context() as never, key => String(key), new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, key => String(key), new MnemonWorkspaceController())
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     fireEvent.click(entry)
     document.documentElement.setAttribute(`data-dsh-${name}-active`, '')
@@ -380,7 +389,7 @@ describe('Mnemon canonical workspace launcher', () => {
 
   it('treats the sidebar entry as navigation and retains an already active workspace', () => {
     const controller = new MnemonWorkspaceController()
-    currentDispose = mountMnemonSidebarLauncher(context() as never, key => String(key), controller)
+    currentDispose = mountFallbackEntry(context() as never, key => String(key), controller)
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     expect(entry.hasAttribute('aria-current')).toBe(false)
     fireEvent.click(entry)
@@ -395,7 +404,7 @@ describe('Mnemon canonical workspace launcher', () => {
   })
 
   it.each([true, false])('round-trips with the released legacy panel protocol (Mnemon mounted first: %s)', mnemonFirst => {
-    const mount = () => { currentDispose = mountMnemonSidebarLauncher(context() as never, key => String(key), new MnemonWorkspaceController()) }
+    const mount = () => { currentDispose = mountFallbackEntry(context() as never, key => String(key), new MnemonWorkspaceController()) }
     if (mnemonFirst) mount()
     const board = mountSiblingPanel('taskboard')
     const ssh = mountSiblingPanel('ssh')
@@ -420,7 +429,7 @@ describe('Mnemon canonical workspace launcher', () => {
   })
 
   it('self-heals its sidebar launcher after a React-style row replacement', async () => {
-    currentDispose = mountMnemonSidebarLauncher(context() as never, t as never, new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, t as never, new MnemonWorkspaceController())
     document.querySelector('[data-dsh-mnemon-entry]')?.remove()
     await waitFor(() => expect(document.querySelector('[data-dsh-mnemon-entry]')).not.toBeNull())
     currentDispose()
@@ -442,7 +451,7 @@ describe('Mnemon canonical workspace launcher', () => {
     const panelArea = document.querySelector<HTMLElement>('.dshp-panelArea')!
     const slot = panelArea.querySelector<HTMLElement>('[data-slot]')!
 
-    currentDispose = mountMnemonSidebarLauncher(context() as never, t as never, new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, t as never, new MnemonWorkspaceController())
 
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     expect(entry.parentElement).toBe(panelArea)
@@ -454,7 +463,7 @@ describe('Mnemon canonical workspace launcher', () => {
 
   it('mounts the launcher in the DSH advanced frame without replacing conversation content', () => {
     renderShell(true)
-    currentDispose = mountMnemonSidebarLauncher(context() as never, t as never, new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context() as never, t as never, new MnemonWorkspaceController())
     const entry = document.querySelector<HTMLButtonElement>('[data-dsh-mnemon-entry]')!
     fireEvent.click(entry)
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Chat')
@@ -535,7 +544,7 @@ describe('Mnemon canonical workspace launcher', () => {
     const listeners = new Set<() => void>()
     const locale = { getSnapshot: () => snapshot, subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener) } }
     const translate = (key: string) => key === 'tab.label' ? active === 'zh' ? '记忆系统' : 'Memory System' : key
-    currentDispose = mountMnemonSidebarLauncher(context(locale) as never, translate as never, new MnemonWorkspaceController())
+    currentDispose = mountFallbackEntry(context(locale) as never, translate as never, new MnemonWorkspaceController())
     expect(document.querySelector('[data-dsh-mnemon-entry]')?.textContent).toBe('记忆系统')
     active = 'en'
     snapshot = { active, locales: [] as const, revision: 1 }

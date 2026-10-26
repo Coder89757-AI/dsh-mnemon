@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useState, useSyncExternalStore, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
-import type { ClientConnectionHandle, MemoryActivityItem, TurnMemoryActivity } from "../host/protocol.ts"
+import { memoryTool, type ClientConnectionHandle, type MemoryActivityItem, type TurnMemoryActivity } from "../host/protocol.ts"
 import { MnemonClient } from './api.ts'
 import { dispatchMnemonAnchor, type MnemonAnchorPage } from './anchor.ts'
 import type { MnemonKey } from './locales.ts'
@@ -29,33 +29,9 @@ function isClosedTurn(turn: unknown): boolean {
   return (turn as { status?: unknown } | null)?.status === 'closed'
 }
 
-/** Route a settled tool name to the workbench page that explains its effect. */
+/** Route a settled tool name to the workbench page its row in the tool table names; a tool without a row, or whose row names no page, opens Memory Spaces. */
 export function memoryPageForTool(name: string): MnemonAnchorPage {
-  if (name === 'mnemon_document_search' || name === 'mnemon_document_manage' || name === 'mnemon_document_create') return 'documents/library'
-  if (name === 'mnemon_runtime_memory') return 'runtime/entries'
-  if (name === 'mnemon_recall' || name === 'mnemon_related') return 'memory-spaces/explore'
-  if (name === 'mnemon_status') return 'status'
-  return 'memory-spaces/spaces'
-}
-
-/** What each memory tool did, as its chip says it; another tool keeps its own name. */
-const TOOL_LABELS: Readonly<Record<string, MnemonKey>> = {
-  mnemon_recall: 'turnTail.tool.recall',
-  mnemon_related: 'turnTail.tool.related',
-  mnemon_document_search: 'turnTail.tool.documentSearch',
-  mnemon_document_manage: 'turnTail.tool.documentManage',
-  mnemon_document_create: 'turnTail.tool.documentCreate',
-  mnemon_runtime_memory: 'turnTail.tool.runtime',
-  mnemon_remember: 'turnTail.tool.remember',
-  mnemon_link: 'turnTail.tool.link',
-  mnemon_forget: 'turnTail.tool.forget',
-  mnemon_status: 'turnTail.tool.status',
-  mnemon_memory_bodies: 'turnTail.tool.spaces',
-  mnemon_memory_body_create: 'turnTail.tool.spaceCreate',
-  mnemon_memory_body_update: 'turnTail.tool.spaceUpdate',
-  mnemon_memory_body_merge: 'turnTail.tool.spaceMerge',
-  mnemon_view_route: 'turnTail.tool.viewRoute',
-  mnemon_view_action: 'turnTail.tool.viewAction',
+  return memoryTool(name)?.page ?? 'memory-spaces/spaces'
 }
 
 /** One chip per tool, in the order the turn first used it, with how many times it did. */
@@ -153,7 +129,8 @@ export const MnemonTurnTail = memo(function MnemonTurnTail({ turn, seq, sessionI
       {open && (
         <ul className={css.details} aria-label={t('turnTail.toolList')}>
           {turnTools(activity.names).map(({ name, count }) => {
-            const label = TOOL_LABELS[name] === undefined ? name : t(TOOL_LABELS[name])
+            const key = memoryTool(name)?.label
+            const label = key === undefined ? name : t(key)
             const used = items.get(name) ?? []
             return (
               <li key={name} className={css.toolRow}>

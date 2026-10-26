@@ -1,7 +1,10 @@
 # dsh-mnemon-strategy-default-three-tier
 
-One ordinary Cordis Strategy plugin. It consumes public Source facts and proposes
-a three-tier View; it imports no Source implementation and grants no authority.
+The **Layered strategy** (分层策略 in the Chinese interface), dsh-mnemon's default
+main strategy: runtime memory stays resident, while Project Documents and Memory
+Spaces are read on demand. It is one ordinary Cordis Strategy plugin that consumes
+public Source facts and proposes that View; it imports no Source implementation
+and grants no authority. Its type id is `default-three-tier`.
 
 `compose` is pure. `createTurn` owns the executing turn's retrieval policy:
 one Documents query (4 results / 6,000 content characters), two different Recall
@@ -14,16 +17,20 @@ Source schemas and provenance are the public read protocol. This plugin formats
 the familiar compact model response; Core retains the evidence/authority envelope
 for auditing without serializing it again into every model tool result.
 
-The default plugin also owns the existing three-tier instructions and reminders.
+This plugin also owns the Layered strategy's instructions and reminders.
 They are pinned in `ViewSpec.guidance`, separately from Source projections. The
 Host renders them for the selected turn; a different Strategy does not inherit
 this plugin's instructions. DSH-assisted write/archival workflows remain Host
 adapters over Source operations; Core does not schedule autonomous maintenance.
 
-The public `threeTierActionWorkflow` policy in `./extension-sdk` identifies Runtime
-capacity maintenance only while this Strategy is selected. The DSH Host applies
-it to named tools, generic View Actions, child writes and browser management.
-The operation retains its exact Source instance, scope, revision and authority;
+Its manifest declares `workflows: ['idle-review', 'runtime-capacity']`, the
+background work the dsh-mnemon Host runs for the turns it composes: idle review,
+and Runtime capacity maintenance, which the Host applies to named tools, generic
+View Actions, child writes and browser management. A Strategy built by spreading
+this manifest copies the declaration; `workflows: []` keeps it out of both.
+`threeTierActionWorkflow` in `./extension-sdk` is kept for existing callers and
+deprecated; the Host reads the declaration instead. A maintenance operation
+retains its exact Source instance, scope, revision and authority;
 archive destinations stay within the selected writable Source and pinned
 namespaces. A browser write needs no conversation. One eligible destination
 requires no model; routing and local profile compaction use a clean workspace
@@ -55,7 +62,7 @@ Replay and Related admission include the exact Source instance identity. Writes
 still require an offered Action and Host authorization, including implicit
 capacity maintenance. Explicit operator management is a separate channel.
 
-With no extensions the original three-tier composition is retained. Disabling
+With no extensions the Layered strategy's original composition is retained. Disabling
 one extension only removes its contribution for new turns; running turns keep
 their pinned View. If disabling explicit selection leaves multiple Sources in
 the same role, the original ambiguity check applies rather than silently
@@ -71,7 +78,7 @@ no auto-activation patch; installing it does not override a configured Strategy.
 
 ## Installation and verification
 
-The default Starter already mounts and selects this Strategy. In an independent Profile, install the package, mount its Entry and explicitly select `default-three-tier`; another installed Strategy does not win by import order.
+The default Starter already mounts and selects the Layered strategy. In an independent Profile, install the package, mount its Entry and explicitly select `default-three-tier`; another installed Strategy does not win by import order.
 
 Installing an npm package is not the same as activating a contribution. From a source checkout, run `pnpm verify` with declared public peers installed; use a packed peer for unreleased SDK work.
 

@@ -7,6 +7,7 @@ import * as scoped from 'dsh-mnemon-strategy-scoped'
 import * as light from 'dsh-mnemon-strategy-light-context'
 import * as capture from 'dsh-mnemon-strategy-auto-capture'
 import type { HostAgent, HostContextShape } from '../src/host/dsh.ts'
+import { isDsh021, loadWorkingDirectory } from './helpers/installed-dsh.ts'
 import { MnemonLifecycle } from '../src/host/lifecycle.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
@@ -15,8 +16,7 @@ import { compositionFixture } from './fixtures/composition.ts'
 // Published-package matrix: DSH loads through its package exports only, with no
 // aliases, source overlay or DSH edits. MNEMON_TEAM_TEST_PROFILE points it at
 // another installation instead of the pinned development host.
-const pinned = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).devDependencies['@deepseek-ai/dsh'] as string
-const profile = process.env.MNEMON_TEAM_TEST_PROFILE
+const profile = process.env.MNEMON_TEAM_TEST_PROFILE ?? process.env.DSH_HOST_ROOT
 const hostRoot = profile === undefined
   ? dirname(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
   : resolve(profile)
@@ -30,9 +30,12 @@ it('runs guarded Team review against the published DSH cohort (issue 275)', asyn
     'dsh-subagent-spawn-in-process', 'dsh-system-prompt', 'dsh-tools', 'dsh-experimental-agent-team',
     'dsh-experimental-tool-agent-team', 'dsh-ptc-runtime-node',
   ].map(load))
+  // Every package of the cohort comes from the host's own release.
+  const release = JSON.parse(readFileSync(require.resolve('@deepseek-ai/dsh/package.json'), 'utf8')).version as string
+  const dsh021 = isDsh021(release)
   const versions = Object.fromEntries(['dsh', 'dsh-agent', 'dsh-tools', 'dsh-subagent', 'dsh-experimental-agent-team', 'dsh-experimental-tool-agent-team'].map(name => {
     const version = JSON.parse(readFileSync(require.resolve(`@deepseek-ai/${name}/package.json`), 'utf8')).version
-    expect(version).toBe(pinned)
+    expect(version).toBe(release)
     return [name, version]
   }))
   const ptcServices = await Promise.all(['dsh-fs-local', 'dsh-subprocess-local', 'dsh-sandbox-local', 'dsh-sandbox-policy'].map(load))
@@ -74,7 +77,8 @@ it('runs guarded Team review against the published DSH cohort (issue 275)', asyn
         await f.mount(light, { instanceId: 'light' })
         await f.mount(capture, { instanceId: 'capture' })
         for (const plugin of [llm.default, session.default]) await ctx.plugin(plugin)
-        await ctx.plugin(persistence.default, { root: join(f.root, 'sessions'), compression: 'none' })
+        // DSH 0.2.1 exports the plugin itself rather than a default class.
+        await ctx.plugin(persistence.default ?? persistence, { root: join(f.root, 'sessions'), compression: 'none' })
         await ctx.plugin(projection.default)
         await ctx.plugin(query.default, { path: ':memory:', openAt: 'never' })
         await ctx.plugin(prompt.default)
@@ -82,9 +86,11 @@ it('runs guarded Team review against the published DSH cohort (issue 275)', asyn
           await ctx.plugin(service.default, index === 0 ? { cwd: f.workspace } : index === 3 ? { mode: 'read-only', workspaceRoot: f.workspace } : {})
         }
         if (mode === 'ptc') await ctx.plugin(ptc.default)
-        await ctx.plugin(tools.default, { mode: mode === 'ptc' ? 'both' : 'native' })
+        // DSH 0.2.0 presents Code Mode beside the native tools; DSH 0.2.1 keeps the root native and each child in Code Mode.
+        await ctx.plugin(tools.default, { mode: mode === 'ptc' && !dsh021 ? 'both' : 'native' })
         await ctx.plugin(agent.default)
         await ctx.plugin(loop.default, { agents: [] })
+        await loadWorkingDirectory(ctx, require)
         await ctx.plugin(subagent.default)
         await ctx.plugin(fork, { providerName: 'fork' })
         await ctx.plugin(spawn, { providerName: 'spawn' })
@@ -156,7 +162,9 @@ it('runs guarded Team review against the published DSH cohort (issue 275)', asyn
         }
         if (policy === 'scoped') {
           expect(receipts.filter(receipt => receipt.name === 'spawn_teammate').every(receipt => receipt.isError)).toBe(true)
-          if (teams === 'tools') expect(receipts).toContainEqual({ name: 'spawn_teammate', isError: true })
+          // In Code Mode DSH 0.2.1 refuses the filtered tool inside run_code before dispatch, so the failed attempt
+          // is the run_code call; the Team tool never runs either way.
+          if (teams === 'tools') expect(receipts).toContainEqual(mode === 'ptc' && dsh021 ? { name: 'run_code', isError: true } : { name: 'spawn_teammate', isError: true })
           expect(children).toHaveLength(cancelled ? 2 : 1)
           for (const child of children) expect(ctx.agents.get(child.id)).toBeUndefined()
         }

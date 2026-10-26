@@ -6,7 +6,7 @@
 
 只有 Mnemon Native 需要 Mnemon CLI。缺少 CLI 时，其他已就绪的 Provider 也可以为记忆空间服务，已保存的 Provider 选择依然有效。
 
-![插件中的记忆空间页面：Mnemon Native 与各第三方 Provider](../../assets/webui-v0.5.19/zh-CN/plugin-spaces.jpg)
+![插件中的记忆空间页面：Mnemon Native 与各第三方 Provider](../../assets/webui-v0.5.32/zh-CN/plugin-spaces.jpg)
 
 每个适配器都是独立发布的 `dsh-mnemon-provider-*` 包，由 Memory Spaces Source 作为子插件安装。Starter 随附九个包，外部服务仍需显式配置后启用；不捆绑外部后端服务或 CLI。参见[官方包列表](../../../README.zh-CN.md#官方插件)和 [Provider 作者契约](../development/extensions.md)。
 
@@ -41,7 +41,16 @@ Host 只暴露适配器能够兑现的能力；UI 与 Agent 工具不会伪造�
 | ByteRover | 默认随工作区，可由目录覆盖 | `cliPath`、`apiKey`、`defaultDirectory` | `workingDirectory` |
 | Supermemory | 保持 Provider 全局作用域 | `endpoint`、`apiKey` | `containerTag`、`searchMode` |
 
-“记忆空间”页面（在**插件 → 可组合记忆**中点击“记忆空间”）的“记忆 Provider”只保存 Provider 服务配置，不创建记忆空间；同一范围内该 Provider 的所有记忆空间复用它。“**记忆空间 → 概览**”负责创建、编辑、启停与删除记忆空间，并只呈现 workspace、user、bank、container、target URI 等实例范围。Host 在调用适配器前合并两层配置。Secret 保存在 `<storageRoot>/state/memory-providers.json`，权限为 `0600`；WebUI 只以掩码表示已配置的 Secret，输入新值即可替换。
+“记忆空间”页面（在**插件 → 可组合记忆**中点击“记忆空间”）的“记忆 Provider”保存 Provider 服务配置，同一范围内该 Provider 的所有记忆空间复用它。启用或保存 Provider 时会进行权威发现，把它可见的命名空间（bank、project、workspace、user 或 container tag 等）同步进记忆空间目录，Provider 提供的标题与描述成为本地路由元数据。“**记忆空间 → 概览**”负责创建、编辑、启停与删除记忆空间，并只呈现 workspace、user、bank、container、target URI 等实例范围。Host 在调用适配器前合并两层配置。Secret 保存在 `<storageRoot>/state/memory-providers.json`，权限为 `0600`；WebUI 只以掩码表示已配置的 Secret，输入新值即可替换。
+
+**之后新建的命名空间。** 设置保存之后才在 Provider 端新建的命名空间，无需再次保存设置也能找到。Host 开始服务一个数据目录后不久，会再询问一次每个已启用的 Provider；**记忆空间 → 概览**中的**重新发现**可以随时再问。重新发现只做添加：
+
+- 第一次见到的命名空间以未激活状态挂载，只有你打开开关后才参与召回。
+- 已挂载的空间保持原有的激活状态、名称、描述与设置；已挂载空间已经读取的命名空间不会再添加。手动创建的空间只要指向同一个 bank、workspace、user、tag、记忆 URI 或目录，就算作该命名空间，其余设置（如召回预算或单个 peer）不同也一样。
+- 你断开过的命名空间（无论是发现的还是手动创建的）保持断开；重新保存该 Provider 的设置会像以前一样恢复它报告的全部命名空间。
+- 出错或 30 秒内没有响应的 Provider 保留原有空间，页面会说明原因。
+
+启动时的发现在每个 Host 进程中对每个数据目录只运行一次；只读部署、记忆空间层关闭，或其 `maintenance` 参与方式不是 `automatic` 时不运行。Honcho 与 OpenViking 只列出前 100 个命名空间。
 
 DSH 的“工作区”模式不会统一重写所有 Provider 命名空间。Mnemon Native 自动随工作区切换；Holographic 与 ByteRover 默认使用工作区下的本地路径，但允许显式路径覆盖；其余远程 Provider 继续使用记忆空间中配置的 URI、workspace、user、bank、project 或 container，切换 DSH 工作区不会隐式改写这些身份。
 
@@ -58,15 +67,21 @@ DSH 的“工作区”模式不会统一重写所有 Provider 命名空间。Mne
 
 连接凭据永远不会进入 selector Prompt。`local-only` 会在模型选择前排除全部远程 Provider。Mnemon CLI 可用时，Mnemon Native 始终是本地候选。
 
+## 召回评分语义
+
+Hindsight 的最终排名分包含加权项，OpenViking 的相似度也不等于经过校准的查询置信度。两者在 manifest 和驱动中均声明 `provider-native`。Memory Spaces 按原始排名与 `recallQuality.maxRankedResults` 配额接纳，不跨 Provider 比较原始分数，也不钳制到 1；参见[召回质量策略](../reference/configuration.md#召回质量策略)。
+
 ## 运维边界
 
-- OpenViking 使用 `content/write`、`mode: "create"`、`wait: true` 和来源/分类标签创建新的 `.md` 文件。分类分别映射至 `preferences`、`experiences`（insight/decision）、`events`（context）或 `entities`（fact/general）。只有 URI、字节数、向量索引完成状态和公开完整正文读回均匹配时才返回 stored；记忆文件的语义处理状态允许为 `skipped`。召回与浏览读取完整正文，不把摘要当作原文；这些写入不再使用会话抽取或 LLM 提炼。
-- OpenViking 服务须支持上述正文 API；可选集成测试已覆盖正式发布的 v0.4.20 后端。默认通过 Admin API 发现，需配置 `account` 与能枚举该账号用户的 key。没有 admin 权限的 user key 可在 `endpoint`、`apiKey`、`account` 之外填写 **User Key 所属用户（跳过 Admin）**（`discoveryUser`）。这会显式选择 `viking://user/<discoveryUser>/memories`，通过只读 `GET /api/v1/fs/ls` 验证后同步一个空间。此模式不发送 account/user 身份请求头，由服务端从 key 解析身份；`account` 标识本地映射，不能覆盖 key 所属租户。账号和用户标识应向服务管理员获取。根目录不存在、访问被拒或响应无效时拒绝保存并保留原配置；不会只凭 health 成功保存，也不在 admin 错误后自动降级。云服务可用性与写入权限需要另外验证，确定性测试不代表真实云账号认证。参见上游[身份验证](https://github.com/volcengine/OpenViking/blob/main/docs/en/guides/04-authentication.md)与[托管服务入门](https://github.com/volcengine/OpenViking/blob/main/docs/en/getting-started/02-quickstart.md)。
+- OpenViking 的 `keyword` 检索通过 `POST /api/v1/search/grep` 进行不区分大小写的字面匹配，正则特殊字符会被转义。`uri` 限定在所选用户记忆根，`node_limit` 受 Source 检索预算限制（1–50，直接调用适配器时默认 10）。同一文件的重复行合并为一条结果，只对根目录内的安全记忆 Markdown 文件通过 `content/read` 读取完整正文，不伪造相关性分数。`smart`/`basic` 继续使用 `search/find`。缺少 grep 接口或响应无效时报告错误，不自动切回语义搜索；本次不开放任意正则输入。请求使用 OpenViking 0.4.16 与 0.5.1.1 共有字段。
+- OpenViking 使用 `content/write`、`mode: "create"`、`wait: true` 创建新的 `.md` 文件，只发送 `uri`、`content`、`mode` 和 `wait`；OpenViking 0.5.1 移除了请求体中的 `timeout` 字段，HTTP 客户端超时仍然生效，然后用 `content/set_tags` 设置来源、分类与重要度标签；服务器无法设置标签、或 5 秒内未确认时，已验证的记忆仍然保留，回执中 `tagsApplied` 为 `false`。分类分别映射至 `preferences`、`experiences`（insight/decision）、`events`（context）或 `entities`（fact/general），文件名以 `_<分类>-<uuid>.md` 结尾，因此读回的分类与写入时一致。文件名不含分类的文件（旧版本写入的，或 OpenViking 自己写入的）按所在文件夹读回：`preferences` 为 preference，`experiences` 为 insight，`events` 为 context，`entities` 为 fact。未知分类按 `general` 保存。服务器拒绝的写入（HTTP 4xx，408 与 409 除外）会报告为未保存。只有 URI、覆盖提交正文的字节数（新版本服务器还会计入保留元数据）、向量索引完成状态和公开完整正文读回均匹配时才返回 stored；记忆文件的语义处理状态允许为 `skipped`。召回与浏览读取完整正文，不把摘要当作原文；这些写入不再使用会话抽取或 LLM 提炼。
+- OpenViking 服务须支持上述正文 API；可选集成测试在正式发布的 0.4.16、0.4.20 与 0.5.0 后端上均通过。默认通过 Admin API 发现，需配置 `account` 与能枚举该账号用户的 key。没有 admin 权限的 user key 可在 `endpoint`、`apiKey`、`account` 之外填写 **User Key 所属用户（跳过 Admin）**（`discoveryUser`）。这会显式选择 `viking://user/<discoveryUser>/memories`，通过只读 `GET /api/v1/fs/ls` 验证后同步一个空间。此模式不发送 account/user 身份请求头，由服务端从 key 解析身份；`account` 标识本地映射，不能覆盖 key 所属租户。账号和用户标识应向服务管理员获取。根目录不存在、访问被拒或响应无效时拒绝保存并保留原配置；不会只凭 health 成功保存，也不在 admin 错误后自动降级。云服务可用性与写入权限需要另外验证，确定性测试不代表真实云账号认证。参见上游[身份验证](https://github.com/volcengine/OpenViking/blob/main/docs/en/guides/04-authentication.md)与[托管服务入门](https://github.com/volcengine/OpenViking/blob/main/docs/en/getting-started/02-quickstart.md)。
 - 已有显式 `viking://user/<user>/memories` 根保持有效；旧 `viking://user/memories` 通过已配置 `user` 展开，未配置时使用经过身份验证的 system-status 用户信息。user-key 发现使用显式所属用户，拒绝不匹配的空间用户。拒绝危险路径成分以及所选用户根以外的删除。注册表格式不变；降级前用当前版本清空 `discoveryUser` 并使用具有 admin 权限的配置，或禁用服务并恢复兼容配置。远端记忆保持不变。
-- OpenViking 错误、索引未完成和超时不会返回已提交回执。远端文件可能已经存在，错误会附带请求 URI，重试前应检查该文件；不自动回退到抽取或重试。经过验证的回执包含精确文件 `id`，使 Host 能在后续本地归档失败时只删除本次新建索引。结果不明的远端写入保留待检查。升级或回退适配器均不会删除已有远端文件；降级会恢复旧写入行为。
+- OpenViking 错误、索引未完成和超时不会返回已提交回执。远端文件可能已经存在，错误会附带请求 URI，重试前应检查该文件；不自动回退到抽取或重试。经过验证的回执包含精确文件 `id`，使 Host 能在后续本地归档失败时只删除本次新建索引。结果不明的远端写入保留待检查。升级或回退适配器均不会删除已有远端文件；降级会恢复旧写入方式，它把标签放在写入请求里，因此需要 OpenViking 0.4.18 或更高版本。
 - WebUI 不直接调用远程服务或本地 CLI；Provider I/O 都留在 Host，统一具备取消、超时、进程输出上限和 shell-disabled 参数执行。
 - “断开”三方记忆空间只删除本地目录登记，不删除底层数据。单条记忆的“遗忘”是另一项按能力开放的操作。
 - Holographic 是对本地结构化事实语义的 TypeScript 适配，使用原子 JSON 存储，并保持独立的数据格式与生命周期实现。
+- Holographic 将显式写入重要度视为 1 到 5 的整数，并以 `importance / 5` 保存可信度；省略重要度时使用 `defaultTrust`。搜索、浏览和关联读取均排除低于 `minTrust` 的事实，隐藏的事实仍然保留。已有事实的可信度保持原值：旧值 1 无法还原原始重要度，因此不会自动重写。新事实单独保留显式重要度，旧版本读取器会忽略该可选字段。其他 Provider 也会收到未被补齐的重要度并使用各自默认值（Mnemon Native 仍为 3）。
 - Hindsight 使用轻量存活检查，并从 Provider 的 bank stats、实体目录与图谱响应读取真实统计、实体和关系；旧版缺少统计接口时仍可使用召回与图谱表面。
 - ByteRover 只开放聚焦的 `status`、`query` 与 `curate`；不会虚构广域知识树浏览和删除能力。
 - Supermemory 的浏览结果合并已抽取 memory entries 与仍可浏览的 ingested documents，并按 Provider ID 去重；文档未完成抽取时也不会从“内容”页消失。

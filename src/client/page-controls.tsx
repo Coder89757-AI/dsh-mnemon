@@ -96,9 +96,25 @@ const LABELS: Readonly<Record<WriteOutcome, MnemonKey>> = {
 
 /**
  * What a task Agent did with a candidate: the outcome, the Agent's own
- * summary, and, when something was written, a way to see it.
+ * summary, and, when something was written, a way to see it. A memory saved
+ * without a vector says so on a line of its own (#388).
  */
-export function WriteReceipt(props: { action?: string | undefined; summary?: string | undefined; error?: string | undefined; t?: MnemonTranslate | undefined; onView?: (() => void) | undefined; viewLabel?: string | undefined }): JSX.Element {
+export function WriteReceipt(props: {
+  action?: string | undefined
+  summary?: string | undefined
+  error?: string | undefined
+  unembedded?: boolean | undefined
+  /**
+   * Whether DSH manages the Mnemon Native embedding settings. Left at their
+   * default (`false`), they set up no embedding service, so a memory without a
+   * vector gets a neutral note; managed, or when this is omitted, it gets the
+   * caution that embedding did not succeed.
+   */
+  embeddingManaged?: boolean | undefined
+  t?: MnemonTranslate | undefined
+  onView?: (() => void) | undefined
+  viewLabel?: string | undefined
+}): JSX.Element {
   const shared = useT()
   const t = props.t ?? shared
   if (props.error !== undefined) {
@@ -109,10 +125,13 @@ export function WriteReceipt(props: { action?: string | undefined; summary?: str
   }
   const outcome = writeOutcome(props.action ?? '')
   const viewable = outcome !== 'skipped' && outcome !== 'unfinished'
+  const vectorless = props.unembedded === true && (outcome === 'written' || outcome === 'updated' || outcome === 'partial')
+  const expected = props.embeddingManaged === false
   return <div className={css.receipt} role="status" data-outcome={outcome}>
     <Tag tone={TONES[outcome]}>{t(LABELS[outcome])}</Tag>
     {props.summary !== undefined && props.summary !== '' && <p>{props.summary}</p>}
     {props.onView !== undefined && viewable && <Button variant="ghost" size="sm" className={css.receiptAction} onClick={props.onView}>{props.viewLabel ?? t('receipt.view')}</Button>}
+    {vectorless && <p className={css.receiptNote} data-tone={expected ? 'neutral' : 'caution'}>{t(expected ? 'receipt.unembeddedNoService' : 'receipt.unembedded')}</p>}
   </div>
 }
 

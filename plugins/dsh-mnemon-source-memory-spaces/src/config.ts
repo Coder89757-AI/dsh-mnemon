@@ -2,8 +2,8 @@ import z from '@deepseek-ai/schemastery'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { MemoryPersistenceStrategy, ResolvedMemoryPersistenceStrategy, MemoryPlacementCapability, MemoryPlacementPreference, MemoryProviderId, MemoryProviderConnection, MnemonEmbeddingConfig, ResolvedMnemonEmbeddingConfig, RecallQualityConfig, ResolvedRecallQualityConfig } from './contracts.ts'
-import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MNEMON_EMBEDDING_PROTOCOLS } from './contracts.ts'
-import { DEFAULT_TIMEOUT_MS, DEFAULT_RECALL_LIMIT, DEFAULT_RECALL_QUALITY_POLICY, DEFAULT_RECALL_LOW_SCORE_THRESHOLD, DEFAULT_RECALL_HIGH_SCORE_THRESHOLD, DEFAULT_RECALL_CANDIDATE_MULTIPLIER, DEFAULT_RECALL_MAX_MEDIUM_RESULTS, DEFAULT_RECALL_MAX_UNKNOWN_RESULTS } from './defaults.ts'
+import { DEFAULT_EMBEDDING_ENDPOINT, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROTOCOL, MEMORY_PLACEMENT_CAPABILITIES, MEMORY_SPACE_ID_PATTERN, MNEMON_EMBEDDING_PROTOCOLS, NATIVE_PROVIDER_ID } from './contracts.ts'
+import { DEFAULT_TIMEOUT_MS, DEFAULT_RECALL_LIMIT, DEFAULT_RECALL_QUALITY_POLICY, DEFAULT_RECALL_LOW_SCORE_THRESHOLD, DEFAULT_RECALL_HIGH_SCORE_THRESHOLD, DEFAULT_RECALL_CANDIDATE_MULTIPLIER, DEFAULT_RECALL_MAX_MEDIUM_RESULTS, DEFAULT_RECALL_MAX_RANKED_RESULTS, DEFAULT_RECALL_MAX_UNKNOWN_RESULTS } from './defaults.ts'
 
 export interface MemorySpacesConfig {
   dataDir?: string
@@ -32,6 +32,8 @@ export interface ResolvedMemorySpacesConfig {
 
 export const MemorySpacesConfig = z.object({
   dataDir: z.string(), cliPath: z.string(), store: z.string(),
+  // The Starter's settings take 100–120,000 ms for the same value. One range for both is on the
+  // roadmap; until then each keeps its own, so that stored values validate as they did.
   timeoutMs: z.number().step(1).min(1).max(600_000),
   defaultRecallLimit: z.number().step(1).min(1).max(50),
   writeEnabled: z.boolean(), embedding: z.any(), recallQuality: z.any(), persistenceStrategy: z.any(),
@@ -39,17 +41,17 @@ export const MemorySpacesConfig = z.object({
 
 function optionalText(value: string | undefined): string | undefined { return value?.trim() || undefined }
 const MEMORY_PROVIDER_ID = /^[a-z][a-z0-9-]{0,127}$/u
-const MEMORY_PLACEMENT_CAPABILITY_SET = new Set(['graph', 'entities', 'related', 'exact-write', 'link', 'forget'])
+const MEMORY_PLACEMENT_CAPABILITY_SET = new Set<string>(MEMORY_PLACEMENT_CAPABILITIES)
 const MEMORY_PLACEMENT_PREFERENCE_SET = new Set(['balanced', 'local-first', 'shared-first'])
 export function resolvePersistenceStrategy(value: MemoryPersistenceStrategy | undefined): ResolvedMemorySpacesConfig['persistenceStrategy'] {
   const mode = value?.mode ?? 'manual'
   if (mode !== 'manual' && mode !== 'automatic') throw new Error(`dsh-mnemon: unsupported persistence strategy mode: ${String(mode)}`)
-  const providerId = value?.providerId ?? 'mnemon-native'
+  const providerId = value?.providerId ?? NATIVE_PROVIDER_ID
   if (!MEMORY_PROVIDER_ID.test(providerId)) throw new Error(`dsh-mnemon: invalid persistence strategy provider: ${String(providerId)}`)
   const prompt = value?.prompt?.trim() ?? ''
   if (prompt.length > 4000) throw new Error('dsh-mnemon: persistence strategy prompt is too long (max 4000 characters)')
   const configuredProviderIds = value?.rules?.allowedProviderIds
-  const allowedProviderIds = [...new Set(configuredProviderIds === undefined || (configuredProviderIds.length === 0 && mode === 'manual') ? ['mnemon-native'] : configuredProviderIds)]
+  const allowedProviderIds = [...new Set(configuredProviderIds === undefined || (configuredProviderIds.length === 0 && mode === 'manual') ? [NATIVE_PROVIDER_ID] : configuredProviderIds)]
   if (allowedProviderIds.length === 0) throw new Error('dsh-mnemon: persistence strategy requires at least one allowed provider')
   for (const id of allowedProviderIds) if (!MEMORY_PROVIDER_ID.test(id)) throw new Error(`dsh-mnemon: invalid persistence strategy provider: ${String(id)}`)
   const dataBoundary = value?.rules?.dataBoundary ?? 'allow-remote'
@@ -109,14 +111,16 @@ export function resolveRecallQuality(value: RecallQualityConfig | undefined): Re
   const highScoreThreshold = value?.highScoreThreshold ?? DEFAULT_RECALL_HIGH_SCORE_THRESHOLD
   const candidateMultiplier = value?.candidateMultiplier ?? DEFAULT_RECALL_CANDIDATE_MULTIPLIER
   const maxMediumResults = value?.maxMediumResults ?? DEFAULT_RECALL_MAX_MEDIUM_RESULTS
+  const maxRankedResults = value?.maxRankedResults ?? DEFAULT_RECALL_MAX_RANKED_RESULTS
   const maxUnknownResults = value?.maxUnknownResults ?? DEFAULT_RECALL_MAX_UNKNOWN_RESULTS
   if (!Number.isFinite(lowScoreThreshold) || lowScoreThreshold < 0 || lowScoreThreshold > 1) throw new Error('dsh-mnemon: recall low score threshold must be within 0..1')
   if (!Number.isFinite(highScoreThreshold) || highScoreThreshold < 0 || highScoreThreshold > 1) throw new Error('dsh-mnemon: recall high score threshold must be within 0..1')
   if (lowScoreThreshold >= highScoreThreshold) throw new Error('dsh-mnemon: recall low score threshold must be less than the high score threshold')
   if (!Number.isInteger(candidateMultiplier) || candidateMultiplier < 1 || candidateMultiplier > 5) throw new Error('dsh-mnemon: recall candidate multiplier must be an integer within 1..5')
   if (!Number.isInteger(maxMediumResults) || maxMediumResults < 0 || maxMediumResults > 50) throw new Error('dsh-mnemon: recall max medium results must be an integer within 0..50')
+  if (!Number.isInteger(maxRankedResults) || maxRankedResults < 0 || maxRankedResults > 50) throw new Error('dsh-mnemon: recall max ranked results must be an integer within 0..50')
   if (!Number.isInteger(maxUnknownResults) || maxUnknownResults < 0 || maxUnknownResults > 50) throw new Error('dsh-mnemon: recall max unknown results must be an integer within 0..50')
-  return { policy, lowScoreThreshold, highScoreThreshold, candidateMultiplier, maxMediumResults, maxUnknownResults }
+  return { policy, lowScoreThreshold, highScoreThreshold, candidateMultiplier, maxMediumResults, maxRankedResults, maxUnknownResults }
 }
 
 
@@ -128,7 +132,7 @@ export function resolveMemorySpacesConfig(value: MemorySpacesConfig = {}, source
     : requested === '~' ? homedir() : requested.startsWith('~/') ? join(homedir(), requested.slice(2)) : requested
   if (!isAbsolute(dataDir)) throw new Error('Memory Spaces dataDir must be absolute or start with ~/')
   const store = optionalText(config.store)
-  if (store !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/u.test(store)) throw new Error('Memory Spaces store has an invalid identifier')
+  if (store !== undefined && !MEMORY_SPACE_ID_PATTERN.test(store)) throw new Error('Memory Spaces store has an invalid identifier')
   const cliPath = optionalText(config.cliPath)
   return {
     storageScope: 'custom', dataDir,

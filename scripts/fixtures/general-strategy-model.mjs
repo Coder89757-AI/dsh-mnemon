@@ -19,7 +19,9 @@ export function generalStrategyModel(report) {
       if (calls.length === 0) {
         report({ event: 'composition', protocol: system.includes('MNEMON GENERAL MEMORY PROTOCOL'),
           admitted: [...system.matchAll(/^- (source:\S+) \(/gmu)].map(match => match[1]),
-          namedRuntimeTool: /MNEMON VIEW TOOLS[^\n]*mnemon_runtime_memory/u.test(prompt), routes: prompt.includes('MNEMON VIEW ROUTES') })
+          namedRuntimeTool: /MNEMON VIEW TOOLS[^\n]*mnemon_runtime_memory/u.test(prompt), routes: prompt.includes('MNEMON VIEW ROUTES'),
+          // With --second-runtime the other track's exact offer stays in the envelope.
+          otherRuntimeOffer: /MNEMON VIEW ROUTES[^\n]*mnemon-source-runtime-global\/mutate/u.test(prompt) })
         return { name: 'mnemon_runtime_memory', args: { action: 'add', target: 'memory', content: generalStrategyFact } }
       }
       const result = parse(calls.at(-1))

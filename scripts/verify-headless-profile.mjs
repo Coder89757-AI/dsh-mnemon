@@ -1,3 +1,4 @@
+// Install the Starter into an isolated Headless profile of real DSH and verify its tools, settings and disabled state.
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { existsSync } from 'node:fs'
@@ -5,9 +6,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { STARTER_ENHANCEMENT_PACKAGES } from '../src/host/starter-components.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const dshBin = join(root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+// Set MNEMON_E2E_DSH to another DSH installation's lib/bin.js to verify Headless on that release.
+const dshBin = process.env.MNEMON_E2E_DSH ? resolve(process.env.MNEMON_E2E_DSH) : join(root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 const marker = 'HEADLESS_MNEMON_READY'
 const arguments_ = process.argv.slice(2)
 const options = new Map()
@@ -19,7 +22,7 @@ if (options.has('--package') !== options.has('--registry')) throw new Error('--p
 if (options.has('--upgrade-from') !== options.has('--upgrade-registry')) throw new Error('--upgrade-from and --upgrade-registry must be supplied together')
 if (options.has('--upgrade-from') && !options.has('--package')) throw new Error('--upgrade-from requires a target --package')
 if (options.has('--strategy-extensions') && options.get('--strategy-extensions') !== 'true') throw new Error('--strategy-extensions expects true')
-const extensionNames = ['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture']
+const extensionNames = STARTER_ENHANCEMENT_PACKAGES
 const extensionNameSet = new Set(extensionNames)
 const extensionsEnabled = options.has('--strategy-extensions')
 

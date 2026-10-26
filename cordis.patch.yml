@@ -1,6 +1,8 @@
-# Mount the Mnemon bridge into a DSH profile. A profile's final patch may
-# replace this config row as a whole; use user settings or environment
-# variables for one-field overrides such as cliPath.
+# Bundle layer: DSH loads this file automatically when dsh-mnemon is enabled.
+# Do NOT copy its insert block into the profile's cordis.patch.yml: doing so
+# duplicates entry IDs and prevents Settings from saving (issue #470).
+# Keep profile overrides as top-level - id: mnemon rows. See the installation
+# guide's "Settings cannot save after manual installation" recovery steps.
 - insert:
     # Keep the v0.4 `mnemon` Entry as the public configuration target while
     # making every v0.5 component inherit its enabled state. The expression
@@ -40,6 +42,7 @@
               highScoreThreshold: 0.6
               candidateMultiplier: 3
               maxMediumResults: 4
+              maxRankedResults: 4
               maxUnknownResults: 2
         - id: mnemon-source-runtime
           name: dsh-mnemon-source-runtime
@@ -69,6 +72,10 @@
                 instanceId: byterover
               - use: dsh-mnemon-provider-supermemory
                 instanceId: supermemory
+        # Skills keep DSH's own files and their evolution data; the page lives
+        # in the Memory System and nothing joins a model View.
+        - id: mnemon-source-skills
+          name: dsh-mnemon-source-skills
         - id: mnemon-strategy-default-three-tier
           name: dsh-mnemon-strategy-default-three-tier
         # A second main Strategy; memoryView.strategyTypeId selects which one

@@ -146,6 +146,13 @@ export interface HostSession {
   header?: { origin?: 'subagent'; parentSession?: string; delegationDepth?: number; cwd?: string; agentPreset?: string }
   snapshotEvents(fromSeq?: number, toSeqExclusive?: number): readonly HostSessionEvent[]
   eventAt(seq: number): HostSessionEvent | undefined
+  /**
+   * The request header in force: the model this Session last asked DSH for. A
+   * task Agent whose inherited route follows its conversation reads it before
+   * the profile-wide default, so background work runs on the model that
+   * conversation uses. DSH applies a model switch on the next request.
+   */
+  requestHeader?(): { config?: { provider?: string; model?: string; reasoningEffort?: string } } | undefined
   /** Model-visible event sequences, in order; rewinds and compaction replace them. */
   surface: { readonly nodes: readonly number[] }
   /** DSH's append, as its own request-error recoveries use it before retrying a step. */
@@ -160,6 +167,13 @@ export interface HostAgentContext {
     guard?(guard: (execution: ToolExecution) => string | undefined): unknown
     /** Public presentation-agnostic lookup in the exact Agent scope. */
     get?(name: string, scope?: HostAgent): unknown
+    /** Hides the tools this Agent inherits outside the filter and refuses to run them. */
+    restrict?(filter: { allow?: string[]; deny?: string[] }): unknown
+  }
+  /** DSH's prompt registry; a section registered here applies to this Agent alone and shadows a global one of the same name. */
+  systemPrompt?: {
+    section?(section: { name: string; order: number; text: string }): unknown
+    getSectionOrder?(name: string): number
   }
   /**
    * `options` is optional and forwarded verbatim to the host. `prepend`
@@ -175,7 +189,7 @@ export interface HostAgentContext {
 export interface HostAgent {
   id: string
   status: 'idle' | 'running'
-  options?: { provider?: string; model?: string; maxTokens?: number }
+  options?: { provider?: string; model?: string; maxTokens?: number; reasoningEffort?: string }
   session: HostSession
   ctx: HostAgentContext
   followup(message: HostUserMessage): void
@@ -190,10 +204,11 @@ export interface HostAgentHandle {
 
 export interface CreateHostAgentOptions {
   sessionId: string
-  meta?: { cwd?: string; agentPreset?: string }
-  agentOptions?: { provider?: string; model?: string; maxTokens?: number }
+  meta?: { cwd?: string; agentPreset?: string; origin?: 'subagent' }
+  agentOptions?: { provider?: string; model?: string; maxTokens?: number; reasoningEffort?: string }
   signal?: AbortSignal
-  setup?: (agentCtx: HostAgentContext) => unknown | Promise<unknown>
+  /** DSH calls it with the unpublished Agent's context and the Agent itself. */
+  setup?: (agentCtx: HostAgentContext, agent?: HostAgent) => unknown | Promise<unknown>
 }
 
 export interface HostAgentsService {
@@ -235,23 +250,50 @@ export interface HostSubagentRun {
 
 export interface HostSubagentProvider {
   inheritsParentContext?: boolean
-  capabilities: { outputSchema: boolean; depthLimit: boolean; toolFilter: boolean; persona: boolean }
+  /** DSH 0.2.0's providers take `toolFilter` and `persona`; DSH 0.2.1's take neither, nor does its start request. */
+  capabilities: { outputSchema: boolean; depthLimit: boolean; toolFilter?: boolean; persona?: boolean }
+  /** Present on a provider whose children DSH creates in this process, such as spawn and fork. */
+  prepareContinuable?: unknown
+}
+
+export interface HostSubagentStartRequest {
+  label?: string
+  prompt: Array<{ type: 'text'; text: string }>
+  parent: HostAgent
+  signal: AbortSignal
+  agentOptions?: { provider?: string; model?: string; maxTokens?: number }
+  outputSchema?: Record<string, unknown>
+  maxDepth?: number
+  /** The child's tools and its persona, which DSH 0.2.0 takes in the request (see subagent-start.ts). */
+  toolFilter?: { allow?: string[]; deny?: string[] }
+  persona?: string
+}
+
+/** One managed child; its result settles once the child is idle and released. */
+export interface HostSubagentActivation {
+  childId: string
+  messageId?: string
+  result: Promise<HostSubagentResult>
+  dispose(): Promise<void>
 }
 
 export interface HostSubagentsService {
   list(): string[]
   getProvider(name: string): HostSubagentProvider | undefined
-  start(name: string, request: {
-    label?: string
-    prompt: Array<{ type: 'text'; text: string }>
-    parent: HostAgent
+  /** One-shot runs, on DSH 0.2.0. */
+  start?(name: string, request: HostSubagentStartRequest): Promise<HostSubagentRun>
+  /**
+   * Managed activations, which replace `start` on DSH 0.2.1. The
+   * signal covers startup only; `dispose` stops a running child. Caller
+   * delivery returns the result without notifying the parent conversation.
+   */
+  startActivation?(spec: {
+    provider: string
+    label: string
+    request: Omit<HostSubagentStartRequest, 'label' | 'signal'>
     signal: AbortSignal
-    agentOptions?: { provider?: string; model?: string; maxTokens?: number }
-    outputSchema?: Record<string, unknown>
-    maxDepth?: number
-    toolFilter?: { allow?: string[]; deny?: string[] }
-    persona?: string
-  }): Promise<HostSubagentRun>
+    delivery: 'parent' | 'caller'
+  }): Promise<HostSubagentActivation>
 }
 
 export interface HostLlmService {

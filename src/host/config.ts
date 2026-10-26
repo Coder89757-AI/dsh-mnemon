@@ -1,9 +1,10 @@
 import z from '@deepseek-ai/schemastery'
-import { DEFAULT_IDLE_REVIEW } from './protocol.ts'
+import { DEFAULT_IDLE_REVIEW, DEFAULT_SKILLS_CONFIG } from './protocol.ts'
 import { isAbsolute } from 'node:path'
 import { normalizeDisplayMode } from './display-mode.ts'
 import { schema as MemoryViewConfig, preferences as validateMemoryViewPreferences } from './view-preferences.ts'
 import { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
+import { MEMORY_PLACEMENT_CAPABILITIES, MEMORY_SPACE_ID_PATTERN } from 'dsh-mnemon-source-memory-spaces/contracts'
 
 export { resolveEmbedding, resolvePersistenceStrategy, resolveRecallQuality } from 'dsh-mnemon-source-memory-spaces'
 import {
@@ -16,6 +17,7 @@ import {
   DEFAULT_RECALL_LIMIT,
   DEFAULT_RECALL_LOW_SCORE_THRESHOLD,
   DEFAULT_RECALL_MAX_MEDIUM_RESULTS,
+  DEFAULT_RECALL_MAX_RANKED_RESULTS,
   DEFAULT_RECALL_MAX_UNKNOWN_RESULTS,
   DEFAULT_RECALL_QUALITY_POLICY,
   DEFAULT_RUNTIME_MAINTENANCE_MAX_TOKENS,
@@ -36,6 +38,7 @@ import type {
   RecallQualityConfig,
   ResolvedConfig as SharedResolvedConfig,
   ResolvedInteractionConfig as SharedResolvedInteractionConfig,
+  ResolvedSkillsConfig,
   RuntimeMemoryConfig,
   ResolvedTaskAgentModelConfig,
   TaskAgentModelConfig,
@@ -51,6 +54,7 @@ export {
   DEFAULT_RECALL_LIMIT,
   DEFAULT_RECALL_LOW_SCORE_THRESHOLD,
   DEFAULT_RECALL_MAX_MEDIUM_RESULTS,
+  DEFAULT_RECALL_MAX_RANKED_RESULTS,
   DEFAULT_RECALL_MAX_UNKNOWN_RESULTS,
   DEFAULT_RECALL_QUALITY_POLICY,
   DEFAULT_RUNTIME_MAINTENANCE_MAX_TOKENS,
@@ -71,7 +75,24 @@ export const InteractionConfig: z<InteractionConfig> = z.object({
   saveAction: z.boolean().default(true),
 })
 
-const MEMORY_PLACEMENT_CAPABILITIES = ['graph', 'entities', 'related', 'exact-write', 'link', 'forget'] as const
+/** 技能管理's settings, with the ranges its page accepts. */
+export const SkillsConfig: z<Partial<ResolvedSkillsConfig>, ResolvedSkillsConfig> = z.object({
+  evolution: z.boolean().default(DEFAULT_SKILLS_CONFIG.evolution),
+  autoBacktest: z.boolean().default(DEFAULT_SKILLS_CONFIG.autoBacktest),
+  hints: z.boolean().default(DEFAULT_SKILLS_CONFIG.hints),
+  sidebar: z.boolean().default(DEFAULT_SKILLS_CONFIG.sidebar),
+  reviewThreshold: z.number().step(1).min(1).max(50).default(DEFAULT_SKILLS_CONFIG.reviewThreshold),
+  idleSeconds: z.number().step(1).min(0).max(3_600).default(DEFAULT_SKILLS_CONFIG.idleSeconds),
+  cooldownSeconds: z.number().step(1).min(0).max(86_400).default(DEFAULT_SKILLS_CONFIG.cooldownSeconds),
+  minConfidence: z.number().min(0).max(1).default(DEFAULT_SKILLS_CONFIG.minConfidence),
+  expiryDays: z.number().step(1).min(1).max(90).default(DEFAULT_SKILLS_CONFIG.expiryDays),
+  maxPendingPerSession: z.number().step(1).min(1).max(20).default(DEFAULT_SKILLS_CONFIG.maxPendingPerSession),
+  casesPerRun: z.number().step(1).min(1).max(20).default(DEFAULT_SKILLS_CONFIG.casesPerRun),
+}) as unknown as z<Partial<ResolvedSkillsConfig>, ResolvedSkillsConfig>
+
+export function resolveSkillsConfig(config: Partial<ResolvedSkillsConfig> | undefined = {}): ResolvedSkillsConfig {
+  return SkillsConfig(config ?? {})
+}
 
 const MemoryProviderConnectionSchema: z<MemoryProviderConnection> = z.dict(z.union([z.string(), z.number(), z.boolean()]))
 const MemoryPersistenceStrategySchema = z.object({
@@ -91,6 +112,7 @@ const TaskAgentModelSchema: z<TaskAgentModelConfig> = z.object({
   mode: z.union(['inherit', 'fixed'] as const),
   provider: z.string(),
   model: z.string(),
+  followConversation: z.boolean(),
 })
 
 const MnemonEmbeddingSchema = z.object({
@@ -107,6 +129,7 @@ const RecallQualitySchema: z<RecallQualityConfig> = z.object({
   highScoreThreshold: z.number().min(0).max(1).default(DEFAULT_RECALL_HIGH_SCORE_THRESHOLD),
   candidateMultiplier: z.number().step(1).min(1).max(5).default(DEFAULT_RECALL_CANDIDATE_MULTIPLIER),
   maxMediumResults: z.number().step(1).min(0).max(50).default(DEFAULT_RECALL_MAX_MEDIUM_RESULTS),
+  maxRankedResults: z.number().step(1).min(0).max(50).default(DEFAULT_RECALL_MAX_RANKED_RESULTS),
   maxUnknownResults: z.number().step(1).min(0).max(50).default(DEFAULT_RECALL_MAX_UNKNOWN_RESULTS),
 })
 
@@ -162,6 +185,9 @@ export const Config: z<Config> = z.object({
     dataDir: z.string(),
   })).default([]),
   store: z.string(),
+  // Memory Spaces' own configuration takes 1–600,000 ms for the same value. One range for both is
+  // on the roadmap (docs/plans/review-gaps-2026-10.md, item 4); until then each keeps its own,
+  // so that stored values validate as they did.
   timeoutMs: z.number().step(1).min(100).max(120_000).default(DEFAULT_TIMEOUT_MS),
   defaultRecallLimit: z.number().step(1).min(1).max(50).default(DEFAULT_RECALL_LIMIT),
   runtimeMemory: RuntimeMemorySchema.default({
@@ -185,6 +211,7 @@ export const Config: z<Config> = z.object({
     highScoreThreshold: DEFAULT_RECALL_HIGH_SCORE_THRESHOLD,
     candidateMultiplier: DEFAULT_RECALL_CANDIDATE_MULTIPLIER,
     maxMediumResults: DEFAULT_RECALL_MAX_MEDIUM_RESULTS,
+    maxRankedResults: DEFAULT_RECALL_MAX_RANKED_RESULTS,
     maxUnknownResults: DEFAULT_RECALL_MAX_UNKNOWN_RESULTS,
   }),
   routingGuidance: z.boolean().default(true),
@@ -199,11 +226,17 @@ export const Config: z<Config> = z.object({
   idleReviewMs: z.number().step(1).min(5_000).max(600_000).default(DEFAULT_IDLE_REVIEW_MS),
   idleReview: IdleReviewSchema.default(DEFAULT_IDLE_REVIEW),
   // Conversation surfaces default on and remain independently switchable live.
+  // `toolviews` switches nothing. Its declaration only keeps the form DSH
+  // generates from this schema, and the default it fills in, as they were:
+  // stored values would validate without it, since undeclared keys pass
+  // through. Settings writes refuse it and the resolved config leaves it out.
   conversationInteraction: z.object({
     toolviews: z.boolean().default(false),
     turnBar: z.boolean().default(true),
     saveAction: z.boolean().default(true),
   }).default({ toolviews: false, turnBar: true, saveAction: true }),
+  // Declared so DSH applies a change live, as it does every other key here.
+  skills: SkillsConfig.default({ ...DEFAULT_SKILLS_CONFIG }),
   persistenceStrategy: MemoryPersistenceStrategySchema,
   taskAgentModel: TaskAgentModelSchema,
   // Git sync is off until a user switches it on: the block stays a title and a
@@ -260,7 +293,10 @@ function resolveCustomPacks(value: CustomPackConfig[] | undefined, legacyDataDir
 function resolveTaskAgentModel(value: TaskAgentModelConfig | undefined): ResolvedTaskAgentModelConfig {
   const mode = value?.mode ?? 'inherit'
   if (mode !== 'inherit' && mode !== 'fixed') throw new Error(`dsh-mnemon: unsupported task Agent model mode: ${String(mode)}`)
-  if (mode === 'inherit') return { mode }
+  const follow = value?.followConversation
+  if (follow !== undefined && typeof follow !== 'boolean') throw new Error('dsh-mnemon: taskAgentModel.followConversation must be a boolean')
+  // A fixed route names its own model, so only an inherited one can follow a conversation.
+  if (mode === 'inherit') return follow === true ? { mode, followConversation: true } : { mode }
   const provider = optionalText(value?.provider)
   const model = optionalText(value?.model)
   if (provider === undefined || model === undefined) throw new Error('dsh-mnemon: a fixed task Agent model requires both provider and model')
@@ -341,7 +377,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
   if (requestedPackId !== undefined && selectedPack === undefined) throw new Error(`dsh-mnemon: unknown custom Pack: ${requestedPackId}`)
   const dataDir = selectedPack?.dataDir ?? legacyDataDir
   if (storageScope === 'custom' && dataDir === undefined) throw new Error('dsh-mnemon: a custom dataDir is required when storageScope is custom')
-  if (store !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(store)) {
+  if (store !== undefined && !MEMORY_SPACE_ID_PATTERN.test(store)) {
     throw new Error('dsh-mnemon: store must match [a-zA-Z0-9][a-zA-Z0-9_-]*')
   }
   return {
@@ -367,7 +403,6 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     idleReviewMs: config.idleReviewMs ?? DEFAULT_IDLE_REVIEW_MS,
     idleReview: IdleReviewSchema(config.idleReview ?? {}),
     conversationInteraction: {
-      toolviews: config.conversationInteraction?.toolviews ?? false,
       turnBar: config.conversationInteraction?.turnBar ?? true,
       saveAction: config.conversationInteraction?.saveAction ?? true,
     },

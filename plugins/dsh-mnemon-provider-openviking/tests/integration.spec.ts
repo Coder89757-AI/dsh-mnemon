@@ -20,19 +20,20 @@ describe.skipIf(endpoint === undefined)('published OpenViking loopback integrati
       endpoint: endpoint!, apiKey, targetUri: 'viking://user/default/memories', user: 'default', account: 'default', actorPeerId: 'dsh',
     }, { dataDir: '/unused', instanceId: 'isolated-openviking' })
     const provider = new OpenVikingProvider(authority, { fetch: requestFetch, requestTimeoutMs: 30_000 })
-    let receipt: { id: string; action: string; vectorStatus: string } | undefined
+    let receipt: { id: string; action: string; vectorStatus: string; tagsApplied: boolean } | undefined
     let removed: unknown
     try {
       receipt = await provider.remember(body, { content: canary, category: 'decision', importance: 4 }) as typeof receipt
-      expect(receipt).toMatchObject({ action: 'stored', vectorStatus: 'complete' })
+      // Tagged in its own call (#353), which every OpenViking since 0.4.3 offers.
+      expect(receipt).toMatchObject({ action: 'stored', vectorStatus: 'complete', tagsApplied: true })
       const readback = await fetch(`${endpoint}/api/v1/content/read?${new URLSearchParams({ uri: receipt!.id })}`, {
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
       }).then(response => response.json()) as { result: string }
       expect(readback.result).toBe(canary)
       const recalled = await provider.search(body, { query: canary, limit: 20 })
-      expect(recalled.results).toContainEqual(expect.objectContaining({ id: receipt!.id, content: canary }))
+      expect(recalled.results).toContainEqual(expect.objectContaining({ id: receipt!.id, content: canary, category: 'decision' }))
       const listed = await provider.list(body, { limit: 200 })
-      expect(listed).toContainEqual(expect.objectContaining({ id: receipt!.id, content: canary }))
+      expect(listed).toContainEqual(expect.objectContaining({ id: receipt!.id, content: canary, category: 'decision' }))
       expect(requests.some(request => request.path.includes('/sessions'))).toBe(false)
     } finally {
       if (receipt !== undefined) removed = await provider.forget(body, receipt.id)

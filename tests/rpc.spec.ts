@@ -175,6 +175,17 @@ describe('Mnemon RPC Source boundaries', () => {
     expect(await write('provider-services', {})).toMatchObject({ ok: false, error: { code: 'bad-request' } })
   })
 
+  it('fills in a space\'s vectors through the write channel only (#392)', async () => {
+    const f = await fixture()
+    const body = await f.memorySpace()
+    const execute = vi.spyOn(f.graph.memoryComposition.current()!, 'executeManagement')
+    const result = await createWriteHandler(f.live)('embedding-fill', { memoryBodyId: body.id })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'embedding-fill', input: expect.objectContaining({ memoryBodyId: body.id }) }))
+    // The fixture's space is not Mnemon Native, so it keeps no vectors to fill in.
+    expect(result).toMatchObject({ ok: false, error: { message: expect.stringContaining('keeps no Mnemon vectors to fill in') } })
+    expect(await createReadHandler(f.live)('embedding-fill', { memoryBodyId: body.id })).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+
   it('validates enum values before Provider I/O', async () => {
     const f = await fixture()
     expect(await createReadHandler(f.live)('search', { query: 'x', mode: 'anything' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('mode') } })
@@ -443,11 +454,23 @@ describe('Host assistance and channels', () => {
     expect(f.graph.packs.exportPack).toHaveBeenCalledWith('full')
     expect(await handler('inspect', { base64: 'eA==', fileName: 'backup.zip' })).toMatchObject({ ok: true })
     expect(await handler('import', { base64: 'eA==', mode: 'replace', components: ['runtime'] })).toMatchObject({ ok: true })
-    expect(f.graph.packs.importPack).toHaveBeenCalledWith('eA==', { mode: 'replace', components: ['runtime'] })
+    expect(f.graph.packs.importPack).toHaveBeenCalledWith('eA==', { mode: 'merge' })
     expect(f.sources['memory-spaces']!.mutate).toHaveBeenCalledWith('reload', {})
     const readonly = protocolFixture({ writeEnabled: false })
     expect(await createPackHandler(readonly.runtime)('import', { base64: 'eA==' })).toMatchObject({ ok: false })
     expect(readonly.graph.packs.importPack).not.toHaveBeenCalled()
+  })
+
+  it('reports the optional native chooser without adding migration operations', async () => {
+    const f = protocolFixture()
+    const capability = vi.fn(() => true)
+    const handler = createPackHandler(f.runtime, capability)
+    expect(await handler('target', {})).toMatchObject({ ok: true, value: { root: '/fixture/data', nativeDirectoryPicker: true } })
+    capability.mockReturnValue(false)
+    expect(await handler('target', {})).toMatchObject({ ok: true, value: { root: '/fixture/data', nativeDirectoryPicker: false } })
+    expect(await createPackHandler(f.runtime)('target', {})).toMatchObject({ ok: true, value: { nativeDirectoryPicker: false } })
+    for (const endpoint of ['storage-plan', 'storage-migrate']) expect(await handler(endpoint, { confirmed: true, dataDir: '/fixture/other' })).toMatchObject({ ok: false })
+    expect(f.graph.packs.importPack).not.toHaveBeenCalled()
   })
 
   it('keeps Git sync authenticated, selected-root scoped, and confirmed in both directions', async () => {
@@ -511,7 +534,9 @@ describe('Host assistance and channels', () => {
     const turnActivities = vi.fn(() => ({ cursor: 12, activities: [{ turn: 2, recalls: 1 }] }))
     const read = createReadHandler(f.runtime, lifecycle({ taskAgentModels, turnActivities }))
     expect(await read('task-agent-models', { includeCatalog: false })).toMatchObject({ ok: true })
-    expect(taskAgentModels).toHaveBeenCalledWith(false)
+    expect(taskAgentModels).toHaveBeenCalledWith(false, undefined)
+    expect(await read('task-agent-models', { includeCatalog: false, sessionId: 's1' })).toMatchObject({ ok: true })
+    expect(taskAgentModels).toHaveBeenLastCalledWith(false, 's1')
     expect(await read('turn-activities', { sessionId: 's1' })).toMatchObject({ ok: true, value: { cursor: 12 } })
     expect(await read('turn-activity', { sessionId: 's1', turn: 2 })).toMatchObject({ ok: true, value: { recalls: 1 } })
     expect(f.graph.source).not.toHaveBeenCalled()

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import type { MemoryMutationCompletion } from 'dsh-mnemon/contracts'
 import { memoryInputInteger as integer } from 'dsh-mnemon/extension-sdk'
 import type { ResolvedMemorySpacesConfig as ResolvedConfig } from './config.ts'
 import { MemorySpaceRegistry, validateMemorySpaceId } from './memory-spaces.ts'
-import type { MnemonRunner } from './runner.ts'
+import { MnemonCliError, type MnemonRunner } from './runner.ts'
 import { finalizeLlmPlacement, prepareMemoryPlacement, rulesOnlyPlacement } from './provider-placement.ts'
 import { EMPTY_MEMORY_PROVIDER_CATALOG, MemoryProviderCatalog } from './providers/catalog.ts'
 import { type MemoryProviderAdapter, type ProviderSpaceStatus, type ProviderSearchResult } from './providers/adapter.ts'
@@ -28,7 +28,9 @@ import {
   CATEGORIES,
   EDGE_TYPES,
   INTENTS,
+  NATIVE_PROVIDER_ID,
   SOURCES,
+  isNativeProvider,
   normalizeEntityKey,
   type Category,
   type CreateMemorySpaceRequest,
@@ -44,12 +46,16 @@ import {
   type MemorySpaceStats,
   type MemorySpaceMetadataSample,
   type MemorySpaceMetadataUpdate,
+  type MemorySpaceRediscovery,
+  type MemorySpaceRediscoveryResult,
   type MemorySpaceView,
   type MemoryGraphEdge,
   type MemoryGraphNode,
   type MemoryGraphSnapshot,
   type MemoryListRequest,
   type MemoryListView,
+  type MnemonEmbeddingFill,
+  type MnemonEmbeddingSpaceStatus,
   type MnemonEmbeddingStatus,
   type MemoryPlacementDecision,
   type MemoryProviderDescriptor,
@@ -107,6 +113,29 @@ function stringArray(value: JsonValue | undefined): string[] | undefined {
 const ENTITY_SELECTION_STATUS_REUSE_MS = 10_000
 /** How long an index that statistics cannot check is reused; a write through this Source still drops it. */
 const ENTITY_INDEX_UNCHECKED_REUSE_MS = 10_000
+
+/** How long one Provider may take to list its namespaces when they are asked for again. */
+export const MEMORY_SPACES_REDISCOVERY_PROVIDER_TIMEOUT_MS = 30_000
+
+/**
+ * Rediscovery per data directory, shared by every generation in this process: the pass now
+ * running, which a second request joins, and the last one, which the Memory Spaces page shows.
+ */
+const rediscoveries = new Map<string, { running?: Promise<MemorySpaceRediscovery>; last?: MemorySpaceRediscovery }>()
+
+/** Settle with `work`, or reject once `signal` aborts, whichever comes first. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    // Nobody waits for `work` now, however it ends.
+    work.catch(() => {})
+    return Promise.reject(signal.reason)
+  }
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
 
 interface EntityIndexRead {
   byBody: Map<string, SpaceEntityIndex>
@@ -335,6 +364,51 @@ export function mutationResultCommitted(result: unknown): boolean {
   return mutationResultCompletion(result) === 'committed'
 }
 
+/** One `mnemon embed --status` answer, strictly validated. */
+function embeddingCounts(value: JsonValue): MnemonEmbeddingStatus {
+  const output = record(value)
+  // Mnemon ≥ 0.3.x reports `embedding_available`; `ollama_available` is the
+  // legacy alias kept for older binaries.
+  const available = output?.embedding_available ?? output?.ollama_available
+  const model = text(output?.model)?.trim()
+  // Mnemon ≥ 0.3.x may report the endpoint protocol it resolved; older binaries
+  // omit the field, so a missing or malformed value is dropped instead of
+  // failing the whole status probe.
+  const protocol = text(output?.protocol)?.trim()
+  const totalInsights = number(output?.total_insights)
+  const embedded = number(output?.embedded)
+  const coverage = text(output?.coverage)?.trim()
+  if (typeof available !== 'boolean'
+    || model === undefined || model === '' || model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model)
+    || !Number.isInteger(totalInsights) || totalInsights! < 0
+    || !Number.isInteger(embedded) || embedded! < 0 || embedded! > totalInsights!
+    || coverage === undefined || !/^(?:100|\d{1,2})%$/u.test(coverage)) {
+    throw new Error('mnemon embed --status returned an invalid response')
+  }
+  const validProtocol = protocol !== undefined && protocol.length <= 32 && !/[\u0000-\u001f\u007f]/u.test(protocol)
+  return { available, model, totalInsights: totalInsights!, embedded: embedded!, coverage, ...(validProtocol ? { protocol } : {}) }
+}
+
+/** How long one fill of a space's vectors may run, and the longest step of it that holds the storage lock (#392). */
+const EMBED_FILL_BUDGET_MS = 60_000
+const EMBED_FILL_STEP_MS = 10_000
+
+/** A whole percent, as Mnemon writes it, that reads 100% only when every memory has its vector. */
+function coveragePercent(embedded: number, total: number): string {
+  return total === 0 ? '0%' : `${Math.floor(embedded * 100 / total)}%`
+}
+
+/** Mnemon's reason for a failed call, without the usage it prints after its `Error:` line. */
+function cliReason(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return /\bError: ([^\n]+)/u.exec(detail)?.[1]?.trim() ?? detail.split('\n')[0]!.trim()
+}
+
+/** Whether a CLI call failed for this cause. */
+function cliFailure(error: unknown, reason: MnemonCliError['reason']): boolean {
+  return error instanceof MnemonCliError && error.reason === reason
+}
+
 export class MemorySpacesService {
   readonly memorySpaces: MemorySpaceRegistry
   private readonly providers: Map<MemorySpace['provider']['id'], MemoryProviderAdapter>
@@ -367,12 +441,12 @@ export class MemorySpacesService {
     return descriptor.typeId ?? descriptor.id
   }
 
-  private isNativeProvider(providerId: string): boolean {
-    return this.providerTypeId(providerId) === 'mnemon-native'
+  private isNativeProviderId(providerId: string): boolean {
+    return this.providerTypeId(providerId) === NATIVE_PROVIDER_ID
   }
 
   private isNativeSpace(body: MemorySpace): boolean {
-    return (body.provider.typeId ?? body.provider.id) === 'mnemon-native'
+    return isNativeProvider(body.provider)
   }
 
   constructor(
@@ -453,7 +527,7 @@ export class MemorySpacesService {
       items,
       providers: this.providerCatalog.providers.map(provider => ({
         ...provider,
-        serviceConfigured: (provider.typeId ?? provider.id) === 'mnemon-native' ? this.runner.commandFound : enabled.has(provider.id),
+        serviceConfigured: isNativeProvider(provider) ? this.runner.commandFound : enabled.has(provider.id),
       })),
       persistenceStrategy: {
         mode: this.config.persistenceStrategy.mode,
@@ -465,7 +539,13 @@ export class MemorySpacesService {
       activeCount: items.filter(body => body.active && body.providerEnabled !== false).length,
       directory: this.memorySpaces.directory,
       generatedAt: new Date().toISOString(),
+      rediscovery: this.rediscoveryState(),
     }
+  }
+
+  private rediscoveryState(): NonNullable<MemorySpaceCatalog['rediscovery']> {
+    const entry = rediscoveries.get(this.memorySpaces.providerRegistryPath)
+    return { running: entry?.running !== undefined, ...(entry?.last === undefined ? {} : { last: entry.last }) }
   }
 
   /** Stable, secret-free checkpoint for the projected Memory Space authority. */
@@ -538,6 +618,7 @@ export class MemorySpacesService {
       timeoutMs: this.config.timeoutMs,
       defaultRecallLimit: this.config.defaultRecallLimit,
       recallQuality: this.config.recallQuality,
+      embeddingManaged: this.config.embedding.enabled,
       memoryBodyDirectory: catalog.directory,
       memoryBodies: catalog.items,
       providerServices,
@@ -545,32 +626,92 @@ export class MemorySpacesService {
     }
   }
 
-  /** Probe the effective Mnemon embedding runtime and its default Store coverage. */
+  /**
+   * Probe Mnemon's embedding runtime, and count the vectors of every Mnemon Native space:
+   * `mnemon embed --status` counts only one Store, so a full count for it could read as the
+   * health of every space while another one lacked vectors (#392).
+   */
   async embeddingStatus(signal?: AbortSignal): Promise<MnemonEmbeddingStatus> {
-    const output = record(await this.runner.runJson(
-      ['embed', '--status'],
-      signal === undefined ? {} : { signal },
-    ))
-    // Mnemon ≥ 0.3.x reports `embedding_available`; `ollama_available` is the
-    // legacy alias kept for older binaries.
-    const available = output?.embedding_available ?? output?.ollama_available
-    const model = text(output?.model)?.trim()
-    // Mnemon ≥ 0.3.x may report the endpoint protocol it resolved; older binaries
-    // omit the field, so a missing or malformed value is dropped instead of
-    // failing the whole status probe.
-    const protocol = text(output?.protocol)?.trim()
-    const totalInsights = number(output?.total_insights)
-    const embedded = number(output?.embedded)
-    const coverage = text(output?.coverage)?.trim()
-    if (typeof available !== 'boolean'
-      || model === undefined || model === '' || model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model)
-      || !Number.isInteger(totalInsights) || totalInsights! < 0
-      || !Number.isInteger(embedded) || embedded! < 0 || embedded! > totalInsights!
-      || coverage === undefined || !/^(?:100|\d{1,2})%$/u.test(coverage)) {
-      throw new Error('mnemon embed --status returned an invalid response')
+    // Mnemon creates the Store it opens, so a space whose database is missing is not read.
+    const native = this.memorySpaces.list().filter(body => this.isNativeSpace(body) && existsSync(body.dbPath))
+    let runtime: MnemonEmbeddingStatus | undefined
+    const spaces: MnemonEmbeddingSpaceStatus[] = []
+    for (const body of native) {
+      const space = { memoryBodyId: body.id, name: body.name, active: body.active }
+      try {
+        const counts = embeddingCounts(await this.runner.runJson(['embed', '--status'], { store: body.id, database: body.dbPath, ...(signal === undefined ? {} : { signal }) }))
+        runtime ??= counts
+        spaces.push({ ...space, totalInsights: counts.totalInsights, embedded: counts.embedded, coverage: coveragePercent(counts.embedded, counts.totalInsights) })
+      } catch (error) {
+        if (signal?.aborted === true) throw error
+        // A space removed since the list was read has nothing left to count.
+        if (cliFailure(error, 'no-database')) continue
+        spaces.push({ ...space, totalInsights: 0, embedded: 0, coverage: '0%', error: cliReason(error) })
+      }
     }
-    const validProtocol = protocol !== undefined && protocol.length <= 32 && !/[\u0000-\u001f\u007f]/u.test(protocol)
-    return { available, model, totalInsights: totalInsights!, embedded: embedded!, coverage, ...(validProtocol ? { protocol } : {}) }
+    runtime ??= await this.embeddingRuntime(signal)
+    // A space that could not be read stays out of the total, which the list then says.
+    const counted = spaces.filter(space => space.error === undefined)
+    const totalInsights = counted.reduce((sum, space) => sum + space.totalInsights, 0)
+    const embedded = counted.reduce((sum, space) => sum + space.embedded, 0)
+    return { ...runtime, totalInsights, embedded, coverage: coveragePercent(embedded, totalInsights), spaces }
+  }
+
+  /** Mnemon's embedding runtime, asked in a scratch data directory: no space could be counted, and Mnemon creates the Store it opens. */
+  private async embeddingRuntime(signal?: AbortSignal): Promise<MnemonEmbeddingStatus> {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-mnemon-embedding-'))
+    try {
+      return embeddingCounts(await this.runner.runJson(['--data-dir', directory, 'embed', '--status'], { globalFlags: false, ...(signal === undefined ? {} : { signal }) }))
+    } catch (error) {
+      throw new Error(cliReason(error), { cause: error })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+
+  /**
+   * Fill in the vectors a Mnemon Native space lacks, through the Host's own data directory and
+   * embedding settings, which a terminal `mnemon embed --all` may not share (#392). Mnemon fills at
+   * most 100 a call and keeps the vectors it wrote when a call is stopped, so the fill goes in steps
+   * no longer than one CLI call, letting other memory work take the storage lock between them,
+   * until none is missing, a step writes none, or a minute is up.
+   */
+  async embedMissing(memoryBodyId: string, signal?: AbortSignal): Promise<MnemonEmbeddingFill> {
+    this.assertWritable()
+    const body = this.memorySpaces.get(validateMemorySpaceId(memoryBodyId))
+    if (!this.isNativeSpace(body)) throw new Error(`${body.provider.label} keeps no Mnemon vectors to fill in`)
+    const options = { store: body.id, database: body.dbPath, ...(signal === undefined ? {} : { signal }) }
+    const failed = (error: unknown): Error => new Error(cliFailure(error, 'no-database') ? `Memory Space ${body.name} has no database` : cliReason(error), { cause: error })
+    const count = async (): Promise<MnemonEmbeddingStatus> => {
+      try {
+        return embeddingCounts(await this.runner.runJson(['embed', '--status'], options))
+      } catch (error) {
+        throw failed(error)
+      }
+    }
+    const step = Math.min(this.config.timeoutMs, EMBED_FILL_STEP_MS)
+    const deadline = Date.now() + EMBED_FILL_BUDGET_MS
+    const first = await count()
+    let last = first
+    let stopped: MnemonEmbeddingFill['stopped']
+    while (last.embedded < last.totalInsights) {
+      if (Date.now() + step > deadline) { stopped = 'time'; break }
+      try {
+        await this.runner.runText(['embed', '--all'], { ...options, timeoutMs: step })
+      } catch (error) {
+        // A stopped step keeps the vectors it wrote; the count after it says how far it got.
+        if (!cliFailure(error, 'timeout')) throw failed(error)
+      }
+      const next = await count()
+      const progressed = next.embedded > last.embedded
+      last = next
+      if (!progressed) { stopped = 'refused'; break }
+    }
+    const remaining = last.totalInsights - last.embedded
+    return {
+      memoryBodyId: body.id, filled: Math.max(0, last.embedded - first.embedded), remaining, model: last.model,
+      ...(remaining > 0 && stopped !== undefined ? { stopped } : {}),
+    }
   }
 
   async status(signal?: AbortSignal): Promise<StatusView> {
@@ -623,6 +764,7 @@ export class MemorySpacesService {
       timeoutMs: this.config.timeoutMs,
       defaultRecallLimit: this.config.defaultRecallLimit,
       recallQuality: this.config.recallQuality,
+      embeddingManaged: this.config.embedding.enabled,
       memoryBodyDirectory: catalog.directory,
       memoryBodies: catalog.items,
       providerServices,
@@ -750,8 +892,9 @@ export class MemorySpacesService {
       }
       const heterogeneous = new Set(spaces.map(body => body.provider.id)).size > 1
       if (heterogeneous) for (const candidate of candidates) candidate.insight.federatedScore = 1 / (60 + candidate.providerRank)
-      candidates.sort((left, right) => heterogeneous
-        ? (right.insight.federatedScore ?? 0) - (left.insight.federatedScore ?? 0) || left.bodyOrder - right.bodyOrder
+      const useProviderOrder = heterogeneous || candidates.some(candidate => candidate.scoreSemantics?.kind === 'provider-native')
+      candidates.sort((left, right) => useProviderOrder
+        ? left.providerRank - right.providerRank || left.bodyOrder - right.bodyOrder
         : (right.insight.score ?? 0) - (left.insight.score ?? 0))
       return { hints, quality: applyRecallQualityPolicy(preparedPolicy, candidates, qualityContext) }
     }
@@ -812,6 +955,8 @@ export class MemorySpacesService {
       }
       if (decision.reason === 'unscored') stats.unscored += 1
       if (decision.reason === 'unscaled-score') stats.unscaled += 1
+      if (decision.tier === 'ranked') stats.ranked = (stats.ranked ?? 0) + 1
+      if (decision.reason === 'out-of-range-score') stats.outOfRange = (stats.outOfRange ?? 0) + 1
     }
     for (const { candidate } of quality.selected) {
       const stats = qualityStats.get(candidate.memoryBodyId)
@@ -1295,7 +1440,7 @@ export class MemorySpacesService {
       return this.createSpace({
         ...body,
         ...(providerId === undefined ? {} : { providerId }),
-        ...(providerId === undefined || this.isNativeProvider(providerId) || connection === undefined ? {} : { connection }),
+        ...(providerId === undefined || this.isNativeProviderId(providerId) || connection === undefined ? {} : { connection }),
       }, signal)
     }
 
@@ -1322,13 +1467,75 @@ export class MemorySpacesService {
 
   async updateProviderService(providerId: MemorySpace['provider']['id'], settings: Record<string, string | number | boolean>, clearSecrets: readonly string[] = [], enabled = true, signal?: AbortSignal) {
     this.assertWritable()
-    if (this.isNativeProvider(providerId)) throw new Error('Mnemon Native service settings are managed by the native configuration')
+    if (this.isNativeProviderId(providerId)) throw new Error('Mnemon Native service settings are managed by the native configuration')
     if (!enabled) return this.memorySpaces.updateProviderService(providerId, settings, clearSecrets, false)
     const connection = this.memorySpaces.resolveProviderService(providerId, settings, clearSecrets)
     const provider = this.providers.get(providerId)
     if (provider?.discover === undefined) throw new Error(`${this.providerCatalog.descriptor(providerId).label} does not support Memory Space discovery`)
     const discovered = await provider.discover(connection, signal)
     return this.memorySpaces.syncProviderService(providerId, connection, discovered)
+  }
+
+  /**
+   * Ask every enabled Provider service again for its namespaces, as saving its settings does, and
+   * mount the ones this directory has never held, inactive (#373). Nothing mounted changes and a
+   * namespace a person disconnected stays disconnected. Providers are asked side by side, each
+   * for at most 30 seconds; one that cannot answer keeps its spaces and says why. A pass already
+   * running for this directory, at start-up or from the page, is joined rather than run twice; a
+   * request that joined one its starter then stopped asks again, unless it was stopped itself.
+   */
+  async rediscoverProviders(trigger: MemorySpaceRediscovery['trigger'], signal?: AbortSignal, providerTimeoutMs = MEMORY_SPACES_REDISCOVERY_PROVIDER_TIMEOUT_MS): Promise<MemorySpaceRediscovery> {
+    this.assertWritable()
+    const key = this.memorySpaces.providerRegistryPath
+    const entry = rediscoveries.get(key) ?? {}
+    rediscoveries.set(key, entry)
+    const joined = entry.running
+    if (joined !== undefined) {
+      try {
+        return await (signal === undefined ? joined : untilAborted(joined, signal))
+      } catch {
+        signal?.throwIfAborted()
+        const next = entry.running
+        if (next !== undefined && next !== joined) return await (signal === undefined ? next : untilAborted(next, signal))
+      }
+    }
+    const running = this.runRediscovery(trigger, signal, providerTimeoutMs)
+    entry.running = running
+    try {
+      const outcome = await running
+      entry.last = outcome
+      return outcome
+    } finally {
+      if (entry.running === running) delete entry.running
+    }
+  }
+
+  private async runRediscovery(trigger: MemorySpaceRediscovery['trigger'], signal: AbortSignal | undefined, providerTimeoutMs: number): Promise<MemorySpaceRediscovery> {
+    const services = this.memorySpaces.providerServices().items.filter(item => item.enabled && !this.isNativeProviderId(item.providerId))
+    const results = await Promise.all(services.map(async (item): Promise<MemorySpaceRediscoveryResult | undefined> => {
+      const provider = this.providers.get(item.providerId)
+      if (provider?.discover === undefined) return undefined
+      const label = this.providerCatalog.descriptor(item.providerId).label
+      const timeout = AbortSignal.timeout(providerTimeoutMs)
+      const bounded = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+      try {
+        const connection = this.memorySpaces.resolveProviderService(item.providerId, {})
+        const discovered = await untilAborted(provider.discover(connection, bounded), bounded)
+        // A pass cut short writes nothing more.
+        signal?.throwIfAborted()
+        const mounted = this.memorySpaces.mountDiscovered(item.providerId, connection, discovered)
+        return { providerId: item.providerId, label, found: discovered.length, added: mounted.added.map(body => ({ id: body.id, name: body.name })), disconnected: mounted.disconnected }
+      } catch (error) {
+        signal?.throwIfAborted()
+        const failure = { providerId: item.providerId, label, found: 0, added: [], disconnected: 0 }
+        if (timeout.aborted) {
+          const limit = providerTimeoutMs < 1_000 ? `${providerTimeoutMs} ms` : `${Math.round(providerTimeoutMs / 1_000)} seconds`
+          return { ...failure, timedOut: true, error: `did not answer within ${limit}` }
+        }
+        return { ...failure, error: error instanceof Error ? error.message : String(error) }
+      }
+    }))
+    return { at: new Date().toISOString(), trigger, results: results.filter((result): result is MemorySpaceRediscoveryResult => result !== undefined) }
   }
 
   updateSpace(id: string, request: UpdateMemorySpaceRequest): MemorySpace {
@@ -1468,7 +1675,8 @@ export class MemorySpacesService {
     // enough for the Host to archive any valid hot-memory entry byte-for-byte;
     // the UI remains at its existing 8,000-character limit.
     const content = required(request.content, 'content', 8 * 1024)
-    const importance = integer(request.importance, 3, 1, 5)
+    // Keep omission distinct from an explicit level so Provider defaults apply.
+    const importance = request.importance === undefined ? undefined : integer(request.importance, 3, 1, 5)
     const category = allowed(request.category, CATEGORIES, 'category') ?? 'general'
     const source = allowed(request.source, SOURCES, 'source') ?? 'user'
     const tags = commaList(request.tags, 'tags', 20)?.split(',')
@@ -1477,7 +1685,7 @@ export class MemorySpacesService {
       body,
       request: {
         content,
-        importance,
+        ...(importance === undefined ? {} : { importance }),
         category,
         source,
         memoryBodyId: body.id,

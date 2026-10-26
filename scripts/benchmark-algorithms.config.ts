@@ -1,3 +1,4 @@
+// Vitest configuration for pnpm bench:algorithms: the algorithm measures in a single worker.
 import { defineConfig } from 'vitest/config'
 import shared from '../vitest.config.ts'
 

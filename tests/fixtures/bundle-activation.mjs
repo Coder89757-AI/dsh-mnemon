@@ -12,6 +12,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const require = createRequire(join(process.argv[2] ?? root, 'package.json'))
 const installAnchor = require.resolve('@deepseek-ai/dsh/package.json')
+const dsh = JSON.parse(await readFile(installAnchor, 'utf8')).version
+const [major, minor, patch] = dsh.split(/[.-]/u).map(Number)
+// From 0.2.1 the plugin manager recomputes package routes after each enable.
+const recomputesRoutes = major > 0 || minor > 2 || (minor === 2 && patch >= 1)
 const runtimeRequire = createRequire(installAnchor)
 const load = name => import(pathToFileURL(runtimeRequire.resolve(name)).href)
 const app = await load('@deepseek-ai/dsh-app-boot')
@@ -19,6 +23,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'mnemon-bundle-activation-'))
 const profileDir = join(temporary, 'profile')
 const patchPath = join(profileDir, 'cordis.patch.yml')
 const configPath = join(profileDir, 'cordis.yml')
+const settings = process.argv[3] === 'settings'
 const isolated = process.argv.includes('--isolated')
 const otherBundle = process.argv.includes('--other-bundle')
 const selected = isolated ? (otherBundle ? ['fixture-other'] : []) : ['dsh-mnemon']
@@ -31,7 +36,7 @@ try {
   await mkdir(profileDir, { recursive: true })
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const names = ['dsh-mnemon', ...Object.keys(manifest.dependencies).filter(name => name.startsWith('dsh-mnemon-'))]
-  assert.equal(names.length, 18)
+  assert.equal(names.length, 19)
   for (const name of names) {
     const directory = join(modules, name)
     await mkdir(directory, { recursive: true })
@@ -81,6 +86,19 @@ export async function apply(ctx, config) {
   const retained = '# Operator comment\n- id: mnemon\n  config:\n    timeoutMs: 4321\n- id: mnemon-strategy-auto-capture\n  disabled: false\n- id: mnemon-source-documents\n  disabled: true\n'
   await writeFile(patchPath, retained)
   const patches = () => app.readProfilePatches('dsh', profile)
+  const flatten = rows => rows.flatMap(row => [row, ...(row.group && Array.isArray(row.config) ? flatten(row.config) : [])])
+  if (settings) {
+    // Reproduce the reported manual installation: the selected bundle already inserts these IDs.
+    const shipped = await readFile(join(root, 'cordis.patch.yml'), 'utf8')
+    await writeFile(patchPath, shipped + retained)
+    const duplicated = flatten(app.composeEntries([patches()]))
+    for (const id of ['mnemon-bundle', 'mnemon']) assert.equal(duplicated.filter(row => row.id === id).length, 2)
+    assert.notEqual(duplicated.find(row => row.id === 'mnemon').config.timeoutMs, 4321,
+      'The config editor sees the first duplicate while the override updates the other one')
+    // The documented recovery preserves overrides and uses the automatically loaded bundle once.
+    await writeFile(patchPath, '- id: mnemon-bundle\n  name: dsh-mnemon/bundle\n  disabled: false\n' + retained)
+  }
+  const ConfigEditor = settings ? (await load('@deepseek-ai/dsh-config-editor')).default : undefined
   let Manager
   if (process.argv[3] === 'manager') Manager = (await load('@deepseek-ai/dsh-plugin-manager')).default
   const start = async () => {
@@ -93,10 +111,16 @@ export async function apply(ctx, config) {
       context.provide('profileContext', profile)
       context.provide('webRuntime', {})
       context.provide('webServer', {})
+      if (ConfigEditor) await context.plugin(ConfigEditor).await()
       // Use the manager's real profile reconciliation; no watcher is needed in
       // this deterministic single-operation fixture.
       if (Manager) {
-        context.provide('hmr', { runExclusive: operation => operation() })
+        context.provide('hmr', {
+          runExclusive: operation => operation(),
+          // DSH 0.2.1's manager applies a change through HMR, which recomposes the profile; with no changed
+          // module to replace, that is app-boot's recomposition. DSH 0.2.0's manager recomposes itself.
+          reconcileProfile: async requiredIds => ({ pending: [], ...await app.recomposeProfile(ctx, patches(), 'dsh', { requiredIds }) }),
+        })
         await context.plugin(Manager).await()
       }
     }, pathToFileURL(join(profileDir, 'package.json')).href)
@@ -133,22 +157,39 @@ export async function apply(ctx, config) {
     const result = await ctx.pluginManager.setBundleEnabled('dsh-mnemon', true)
     assert.equal(result.application, 'applied', JSON.stringify(result))
     if (otherBundle) {
-      assert.equal(ctx.pluginPackages.packageOf('fixture-leaf', parentUrl)?.dir, previousPackage.dir)
+      // A host that recomputes the routes from the selected bundles can drop a
+      // stopped bundle's route until it is enabled again. It must never point
+      // anywhere else, then or afterwards.
+      const retained = ctx.pluginPackages.packageOf('fixture-leaf', parentUrl)?.dir
+      if (retained !== undefined || !recomputesRoutes) assert.equal(retained, previousPackage.dir)
       assert.equal((await ctx.pluginManager.setBundleEnabled('fixture-other', true)).application, 'applied')
       assert(ctx.get('otherFixture'))
+      assert.equal(ctx.pluginPackages.packageOf('fixture-leaf', parentUrl)?.dir, previousPackage.dir)
     }
   }
   assertEnabled()
+  if (settings) {
+    const core = [...ctx.loader.entries()].find(entry => entry.options.id === 'mnemon')
+    await ctx.configEditor.edit(core, current => ({ ...current, skills: { evolution: true } }))
+    assert.equal(state.configs.get('dsh-mnemon').skills.evolution, true)
+    const rows = flatten(app.composeEntries([patches()]))
+    for (const id of ['mnemon-bundle', 'mnemon']) assert.equal(rows.filter(row => row.id === id).length, 1)
+    assert.equal(rows.find(row => row.id === 'mnemon').config.skills.evolution, true)
+    await stop(); await start()
+    assertEnabled()
+    assert.equal(state.configs.get('dsh-mnemon').skills.evolution, true)
+    console.log('Config editor saved and reloaded Skills evolution with unique bundle/core IDs (#470).')
+  }
   if (Manager) {
     const manager = ctx.pluginManager
     const components = (await manager.listBundles()).find(bundle => bundle.name === 'dsh-mnemon').rows
     const plugins = await manager.listPlugins()
     // Native groups are lifecycle containers, deliberately absent from the
-    // manager's inventory. Strict mode reproduces rc.2's bundle-list mismatch
+    // manager's inventory. Strict mode reproduces DSH 0.2.0's bundle-list mismatch
     // without making that upstream defect an accepted lifecycle contract.
     const groups = new Set([...ctx.loader.entries()].filter(entry => entry.options.group).map(entry => entry.options.id))
     const pluginComponents = components.filter(row => !groups.has(row.rowId))
-    assert.equal(pluginComponents.length, 9)
+    assert.equal(pluginComponents.length, 10)
     assert(pluginComponents.every(row => plugins.some(plugin => plugin.entryId === row.entryId)))
     if (process.argv.includes('--check-declared-rows')) {
       assert.deepEqual(components.filter(row => !plugins.some(plugin => plugin.entryId === row.entryId)), [],
@@ -209,7 +250,7 @@ export async function apply(ctx, config) {
   assert.equal(bundle?.name, 'dsh-mnemon/bundle')
   assert.deepEqual(schema.diagnostics.filter(item => item.level === 'error'), [{ level: 'error', path: bundle.path,
     message: 'unrecognized Loader tree carrier; use cordis:group or cordis:include for native child collection' }])
-  console.log(JSON.stringify({ dsh: JSON.parse(await readFile(installAnchor, 'utf8')).version, packages: names.length,
+  console.log(JSON.stringify({ dsh, packages: names.length,
     components: 9, manager: Boolean(Manager), result: 'passed' }))
 } finally {
   await ctx?.fiber.dispose()

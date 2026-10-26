@@ -92,3 +92,13 @@
 }
 .receipt > :first-child { flex: none; margin-top: 1px; }
 .receiptAction { flex: none; margin-left: auto; }
+/* A fact about the write the summary may leave out, under the row: a quiet note, or a caution when something failed. */
+.receipt > .receiptNote {
+  flex-basis: 100%;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.receipt > .receiptNote[data-tone='caution'] {
+  color: var(--dsw-alias-state-warn-label, var(--dsw-alias-label-secondary));
+}

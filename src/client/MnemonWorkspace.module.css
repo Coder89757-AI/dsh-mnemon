@@ -43,14 +43,21 @@
   padding-block-start: var(--dsh-frame-top-clearance, 0px);
 }
 
+/* Covers the clearance above, which has no height where DSH reserves none. */
+.windowDragBand {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--dsh-frame-top-clearance, 0px);
+}
+
 .nativeWorkspace[hidden] {
   display: none;
 }
 
 /*
  * The fallback entry, used when the layout offers no native panel seat, copies
- * DSH's own panel row (dsh-client-ui-sidebar .panelRow, identical in 0.1.7-rc.2
- * and 0.2.0-rc.2) so it lines up with built-in and plugin rows (#318). The width
+ * DSH's own panel row (dsh-client-ui-sidebar .panelRow, identical in 0.2.0-rc.2
+ * and 0.2.1-rc.1) so it lines up with built-in and plugin rows (#318). The width
  * leaves the row's 2px side margins inside the sidebar column.
  */
 .entry {

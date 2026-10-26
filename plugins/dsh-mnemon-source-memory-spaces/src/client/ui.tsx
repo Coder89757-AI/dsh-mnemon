@@ -1,13 +1,15 @@
 import { css, sidebarCss, useT } from './presentation.ts'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
+import * as mnemonClient from 'dsh-mnemon/client'
 import {
   createMemorySourcePageClient, installMemorySourceUI, MemorySourcePageFrame, translateEn, message, PageHeader,
-  appearanceClass, type MemorySourcePageProps, type MnemonSourceManagementClient, type MnemonTranslate,
+  appearanceClass, type MemoryComponentUIContext, type MemorySourcePageProps, type MnemonSourceManagementClient, type MnemonTranslate,
 } from 'dsh-mnemon/client'
 import type { Insight, MemorySpacesStatus } from '../contracts.ts'
 import { OverviewPage, ExplorePage, EntitiesPage, RememberPage, ListPage, PersistenceStrategyDialog, type MemoryPlacementPageConfig } from './pages.tsx'
 import type { MemorySpacesPageClient } from './api.ts'
+import { installMemorySpacesSettings, yieldsComponentSettings } from './settings.tsx'
 
 /** The adapter never gets a transport or chooses another Source instance. */
 export function memorySpacesPageClient(management: MnemonSourceManagementClient): MemorySpacesPageClient & { status(): Promise<MemorySpacesStatus>; canAssist(operation: string): boolean } {
@@ -33,6 +35,7 @@ export function memorySpacesPageClient(management: MnemonSourceManagementClient)
     updateBody: (memoryBodyId, request) => typeof request.active === 'boolean' && Object.keys(request).every(key => key === 'active') && client.canAssist('activation')
       ? client.assist('activation', { memoryBodyId, active: request.active }, true) : client.mutate('body-update', input({ memoryBodyId, ...request }), true),
     deleteBody: memoryBodyId => client.mutate('body-delete', { memoryBodyId }, true),
+    rediscoverBodies: () => client.mutate('provider-rediscover', { trigger: 'manual' }, true),
     agentSearch: request => client.assist('agent-search', input(request), false),
     supervise: (content, idempotencyKey) => client.assist('supervise', input({ content, idempotencyKey }), true),
     maintainBodyMetadata: memoryBodyIds => client.assist('body-metadata-maintain', { memoryBodyIds }, true),
@@ -102,7 +105,7 @@ function MemorySpacesSourceView(props: MemorySourcePageProps & { page: Page }): 
     {page === 'explore' && <ExplorePage client={client} agentClient={client} agentAvailable={client.canAssist('agent-search')} status={status} seed={seed} writeEnabled={writable} onForget={forget} onRevealElement={revealElement} />}
     {page === 'entities' && <EntitiesPage client={client} revision={revision} writeEnabled={writable} onForget={forget} onExplore={explore} />}
     {page === 'content' && <ListPage client={client} revision={revision} writeEnabled={writable} onForget={forget} onClone={insight => remember(insight.content)} onExplore={explore} />}
-    {rememberOpen && <RememberPage client={client} agentAvailable={agentAvailable} memoryBodies={bodies} writeEnabled={writable} seed={seed} onMutate={refresh} onClose={() => setRememberOpen(false)} onView={() => { setRememberOpen(false); setPage('content') }} />}
+    {rememberOpen && <RememberPage client={client} agentAvailable={agentAvailable} memoryBodies={bodies} writeEnabled={writable} seed={seed} embeddingManaged={status?.embeddingManaged} onMutate={refresh} onClose={() => setRememberOpen(false)} onView={() => { setRememberOpen(false); setPage('content') }} />}
     {strategyOpen && preferences !== undefined && <PersistenceStrategyDialog client={client} settingsScope={{ setPath: async (path, value) => {
       if (path.length !== 1 || path[0] !== 'persistenceStrategy') throw new Error('Preference path is outside this Source')
       await preferences.replace(JSON.parse(JSON.stringify({ persistenceStrategy: value })) as MemoryJsonValue)
@@ -131,4 +134,7 @@ export function installMemorySpacesUI(ctx: Parameters<typeof installMemorySource
 }
 
 export const inject = ['slots', 'locale']
-export function apply(ctx: Parameters<typeof installMemorySourceUI>[0]): void { installMemorySpacesUI(ctx, ctx.locale!.bind('mnemon')) }
+export function apply(ctx: Parameters<typeof installMemorySourceUI>[0] & MemoryComponentUIContext): void {
+  installMemorySpacesUI(ctx, ctx.locale!.bind('mnemon'))
+  if (yieldsComponentSettings(mnemonClient)) installMemorySpacesSettings(ctx)
+}

@@ -89,7 +89,7 @@ describe('external consumer of packed artifacts', () => {
   it('imports every declared Node entry from installed packages, not repository sources', async () => {
     const names: string[] = JSON.parse(readFileSync(new URL('../artifacts.json', import.meta.url), 'utf8'))
     const require = createRequire(import.meta.url)
-    expect(names).toHaveLength(18)
+    expect(names).toHaveLength(19)
     for (const name of names) {
       const manifest = JSON.parse(readFileSync(require.resolve(name + '/package.json'), 'utf8'))
       for (const subpath of Object.keys(manifest.exports)) {
@@ -124,9 +124,9 @@ describe('external consumer of packed artifacts', () => {
     const manifest = JSON.parse(readFileSync(require.resolve('dsh-mnemon/package.json'), 'utf8'))
     expect(english.meta).toEqual({})
     expect(manifest.name).toBe('dsh-mnemon')
-    expect(manifest.description).toMatch(/Composable, view-based memory/)
+    expect(manifest.description).toMatch(/Composable, view-based context/)
     expect(chinese.meta.title).toBe('可组合记忆 (dsh-mnemon)')
-    expect(chinese.meta.description).toMatch(/可组合视图记忆/)
+    expect(chinese.meta.description).toMatch(/可组合视图上下文/)
   })
 
   it('supports a new Source and Strategy, authority checks, exact grants and explicit replacement', async () => {

@@ -4,17 +4,18 @@
 
 dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**运行时记忆**、问题需要时才检索的**项目档案**，以及存放在你所选 Provider 上的长期证据**记忆空间**。主策略决定它们如何参与每一轮对话，主策略与增强都在插件页中选择。从默认的分层策略开始即可，日常使用无需管理插件。
 
-[![可组合记忆插件页中的记忆组合面板](../assets/webui-v0.5.19/zh-CN/plugin-composition.jpg)](./guides/ui-guide.md#在插件页中)
+[![可组合记忆插件页中的记忆组合面板](../assets/webui-v0.5.32/zh-CN/plugin-composition.jpg)](./guides/ui-guide.md#在插件页中)
 
 ## 使用记忆系统
 
 | 要完成的事 | 指南 |
 |---|---|
 | 从零安装并启动：网页、桌面版或命令行，到第一条记忆 | [安装与启动](./guides/installation.md) |
-| 保存并用上第一批记忆 | [快速开始](./guides/getting-started.md) |
+| 保存并用上第一批记忆 | [入门指南](./guides/getting-started.md) |
 | 熟悉对话、记忆系统与插件页 | [界面指南](./guides/ui-guide.md) |
 | 了解每个组件与策略能做什么 | [能力地图](./guides/capabilities.md) |
 | 选择并接入长期记忆后端 | [Provider 指南](./guides/memory-providers.md) |
+| 管理技能，让它们从对话中改进，测试它们并安装更多技能 | [技能管理](./guides/skills.md) |
 | 备份、迁移存储或排查故障 | [运维指南](./guides/operations.md) |
 | 升级已有安装 | [兼容性与升级](./reference/compatibility.md) |
 
@@ -36,9 +37,10 @@ dsh-mnemon 为 DeepSeek Harness 提供三类记忆：每一轮都会用到的**�
 | 让皮肤适配 Mnemon 背景与透明度 | [皮肤开发](./development/skin-integration.md) |
 | 构建、测试与真实 WebUI 截图 | [开发与验证](./development/README.md) |
 | 为独立包管理版本和发布 | [发布流程](./development/releasing.md) |
+| 参与贡献：规则、脚本与设计计划 | [贡献指南](../../CONTRIBUTING.zh-CN.md) · [脚本](../../scripts/README.md)（英文） · [设计计划](../plans/README.md)（英文） |
 
 ## 最新变化
 
-[v0.5.25](./releases/v0.5.25.md) 让记忆在没有记忆空间能接收归档时照常工作，并让“保存到记忆”可以选择写入位置。[v0.5.24](./releases/v0.5.24.md) 让实体页统计并列出带有某个实体的全部记忆，选中后立即显示，相关记忆只在需要时查找。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
+[v0.5.35](./releases/v0.5.35.md) 改进技能回收站与纯文本评测，保留运行时重要性与同步溢出记录，修复 Provider 写入和分数处理，并公开工作区身份辅助函数。[v0.5.34](./releases/v0.5.34.md) 新增实验性组件技能管理：管理工作区加载的 DSH 技能，从你的对话中改进技能（草案先回测、再由你采纳），为每个技能保存测试用例，并能从 skills.sh、GitHub 和 Agent Skills 网站安装更多技能。[v0.5.33](./releases/v0.5.33.md) 让 Git 同步无论 Git 怎样配置都能找到令牌，为 gitee.com 使用它接受的用户名，让记忆任务不再在 DSH 的会话列表中留下空会话，并写明在 DSH 0.2.1 的桌面版中从 0.5.30 及更早版本更新的方法。[全部版本](./releases/README.md) · [路线图](./roadmap.md) · [历史验收证据](../pr-assets/README.md)
 
-指南描述当前版本。截图与录屏来自 [v0.5.19 图集](../assets/webui-v0.5.19/README.md)，安装步骤来自[安装图集](../assets/install-v0.5.19/README.md)；带日期的 PR 记录只证明其标注的代码修订与环境。内部 Host RPC 不属于对外插件 SDK。
+指南描述当前版本。截图与录屏来自 [v0.5.32 图集](../assets/webui-v0.5.32/README.md)，技能管理的截图来自 [v0.5.34 技能管理图集](../assets/skills-v0.5.34/README.md)，安装步骤来自[安装图集](../assets/install-v0.5.19/README.md)；带日期的 PR 记录只证明其标注的代码修订与环境。内部 Host RPC 不属于对外插件 SDK。

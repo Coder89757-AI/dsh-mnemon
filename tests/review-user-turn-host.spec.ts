@@ -1,12 +1,10 @@
-import { realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { LlmAdapter, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { JsonlSessionPersistence } from './helpers/dsh-plugins.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -18,8 +16,8 @@ import { CONTINUATION_TEXT } from '../src/host/continuation-turn.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { compositionFixture } from './fixtures/composition.ts'
+import { loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 
-const requireDsh = createRequire(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
 const fork = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-fork-in-process'))
 const spawn = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-spawn-in-process'))
 
@@ -144,6 +142,7 @@ it.each([
     await ctx.plugin(ToolRuntime, { mode: 'native' })
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await loadWorkingDirectory(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(fork, { providerName: 'fork' })
     await ctx.plugin(spawn, { providerName: 'spawn' })

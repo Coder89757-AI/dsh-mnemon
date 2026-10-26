@@ -234,6 +234,41 @@ describe('conversation interaction surfaces', () => {
     unsubscribe()
   })
 
+  it('names and opens every memory tool chip as it always did', async () => {
+    const expected: Record<string, [string, string]> = {
+      mnemon_view_route: ['turnTail.tool.viewRoute', 'memory-spaces/spaces'],
+      mnemon_view_action: ['turnTail.tool.viewAction', 'memory-spaces/spaces'],
+      mnemon_memory_bodies: ['turnTail.tool.spaces', 'memory-spaces/spaces'],
+      mnemon_recall: ['turnTail.tool.recall', 'memory-spaces/explore'],
+      mnemon_related: ['turnTail.tool.related', 'memory-spaces/explore'],
+      mnemon_status: ['turnTail.tool.status', 'status'],
+      mnemon_document_search: ['turnTail.tool.documentSearch', 'documents/library'],
+      mnemon_document_create: ['turnTail.tool.documentCreate', 'documents/library'],
+      mnemon_document_manage: ['turnTail.tool.documentManage', 'documents/library'],
+      mnemon_runtime_memory: ['turnTail.tool.runtime', 'runtime/entries'],
+      mnemon_remember: ['turnTail.tool.remember', 'memory-spaces/spaces'],
+      mnemon_link: ['turnTail.tool.link', 'memory-spaces/spaces'],
+      mnemon_forget: ['turnTail.tool.forget', 'memory-spaces/spaces'],
+      mnemon_memory_body_create: ['turnTail.tool.spaceCreate', 'memory-spaces/spaces'],
+      mnemon_memory_body_update: ['turnTail.tool.spaceUpdate', 'memory-spaces/spaces'],
+      mnemon_memory_body_merge: ['turnTail.tool.spaceMerge', 'memory-spaces/spaces'],
+      // Another tool keeps its own name.
+      mnemon_notes_digest: ['mnemon_notes_digest', 'memory-spaces/spaces'],
+    }
+    const names = Object.keys(expected)
+    const rpcCall = vi.fn(async () => ({ ok: true as const, value: { cursor: 12, activities: [{
+      turn: 2, count: names.length, names, recalls: 0, writes: 0, documentSearches: 0, inspections: 0, failures: 0, retrieved: [], writebacks: [],
+    }] } }))
+    const received: string[] = []
+    const unsubscribe = subscribeMnemonAnchor('session-a', anchor => received.push(anchor.page))
+    render(<MnemonTurnTail turn={{ turn: 2, status: 'closed' }} seq={12} openFile={vi.fn()} sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as ClientConnectionHandle} localeRuntime={localeRuntime} t={translate as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: /turnTail\.label/ }))
+    const chips = screen.getAllByRole('button', { name: 'turnTail.openTool' })
+    for (const chip of chips) fireEvent.click(chip)
+    expect(Object.fromEntries(chips.map((chip, index) => [names[index], [chip.textContent, received[index]]]))).toEqual(expected)
+    unsubscribe()
+  })
+
   it('shows at most three items per tool and counts the rest', async () => {
     const items = Array.from({ length: 5 }, (_, index) => ({ id: `doc-${index}`, title: `Document ${index}` }))
     const retrieved = [{ callId: 'read', toolName: 'mnemon_document_search', operationId: 'search', sourceTypeId: 'documents', items }]
@@ -387,8 +422,8 @@ describe('conversation interaction surfaces', () => {
     { sourceInstanceKey: 'source:mnemon-source-memory-spaces', sourceTypeId: 'memory-spaces', revision: 's1' },
   ] } })
   const emptyRuntime = { ok: true as const, value: { revision: 'r1', value: { targets: { memory: { used: 0, limit: 10_240 }, user: { used: 0, limit: 4_096 } } } } }
-  const openSaveAction = (rpcCall: (...args: never[]) => unknown) => {
-    render(<MnemonSaveAction messageId="message-1" sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as unknown as ClientConnectionHandle} settingsScope={writableSettingsScope} localeRuntime={localeRuntime} t={translate as never} />)
+  const openSaveAction = (rpcCall: (...args: never[]) => unknown, scope = writableSettingsScope) => {
+    render(<MnemonSaveAction messageId="message-1" sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as unknown as ClientConnectionHandle} settingsScope={scope} localeRuntime={localeRuntime} t={translate as never} />)
     fireEvent.click(screen.getByRole('button', { name: 'saveAction.button' }))
   }
   const choose = (label: RegExp) => {
@@ -511,6 +546,70 @@ describe('conversation interaction surfaces', () => {
     choose(/^saveAction\.to\.user/)
     await saveWhenReady()
     await screen.findByText('saveAction.saved.runtimeMaintained')
+    // Working memory and the user profile keep no vectors, so their receipts never mention one.
+    expect(screen.queryByText('receipt.unembedded')).toBeNull()
+    expect(screen.queryByText('receipt.unembeddedNoService')).toBeNull()
+  })
+
+  it('says nothing about a vector when the write put no memory anywhere (#388)', async () => {
+    const rpcCall = vi.fn(async (_channel: string, endpoint: string) => {
+      if (endpoint === 'status') return { ok: true as const, value: { writeEnabled: true, lifecycle: { taskAgentAvailable: true } } }
+      if (endpoint === 'assistant-message') return { ok: true as const, value: { messageId: 'message-1', text: 'Checkout loads the payment SDK after interaction.' } }
+      // An earlier write in the run had no vector; the run itself ended as a skipped duplicate.
+      if (endpoint === 'supervise') return { ok: true as const, value: { summary: 'Already saved.', action: 'skipped', memoryBodyIds: [], unembedded: [{ memoryBodyId: 'lumen', id: 'm1' }] } }
+      throw new Error(`unexpected endpoint: ${endpoint}`)
+    })
+    render(<MnemonSaveAction messageId="message-1" sessionId="session-a" connection={{ rpc: { call: rpcCall }, isLoopback: true } as ClientConnectionHandle} settingsScope={writableSettingsScope} localeRuntime={localeRuntime} t={translate as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'saveAction.button' }))
+    await screen.findByText('taskAgent.ready')
+    const submit = screen.getByRole('button', { name: 'saveAction.submit' }) as HTMLButtonElement
+    await waitFor(() => expect(submit.disabled).toBe(false))
+    fireEvent.click(submit)
+    await screen.findByText('receipt.skipped')
+    expect(screen.queryByText('receipt.unembedded')).toBeNull()
+    expect(screen.queryByText('receipt.unembeddedNoService')).toBeNull()
+  })
+
+  // With the embedding settings at their default no embedding service is set up, so a missing vector is expected and
+  // gets a neutral note; once DSH manages them, a configured service did not answer, which keeps the caution.
+  it.each([
+    [false, 'receipt.unembeddedNoService', 'neutral'],
+    [true, 'receipt.unembedded', 'caution'],
+  ] as const)('says when a memory was saved without a vector, through the task Agent or written directly, DSH managing the embedding: %s (#388)', async (managed, note, tone) => {
+    const native = { id: 'native', name: 'Native space', active: true, providerEnabled: true, provider: { id: 'mnemon-native', label: 'Mnemon Native', capabilities: { remember: true } } }
+    let embedded = false
+    const rpcCall = vi.fn(async (_channel: string, endpoint: string) => {
+      if (endpoint === 'status') return { ok: true as const, value: { writeEnabled: true, commandFound: true, memoryBodies: [native], lifecycle: { taskAgentAvailable: true }, memorySystem: memorySystem() } }
+      if (endpoint === 'assistant-message') return { ok: true as const, value: { messageId: 'message-1', text: 'Grafana on the staging cluster listens on port 3300.' } }
+      if (endpoint === 'source-management-read') return emptyRuntime
+      if (endpoint === 'source-management-catalog') return runtimeCatalog()
+      if (endpoint === 'supervise') return { ok: true as const, value: { summary: 'Saved to Native space.', action: 'added', memoryBodyIds: ['native'], unembedded: [{ memoryBodyId: 'native', id: 'm1' }] } }
+      if (endpoint === 'source-management-mutate') return { ok: true as const, value: { revision: 's2', value: { action: 'added', id: 'm2', memoryBodyId: 'native', embedded } } }
+      throw new Error(`unexpected endpoint: ${endpoint}`)
+    })
+    const other = managed ? 'receipt.unembeddedNoService' : 'receipt.unembedded'
+    openSaveAction(rpcCall, settingsScope<Config>({ status: 'ready', value: managed ? { embedding: { enabled: true, endpoint: 'http://127.0.0.1:9' } } : {}, writable: true, mode: 'host' }))
+    await screen.findByText('taskAgent.ready')
+    const submit = screen.getByRole('button', { name: 'saveAction.submit' }) as HTMLButtonElement
+    await waitFor(() => expect(submit.disabled).toBe(false))
+    fireEvent.click(submit)
+    // The task Agent's result lists the memory; its own summary may leave that out.
+    await screen.findByText('Saved to Native space.')
+    expect(screen.getByText(note).getAttribute('data-tone')).toBe(tone)
+    expect(screen.queryByText(other)).toBeNull()
+    // Written directly, Mnemon Native's receipt says embedded: false.
+    choose(/^Native space/)
+    fireEvent.click(screen.getByRole('button', { name: 'saveAction.save' }))
+    await screen.findByText('saveAction.saved.space')
+    expect(screen.getByText(note).getAttribute('data-tone')).toBe(tone)
+    expect(screen.queryByText(other)).toBeNull()
+    // A memory saved with its vector reads as before.
+    embedded = true
+    fireEvent.change(screen.getByRole('textbox', { name: 'saveAction.candidate' }), { target: { value: 'Grafana on the staging cluster listens on port 3301.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'saveAction.save' }))
+    await screen.findByText('saveAction.saved.space')
+    expect(screen.queryByText(note)).toBeNull()
+    expect(screen.queryByText(other)).toBeNull()
   })
 
   it('says before saving when working memory cannot take the text, or will make room first', async () => {

@@ -8,13 +8,14 @@ import { MnemonGitSync } from './git-sync.ts'
 import type { MnemonGitHubAuth } from './github-auth.ts'
 import { StorageScopeInspector } from './storage-scope.ts'
 import { createStorageRoot } from './storage-root.ts'
-import { canonicalWorkspacePath } from './workspace-storage.ts'
+import { canonicalWorkspacePath } from '../sdk/workspace-storage.ts'
 import { SourceSession } from './source-session.ts'
 import { MemoryRuntime } from '../core/runtime.ts'
 import type { MemoryGenerationHost } from '../core/generation.ts'
 import { ComposableMemoryTurnManager } from '../core/turns.ts'
 import { MEMORY_CAPABILITIES, type MemoryOperationScope } from '../core/contracts/index.ts'
 import { allowsParticipation } from './access.ts'
+import { mainStrategyTypeId } from './main-strategy.ts'
 import type { CompileMemoryGenerationOptions } from '../core/composition.ts'
 import { MemoryExecutions } from './memory-executions.ts'
 
@@ -50,7 +51,7 @@ export function memoryGenerationOptions(config: ResolvedConfig, workspaceRoot: s
   const directory = createStorageRoot(config, workspaceRoot).effectiveDataDir()
   const userDirectory = config.runtimeUserScope === 'global' ? createStorageRoot({ storageScope: 'global' }).effectiveDataDir() : directory
   return {
-    strategyTypeId: config.memoryTopology.strategyId,
+    strategyTypeId: mainStrategyTypeId(config),
     // A main Strategy switched off in the DSH Plugins page must not leave the
     // Host without a View while exactly one other Strategy remains.
     strategyFallback: 'sole-strategy',
@@ -63,6 +64,7 @@ export function memoryGenerationOptions(config: ResolvedConfig, workspaceRoot: s
       if (!isDefaultSourceInstance(installed.instanceKey, type)) return {}
       if (type === 'runtime') return { dataDir: directory, userDataDir: userDirectory, memoryLimitBytes: config.runtimeMemory.memoryLimitBytes, userLimitBytes: config.runtimeMemory.userLimitBytes }
       if (type === 'documents') return { dataDir: directory }
+      if (type === 'skills') return { dataDir: directory }
       if (type === 'memory-spaces') return JSON.parse(JSON.stringify({
         dataDir: directory, cliPath: config.cliPath, store: config.store, timeoutMs: config.timeoutMs,
         defaultRecallLimit: config.defaultRecallLimit, writeEnabled: config.writeEnabled,
@@ -101,6 +103,21 @@ export function createRuntimeGraph(config: ResolvedConfig, workspaceRoot: string
   }
 }
 
+/**
+ * When the Host asks a data directory's Providers again for namespaces they gained (#373): a
+ * little after a runtime starts serving it, then, while a try cannot reach the Source, after
+ * `retryDelayMs`, `attempts` tries in all. Tests shorten these.
+ */
+export const PROVIDER_REDISCOVERY_TIMING = { delayMs: 10_000, retryDelayMs: 30_000, attempts: 3 }
+
+/** Data directories whose Provider namespaces this process has asked for again, or is asking now. */
+const rediscoveredDirectories = new Set<string>()
+
+/** An answer asking again cannot change: no Memory Spaces Source, or one older than this request. */
+function finalRediscoveryAnswer(error: unknown): boolean {
+  return /unsupported Memory Spaces management mutation operation|is not installed/u.test(error instanceof Error ? error.message : String(error))
+}
+
 /** Resolve every property access against one generation, binding methods to it. */
 function liveProxy<T extends object>(resolve: () => T): T {
   return new Proxy({} as T, {
@@ -134,6 +151,8 @@ export class LiveMnemonRuntime implements MnemonAgentRuntimeSource {
   private readonly workspaceGraphs = new Map<string, MnemonRuntimeGraph>()
   private readonly agentGraphs = new Map<string, { token: symbol; graph: MnemonRuntimeGraph }>()
   private readonly retiredGraphs = new Set<MnemonRuntimeGraph>()
+  /** The start-up rediscovery each graph has waiting or running, to stop when the graph goes. */
+  private readonly rediscoveries = new Map<MnemonRuntimeGraph, () => void>()
   private githubAuth: MnemonGitHubAuth | undefined
   private autoBackupView: (() => MnemonSyncAutoBackup | undefined) | undefined
   private closed = false
@@ -151,6 +170,7 @@ export class LiveMnemonRuntime implements MnemonAgentRuntimeSource {
     this.packs = liveProxy(() => this.current.packs)
     this.sync = liveProxy(() => this.current.sync)
     this.reviews = liveProxy(() => this.current.reviews)
+    this.rediscoverProviders(initial)
   }
 
   /**
@@ -190,6 +210,7 @@ export class LiveMnemonRuntime implements MnemonAgentRuntimeSource {
     this.current = next
     this.applyGitHubAuth(next)
     this.applyAutoBackup(next)
+    this.rediscoverProviders(next)
     this.retireGraph(previous)
     for (const graph of this.workspaceGraphs.values()) this.retireGraph(graph)
     this.workspaceGraphs.clear()
@@ -227,6 +248,8 @@ export class LiveMnemonRuntime implements MnemonAgentRuntimeSource {
     this.agentGraphs.clear()
     this.workspaceGraphs.clear()
     this.retiredGraphs.clear()
+    for (const stop of this.rediscoveries.values()) stop()
+    this.rediscoveries.clear()
     for (const graph of graphs) graph.dispose()
   }
 
@@ -297,12 +320,65 @@ export class LiveMnemonRuntime implements MnemonAgentRuntimeSource {
       graph = createRuntimeGraph(this.current.config, key, this.extensions)
       this.applyGitHubAuth(graph)
       this.applyAutoBackup(graph)
+      this.rediscoverProviders(graph)
       this.workspaceGraphs.set(key, graph)
     }
     return graph
   }
 
+  /**
+   * Ask the Providers of one data directory again for namespaces they gained, once per process,
+   * a little after a runtime this Host serves starts (#373); a graph built only to validate
+   * settings never asks. A read-only runtime asks nothing, and neither does one whose Memory
+   * Spaces layer is off or does not maintain itself automatically. A try that cannot reach the
+   * Source, before a generation serves for example, is made again a little later; one cut short
+   * because its runtime was replaced is left to the runtime that replaced it.
+   */
+  private rediscoverProviders(graph: MnemonRuntimeGraph): void {
+    if (!graph.config.writeEnabled || !allowsParticipation(graph.config, 'memory-spaces', 'maintain', 'automatic')) return
+    const directory = resolve(graph.directory)
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let running = false
+    const release = () => { if (this.rediscoveries.get(graph) === stop) this.rediscoveries.delete(graph) }
+    const schedule = (attempt: number, delayMs: number) => {
+      timer = setTimeout(() => void ask(attempt), delayMs)
+      timer.unref?.()
+    }
+    const ask = async (attempt: number) => {
+      timer = undefined
+      if (rediscoveredDirectories.has(directory)) return release()
+      rediscoveredDirectories.add(directory)
+      running = true
+      let again = false
+      try {
+        await graph.source('memory-spaces').mutate('provider-rediscover', { trigger: 'startup' }, controller.signal)
+      } catch (error) {
+        again = !finalRediscoveryAnswer(error)
+      } finally {
+        running = false
+      }
+      if (controller.signal.aborted) return
+      if (again) {
+        rediscoveredDirectories.delete(directory)
+        if (attempt < PROVIDER_REDISCOVERY_TIMING.attempts) return schedule(attempt + 1, PROVIDER_REDISCOVERY_TIMING.retryDelayMs)
+      }
+      release()
+    }
+    const stop = () => {
+      if (timer !== undefined) clearTimeout(timer)
+      // A pass cut short is left to the next runtime for this directory, however the Source ends it.
+      if (running) rediscoveredDirectories.delete(directory)
+      controller.abort(new Error('the Mnemon runtime was replaced'))
+    }
+    this.rediscoveries.get(graph)?.()
+    this.rediscoveries.set(graph, stop)
+    schedule(1, PROVIDER_REDISCOVERY_TIMING.delayMs)
+  }
+
   private retireGraph(graph: MnemonRuntimeGraph): void {
+    this.rediscoveries.get(graph)?.()
+    this.rediscoveries.delete(graph)
     graph.retire()
     if ([...this.agentGraphs.values()].some(binding => binding.graph === graph)) this.retiredGraphs.add(graph)
     else graph.dispose()

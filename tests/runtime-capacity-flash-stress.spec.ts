@@ -1,5 +1,4 @@
-import { realpathSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { Context } from '@deepseek-ai/cordis'
@@ -7,7 +6,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { LlmAdapter, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { JsonlSessionPersistence } from './helpers/dsh-plugins.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -17,12 +16,14 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { MemorySpaceCatalog, MemorySpaceView, Insight } from 'dsh-mnemon-source-memory-spaces/contracts'
 import type { RuntimeMemoryMutationResult, RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
-import type { HostContextShape } from '../src/host/dsh.ts'
+import type { HostAgent, HostContextShape } from '../src/host/dsh.ts'
 import { MnemonLifecycle } from '../src/host/lifecycle.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
+import { startSubagent } from '../src/host/subagent-start.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { createWriteHandler } from '../src/host/rpc.ts'
 import { compositionFixture } from './fixtures/composition.ts'
+import { loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 
 // Explicit opt-in only. No discovery of credentials, personal memory or a live DSH profile.
 const enabled = process.env.MNEMON_RUN_FLASH_STRESS === '1'
@@ -210,9 +211,9 @@ async function harness(scenario: string, multipleDestinations: boolean) {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
+  await loadWorkingDirectory(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
-  const requireDsh = createRequire(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
   const deepseek = await import(requireDsh.resolve('@deepseek-ai/dsh-llm-deepseek'))
   const options = deepseek.resolveAdapterOptions({ baseURL: 'https://api.deepseek.com', thinking: 'disabled', reasoningEffort: 'off', maxTokens: 8192, streamIdleTimeoutMs: 60000 })
   ctx.llm.registerAdapter([PROVIDER], new FlashAdapter(new deepseek.DeepSeekAdapter({ options: () => options,
@@ -352,11 +353,12 @@ describe.skipIf(!enabled)('real DeepSeek V4 Flash Runtime pressure', () => {
     const f = await harness('four-children-four-spaces', true)
     for (let round = 0; round < rounds; round++) {
       await Promise.all(f.parents.map(async (parent, index) => {
-        const run = await f.ctx.subagents.start('spawn', { parent, label: `Orion ${domains[index]} writer`,
+        const host = f.ctx as unknown as HostContextShape
+        const run = await startSubagent(host.subagents, host.agents, 'spawn', { parent: parent as unknown as HostAgent, label: `Orion ${domains[index]} writer`,
           prompt: [{ type: 'text', text: prompt(f.batch(domains[index]!, round)) }],
           signal: AbortSignal.timeout(180000), maxDepth: 1, toolFilter: { allow: ['mnemon_runtime_memory', DONE] },
           agentOptions: { provider: PROVIDER, model: MODEL, maxTokens: 8192 },
-        })
+        }, host)
         try { expect((await run.result).stopReason).toBe('completed') } finally { await run.dispose() }
       }))
       await f.checkpoint(round)

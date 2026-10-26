@@ -1,6 +1,8 @@
+// Import every public Node entry and check that no declaration it reaches exposes a private type, and that
+// dsh-mnemon/client's declarations stay on the browser side.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { localeExport, readPackageLocales } from './package-locales.mjs'
@@ -38,8 +40,29 @@ function verifyDeclarations(filename) {
   }
 }
 
+// The client's declarations stay on the browser side: browser-safe modules of
+// this package and the packages a plugin's client already has. Through the
+// Host protocol they would reach the SDK's cordis Context augmentation, which
+// splits Context in the standalone typecheck of a plugin that imports the client.
+const CLIENT_DECLARATION_PACKAGES = new Set(['react', '@deepseek-ai/dsh-client-ui-primitives'])
+function verifyClientDeclarations(filename, seen = new Set()) {
+  if (seen.has(filename)) return seen
+  seen.add(filename)
+  const path = relative(root, filename).split('\\').join('/')
+  if (/^lib\/types\/src\/(?:host|sdk)\//u.test(path)) throw new Error(`dsh-mnemon/client declarations reach ${path}`)
+  const source = readFileSync(filename, 'utf8')
+  if (/declare\s+module\s+['"]@deepseek-ai\/cordis['"]/u.test(source)) throw new Error(`dsh-mnemon/client declarations reach a cordis Context augmentation in ${path}`)
+  const dependencies = ts.preProcessFile(source, true, true)
+  for (const { fileName } of [...dependencies.importedFiles, ...dependencies.referencedFiles, ...dependencies.typeReferenceDirectives]) {
+    if (fileName.startsWith('.')) verifyClientDeclarations(resolve(dirname(filename), fileName.replace(/(?<!\.d)\.[cm]?[jt]sx?$/u, '.d.ts')), seen)
+    else if (!CLIENT_DECLARATION_PACKAGES.has(fileName)) throw new Error(`dsh-mnemon/client declarations import ${fileName} in ${path}; only ${[...CLIENT_DECLARATION_PACKAGES].join(', ')} may be imported there`)
+  }
+  return seen
+}
+
 let imported = 0
 let executables = 0
+const clientDeclarations = verifyClientDeclarations(resolve(root, JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).exports['./client'].types))
 for (const directory of [root, resolve(root, 'plugins/dsh-mnemon-source-memory-spaces'), resolve(root, 'plugins/dsh-mnemon-strategy-default-three-tier')]) {
   const manifest = JSON.parse(readFileSync(resolve(directory, 'package.json'), 'utf8'))
   for (const executable of Object.values(manifest.bin ?? {})) {
@@ -76,4 +99,4 @@ for (const directory of [root, resolve(root, 'plugins/dsh-mnemon-source-memory-s
   }
 }
 
-console.log(`Imported ${imported} Node-compatible entries; verified ${publicTypes.size} public type dependencies and ${executables} executable help entry on ${process.version}.`)
+console.log(`Imported ${imported} Node-compatible entries; verified ${publicTypes.size} public type dependencies, ${clientDeclarations.size} browser-side client declarations and ${executables} executable help entry on ${process.version}.`)

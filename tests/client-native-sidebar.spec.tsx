@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/client/MnemonWorkbench.tsx', () => ({
-  MnemonWorkbench: ({ active, onClose, renderSlot }: { active?: boolean; onClose?: () => void; renderSlot?: (name: string, props: unknown, options: unknown) => unknown }) => <div data-testid="native-memory" data-active={active}>
+  MnemonWorkbench: ({ active, titleBar, onClose, renderSlot }: { active?: boolean; titleBar?: boolean; onClose?: () => void; renderSlot?: (name: string, props: unknown, options: unknown) => unknown }) => <div data-testid="native-memory" data-active={active} data-title-bar={titleBar}>
     <input aria-label="Retained editor" defaultValue="draft" />
     <button onClick={onClose}>Return to conversation</button>
     {renderSlot?.('mnemon.source.page', {}, {}) as never}
@@ -166,6 +166,10 @@ describe('native Sidebar panel integration', () => {
     fireEvent.click(entry)
     const content = screen.getByTestId('native-memory')
     expect(entry.getAttribute('aria-current')).toBe('page')
+    // The main column's top clearance and the page header are the window's title bar on DSH Desktop.
+    const band = document.querySelector('[data-dsh-mnemon-main-seat] > [data-window-drag]')
+    expect(band?.getAttribute('aria-hidden')).toBe('true')
+    expect(content.getAttribute('data-title-bar')).toBe('true')
     expect(within(screen.getByTestId('native-main')).getByText('shell-source-owner')).not.toBeNull()
     fireEvent.change(screen.getByLabelText('Retained editor'), { target: { value: 'unsaved draft' } })
     fireEvent.click(screen.getByRole('button', { name: 'plugins' }))

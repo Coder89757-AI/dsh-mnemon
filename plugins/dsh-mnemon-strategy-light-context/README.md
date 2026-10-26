@@ -9,7 +9,7 @@ Optional additive projection cap for any Mnemon main Strategy that accepts Core'
     maxProjectionCharacters: 4096
 ```
 
-The cap is shared by all selected Sources and can only narrow the Host turn budget. It does not change read routes, actions, Source storage, or retrieval-result ceilings. Runtime projection has no automatic expansion route: choosing a very small cap may hide hot context, so benchmark a value appropriate for the workload. Uninstalling restores the original allocation.
+The cap is shared by all selected Sources and can only narrow the Host turn budget. It does not change read routes, actions, Source storage, or retrieval-result ceilings. Runtime projection has no automatic expansion route: choosing a very small cap may hide runtime memory, so benchmark a value appropriate for the workload. Uninstalling restores the original allocation.
 
 ## Installation and verification
 

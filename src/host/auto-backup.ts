@@ -1,4 +1,4 @@
-import type { MnemonSyncAutoBackup } from './protocol.ts'
+import type { MnemonSyncAutoBackup, MnemonSyncFailureReason } from './protocol.ts'
 import type { LiveMnemonRuntime } from './runtime.ts'
 
 /** The one failure that is not worth reporting: the reader is already working. */
@@ -31,6 +31,7 @@ export class MnemonAutoBackupScheduler {
   private lastAt: string | undefined
   private lastAttemptAt: number | undefined
   private lastError: string | undefined
+  private lastFailure: MnemonSyncFailureReason | undefined
   private lastCommit: string | undefined
   private lastPushed: boolean | undefined
 
@@ -70,6 +71,7 @@ export class MnemonAutoBackupScheduler {
       // stopped timer never advertises a time it will not keep.
       ...(this.lastAttemptAt === undefined || !available ? {} : { nextAt: new Date(this.lastAttemptAt + minutes * MINUTE_MS).toISOString() }),
       ...(this.lastError === undefined ? {} : { lastError: this.lastError }),
+      ...(this.lastError === undefined || this.lastFailure === undefined ? {} : { lastFailure: this.lastFailure }),
       ...(this.lastCommit === undefined ? {} : { lastCommit: this.lastCommit }),
       ...(this.lastPushed === undefined ? {} : { lastPushed: this.lastPushed }),
     }
@@ -124,10 +126,12 @@ export class MnemonAutoBackupScheduler {
         // Nothing to publish to yet. The timer keeps running, so configuring a
         // repository later needs no second visit to the settings page.
         this.lastError = undefined
+        this.lastFailure = undefined
       } else if (!this.runtime.config.writeEnabled) {
         // A Host that cannot write says so, and the message matches what the RPC
         // layer refuses with, so the page never shows two names for one fact.
         this.lastError = 'dsh-mnemon is configured read-only'
+        this.lastFailure = undefined
       } else {
         const result = await sync.push({ signal: controller.signal })
         this.lastAt = this.now().toISOString()
@@ -136,11 +140,16 @@ export class MnemonAutoBackupScheduler {
         // A payload the branch already holds is not a failure, so the reason is
         // only kept when a commit that should have travelled did not.
         this.lastError = result.pushed ? undefined : result.committed ? result.reason : undefined
+        // The error and its kind always change together, so a translated reason never
+        // stands beside the words of another failure.
+        this.lastFailure = this.lastError === undefined ? undefined : result.failure
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (!this.stopped && !message.includes(BUSY_MESSAGE)) {
+      const reason = error instanceof Error ? (error as { reason?: unknown }).reason : undefined
+      if (!this.stopped && reason !== 'busy' && !message.includes(BUSY_MESSAGE)) {
         this.lastError = message
+        this.lastFailure = typeof reason === 'string' ? reason as MnemonSyncFailureReason : undefined
         console.warn('dsh-mnemon: automatic Git backup failed', error)
       }
     } finally {

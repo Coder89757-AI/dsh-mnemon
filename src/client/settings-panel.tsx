@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX } from 'react'
 import { Button, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ClientSettingsScope, ClientSettingsSnapshot } from '../host/protocol.ts'
 import type { MnemonTranslate } from './locales.ts'
 import css from './MnemonSettingsCard.module.css'
 import { message } from './page-kit.tsx'
@@ -11,7 +10,10 @@ import { message } from './page-kit.tsx'
  * for their group's Apply. No group joins another group's save.
  */
 
-export function useScope<T>(scope: ClientSettingsScope<T>): ClientSettingsSnapshot<T> {
+// Typed by shape: `dsh-mnemon/client` exports this module, and declarations that
+// reach the Host protocol bring the SDK's cordis Context augmentation into the
+// client's types, which splits Context in a plugin's standalone typecheck.
+export function useScope<S>(scope: { getSnapshot(): S; subscribe(listener: () => void): () => void }): S {
   const subscribe = useMemo(() => scope.subscribe.bind(scope), [scope])
   const getSnapshot = useMemo(() => scope.getSnapshot.bind(scope), [scope])
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
@@ -70,12 +72,18 @@ export function useLive<T>(saved: T, write: (value: T) => Promise<void>) {
   }
 }
 
-/** A failed write, beside the controls that made it. */
+/**
+ * A failed write, beside the controls that made it. `t` is the translation the
+ * settings use: the configuration page sets none around a component's settings.
+ */
 export function WriteFailure(props: { error: string | null; t: MnemonTranslate }): JSX.Element | null {
   return props.error === null ? null : <p className={css.panelError} role="alert">{props.t('config.saveFailed', { error: props.error })}</p>
 }
 
-/** Discard and Apply for one group, shown while it has edits; `note` says what applying does. */
+/**
+ * Discard and Apply for one group, shown while it has edits; `note` says what
+ * applying does. `t` is the translation the settings use, as for WriteFailure.
+ */
 export function PanelActions(props: { dirty: boolean; saving: boolean; invalid: string | null; failed: string | null; applied: boolean; disabled: boolean; note?: string; t: MnemonTranslate; onDiscard: () => void; onApply: () => void }): JSX.Element | null {
   const { t } = props
   if (!props.dirty) return props.applied ? <p className={css.panelNote} role="status">{t('config.ready')}</p> : null

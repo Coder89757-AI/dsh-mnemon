@@ -1,12 +1,10 @@
-import { realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { LlmAdapter, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { JsonlSessionPersistence } from './helpers/dsh-plugins.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -17,8 +15,8 @@ import { MnemonLifecycle } from '../src/host/lifecycle.ts'
 import { MnemonSubagentCoordinator } from '../src/host/subagent.ts'
 import { registerTools } from '../src/host/tools.ts'
 import { compositionFixture } from './fixtures/composition.ts'
+import { dsh021, loadWorkingDirectory, requireDsh } from './helpers/installed-dsh.ts'
 
-const requireDsh = createRequire(realpathSync(new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url)))
 const fork = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-fork-in-process'))
 const spawn = await import(requireDsh.resolve('@deepseek-ai/dsh-subagent-spawn-in-process'))
 const ptc = await import(requireDsh.resolve('@deepseek-ai/dsh-ptc-runtime-node'))
@@ -75,9 +73,11 @@ it.each(['native', 'ptc'].flatMap(mode => ['fork', 'spawn'].map(provider => ({ m
       }
       await ctx.plugin(ptc.default)
     }
-    await ctx.plugin(ToolRuntime, { mode: mode === 'ptc' ? 'both' : 'native' })
+    // DSH 0.2.0 presents Code Mode beside the native tools; DSH 0.2.1 keeps the root native and each child in Code Mode.
+    await ctx.plugin(ToolRuntime, { mode: (mode === 'ptc' && !dsh021 ? 'both' : 'native') as 'native' })
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await loadWorkingDirectory(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(fork, { providerName: 'fork' })
     await ctx.plugin(spawn, { providerName: 'spawn' })
@@ -126,20 +126,27 @@ it.each(['native', 'ptc'].flatMap(mode => ['fork', 'spawn'].map(provider => ({ m
       }
     })
     const host = ctx as unknown as HostContextShape
+    // A fast child can call tools before the caller receives its run handle, so the child is held back
+    // until its first foreign tool attempt: DSH 0.2.0 starts it with `start`, DSH 0.2.1 with `startActivation`.
+    const holdBack = async <T extends { result: Promise<unknown>; dispose(): Promise<void> }>(started: Promise<T>): Promise<T> => {
+      const run = await started
+      try {
+        await Promise.race([attempted.promise, run.result.then(() => { throw new Error('child completed before its foreign tool attempt') })])
+      } catch (error) {
+        await run.dispose()
+        throw error
+      }
+      providerReturned = true
+      return run
+    }
     const service = {
       list: () => host.subagents.list(), getProvider: (name: string) => host.subagents.getProvider(name),
-      async start(...args: Parameters<typeof host.subagents.start>) {
-        const run = await host.subagents.start(...args)
-        // A fast child can call tools before the caller receives its run handle.
-        try {
-          await Promise.race([attempted.promise, run.result.then(() => { throw new Error('child completed before its foreign tool attempt') })])
-        } catch (error) {
-          await run.dispose()
-          throw error
-        }
-        providerReturned = true
-        return run
-      },
+      ...(typeof host.subagents.start === 'function'
+        ? { start: (...args: Parameters<NonNullable<typeof host.subagents.start>>) => holdBack(host.subagents.start!(...args)) }
+        : {}),
+      ...(typeof host.subagents.startActivation === 'function'
+        ? { startActivation: (spec: Parameters<NonNullable<typeof host.subagents.startActivation>>[0]) => holdBack(host.subagents.startActivation!(spec)) }
+        : {}),
     }
     const coordinator = new MnemonSubagentCoordinator(service, f.live, host)
     const lifecycle = new MnemonLifecycle(host, coordinator, f.config, f.live)

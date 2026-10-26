@@ -62,6 +62,15 @@
       "dsh-mnemon-source-documents": [
         "./plugins/dsh-mnemon-source-documents/src/index.ts"
       ],
+      "dsh-mnemon-source-skills/client": [
+        "./plugins/dsh-mnemon-source-skills/src/client.ts"
+      ],
+      "dsh-mnemon-source-skills/contracts": [
+        "./plugins/dsh-mnemon-source-skills/src/contracts.ts"
+      ],
+      "dsh-mnemon-source-skills": [
+        "./plugins/dsh-mnemon-source-skills/src/index.ts"
+      ],
       "dsh-mnemon-source-memory-spaces": [
         "./plugins/dsh-mnemon-source-memory-spaces/src/index.ts"
       ],
@@ -112,6 +121,9 @@
       ],
       "dsh-mnemon-source-memory-spaces/native-cli": [
         "./plugins/dsh-mnemon-source-memory-spaces/src/native-cli.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/space-identity": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/space-identity.ts"
       ]
     },
     "resolveJsonModule": true

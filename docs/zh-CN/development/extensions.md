@@ -31,6 +31,23 @@ Source 不需要再实现 Provider；Provider 不需要理解 View 组合；Stra
 
 引擎、已安装记录、注册表、运行代和租约留在内部，`extension-sdk`、`contracts` 与 Core 插件均不导出这些对象。`MemorySourceRuntime` 则有意公开：它描述**你的 Source 要实现的回调**，不是引擎句柄。定义/factory 属于 Host 侧可执行契约；元信息、操作输入和结果保持 JSON 安全。这个服务边界不等于任意 JavaScript 的安全沙箱。
 
+## 工作区标识工具
+
+Host 侧工具可从 `dsh-mnemon/extension-sdk` 导入 `canonicalWorkspacePath` 和 `workspaceStorageId`。它们与内置 Host 使用同一套同步函数，不属于浏览器 API：
+
+```ts
+import { resolve } from 'node:path'
+import { canonicalWorkspacePath, workspaceStorageId } from 'dsh-mnemon/extension-sdk'
+
+const workspace = resolve(process.argv[2] ?? '.')
+const canonical = canonicalWorkspacePath(workspace)
+const id = workspaceStorageId(workspace)
+```
+
+两者都要求不含 NUL 字符的绝对路径。规范化会解析已有的符号链接／junction，并在最近存在的祖先目录下保留尚未创建的后代路径。除路径不存在外的文件系统错误会继续抛出；文件不能成为缺失后代的祖先。已有文件路径仍保留其现有标识，因此这两个函数不是目录校验器。
+
+`workspaceStorageId` 返回规范化路径的 SHA-256 小写十六进制摘要。在内置 `storageScope: "workspaces"` 布局中，它标识 `<中心根目录>/workspaces/` 下的目录。该值取决于本机解析后的路径，不是可跨机器移植的项目 ID；移动工作区可能得到不同 ID。两个函数都不创建、迁移或删除文件，不查找已配置的存储根，也不授予对其他 Source 的访问权限。按组件选择存储范围和迁移仍是独立功能。
+
 ## Source 生命周期
 
 用 `defineMemorySource` 定义 `MemorySourceDefinition`。manifest 声明 API 版本、type id、包名、角色、一致性和 route/action；factory 接收稳定的实例来源及不可变配置。
@@ -106,7 +123,7 @@ DSH 自己的插件列表从包内的 `locale/en.json` 与 `locale/zh.json`（`m
 
 #### 组件自己的设置与状态卡片
 
-声明的选项不够用时，组件可以在 `./client` 入口把自己的设置加入它的组件页，与随附组件的做法相同：运行时记忆的用户画像范围、记忆空间的 Provider 与嵌入、分层策略的后台任务。Source 还可以提供它运行时在记忆系统“状态”页卡片上显示的内容。
+声明的选项不够用时，组件可以在 `./client` 入口把自己的设置加入它的组件页，记忆空间就是这样带来它的 Provider 与嵌入。其他随附组件的设置仍由 dsh-mnemon 通过同一区域绘制：运行时记忆的用户画像范围、分层策略的后台任务。Source 还可以提供它运行时在记忆系统“状态”页卡片上显示的内容。
 
 ```tsx
 import { installMemoryComponentUI } from 'dsh-mnemon/client'
@@ -121,6 +138,14 @@ export function apply(ctx) {
 ```
 
 设置渲染在 `mnemon.component.settings` 区域，以插件声明中的包名为键，位于组件页的状态、关系与声明的选项之后；该组件的行会出现打开它们的齿轮。它只接收页面知道的信息：`component`（`packageName`、`label`、`enabled`）、`writable`、`language`，以及存在时对话的 `sessionId` 与 `workspace`；所需的服务请通过自己的注册注入。注册会等待 dsh-mnemon 的配置出现，调用返回的函数即结束。请遵循页面的交互规则：开关与下拉选择改动即生效，需要输入的值等待你自己的**应用**，且不并入其他分组的保存。
+
+`dsh-mnemon/client` 还导出记忆空间自己的设置所用的控件与样式，即 dsh-mnemon 绘制这些设置时所用的：`ToggleRow`，`useLive`、`useStaged` 以及 `PanelActions`、`WriteFailure`（一组设置的两种保存方式），`Callout`、`Reveal`、`GlobalLocationSetting`，以及配置页的类名表 `memorySettingsStyles`。类名表的键是一组固定的类名，属于 API：比 Starter 更旧或更新的已安装组件按名称查找它们，因此任何版本都不会重命名其中的类。配置页不会在组件的设置外层设置翻译，所以 `PanelActions` 与 `WriteFailure` 接收你传入的 `t`。导入它们的组件，应把 `dsh-mnemon` peer 最低版本声明为首个导出它们的 Starter，也就是同时导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 的那一版。
+
+记忆空间是 dsh-mnemon 曾代为绘制设置的随附组件。dsh-mnemon 保留它的设置，并把只有自己掌握的内容借给记忆空间自己的设置：
+
+- **后备注册。** dsh-mnemon 以 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 自行注册记忆空间的设置（取自它固定的记忆空间版本），为随附组件保留的状态卡片也会这样注册。DSH 对每个键只渲染优先级数值最低的注册，因此记忆空间以默认优先级注册自己的设置后，只要仍在注册，就会替代后备注册。所以只要记忆空间自己的客户端没有注册设置，页面就由后备注册绘制：记忆空间关闭时、打开后其客户端加载期间、客户端加载失败或其条目出错时，以及搭配本身没有设置的 0.5.21 及更早的记忆空间时。打开记忆空间会在已打开的页面下把前者换成后者；前者存在 `host.retained` 中的内容让后者从前者所在的状态开始。
+- **只在 dsh-mnemon 让出时注册。** dsh-mnemon 0.5.31 及更早版本以默认优先级自己绘制记忆空间的设置，而 DSH 拒绝同一个包在同一优先级上的第二次注册。导出 `MNEMON_COMPONENT_FALLBACK_PRIORITY` 是 dsh-mnemon 的承诺：它以该优先级保留这些设置，并借给它们 `host`。因此记忆空间只在 `dsh-mnemon/client` 导出它时注册自己的设置。客户端包读取已加载的 dsh-mnemon 缺少的导出时得到 `undefined`，所以记忆空间在绘制时才读取较新的导出，而不是在加载时。
+- **`host`。** 注册在记忆空间键下的设置会收到 `host`。`host.configuration` 读取借给记忆空间的配置键，并通过页面带修订栅栏的设置写入 `set` 它拥有的那个键。`host.operations.read`/`write` 调用 dsh-mnemon 为记忆空间提供的 Host 操作，并始终在页面自己的对话与工作区中执行：输入中带 `sessionId` 或 `workspaceId` 的会被拒绝。记忆空间的设置自行发起的读取（`provider-services`、`status-summary`）在相同读取仍在进行时会与之合并，但只合并在配置当前修订下发起的那一次；嵌入测试总是向 Host 重新询问。`host.retained` 在页面的客户端运行期间保存设置重新挂载时需要的内容，`host.changed()` 让记忆系统重新读取它的页面。与 Source 页面的 `management` 客户端一样，`host` 从不交出设置服务或传输层。它跟随键而不是注册者：注册在其他键下的设置不会收到它；其他包只有抢先注册在记忆空间的键下才能拿到它，而这不会给它超出 DSH 已与所有客户端插件共享的连接之外的任何权限。
 
 状态卡片渲染在 `mnemon.component.status` 区域，同样以包名为键，在组件声明的名称下方显示 `<strong>` 中的一行要点与 `<p>` 中的一行说明。它接收 `component`、`language`，以及存在时记忆系统的 `sessionId` 与 `workspace`，并自行读取自己的 Source。无论是否提供内容，每个 Source 组件都有一张卡片：组件已关闭或其 Source 未运行时显示页面自己的说明，未提供内容时显示正在运行。标签页、卡片与页头都使用组件声明的名称。
 
@@ -138,7 +163,7 @@ export function apply(ctx) {
 | `dsh-mnemon-strategy-light-context` | `projection` | 一份共享投影上限，只收紧 Host 预算；不是增量注入或摘要压缩 |
 | `dsh-mnemon-strategy-auto-capture` | `capture` | 当前对话的记录指引、目标与明确 Action id；不启动后台 Agent、不直接写入 |
 
-Starter 会安装这三个包并注册为停用的 DSH Entry，因此开关始终可用，但默认组合、预算和提醒保持 v0.4 行为。打开开关后，对应贡献自动参与当前主策略，不改变主策略；关闭只撤销该贡献，不删除任何 Source 数据。通用策略（`dsh-mnemon-strategy-general`）同样接受这三个槽。Runtime 当前没有展开 route；把常驻预算压得很低可能隐藏热记忆，需要针对实际任务评测。
+Starter 会安装这三个包并注册为停用的 DSH Entry，因此开关始终可用，但默认组合、预算和提醒保持 v0.4 行为。打开开关后，对应贡献自动参与当前主策略，不改变主策略；关闭只撤销该贡献，不删除任何 Source 数据。通用策略（`dsh-mnemon-strategy-general`）同样接受这三个槽。Runtime 当前没有展开 route；把常驻预算压得很低可能隐藏运行时记忆，需要针对实际任务评测。
 
 `scoped` 的 Source key 若包含 Loader 的 include 前缀，应使用实例目录中的完整 key；省略配置时按角色/key 确定性组合现有实例，不创建新的存储。面板的**选项**可编辑包声明的字段；Profile 配置仍可用于自动化。
 
@@ -159,11 +184,11 @@ export function apply(ctx: Context): void {
 
 扩展不另建后台调度器；对话内写入仍通过已有 Host 工具、授权和 Source 回执。`capture` 不能把 `manage-spaces` 等一般写操作自动当成记录：作者必须指定实际记录用的 Action id。共享检索预算仍按整个执行回合计算，不按 Source 数量倍增；缓存和 Related 准入带 Source 身份，避免同名空间串用证据。停用贡献后重建失败时，不继续使用已撤销策略：新回合不带记忆 View 运行，对话本身照常进行；已固定的旧回合仍按原租约完成。
 
-可选的 `createTurn(view)` 返回执行级 `query(request, read)` 策略。它只获得绑定当前 Route 和私有 grant 的 `read(input, narrowerLimits?)`，Core 仍校验输入、有效上限、已分派次数和生命周期。策略可以筛选、重放结果，并用 `Evidence.output` 提供简洁模型输出，但不会获得 Source 对象、写入回调或新增权限。即使继承同一个不可变 View，不同执行轮次也拥有独立策略状态。不提供此钩子时，读取仍经过 Core 边界直接进入 Source。
+可选的 `createTurn(view)` 返回执行级 `query(request, read)` 策略。它只获得绑定当前 Route 和私有 grant 的 `read(input, narrowerLimits?)`，Core 仍校验输入、有效上限、已分派次数和生命周期。策略可以筛选、重放结果，并用 `Evidence.output` 提供简洁模型输出，但不会获得 Source 对象、写入回调或新增权限。策略不调用 `read` 就回答的读取（例如超出预算的读取）应以 `output.notRun: true` 说明，并且不返回条目；Host 不会把它计为一次记忆空间召回。即使继承同一个不可变 View，不同执行轮次也拥有独立策略状态。不提供此钩子时，读取仍经过 Core 边界直接进入 Source。
 
 分层策略插件用此钩子实现旧版 Documents 单次查询、Recall 两次查询的共享证据预算、去重与 Related 准入。命名工具和通用 View Route 共用这套策略。Source 保留原始检索、存储和维护能力；显式的 DSH 辅助写入/归档仍由 Host 工作流执行，不成为 Core 的通用后台任务。
 
-默认插件的公开 `threeTierActionWorkflow` 纯策略识别 Runtime `mutate` 的容量维护，Host 将具名工具、通用 View Action、子 Agent 与浏览器管理统一接入该流程。它只在选择分层策略时生效，不改变 Source 的独立管理协议，也不向 Core 添加三层存储逻辑。模型写入保留发起回合的 View、实例与权限，归档目标限定在该 View 的可写 Memory Spaces Source 及其定义的写入范围内；多个可写归档 Source 无法唯一确定目标时拒绝归档。浏览器使用已登记工作区对应的 scope、实例与确认修订，无需绑定用户会话。只有需要模型判断时才创建独立维护任务。
+策略在 manifest 的 `workflows` 中声明 Host 要为它组合的回合运行哪些后台工作。`idle-review` 让 Host 在对话空闲时审查由该策略组合的回合（[工作流](../reference/workflows.md)）。`runtime-capacity` 让 Host 接管 Runtime Source 的 `mutate` Action：写入会超出运行时记忆容量时，先归档较早的条目；具名工具、通用 View Action、子 Agent 与浏览器管理都走这一流程。分层策略声明了这两项，其他随附的策略都不声明。以展开分层策略 manifest 的方式构造的策略会连同 `workflows` 一起复制；写 `workflows: []` 可让它两项都不参与。策略选用的空闲审查就是分层策略的空闲审查：设置项是分层策略的 `idleReview`，任务 Agent 通过运行时记忆与项目档案工具写入。Host 会忽略自己不认识的工作流 id；0.5.10 之前的分层策略没有声明，按声明了这两项处理。分层策略插件仍导出 `threeTierActionWorkflow` 供已有调用方使用，Host 不再使用它。这些都不改变 Source 的独立管理协议，也不向 Core 添加三层存储逻辑。模型写入保留发起回合的 View、实例与权限，归档目标限定在该 View 的可写 Memory Spaces Source 及其定义的写入范围内；多个可写归档 Source 无法唯一确定目标时拒绝归档。浏览器使用已登记工作区对应的 scope、实例与确认修订，无需绑定用户会话。只有需要模型判断时才创建独立维护任务。
 
 归档预检时，Host 可向所选 Memory Spaces Source 的 `body-directory` 读取传入 `{ writeScope: { viewId, grant } }`。可选响应 `writeScope: { viewId, sourceInstanceKey, memoryBodyIds }` 与 `remember` 使用相同权限：grant 中已知的命名空间，加上该 View 创建的命名空间。Source 校验 grant 所属实例；Host 校验返回的 View 与 Source 身份，将空范围视为无授权，并在写入前复查权限与当前能力。未返回此字段的 Source 仍使用较窄的已激活命名空间固定范围。响应格式损坏时拒绝操作。Host 不会用其他 Source 或当前目录替代缺失的授权；召回保留原有命名空间固定范围。
 
@@ -175,7 +200,7 @@ export function apply(ctx: Context): void {
 
 ## 开放操作，有限执行
 
-Source 自己定义操作名、输入 schema、存储、索引和维护方式。不要求五类动作、摘要树、统一表示词汇或多维预算协议。Strategy 按 id、角色或权限能力选择自己理解的公开操作。Core 从 Manifest、动态 Facts 和 Host 权限生成 `MemoryAvailableSource.routes/actions`，作者不重复填写描述。
+Source 自己定义操作名、输入 schema、存储、索引和维护方式。第三方 Source 还要自己负责备份数据：Mnemon Pack 备份与 Git 同步只覆盖官方的运行时记忆、项目档案与记忆空间组件，也不包含第三方 Provider 的数据与凭据。不要求五类动作、摘要树、统一表示词汇或多维预算协议。Strategy 按 id、角色或权限能力选择自己理解的公开操作。Core 从 Manifest、动态 Facts 和 Host 权限生成 `MemoryAvailableSource.routes/actions`，作者不重复填写描述。
 
 Core 仅约束投影字符数、证据字符数/条数及已分派调用次数；这些是载荷上限，不是完整 LLM prompt 的 token 估算。Source 接收有效上限，自行提供摘录和结构化格式；Core 丢弃超限条目，不伪造摘要或切坏 JSON。已分派失败仍消耗调用次数，不自动重试。
 
@@ -201,6 +226,8 @@ Provider 使用 Memory Spaces SDK 的 `defineMemorySpaceProvider`。模块只收
 
 声明 `entities` 的 Provider 会为实体页提供数据。默认情况下，Source 用 `list()` 为每个空间建立实体索引：请在请求的上限内返回全部记忆及其 `entities`，一个实体的计数就是列出的记忆中带有它的条数，也就是实体页列出的那些记忆。如果 Provider 的 `list()` 取不全整个空间（例如受服务端分页大小限制），或者不能列举，请实现可选的 `entityIndex(body, signal)`，返回 `{ memories, complete }`：带有实体的记忆，以及是否已包含全部。索引不完整时，实体页会标为部分。声明了 `entities`、但既不能列举也没有 `entityIndex` 的 Provider 显示为仅查询，它的记忆只会作为召回找到的相关记忆出现在实体页。只要空间的 `status()` 统计不变，Source 就沿用该空间的索引，因此统计应随每次写入变化。
 
+只有经过校准的 0–1 相关度才应在 manifest 和适配器中声明 `normalized-relevance`。分数只用于 Provider 内部排序时，在 manifest 中声明 `provider-native`，适配器中使用 `scoreSemantics: { kind: 'provider-native' }`，按预期排名返回候选。Source 按配额接纳 `ranked` 档，不伪造标准化置信度；缺少声明仍归为 `unknown`。参见[召回质量策略](../reference/configuration.md#召回质量策略)。
+
 Provider 还可以实现可选的 `get(body, id, signal)`：返回空间中这个精确 id 对应的记忆，没有时返回 `undefined`，读取时不能有副作用。实现后，遗忘、建立关联和相关记忆遍历都可以接受当前 View 没有返回过的 id，例如 Agent 刚写入的记忆，或委派请求中点名的记忆：Source 会在 View 可读的空间中查找这个 id，只有恰好一个空间持有它时才执行。没有 `get` 时，即使指明空间，这样的 id 也要等 View 把它作为证据返回后才能使用：Provider 自己的遗忘或建立关联调用未必限定在该空间内。
 
 可选的 `./client` 通过 `dsh-mnemon/client` 的 `installMemorySourceUI` 注册，由 DSH 作为普通 Client 插件加载。页面接收 `MemorySourcePageProps`：选中实例、locale、可写状态和限定范围的 `management.read/mutate`。用 `MemorySourcePageFrame` 复用 locale/appearance；React 不接收 Host Context、驱动、令牌、LLM grant 或传输层。缺少专属页面时有通用管理入口，重复归属和渲染失败局部诊断。
@@ -209,9 +236,11 @@ Provider 还可以实现可选的 `get(body, id, signal)`：返回空间中这�
 
 需要显示某个元素时，将 Source 自有 ref 中的元素传给可选的 `onRevealElement(element, topInset)` 回调。不传 `topInset` 时，元素会停在锁定的页面标题下方；自己固定头部的 Source 则传入实测的头部高度。Host 只滚动所属 canvas，并忽略区域外的元素；不要使用全局 ID 或会移动 DSH 祖先节点的 `scrollIntoView`。关闭选择或卸载 Source 时取消待执行的动画帧。两个滚动回调均为可选：新 Source 仍支持现有 Root peer 最低版本，旧 Host 不提供回调时可手动滚动。
 
-用户每次点击工作区顶栏的**刷新**，`refreshKey` 都会变化；页面应在它变化时重新读取数据，而不是自己放置刷新或同步按钮。只有对话中的锚点（例如回合记忆栏里的一条内容）打开页面时，`navigationInput` 才是 `{ seed, nonce }`；点击标签页打开时没有它。默认 Source 把 seed 分别理解为档案 id（项目档案选中它）、召回查询（记忆空间打开后立即执行）或条目文本（运行时记忆高亮并滚动到它）。新的 `nonce` 表示对同一 seed 的又一次请求。
+页面中的操作需要回到对话时（例如把某个技能放进输入框），调用可选的 `onReturnToConversation()`：它与页头的**返回会话**相同。工作台已经与对话并排时（会话标签页）不提供这个回调。
 
-`dsh-mnemon/client` 还导出默认 Source 使用的控件，让安装的 Source 与它们外观和行为一致：`SearchField`（带搜索图标的 DSH 输入框）、`SelectField`（带标签的 DSH 选择菜单，支持 `inline`、`size: 'sm'`、`hideLabel` 与 `ariaLabel`）、`WriteReceipt`（写入的结果、摘要与可选的查看操作）和 `TaskAgentTag`（任务 Agent 能否接手）。它们遵循[交互约定](../guides/ui-guide.md#交互约定)。导入这些控件或读取 `refreshKey` 的 Source，应把 `dsh-mnemon` peer 最低版本声明为首个导出它们的 Starter 0.5.19。
+用户每次点击工作区顶栏的**刷新**，`refreshKey` 都会变化；配置页改变了页面要显示的内容时也会变化，例如切换组件、保存 Provider、同步、合并、导入 ZIP 或执行整理方案，页面隐藏时也可能变化。页面应在它变化时重新读取数据，而不是自己放置刷新或同步按钮。只有对话中的锚点（例如回合记忆栏里的一条内容）打开页面时，`navigationInput` 才是 `{ seed, nonce }`；点击标签页打开时没有它。默认 Source 把 seed 分别理解为档案 id（项目档案选中它）、召回查询（记忆空间打开后立即执行）或条目文本（运行时记忆高亮并滚动到它）。新的 `nonce` 表示对同一 seed 的又一次请求。
+
+`dsh-mnemon/client` 还导出默认 Source 使用的控件，让安装的 Source 与它们外观和行为一致：`SearchField`（带搜索图标的 DSH 输入框）、`SelectField`（带标签的 DSH 选择菜单，支持 `inline`、`size: 'sm'`、`hideLabel` 与 `ariaLabel`）、`WriteReceipt`（写入的结果、摘要与可选的查看操作）和 `TaskAgentTag`（任务 Agent 能否接手）。它们遵循[交互约定](../guides/ui-guide.md#交互约定)。导入这些控件或读取 `refreshKey` 的 Source，应把 `dsh-mnemon` peer 最低版本声明为首个导出它们的 Starter 0.5.19。传入 `unembedded` 时，`WriteReceipt` 会多一行说明这条记忆没有向量，`embeddingManaged` 决定它的措辞：`false` 表示 DSH 不管理 Mnemon Native 嵌入配置，显示中性的说明；`true` 或不传则显示嵌入没有成功的提醒。dsh-mnemon 0.5.31 及更早版本会忽略 `embeddingManaged`。
 
 ## 独立仓库验收
 
@@ -247,6 +276,6 @@ try {
 
 至少覆盖：正常组合、缺失/歧义依赖、双实例、schema/能力/授权拒绝、并发快照、旧修订、取消/部分失败、卸载排空/重载、持久化、管理与真实页面点击。Provider 另测凭据、真实能力、上游损坏数据、超时与父 Source 内 conformance。
 
-插件运行自己的 `pnpm verify`。仓库级 `pnpm verify:plugins` 打包全部 17 个制品，用正常 semver manifest 在工作区外逐个安装、检查、测试和构建，再编译外部消费者；禁止源码 alias、manifest override 和工作区软链接。
+插件运行自己的 `pnpm verify`。仓库级 `pnpm verify:plugins` 打包全部 18 个制品，用正常 semver manifest 在工作区外逐个安装、检查、测试和构建，再编译外部消费者；禁止源码 alias、manifest override 和工作区软链接。
 
 RSI 应保存可复现候选输入/制品，对照已知组合评估，经明确安装/选择决策晋升。Strategy 回放通过，不代表任意 JavaScript 已被沙箱隔离，也不授予交易、发消息或删除外部数据的权限。

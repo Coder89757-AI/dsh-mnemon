@@ -1,4 +1,4 @@
-import type { MemoryPackageProvenance, MemoryPluginDescriptor, MemoryPluginLocalizedText, MemorySourceActionManifest, MemorySourceDefinition, MemorySourceManifest, MemorySourceRouteManifest, MemoryStrategyDefinition, MemoryStrategyExtensionDefinition } from './contracts/index.ts'
+import type { MemoryPackageProvenance, MemoryPluginDescriptor, MemoryPluginLocalizedText, MemorySourceActionManifest, MemorySourceDefinition, MemorySourceManifest, MemorySourceRouteManifest, MemoryStrategyDefinition, MemoryStrategyExtensionDefinition, MemoryStrategyWorkflow } from './contracts/index.ts'
 import { ANY_MEMORY_SOURCE_ROLE, ANY_MEMORY_STRATEGY, COMPOSABLE_MEMORY_API_VERSION, MEMORY_CAPABILITIES, MEMORY_PLUGIN_API_VERSION, MEMORY_VIEW_EXTENSION_SLOTS } from './contracts/index.ts'
 
 const ID = /^[a-z][a-z0-9-]{0,127}$/u
@@ -244,6 +244,7 @@ export function defineMemoryStrategy<T extends MemoryStrategyDefinition>(definit
   if (manifest.deterministic !== true) throw new Error('memory Strategy must declare deterministic: true')
   if (typeof definition.compose !== 'function') throw new Error(`memory Strategy compose() is required: ${typeId}`)
   if (definition.createTurn !== undefined && typeof definition.createTurn !== 'function') throw new Error('memory Strategy createTurn must be a function')
+  if (manifest.workflows !== undefined && !Array.isArray(manifest.workflows)) throw new Error('memory Strategy workflows must be a list')
   const normalizedManifest = jsonClone({
     ...manifest,
     typeId,
@@ -253,6 +254,8 @@ export function defineMemoryStrategy<T extends MemoryStrategyDefinition>(definit
     maxRoutes: positiveInteger(manifest.maxRoutes, 'memory Strategy maxRoutes', 1_000),
     maxActions: positiveInteger(manifest.maxActions, 'memory Strategy maxActions', 1_000),
     ...(manifest.extensionSlots === undefined ? {} : { extensionSlots: uniqueIds(manifest.extensionSlots, 'memory Strategy extension slot') }),
+    // Ids this Core does not know stay as declared, so a newer Strategy still loads.
+    ...(manifest.workflows === undefined ? {} : { workflows: uniqueIds(manifest.workflows, 'memory Strategy workflow') as MemoryStrategyWorkflow[] }),
   }, 'memory Strategy manifest')
   return Object.freeze({ manifest: normalizedManifest, compose: definition.compose,
     ...(definition.createTurn === undefined ? {} : { createTurn: definition.createTurn }),

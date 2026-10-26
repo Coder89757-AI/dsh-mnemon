@@ -23,6 +23,7 @@ interface HolographicFact {
   tags: string[]
   entities: string[]
   trustScore: number
+  importance?: number
   createdAt: string
   updatedAt: string
 }
@@ -71,7 +72,7 @@ function insight(fact: HolographicFact, score?: number): Insight {
     id: fact.id,
     content: fact.content,
     category: fact.category,
-    importance: fact.trustScore,
+    ...(fact.importance === undefined ? {} : { importance: fact.importance }),
     tags: fact.tags,
     entities: fact.entities,
     source: 'external',
@@ -171,8 +172,9 @@ export class HolographicProvider implements MemoryProviderAdapter {
     if (source === undefined) return []
     const sourceEntities = new Set(source.entities.map(value => value.toLocaleLowerCase()))
     const sourceTerms = terms(source.content)
+    const minTrust = clampTrust(Number(this.connection(body).minTrust ?? 0.3))
     return topScored(store.facts.flatMap(fact => {
-      if (fact.id === id) return []
+      if (fact.id === id || fact.trustScore < minTrust) return []
       const sharedEntities = fact.entities.filter(value => sourceEntities.has(value.toLocaleLowerCase())).length
       const score = Math.max(sharedEntities === 0 ? 0 : Math.min(1, 0.5 + sharedEntities * 0.2), overlap(sourceTerms, terms(fact.content))) * fact.trustScore
       return score <= 0 ? [] : [{ fact, score }]
@@ -180,6 +182,9 @@ export class HolographicProvider implements MemoryProviderAdapter {
   }
 
   async remember(body: MemorySpace, request: RememberRequest): Promise<JsonValue> {
+    if (request.importance !== undefined && (!Number.isInteger(request.importance) || request.importance < 1 || request.importance > 5)) {
+      throw new Error('importance must be an integer from 1 through 5')
+    }
     const store = this.load(body)
     const existing = store.facts.find(fact => fact.content === request.content.trim())
     if (existing !== undefined) return { action: 'skipped', provider: this.id, id: existing.id, summary: 'Holographic already contains this fact.' }
@@ -191,7 +196,8 @@ export class HolographicProvider implements MemoryProviderAdapter {
       category: request.category ?? 'general',
       tags: [...new Set(request.tags ?? [])],
       entities: extractEntities(request.content, request.entities),
-      trustScore: clampTrust(Number(request.importance ?? connection.defaultTrust ?? 0.5)),
+      trustScore: request.importance === undefined ? clampTrust(Number(connection.defaultTrust ?? 0.5)) : request.importance / 5,
+      importance: request.importance ?? 3,
       createdAt: now,
       updatedAt: now,
     }

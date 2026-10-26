@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createGitHubTransport, createTunnelFetch, describeTransportError, discoverGitHubProxy, isLoopbackHost,
-  isTransportFailure, parseWindowsProxy, proxyBypassesHost, proxyFromEnvironment, readWindowsProxySettings,
+  isTransportFailure, parseWindowsProxy, proxyBypassesHost, proxyFromEnvironment, readWindowsProxySettings, tunnelAnswer,
   type MnemonGitHubProxyRoute,
 } from '../src/host/github-transport.ts'
 
@@ -220,6 +220,17 @@ describe('the CONNECT tunnel a fallback proxy is reached through', () => {
     } finally {
       await new Promise<void>(resolve => { proxy.close(() => { resolve() }) })
     }
+  })
+
+  it('hands back the content type with the status and the text, so a form answer still reads as one', async () => {
+    const form = 'application/x-www-form-urlencoded; charset=utf-8'
+    const answer = tunnelAnswer(200, form, 'device_code=d&interval=5')
+    expect(answer.status).toBe(200)
+    expect(answer.headers.get('content-type')).toBe(form)
+    expect(await answer.text()).toBe('device_code=d&interval=5')
+    const empty = tunnelAnswer(204, undefined, '')
+    expect(empty.status).toBe(204)
+    expect(empty.body).toBeNull()
   })
 
   it('refuses an address that is not a proxy', () => {

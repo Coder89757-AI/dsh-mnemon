@@ -1,4 +1,4 @@
-import type { JsonValue, MemoryActivityItem, MemoryActivityRead, MemoryActivityWriteback } from './protocol.ts'
+import { MEMORY_TOOLS, type JsonValue, type MemoryActivityItem, type MemoryActivityRead, type MemoryActivityWriteback, type MemoryToolName } from './protocol.ts'
 import { mutationResultCommitted } from './receipts.ts'
 
 export const MNEMON_ACTIVITY_SCHEMA = 'dsh-mnemon.activity/v1' as const
@@ -20,8 +20,6 @@ interface WriteActivityMeta extends ActivityMetaBase {
   committed: boolean
   item: MemoryActivityItem
 }
-
-export type MnemonActivityMeta = ReadActivityMeta | WriteActivityMeta
 
 const MAX_ITEMS = 8
 const MAX_TITLE = 160
@@ -105,6 +103,15 @@ export function memoryWritePresentation(sourceTypeId: string | undefined, operat
     committed: mutationResultCommitted(value) || operationId === 'mutate' && object(value)?.success === true,
     item: writeItem(args, operationId),
   }) as unknown as JsonValue
+}
+
+/** A named tool whose result records activity: one that reads or writes a Source operation, not an inspection. */
+type RecordedToolName = { [Name in MemoryToolName]: (typeof MEMORY_TOOLS)[Name] extends { readonly sourceTypeId: string; readonly kind: 'read' | 'write' } ? Name : never }[MemoryToolName]
+
+/** The activity a named tool's result records: the Source and operation its row in the tool table names. */
+export function namedToolPresentation(name: RecordedToolName): (args: unknown, value: unknown) => JsonValue {
+  const tool = MEMORY_TOOLS[name]
+  return tool.kind === 'write' ? memoryWritePresentation(tool.sourceTypeId, tool.operation) : memoryReadPresentation(tool.sourceTypeId, tool.operation)
 }
 
 function validItem(value: unknown): value is MemoryActivityItem {

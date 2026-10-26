@@ -10,16 +10,16 @@ import {
   type MemoryViewDashboard,
   type MemoryViewConfigurationRequest,
   type AssistantMessageText,
+  type SkillActivitySnapshot,
   type ClientConnectionHandle,
   type JsonValue,
-  type MemoryProviderServiceCatalog,
-  type MemoryProviderServiceView,
   type MemoryCompositionStatus,
   type MemorySourceManagementCatalog,
   type MemorySourceManagementResult,
   type MnemonPackComponent,
+  type MnemonRpcChannel,
+  type MnemonRpcEndpoint,
   type MnemonPackExport,
-  type MnemonPackImportMode,
   type MnemonPackImportResult,
   type MnemonPackPreview,
   type MnemonPackTarget,
@@ -38,19 +38,19 @@ import {
   type MnemonSyncPullResult,
   type MnemonSyncPushResult,
   type MnemonSyncStatus,
-  type MnemonStorageMigration,
-  type MnemonEmbeddingStatus,
   type StatusView,
+  type SupervisedWritebackResult,
   type TaskAgentModelCatalog,
   type TurnMemoryActivity,
   type TurnMemoryActivitySnapshot,
-  type UpdateMemoryProviderServiceRequest,
   type VersionComponentId,
   type VersionStatus,
   type VersionUpdateResult,
 } from "../host/protocol.ts"
-import type { MnemonMigrationPlan } from '../host/storage-migration.ts'
 import { callMnemonRpc } from './remote-rpc.ts'
+
+/** The channel a component's read or write operation goes on. */
+type ComponentChannel<Mode extends 'read' | 'write'> = Mode extends 'read' ? typeof MNEMON_READ_CHANNEL : typeof MNEMON_WRITE_CHANNEL
 
 interface TurnActivityCacheEntry {
   cursor: number
@@ -94,9 +94,13 @@ async function loadTurnActivities(connection: ClientConnectionHandle, sessionId:
 export class MnemonClient {
   constructor(private readonly connection: ClientConnectionHandle, private readonly sessionId?: string, private readonly workspaceId?: string) {}
 
-  private async call<T>(channel: string, endpoint: string, payload: unknown): Promise<T> {
+  private async call<T, Channel extends MnemonRpcChannel = MnemonRpcChannel>(channel: Channel, endpoint: MnemonRpcEndpoint<Channel>, payload: unknown): Promise<T> {
     const response = await callMnemonRpc(this.connection, channel, endpoint, payload)
-    if (!response.ok) throw new Error(response.error.message)
+    if (!response.ok) {
+      // A failure the Host could name keeps that name, so the page can translate it.
+      const reason = (response.error.details as { reason?: unknown } | undefined)?.reason
+      throw Object.assign(new Error(response.error.message), typeof reason === 'string' ? { reason } : {})
+    }
     return response.value as T
   }
 
@@ -114,10 +118,6 @@ export class MnemonClient {
 
   statusSummary(): Promise<StatusView> {
     return this.call(MNEMON_READ_CHANNEL, 'status-summary', this.scoped())
-  }
-
-  embeddingStatus(): Promise<MnemonEmbeddingStatus> {
-    return this.call(MNEMON_READ_CHANNEL, 'embedding-status', this.scoped())
   }
 
   memorySystem(): Promise<MemoryCompositionStatus> {
@@ -145,8 +145,9 @@ export class MnemonClient {
     return this.call(operation === 'activation' ? MNEMON_ACTIVATION_CHANNEL : confirmed ? MNEMON_WRITE_CHANNEL : MNEMON_READ_CHANNEL, 'source-assistance', this.scoped({ sourceInstanceKey, operation, input, expectedRevision, confirmed }))
   }
 
+  /** A session-scoped call reports the route that conversation's background work uses. */
   taskAgentModels(includeCatalog?: boolean): Promise<TaskAgentModelCatalog> {
-    return this.call(MNEMON_READ_CHANNEL, 'task-agent-models', includeCatalog === undefined ? {} : { includeCatalog })
+    return this.call(MNEMON_READ_CHANNEL, 'task-agent-models', this.scoped(includeCatalog === undefined ? {} : { includeCatalog }))
   }
 
   versions(): Promise<VersionStatus> {
@@ -157,12 +158,13 @@ export class MnemonClient {
     return this.call(MNEMON_WRITE_CHANNEL, 'version-update', { component })
   }
 
-  providerServices(): Promise<MemoryProviderServiceCatalog> {
-    return this.call(MNEMON_READ_CHANNEL, 'provider-services', this.scoped())
-  }
-
-  updateProviderService(request: UpdateMemoryProviderServiceRequest): Promise<MemoryProviderServiceView> {
-    return this.call(MNEMON_WRITE_CHANNEL, 'provider-service-update', this.scoped(request))
+  /**
+   * One of the Host operations a page lends a component's settings, by its
+   * endpoint name (component-host.ts): Memory Spaces reads its Providers and
+   * embedding through these.
+   */
+  componentOperation<T, Mode extends 'read' | 'write' = 'read' | 'write'>(mode: Mode, endpoint: MnemonRpcEndpoint<ComponentChannel<Mode>>, payload: object): Promise<T> {
+    return this.call(mode === 'read' ? MNEMON_READ_CHANNEL : MNEMON_WRITE_CHANNEL, endpoint, this.scoped(payload))
   }
 
   /** Settled memory-tool activity of one turn, shared across all mounted tails. */
@@ -171,12 +173,17 @@ export class MnemonClient {
     return snapshot.activities.find(activity => activity.turn === turn) ?? null
   }
 
+  /** What this conversation did with skills: each turn's uses and each review, for the turn bars. */
+  skillActivity(): Promise<SkillActivitySnapshot> {
+    return this.call(MNEMON_READ_CHANNEL, 'skill-activity', { sessionId: this.sessionId })
+  }
+
   /** Plain text of one finalized assistant message; null when absent or empty. */
   assistantMessageText(messageId: string): Promise<AssistantMessageText | null> {
     return this.call(MNEMON_READ_CHANNEL, 'assistant-message', { sessionId: this.sessionId, messageId })
   }
 
-  supervise(content: string, idempotencyKey?: string): Promise<{ delegated: true; sessionId: string; runId: string; provider: string; summary: string; action: string; memoryBodyIds: string[] }> {
+  supervise(content: string, idempotencyKey?: string): Promise<SupervisedWritebackResult> {
     return this.call(MNEMON_WRITE_CHANNEL, 'supervise', this.scoped({ content, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) }))
   }
 
@@ -192,18 +199,8 @@ export class MnemonClient {
     return this.call(MNEMON_PACK_CHANNEL, 'inspect', this.scoped({ base64, ...(fileName === undefined ? {} : { fileName }) }))
   }
 
-  importPack(base64: string, mode: MnemonPackImportMode = 'merge', components?: MnemonPackComponent[]): Promise<MnemonPackImportResult> {
-    return this.call(MNEMON_PACK_CHANNEL, 'import', this.scoped({ base64, mode, ...(components === undefined ? {} : { components }) }))
-  }
-
-  /** What moving the data directory would do, before anything moves. */
-  storagePlan(dataDir: string): Promise<MnemonMigrationPlan> {
-    return this.call(MNEMON_PACK_CHANNEL, 'storage-plan', this.scoped({ dataDir }))
-  }
-
-  /** The move itself. The caller confirms it: it deletes the old directory. */
-  migrateStorage(dataDir: string): Promise<MnemonStorageMigration> {
-    return this.call(MNEMON_PACK_CHANNEL, 'storage-migrate', this.scoped({ dataDir, confirmed: true }))
+  importPack(base64: string): Promise<MnemonPackImportResult> {
+    return this.call(MNEMON_PACK_CHANNEL, 'import', this.scoped({ base64 }))
   }
 
   /** Every reconciliation proposal this machine still holds. */
@@ -243,7 +240,7 @@ export class MnemonClient {
   }
 
   /** Saves a patch; the answer never carries the token back. */
-  configureSync(patch: { repoUrl?: string | null; branch?: string; subdir?: string; token?: string | null; authorName?: string; authorEmail?: string; autoBackupMinutes?: number }): Promise<MnemonSyncConfigView> {
+  configureSync(patch: { repoUrl?: string | null; branch?: string; subdir?: string; token?: string | null; authorName?: string; authorEmail?: string; autoBackupMinutes?: number; machineLabel?: string | null }): Promise<MnemonSyncConfigView> {
     return this.call(MNEMON_SYNC_CHANNEL, 'configure', this.scoped(patch))
   }
 

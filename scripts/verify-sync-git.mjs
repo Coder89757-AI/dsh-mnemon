@@ -18,9 +18,11 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { STARTER_SELF_REGISTERING_PACKAGES } from '../src/host/starter-components.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const dshBin = join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
+// Set MNEMON_E2E_DSH to another DSH installation's lib/bin.js to check that release.
+const dshBin = process.env.MNEMON_E2E_DSH ? resolve(process.env.MNEMON_E2E_DSH) : join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
 const keep = process.env.MNEMON_SYNC_E2E_KEEP === '1'
 const MARKER = 'Sync e2e: the maintainer keeps acceptance notes in the project wiki.'
 const PROFILE = 'Sync e2e profile entry.'
@@ -171,7 +173,7 @@ function reconcileReply(instructions) {
 
 async function install(home, workspace, env) {
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-  const selfRegistering = new Set(['dsh-mnemon-strategy-scoped', 'dsh-mnemon-strategy-light-context', 'dsh-mnemon-strategy-auto-capture', 'dsh-mnemon-strategy-general'])
+  const selfRegistering = new Set(STARTER_SELF_REGISTERING_PACKAGES)
   const plugins = Object.keys(manifest.dependencies).filter(name => name.startsWith('dsh-mnemon-') && !selfRegistering.has(name))
   const result = await run(process.execPath, [dshBin, 'plugin', '--profile', 'web', 'add',
     'link:' + root, ...plugins.map(name => 'link:' + join(root, 'plugins', name)),
@@ -273,6 +275,9 @@ try {
     fresh.enabled === true && fresh.configured === false && fresh.git.available === true && fresh.git.required === '2.20'
     && fresh.remote.reachable === false && fresh.remote.branchExists === false, JSON.stringify(fresh))
   check('the configuration path lives inside the storage root', fresh.configPath === join(data.a, 'state', 'sync-git.json'), fresh.configPath)
+  const unconfiguredPush = await sync(a, 'push', { confirmed: true })
+  expectFailure(unconfiguredPush, /no sync repository is configured/u, 'a push without a repository')
+  check('a push without a repository says so by name through DSH', unconfiguredPush.error.details?.reason === 'no-repository', JSON.stringify(unconfiguredPush.error))
   const defaults = expectOk(await sync(a, 'configure', { repoUrl: origin }), 'configure')
   check('a repository alone is enough: branch, directory and author keep their defaults',
     defaults.repoUrl === origin && defaults.branch === 'mnemon-sync' && defaults.subdir === 'mnemon/'
@@ -285,6 +290,16 @@ try {
   const reset = expectOk(await sync(a, 'configure', { branch: '', subdir: '' }), 'configure')
   check('an empty branch and directory fall back to the defaults',
     reset.branch === 'mnemon-sync' && reset.subdir === 'mnemon/', JSON.stringify(reset))
+  const named = expectOk(await sync(a, 'configure', { machineLabel: 'Acceptance A' }), 'configure')
+  const namedStatus = expectOk(await sync(a, 'status'), 'status')
+  check('a name given to this machine stays apart from the channel settings and reports its source',
+    named.repoUrl === origin && named.branch === 'mnemon-sync' && namedStatus.machine?.label === 'Acceptance A'
+    && namedStatus.machineLabel?.source === 'custom' && typeof namedStatus.machineLabel?.hostname === 'string'
+    && namedStatus.machineLabel.hostname !== '', JSON.stringify({ label: namedStatus.machine?.label, source: namedStatus.machineLabel?.source }))
+  const twoLines = await sync(a, 'configure', { branch: 'elsewhere', machineLabel: 'two\nlines' })
+  expectFailure(twoLines, /machine name/u, 'a two-line machine name')
+  check('a refused name changes nothing else the same request carried',
+    expectOk(await sync(a, 'status'), 'status').config.branch === 'mnemon-sync')
   const added = expectOk(await call(a, '/dsh-mnemon-write', 'runtime-memory', { action: 'add', target: 'memory', content: MARKER }), 'runtime-memory')
   check('the working memory accepted one entry through the write channel', added.success === true && added.entryCount === 1, JSON.stringify(added))
   expectOk(await call(a, '/dsh-mnemon-write', 'runtime-memory', { action: 'add', target: 'user', content: PROFILE }), 'runtime-memory user')
@@ -315,6 +330,8 @@ try {
   const publishedMemory = await git(['show', 'mnemon-sync:mnemon/payload/runtime/MEMORY.md'], origin)
   check('the published working memory carries the entry', publishedMemory.includes(MARKER))
   const manifest = JSON.parse(await git(['show', 'mnemon-sync:mnemon/manifest.json'], origin))
+  check('the published version carries the name this machine was given',
+    manifest.sync.machine?.label === 'Acceptance A', JSON.stringify(manifest.sync.machine?.label))
   check('the manifest declares the pack and its channel',
     manifest.format === 'mnemonpack' && manifest.version === 1 && manifest.scope === 'full'
     && manifest.sync.channel === 'git' && manifest.sync.branch === 'mnemon-sync' && manifest.sync.subdir === 'mnemon/'
@@ -427,9 +444,11 @@ try {
   check('an unreachable remote is reported without leaking the token',
     unreachable.remote.reachable === false && typeof unreachable.remote.error === 'string'
     && unreachable.remote.error.includes(TOKEN) === false, unreachable.remote.error)
+  check('the unreachable remote is named a network failure', unreachable.remote.issue === 'network', JSON.stringify(unreachable.remote))
   const failedPush = await sync(a, 'push', { confirmed: true })
   expectFailure(failedPush, /./u, 'push to an unreachable remote')
   check('a failed push never echoes the token', failedPush.error.message.includes(TOKEN) === false, failedPush.error.message)
+  check('a failed push carries the kind of failure through DSH', failedPush.error.details?.reason === 'remote-network', JSON.stringify(failedPush.error))
   check('the token never reaches the mirror',
     (await readFile(join(data.a, 'state', 'sync', 'git', '.git', 'config'), 'utf8')).includes(TOKEN) === false)
 

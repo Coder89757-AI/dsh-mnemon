@@ -41,8 +41,12 @@ const run = (command, args, options = {}) => new Promise((fulfill, reject) => {
   })
 })
 const require = createRequire(join(profile, 'package.json'))
-const publishedVersion = JSON.parse(await readFile(require.resolve('@deepseek-ai/dsh/package.json'))).version
-assert.equal(publishedVersion, '0.1.7-rc.2', 'Install the exact official rc2-profile.json cohort')
+// DSH's own compatibility check: the profile's DSH must be one the Starter states it supports.
+const dshManifest = require.resolve('@deepseek-ai/dsh/package.json')
+const publishedVersion = JSON.parse(await readFile(dshManifest)).version
+const { evaluatePluginCompatibility } = await import(pathToFileURL(createRequire(dshManifest).resolve('@deepseek-ai/dsh-app-boot')).href)
+const starterManifest = JSON.parse(await readFile(new URL('../../package.json', import.meta.url)))
+assert.equal(evaluatePluginCompatibility(starterManifest, {}, publishedVersion), undefined, `Use an official DSH profile the Starter supports (${starterManifest.engines.dsh}); this one runs DSH ${publishedVersion}`)
 const packages = new Map()
 for (const filename of await readdir(artifacts)) {
   if (!filename.endsWith('.tgz')) continue
@@ -55,7 +59,7 @@ for (const filename of await readdir(artifacts)) {
     sha256: createHash('sha256').update(bytes).digest('hex'),
   })
 }
-assert.equal(packages.size, 17, 'Use Root and all sixteen packed plugin artifacts')
+assert.equal(packages.size, 1 + Object.keys(starterManifest.dependencies).filter(name => name.startsWith('dsh-mnemon-')).length, 'Use Root and every packed plugin artifact it pins')
 assert(packages.has('dsh-mnemon'), 'The packed Root is required')
 let registryUrl
 const registry = createServer((request, response) => {

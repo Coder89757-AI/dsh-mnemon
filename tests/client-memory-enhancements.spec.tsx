@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MnemonSettingsCard } from '../src/client/MnemonSettingsCard.tsx'
 import { translateEn } from '../src/client/locales.ts'
@@ -186,31 +186,33 @@ describe('Memory enhancement settings', () => {
 
     expect(await screen.findByText('已登录 @octocat')).toBeTruthy()
     expect(screen.queryByText('2654-9D74')).toBeNull()
-    expect(screen.queryByText('在 GitHub 输入此设备码：')).toBeNull()
+    expect(screen.queryByText('在 GitHub 页面输入这个设备码：')).toBeNull()
     await waitFor(() => expect(call).toHaveBeenCalledWith('/dsh-mnemon-sync', 'github-repositories', {}))
   })
 
-  it('offers the repository entry before a sign-in and marks the author as optional', async () => {
+  it('offers a GitHub sign-in or an address first, and keeps the branch, directory and author under Advanced', async () => {
     const { connection } = fixture({ github: { available: true, signedIn: false, writable: true } })
     render(<MnemonSettingsCard scope={readyScope(SYNCING)} connection={connection} />)
 
-    // Signed out, the block still explains what a sign-in adds instead of hiding itself.
-    expect(await screen.findByText('登录后这里会列出你的仓库，可直接选用或新建；不登录也可以在手填表单里填写地址')).toBeTruthy()
-    expect(screen.queryByLabelText('新建仓库')).toBeNull()
-    // Branch and directory arrive filled in, and the author is optional.
+    // Signed out, the repository is connected through a sign-in or by its address.
+    expect(await screen.findByRole('button', { name: '使用 GitHub 登录' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '仓库地址' })).toBeTruthy()
+    expect(screen.queryByPlaceholderText('搜索仓库，或输入新仓库名')).toBeNull()
+    // Branch, directory and author wait under Advanced, each showing the value in use.
+    expect(screen.queryByLabelText('分支')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^高级设置/u }))
     expect((screen.getByLabelText('分支') as HTMLInputElement).value).toBe('mnemon-sync')
-    expect((screen.getByLabelText('远端目录') as HTMLInputElement).value).toBe('mnemon/')
-    expect((screen.getByLabelText('提交者姓名') as HTMLInputElement).placeholder).toBe('可选')
-    expect((screen.getByLabelText('提交者邮箱') as HTMLInputElement).placeholder).toBe('可选')
-    expect(screen.getByText('留空则使用本机 Git 身份')).toBeTruthy()
+    expect((screen.getByLabelText('仓库内目录') as HTMLInputElement).value).toBe('mnemon/')
+    expect((within(screen.getByRole('radiogroup', { name: '提交者' })).getByRole('radio', { name: '默认' }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText('以 dsh-mnemon sync <mnemon@localhost> 提交')).toBeTruthy()
     cleanup()
 
     const signedIn = fixture({ github: { available: true, signedIn: true, writable: true, login: 'octocat' } })
     render(<MnemonSettingsCard scope={readyScope(SYNCING)} connection={signedIn.connection} />)
 
-    // The same entry turns into a real picker and a create form once signed in.
-    expect((await screen.findByLabelText('新建仓库') as HTMLInputElement).placeholder).toBe('mnemon-memory')
-    expect(screen.getByText('账号下还没有仓库，可以在下面新建')).toBeTruthy()
+    // Signed in, the same block searches the account's repositories or creates one.
+    expect(await screen.findByPlaceholderText('搜索仓库，或输入新仓库名')).toBeTruthy()
+    expect(await screen.findByText('账号下还没有仓库，输入名称即可新建')).toBeTruthy()
   })
 
   it('keeps the Git sync row silent until the switch turns it on', async () => {
@@ -223,9 +225,8 @@ describe('Memory enhancement settings', () => {
     const off = await screen.findByRole('switch', { name: 'Git 同步' })
     expect(off.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByText('把上述组件的数据同步到 Git 仓库；不含第三方 Provider 与密钥')).toBeTruthy()
-    expect(screen.queryByLabelText('分支')).toBeNull()
-    expect(screen.queryByLabelText('提交者姓名')).toBeNull()
-    expect(screen.queryByText('尚未配置仓库')).toBeNull()
+    expect(screen.queryByText('选择保存记忆的 Git 仓库')).toBeNull()
+    expect(screen.queryByRole('button', { name: '使用 GitHub 登录' })).toBeNull()
     // Reading the channel is what would run Git, so a switched-off row asks it nothing.
     expect(call.mock.calls.filter(([channel]) => channel === '/dsh-mnemon-sync')).toEqual([])
 
@@ -233,8 +234,8 @@ describe('Memory enhancement settings', () => {
     // The choice saves as it is made, and it is what the next read of the profile shows.
     await waitFor(() => expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['syncEnabled'], value: true }]))
     await waitFor(() => expect(screen.getByRole('switch', { name: 'Git 同步' }).getAttribute('aria-checked')).toBe('true'))
-    // Switched on, the same row unfolds the repository form and reads the channel.
-    expect(await screen.findByLabelText('分支')).toBeTruthy()
+    // Switched on, the same row unfolds the repository block and reads the channel.
+    expect(await screen.findByText('选择保存记忆的 Git 仓库')).toBeTruthy()
     await waitFor(() => expect(call).toHaveBeenCalledWith('/dsh-mnemon-sync', 'status', {}))
   })
 
@@ -260,9 +261,9 @@ describe('Memory enhancement settings', () => {
     render(<MnemonSettingsCard scope={scope} connection={connection} />)
 
     fireEvent.click(await screen.findByRole('switch', { name: 'Git 同步' }))
-    expect(await screen.findByText('尚未配置仓库')).toBeTruthy()
+    expect(await screen.findByText('选择保存记忆的 Git 仓库')).toBeTruthy()
     expect(statusReads).toBeGreaterThanOrEqual(2)
-    expect(screen.queryByText(/缺少 Git/)).toBeNull()
+    expect(screen.queryByText(/同步需要 Git/)).toBeNull()
   })
 
   it('hides the enhancements and keeps the other settings when the View dashboard fails', async () => {

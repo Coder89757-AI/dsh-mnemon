@@ -105,16 +105,3 @@ export function describeChange(before: MemoryViewDashboard, after: MemoryViewDas
     : source ? entry.enabled ? 'feedback.externalSourceOn' : 'feedback.externalSourceOff' : entry.enabled ? 'feedback.externalComponentOn' : 'feedback.externalComponentOff'
   return { text: t(key, { component }), tone: own ? 'success' : 'info', targets }
 }
-
-/** What a write is doing while it crosses the wire. */
-export function describePending(before: MemoryViewDashboard, after: MemoryViewDashboard, name: (entry: MemoryPluginEntryView) => string, t: MnemonTranslate): string {
-  if (before.strategyTypeId !== after.strategyTypeId) {
-    const next = componentModel(after).selected
-    if (next !== undefined) return t('feedback.pendingMain', { strategy: name(next) })
-  }
-  const switched = switchedEntries(before, after)
-  const reconfigured = reconfiguredEntries(before, after)
-  if (switched.length === 0 && reconfigured.length === 1) return t('feedback.pendingOptions', { component: name(reconfigured[0]!) })
-  if (switched.length !== 1) return t('feedback.pendingSeveral')
-  return t(switched[0]!.enabled ? 'feedback.pendingOn' : 'feedback.pendingOff', { component: name(switched[0]!) })
-}
