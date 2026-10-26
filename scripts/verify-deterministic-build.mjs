@@ -4,14 +4,14 @@ import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { packageManagerCommand } from './package-manager.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outputRoot = join(root, 'lib')
 
 function build() {
-  const npmExecPath = process.env.npm_execpath
-  if (npmExecPath === undefined) throw new Error('Run this check through the package manager')
-  const result = spawnSync(process.execPath, [npmExecPath, 'run', 'build'], { cwd: root, stdio: 'inherit' })
+  const { command, args } = packageManagerCommand()
+  const result = spawnSync(command, [...args, 'run', 'build'], { cwd: root, stdio: 'inherit' })
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
 
