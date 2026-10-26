@@ -198,6 +198,8 @@ Generate an inventory or checksums and rehearse recovery in isolation. A normal 
 
 ## Changing storage scope
 
+The optional **Choose directory** button uses DSH’s native chooser when available. It fills the custom path without saving; **Apply** uses the same settings path as manual entry, and **Discard changes** restores the draft. A chooser error leaves manual entry available.
+
 Saving `global` / `workspace` / `custom` / `workspaces` initializes a new runtime graph before switching atomically. The page reloads automatically, but **data is not migrated**:
 
 ```text

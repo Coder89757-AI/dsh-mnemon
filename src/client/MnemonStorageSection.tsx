@@ -1,5 +1,5 @@
-import { useRef, type JSX } from 'react'
-import { PathLabel } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useRef, useState, type JSX } from 'react'
+import { Button, PathLabel } from '@deepseek-ai/dsh-client-ui-primitives'
 import { MNEMON_PACK_COMPONENTS, type ClientConnectionHandle, type ClientSettingsScope, type Config, type SettingsOperation } from '../host/protocol.ts'
 import type { MemoryPluginEntryView, MemoryViewDashboard } from '../host/view-protocol.ts'
 import { componentCopy } from './component-copy.ts'
@@ -12,6 +12,7 @@ import { MnemonReviewSection } from './MnemonReviewSection.tsx'
 import { MnemonSyncSection } from './MnemonSyncSection.tsx'
 import { SelectRow, SettingRow } from './settings-controls.tsx'
 import { PanelActions, useLive, WriteFailure, useStaged } from './settings-panel.tsx'
+import type { MnemonDirectoryPicker } from './picker.ts'
 
 type StorageChoice = 'global' | 'workspace' | 'workspaces'
 /** Whether a shared or central directory is Mnemon's default one or one the user chose. */
@@ -86,6 +87,7 @@ export interface MnemonStorageSectionProps {
   /** The directory memory reads and writes now. */
   target: PackTarget | null
   connection?: ClientConnectionHandle
+  directoryPicker?: MnemonDirectoryPicker
   sessionId?: string
   workspaceId?: string
   language: string
@@ -138,6 +140,33 @@ export function MnemonStorageSection(props: MnemonStorageSectionProps): JSX.Elem
   })
   const { draft } = storage
   const problem = storageProblem(t, draft)
+  const canPick = props.target?.nativeDirectoryPicker === true && props.directoryPicker?.available() === true
+  const [picking, setPicking] = useState(false)
+  const [pickerFailed, setPickerFailed] = useState(false)
+  const pendingPick = useRef<{ active: boolean } | undefined>(undefined)
+  const savedKey = JSON.stringify(saved)
+  // A chooser can outlive a draft, workspace, permission or saved-setting change.
+  // Its late answer must not overwrite the operator's newer intent.
+  useEffect(() => {
+    setPickerFailed(false)
+    return () => { if (pendingPick.current !== undefined) pendingPick.current.active = false }
+  }, [draft, savedKey, props.scope, props.disabled, props.sessionId, props.workspaceId, props.directoryPicker, canPick, storage.saving])
+  useEffect(() => () => { pendingPick.current = undefined }, [])
+  const pickDirectory = async (): Promise<void> => {
+    if (!canPick || props.disabled || storage.saving || pendingPick.current !== undefined) return
+    const request = { active: true }
+    pendingPick.current = request
+    setPicking(true)
+    setPickerFailed(false)
+    try {
+      const directory = await props.directoryPicker!.pick()
+      if (pendingPick.current === request && request.active && directory !== null) storage.edit({ dataDir: directory })
+    } catch {
+      if (pendingPick.current === request && request.active) setPickerFailed(true)
+    } finally {
+      if (pendingPick.current === request) { pendingPick.current = undefined; setPicking(false) }
+    }
+  }
   // Choosing to type a directory puts the cursor in the field.
   const focusDirectory = useRef(false)
   const chooseLocation = (location: LocationChoice): void => {
@@ -154,6 +183,12 @@ export function MnemonStorageSection(props: MnemonStorageSectionProps): JSX.Elem
   const directoryHint = draft.scope === 'workspaces'
     ? current === undefined ? '' : <Path label={t('storage.thisWorkspace')} value={current} />
     : draft.location === 'default' && defaultRoot !== undefined ? <Path value={defaultRoot} /> : ''
+  const directoryInput = <input id="mnemon-data-directory" className={css.directoryInput} type="text" value={draft.dataDir}
+    aria-label={t('config.dataDirectory')} aria-invalid={problem !== null}
+    placeholder={t('storage.directoryExample')}
+    disabled={props.disabled} autoComplete="off" spellCheck={false} autoCapitalize="none" autoCorrect="off"
+    ref={element => { if (element !== null && focusDirectory.current) { focusDirectory.current = false; element.focus() } }}
+    onChange={event => storage.edit({ dataDir: event.target.value })} />
   return <section className={css.section} aria-labelledby="mnemon-storage-heading">
     <div className={css.sectionHeading}>
       <h2 id="mnemon-storage-heading">{t('config.storageTitle')}</h2>
@@ -175,12 +210,12 @@ export function MnemonStorageSection(props: MnemonStorageSectionProps): JSX.Elem
           label={t('config.dataDirectory')} hint={directoryHint} defaultLabel={t('storage.default')} customLabel={t('config.custom')}
           custom={draft.location === 'custom'} workspace={false} disabled={props.disabled}
           onChange={custom => chooseLocation(custom ? 'custom' : 'default')}>
-          <input id="mnemon-data-directory" className={css.directoryInput} type="text" value={draft.dataDir}
-            aria-label={t('config.dataDirectory')} aria-invalid={problem !== null}
-            placeholder={t('storage.directoryExample')}
-            disabled={props.disabled} autoComplete="off" spellCheck={false} autoCapitalize="none" autoCorrect="off"
-            ref={element => { if (element !== null && focusDirectory.current) { focusDirectory.current = false; element.focus() } }}
-            onChange={event => storage.edit({ dataDir: event.target.value })} />
+          {canPick ? <div className={css.directoryPickerRow}>
+            {directoryInput}
+            <Button variant="outline" size="sm" disabled={props.disabled || storage.saving || picking} aria-busy={picking || undefined}
+              onClick={() => { void pickDirectory() }}>{t('storage.chooseDirectory')}</Button>
+          </div> : directoryInput}
+          {pickerFailed && <p className={css.panelError} role="alert">{t('storage.pickFailed')}</p>}
         </GlobalLocationSetting>}
       <PanelActions dirty={storage.dirty} saving={storage.saving} invalid={problem} failed={storage.failed} applied={storage.applied} disabled={props.disabled || storageMissing(draft)}
         note={t('storage.moveNote')} t={t} onDiscard={storage.discard} onApply={() => { void storage.apply() }} />

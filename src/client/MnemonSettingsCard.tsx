@@ -22,6 +22,7 @@ import { isRecord } from './is-record.ts'
 import { translateZh, type MnemonTranslate } from './locales.ts'
 import { usePackTarget } from './MnemonPackSection.tsx'
 import { MnemonStorageSection } from './MnemonStorageSection.tsx'
+import type { MnemonDirectoryPicker } from './picker.ts'
 import type { MnemonChangeSignal } from './change-signal.ts'
 import type { MnemonComponentListSeat } from './component-list-seat.ts'
 
@@ -39,6 +40,7 @@ export interface MnemonSettingsCardProps {
   interactionScope?: ClientSettingsScope<InteractionConfig>
   /** Loopback RPC used for whole-directory ZIP backup and restore. */
   connection?: ClientConnectionHandle
+  directoryPicker?: MnemonDirectoryPicker
   sessionId?: string
   workspaceId?: string
   workspaceLabel?: string
@@ -71,7 +73,7 @@ const NO_COMPONENT_LIST: Pick<MnemonComponentListSeat, 'subscribe' | 'getSnapsho
  * Typed values wait for their group's Apply; the storage location waits too,
  * because it moves where every component reads and writes.
  */
-export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractionScope, connection, sessionId, workspaceId, workspaceLabel, t = translateZh, language = 'zh', componentChanges = NO_CHANGE_SIGNAL, componentSettings, component, componentList = NO_COMPONENT_LIST }: MnemonSettingsCardProps): JSX.Element | null {
+export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractionScope, connection, directoryPicker, sessionId, workspaceId, workspaceLabel, t = translateZh, language = 'zh', componentChanges = NO_CHANGE_SIGNAL, componentSettings, component, componentList = NO_COMPONENT_LIST }: MnemonSettingsCardProps): JSX.Element | null {
   const interactionScope = suppliedInteractionScope ?? scope as unknown as ClientSettingsScope<InteractionConfig>
   const coreSnapshot = useScope(scope)
   const interactionSnapshot = useScope(interactionScope)
@@ -185,6 +187,7 @@ export function MnemonSettingsCard({ scope, interactionScope: suppliedInteractio
           pages={pages} {...(settingsRenderer === undefined ? {} : { componentSettings: settingsRenderer })} />
 
         <MnemonStorageSection scope={scope} value={coreSnapshot.value} user={coreUser} disabled={coreDisabled} dashboard={view.state.dashboard} target={target}
+          {...(directoryPicker === undefined ? {} : { directoryPicker })}
           {...(connection === undefined ? {} : { connection })} {...(sessionId === undefined ? {} : { sessionId })} {...(workspaceId === undefined ? {} : { workspaceId })}
           language={language} t={t} onOpen={entry => pages.open(entry.entryId, 'configuration')} onSaved={() => setTargetRevision(revision => revision + 1)}
           onDataChanged={componentChanges.bump} />

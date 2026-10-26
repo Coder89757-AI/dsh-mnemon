@@ -12,6 +12,7 @@ import {
 } from "../host/protocol.ts"
 import { MnemonComponentRowHost, MnemonSettingsHost } from './MnemonSettingsHost.tsx'
 import { createComponentSettingsDirectory, type MemoryComponentSettingsProps, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT, renderComponentRegion } from './component-ui.tsx'
+import { directoryPicker } from './picker.ts'
 import { createComponentHosts } from './component-host.ts'
 import { installShippedComponentSettings } from './component-settings.tsx'
 import { installShippedComponentStatus } from './component-status.tsx'
@@ -385,6 +386,7 @@ export function apply(rawContext: unknown): void {
   const configurationServices = () => ({
     componentSettingsDirectory,
     componentHost,
+    directoryPicker: directoryPicker(ctx),
     scope: settings,
     interactionScope: interactionSettings,
     connection: ctx.connection,

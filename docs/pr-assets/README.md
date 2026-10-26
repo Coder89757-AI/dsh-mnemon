@@ -12,6 +12,7 @@ For new evaluations, commit the reusable harness and workload generator to [`scr
 
 | Record / 记录 | Scope / 范围 |
 |---|---|
+| [Directory chooser with existing storage semantics](./storage-directory-picker/README.md) / [中文](./storage-directory-picker/README.zh-CN.md) | Narrowed PR #355: native capability gating, staged paths, unchanged data and storage scopes, supported-host regressions and actual WebUI fallback / 收敛 #355：原生能力判定、路径草稿、数据与存储范围保持、受支持宿主回归及真实 WebUI 回退 |
 | [DSH rc.3 task Agent model directory](./rc3-model-directory/README.md) / [中文](./rc3-model-directory/README.zh-CN.md) | Published DSH adapter with a delayed directory, bounded failures, installed-host tests and the real WebUI / 正式 DSH adapter 的延迟目录、失败上限、已安装宿主测试与真实 WebUI |
 | [Independent skill suggestion controls](./issue-496-suggestion-switches/README.md) / [中文](./issue-496-suggestion-switches/README.zh-CN.md) | Four create/update combinations, settings persisted through a real DSH Host restart, bilingual UI and Host/Source admission checks / 新建与改进四种组合、真实 DSH Host 重启后的设置持久化、中英文界面及 Host/Source 接纳检查 |
 | [v0.5.35 release](./release-v0.5.35/README.md) / [中文](./release-v0.5.35/README.zh-CN.md) | Nine candidate packages installed through Add plugin and updated from v0.5.34 through Check versions on DSH 0.2.1-rc.2 and 0.2.0-rc.2; exact package bytes, image cases marked unmeasured and skill Trash restore / 两个受支持宿主的全新安装、从 v0.5.34 应用内更新、制品字节核对、图片用例未测与技能回收站恢复 |

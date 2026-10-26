@@ -481,13 +481,13 @@ export function createWriteHandler(input: LiveMnemonRuntime, lifecycle?: MnemonL
 }
 
 /** Pack data stays inside the selected storage root and DSH authentication. */
-export function createPackHandler(input: LiveMnemonRuntime): HostRpcHandler {
+export function createPackHandler(input: LiveMnemonRuntime, nativeDirectoryPicker: () => boolean = () => false): HostRpcHandler {
   return async (endpoint, rawPayload) => {
     try {
       const payload = object(rawPayload)
       const runtime = scoped(input, payload)
       const manager = runtime.graph.packs
-      if (endpoint === 'target') return success(manager.target())
+      if (endpoint === 'target') return success({ ...manager.target(), nativeDirectoryPicker: nativeDirectoryPicker() })
       if (endpoint === 'export') return success(await manager.exportPack('full'))
       if (endpoint === 'inspect') return success(manager.inspectPack(String(payload.base64 ?? ''), payload.fileName === undefined ? undefined : String(payload.fileName)))
       if (endpoint === 'import') {
@@ -656,7 +656,7 @@ export function createReviewHandler(input: LiveMnemonRuntime, lifecycle?: Mnemon
   }
 }
 
-export function registerRpc(connection: HostConnectionHandle, input: LiveMnemonRuntime, lifecycle?: MnemonLifecycle, versions?: VersionUpdateManager, onSyncConfigured?: () => void): {
+export function registerRpc(connection: HostConnectionHandle, input: LiveMnemonRuntime, lifecycle?: MnemonLifecycle, versions?: VersionUpdateManager, onSyncConfigured?: () => void, nativeDirectoryPicker?: () => boolean): {
   read: HostRpcHandler
   activation: HostRpcHandler
   write: HostRpcHandler
@@ -670,7 +670,7 @@ export function registerRpc(connection: HostConnectionHandle, input: LiveMnemonR
   const writeHandler = createWriteHandler(input, lifecycle, versionManager)
   const syncHandler = createSyncHandler(input, onSyncConfigured)
   const reviewHandler = createReviewHandler(input, lifecycle)
-  const packHandler = createPackHandler(input)
+  const packHandler = createPackHandler(input, nativeDirectoryPicker)
   connection.rpc.handle(MNEMON_READ_CHANNEL, readHandler)
   connection.rpc.handle(MNEMON_ACTIVATION_CHANNEL, activationHandler)
   connection.rpc.handle(MNEMON_WRITE_CHANNEL, writeHandler)

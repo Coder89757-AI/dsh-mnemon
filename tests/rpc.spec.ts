@@ -461,6 +461,18 @@ describe('Host assistance and channels', () => {
     expect(readonly.graph.packs.importPack).not.toHaveBeenCalled()
   })
 
+  it('reports the optional native chooser without adding migration operations', async () => {
+    const f = protocolFixture()
+    const capability = vi.fn(() => true)
+    const handler = createPackHandler(f.runtime, capability)
+    expect(await handler('target', {})).toMatchObject({ ok: true, value: { root: '/fixture/data', nativeDirectoryPicker: true } })
+    capability.mockReturnValue(false)
+    expect(await handler('target', {})).toMatchObject({ ok: true, value: { root: '/fixture/data', nativeDirectoryPicker: false } })
+    expect(await createPackHandler(f.runtime)('target', {})).toMatchObject({ ok: true, value: { nativeDirectoryPicker: false } })
+    for (const endpoint of ['storage-plan', 'storage-migrate']) expect(await handler(endpoint, { confirmed: true, dataDir: '/fixture/other' })).toMatchObject({ ok: false })
+    expect(f.graph.packs.importPack).not.toHaveBeenCalled()
+  })
+
   it('keeps Git sync authenticated, selected-root scoped, and confirmed in both directions', async () => {
     const f = protocolFixture()
     const handler = createSyncHandler(f.runtime)

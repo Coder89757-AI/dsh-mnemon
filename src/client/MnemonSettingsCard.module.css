@@ -235,6 +235,9 @@
 .selectOption { display: grid; min-width: 0; gap: 1px; white-space: normal; }
 .selectOption > small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 
+.directoryPickerRow { display: flex; align-items: center; gap: 8px; }
+.directoryPickerRow > input { flex: 1; }
+.directoryPickerRow > button { flex: none; }
 .directoryInput {
   width: 100%;
   min-width: 0;

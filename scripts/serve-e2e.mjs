@@ -69,6 +69,7 @@ for (const flag of flags) {
   if (flag === '--remote-management') continue
   if (flag === '--live-model') continue
   if (flag === '--log-model-requests') continue
+  if (flag === '--native-directory-picker') continue
   if (flag === '--recall-budget') continue
   if (flag === '--docs-demo' || flag.startsWith('--docs-demo=')) {
     docsDemo = flag === '--docs-demo' ? 'zh-CN' : flag.slice('--docs-demo='.length)
@@ -312,6 +313,7 @@ try {
     : docsDemoAssistant(docsDemo)
   // The docs demo's assistant reads files and loads skills, as DSH's standard preset does.
   const docsDemoTools = ['tool-fs', 'skill-filesystem', 'tool-skill'].map(id => `          - id: ${id}\n            name: '@deepseek-ai/dsh-${id}'\n`).join('')
+  const pickerKind = flags.has('--native-directory-picker') ? 'native' : 'browse'
   const browsePicker = `- id: agent-preset-registry
   config:
     default: mnemon-e2e
@@ -329,9 +331,9 @@ try {
             config:
               prefix: ${JSON.stringify(assistant.persona)}
 ${docsDemo === undefined ? '' : docsDemoTools}    - id: e2e-directory-picker
-      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+      name: '@deepseek-ai/dsh-host-directory-picker-${pickerKind}'
     - id: e2e-directory-picker-ui
-      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-${pickerKind}'
 `
   const reviewFixture = join(fixture, 'review-evidence-plugin.mjs')
   if (reviewModel !== undefined) await writeFile(reviewFixture, scopedOverviewPlugin)

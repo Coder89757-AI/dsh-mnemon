@@ -793,6 +793,8 @@ export interface MnemonPackTarget {
   root: string
   scope: StorageScopeKind
   defaultRoot: string
+  /** Optional on older Hosts; only a native DSH backend can open an OS chooser. */
+  nativeDirectoryPicker?: boolean
 }
 
 export interface MnemonPackExport {
