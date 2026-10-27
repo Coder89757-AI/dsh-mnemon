@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import { SearchField } from 'dsh-mnemon/client'
-import type { CatalogView, EvalCase } from '../contracts.ts'
+import { SearchField, SelectField } from 'dsh-mnemon/client'
+import type { CatalogView, EvalCase, ModelRoute } from '../contracts.ts'
+import { modelOptionPick, modelOptionValue, useModelChoice } from './model-choice.tsx'
 import { css, points, relative, useT } from './presentation.ts'
 import { Busy, Empty, SkillIcon } from './shared.tsx'
 import { SkillTests } from './skill-tests.tsx'
@@ -38,6 +39,7 @@ export function EvalsPage(props: { context: SkillsPageContext; location: SkillsL
   const [proposed, setProposed] = useState<ReadonlySet<string>>(new Set())
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | undefined>(location.skillName)
+  const choice = useModelChoice(context, 'tests.modelAuto')
   useEffect(() => { if (location.skillName !== undefined) setSelected(location.skillName) }, [location.skillName, location.nonce])
   useEffect(() => {
     let active = true
@@ -73,7 +75,21 @@ export function EvalsPage(props: { context: SkillsPageContext; location: SkillsL
     { key: 'untested', title: t('evals.untested'), rows: visible.filter(row => row.cases === 0) },
   ].filter(group => group.rows.length > 0)
   const current = rows.find(row => row.name === selected) ?? groups[0]?.rows[0] ?? rows[0]!
-  return <div className={css.skSplit}>
+  // The pick for this skill, else the global one: a backtest runs on the first
+  // that is set, and on the task Agent's own route when neither is.
+  const runOverride = Object.hasOwn(choice.preferences.skillRunModels, current.name) ? choice.preferences.skillRunModels[current.name]! : null
+  const effectiveRunModel = runOverride ?? choice.preferences.runModel ?? null
+  const saveRun = (value: string) => choice.saveRunModel(modelOptionPick(value))
+  const saveSkillRun = (value: string) => choice.saveSkillRunModel(current.name, modelOptionPick(value))
+  const modelBar = <div className={css.skListBar} style={{ borderBottom: 'none', padding: '0 0 10px' }}>
+    <div className={css.skSplit} style={{ minHeight: 0, alignItems: 'center', width: '100%' }}>
+      <SelectField<string> label={t('tests.model')} triggerDetail inline size="sm" value={modelOptionValue(choice.preferences.runModel)} disabled={!context.writable || choice.models === null} onChange={saveRun} options={choice.options} />
+      <SelectField<string> label={t('tests.modelCard')} triggerDetail inline size="sm" value={modelOptionValue(runOverride)} disabled={!context.writable || choice.models === null} onChange={saveSkillRun} options={choice.cardOptions} />
+    </div>
+  </div>
+  return <>
+    {modelBar}
+    <div className={css.skSplit}>
     <aside className={css.skList}>
       <header className={css.skListBar}>
         <SearchField label={t('skills.search')} placeholder={t('skills.search')} value={query} onChange={event => setQuery(event.target.value)} />
@@ -102,8 +118,9 @@ export function EvalsPage(props: { context: SkillsPageContext; location: SkillsL
             {!current.exists && <p>{t('evals.notCreatedBody')}{proposed.has(current.name) && <> <button type="button" className={css.skLink} onClick={() => context.navigate({ tab: 'evolution', skillName: current.name })}>{t('evals.openSuggestion')} ›</button></>}</p>}
           </div>
         </header>
-        <SkillTests context={context} skillName={current.name} />
+        <SkillTests context={context} skillName={current.name} runModel={effectiveRunModel} />
       </article>
     </div>
-  </div>
+    </div>
+  </>
 }

@@ -493,3 +493,83 @@ describe('Skills page', () => {
     expect(waiting.size).toBe(0)
   })
 })
+
+describe('model pickers', () => {
+  /** The management client with a model directory, as a Host that offers one reports it. */
+  function withModels(base: typeof management): typeof management {
+    return Object.assign(Object.create(Object.getPrototypeOf(base) as object) as typeof management, base, {
+      models: () => Promise.resolve({
+        effective: { provider: 'buddy', model: 'deepseek-v4.1-flash', source: 'fixed' as const },
+        groups: [
+          { id: 'buddy', name: 'CodeBuddy (腾讯)', models: [{ id: 'deepseek-v4.1-flash', name: 'DeepSeek-V4.1-Flash' }] },
+          { id: 'trae', name: 'TRAE (字节)', models: [{ id: 'deepseek-v4.1-flash-1017', name: 'DeepSeek-V4.1-Flash-1017' }] },
+        ],
+        failures: [],
+      }),
+    })
+  }
+
+  /** The two pickers of a page, by the labels the toolbar shows. */
+  const picker = (label: string) => screen.getByRole('button', { name: named(label) }) as HTMLButtonElement
+
+  it('offers the global pick and this card\'s own on 进化, and stores each', async () => {
+    await mutate('review-record', review())
+    const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
+    render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={withModels(management)} navigationInput={{ seed: `suggestion:${suggestion!.id}`, nonce: 1 }} />)
+    // The card picker follows the Agent until this card is given a model of its own.
+    await waitFor(() => expect(picker(t('evolution.modelCard')).textContent).toContain(t('evolution.modelAuto')))
+    // The global picker names the model the task Agent runs once the directory arrives.
+    await waitFor(() => expect(picker(t('evolution.model')).textContent).toContain('deepseek-v4.1-flash'))
+    expect(picker(t('evolution.model')).disabled).toBe(false)
+    // A card's own pick writes only that card's entry.
+    fireEvent.click(picker(t('evolution.modelCard')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: named('DeepSeek-V4.1-Flash-1017', 'TRAE (字节)') }))
+    await waitFor(async () => expect((await management.read('draft-preferences', null)).value).toMatchObject({ suggestionModels: { [suggestion!.id]: { provider: 'trae', model: 'deepseek-v4.1-flash-1017' } } }))
+    // The global pick writes the global entry and leaves the card's alone.
+    fireEvent.click(picker(t('evolution.model')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: named('DeepSeek-V4.1-Flash', 'CodeBuddy (腾讯)') }))
+    await waitFor(async () => expect((await management.read('draft-preferences', null)).value).toMatchObject({ model: { provider: 'buddy', model: 'deepseek-v4.1-flash' }, suggestionModels: { [suggestion!.id]: { provider: 'trae', model: 'deepseek-v4.1-flash-1017' } } }))
+  })
+
+  it('writes the pickers before the directory arrives, showing follow-default and staying disabled', async () => {
+    const pending: { release: (value: never) => void } = { release: () => {} }
+    const slow = Object.assign(Object.create(Object.getPrototypeOf(management) as object), management, {
+      models: () => new Promise<never>(resolve => { pending.release = resolve as (value: never) => void }),
+    }) as typeof management
+    render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={slow} navigationInput={{ seed: 'evolution:pending', nonce: 1 }} />)
+    // The toolbar is there while the directory is still in flight, and says follow-default.
+    await waitFor(() => expect(picker(t('evolution.model')).textContent).toContain(t('evolution.modelAuto')))
+    expect(picker(t('evolution.model')).disabled).toBe(true)
+    expect(picker(t('evolution.modelCard')).disabled).toBe(true)
+    pending.release({ effective: { provider: 'buddy', model: 'deepseek-v4.1-flash' }, groups: [], failures: [] } as never)
+    // Once the directory answers, the picker opens and names the model the Agent runs.
+    await waitFor(() => expect(picker(t('evolution.model')).disabled).toBe(false))
+    expect(picker(t('evolution.model')).textContent).toContain('deepseek-v4.1-flash')
+  })
+
+  it('picks the model a backtest runs on, globally and for one skill, on 评测', async () => {
+    await mutate('review-record', review())
+    render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={withModels(management)} navigationInput={{ seed: 'evals:release-notes', nonce: 1 }} />)
+    // The global picker names the Agent's own model; the per-skill one follows it until set.
+    await waitFor(() => expect(picker(t('tests.model')).textContent).toContain('deepseek-v4.1-flash'))
+    expect(picker(t('tests.modelCard')).textContent).toContain(t('tests.modelAuto'))
+    fireEvent.click(picker(t('tests.model')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: named('DeepSeek-V4.1-Flash', 'CodeBuddy (腾讯)') }))
+    await waitFor(async () => expect((await management.read('draft-preferences', null)).value).toMatchObject({ runModel: { provider: 'buddy', model: 'deepseek-v4.1-flash' } }))
+    fireEvent.click(picker(t('tests.modelCard')))
+    fireEvent.click(await screen.findByRole('menuitem', { name: named('DeepSeek-V4.1-Flash-1017', 'TRAE (字节)') }))
+    await waitFor(async () => expect((await management.read('draft-preferences', null)).value).toMatchObject({ skillRunModels: { 'release-notes': { provider: 'trae', model: 'deepseek-v4.1-flash-1017' } } }))
+  })
+
+  it('deletes a suggestion from its card, and a draft from its own, after a confirmation', async () => {
+    await mutate('review-record', review())
+    const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
+    page({ seed: `suggestion:${suggestion!.id}`, nonce: 1 })
+    fireEvent.click(await screen.findByRole('button', { name: t('common.delete') }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(t('evolution.deleteTitle'))).not.toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: t('common.delete') }))
+    expect(await screen.findByText(t('evolution.deleted'))).not.toBeNull()
+    expect((await management.read('suggestions', null)).value).toEqual([])
+  })
+})

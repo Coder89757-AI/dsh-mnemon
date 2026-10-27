@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { HostAgent, HostSubagentResult, HostSubagentRun, HostSubagentsService, ToolDefinition, ToolExecution } from "./dsh.ts"
 import type { DocumentMutation, DocumentSearchResult, DocumentSnapshot, DocumentView } from 'dsh-mnemon-source-documents/contracts'
 import type { RuntimeMemoryMutation, RuntimeMemoryMutationResult, RuntimeMemorySnapshot } from 'dsh-mnemon-source-runtime/contracts'
+import type { ModelRoute } from 'dsh-mnemon-source-skills/contracts'
 import type { EdgeType, Insight, MemorySpaceCatalog, MemorySpaceMetadataSample, PreparedMemoryPlacement, RememberRequest, SearchRequest } from 'dsh-mnemon-source-memory-spaces/contracts'
 import { mutationResultCommitted } from './receipts.ts'
 import { SourceSession } from './source-session.ts'
@@ -687,8 +688,8 @@ export class MnemonSubagentCoordinator {
    * One tool-less structured run for skill evolution: a review, a draft, a
    * backtest step or a case derivation. The child sees only the prompt.
    */
-  async skillTask(parent: HostAgent, label: string, prompt: string, schema: Record<string, unknown>, persona: string, signal: AbortSignal): Promise<{ provider: string; runId: string; structured: unknown }> {
-    const { provider, runId, result } = await this.delegate(parent, 'skill', label, prompt, [], schema, signal, 'spawn', persona)
+  async skillTask(parent: HostAgent, label: string, prompt: string, schema: Record<string, unknown>, persona: string, signal: AbortSignal, route?: ModelRoute): Promise<{ provider: string; runId: string; structured: unknown }> {
+    const { provider, runId, result } = await this.delegate(parent, 'skill', label, prompt, [], schema, signal, 'spawn', persona, undefined, undefined, route)
     return { provider, runId, structured: result.structured }
   }
 
@@ -820,6 +821,7 @@ ${naturalRequest(request, target === undefined ? REQUEST_LABELS : TARGETED_WRITE
     persona = WRITE_PERSONA,
     recovery?: ToolReceiptRecovery,
     guard?: (execution: ToolExecution) => string | undefined,
+    route?: ModelRoute,
   ): Promise<{ provider: string; runId: string; result: HostSubagentResult; receipts: CapturedToolReceipt[]; writes: CapturedToolReceipt[] }> {
     if (this.disposed) throw new Error('dsh-mnemon subagent coordinator is disposed')
     const provider = this.provider(preferredProvider)
@@ -929,7 +931,9 @@ This is the only completion channel for this run. Do not finish with a plain-tex
         : operation === 'review' ? this.runtimeSource.config.idleReview.maxTokens
         : operation === 'skill' ? 16_384
         : undefined
-      const fixed = this.taskAgentModelResolver?.()
+      // A route the caller picked is the model the user asked this run to use,
+      // so it wins over the resolver rather than being added to it.
+      const fixed = route ?? this.taskAgentModelResolver?.()
       const baseAgentOptions = perOpMaxTokens === undefined ? undefined : { maxTokens: perOpMaxTokens }
       const resolvedAgentOptions = fixed === undefined ? baseAgentOptions : { ...(baseAgentOptions ?? {}), provider: fixed.provider, model: fixed.model }
       const host = this.resultRuntime

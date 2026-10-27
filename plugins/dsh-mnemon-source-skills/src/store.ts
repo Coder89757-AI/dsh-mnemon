@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type {
-  BacktestRun, EvalCase, MarketInstall, MarketRegistryFile, MarketSourceKind, ReviewLogEntry, SkillDraft, SkillRootKind, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary, TrashEntry,
+  BacktestRun, DraftPreferences, EvalCase, MarketInstall, MarketRegistryFile, MarketSourceKind, ModelRoute, ReviewLogEntry, SkillDraft, SkillRootKind, SkillSuggestion, SkillVersion, Trajectory, TrajectorySummary, TrashEntry,
 } from './contracts.ts'
 
 export const MAX_TRAJECTORIES = 100
@@ -169,6 +169,42 @@ export class SkillsStore {
       trajectories: array(value.trajectories),
       installs: array(value.installs),
     }
+  }
+
+  /**
+   * What the user picked for draft and backtest runs, kept out of `fingerprint()`
+   * on purpose: changing a picker must not invalidate an open page's revision.
+   */
+  preferences(): DraftPreferences {
+    const stored = object(this.readJson('preferences.json')) ?? {}
+    const route = (value: unknown): ModelRoute | undefined => {
+      const picked = object(value)
+      const provider = typeof picked?.provider === 'string' ? picked.provider : undefined
+      const model = typeof picked?.model === 'string' ? picked.model : undefined
+      return provider !== undefined && model !== undefined ? { provider, model } : undefined
+    }
+    const routes = (value: unknown): Record<string, ModelRoute> => {
+      const result: Record<string, ModelRoute> = {}
+      const map = object(value)
+      if (map !== undefined) for (const [key, item] of Object.entries(map)) {
+        const picked = route(item)
+        if (picked !== undefined) result[key] = picked
+      }
+      return result
+    }
+    const draft = route(stored.draftModel)
+    const run = route(stored.runModel)
+    return {
+      version: 1,
+      ...(draft === undefined ? {} : { draftModel: draft }),
+      ...(run === undefined ? {} : { runModel: run }),
+      suggestionModels: routes(stored.suggestionModels),
+      skillRunModels: routes(stored.skillRunModels),
+    }
+  }
+
+  savePreferences(preferences: DraftPreferences): void {
+    this.writeJson('preferences.json', preferences)
   }
 
   saveLedger(ledger: LedgerFile): void {

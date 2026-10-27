@@ -26,6 +26,10 @@ function bindSourceManagementClient(client: MnemonClient, instance: MemorySource
       options.expectedRevision ?? instance.revision,
       options.confirmed,
     ),
+    // The catalog a page offers as a per-run choice is the task Agent's own
+    // directory, asked through the task-scoped client so a session's route is
+    // reported from the conversation that will actually run the work.
+    models: () => taskClient.taskAgentModels(true),
   }
 }
 

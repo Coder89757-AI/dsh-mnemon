@@ -222,6 +222,18 @@ function optionalString(value: unknown, label: string): string | undefined {
   return value.trim() === '' ? undefined : value.trim()
 }
 
+/**
+ * The `provider` + `model` pair a page may send with model work. Both or
+ * neither: a half route cannot run, and an absent one keeps the profile's own.
+ */
+function modelRoute(input: Record<string, unknown>, missing = 'a draft model needs both provider and model'): { provider: string; model: string } | undefined {
+  const provider = optionalString(input.provider, 'provider')
+  const model = optionalString(input.model, 'model')
+  if (provider === undefined && model === undefined) return undefined
+  if (provider === undefined || model === undefined) throw new Error(missing)
+  return { provider, model }
+}
+
 /** Skill evolution's model work: drafts and backtests run in the background, cases and reviews answer here. */
 async function skillAssistance(runtime: ScopedRuntime, lifecycle: MnemonLifecycle, operation: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
   const skills = lifecycle.skills
@@ -237,9 +249,13 @@ async function skillAssistance(runtime: ScopedRuntime, lifecycle: MnemonLifecycl
       if (suggestionId === undefined && skill === undefined) throw new Error('a draft needs a suggestion or a skill')
       const guidance = optionalString(input.guidance, 'guidance')
       if (guidance !== undefined && guidance.length > 4_000) throw new Error('guidance is too long (max 4000 characters)')
+      // The pick is a Provider and a model together, or neither: half a route
+      // cannot run, and a whole one is what the page's two pickers send.
+      const draftRoute = modelRoute(input)
       return skills.draft(source, workspaceRoot, {
         ...(suggestionId === undefined ? {} : { suggestionId }), ...(skill === undefined ? {} : { skill }),
         ...(guidance === undefined ? {} : { guidance }), ...(root === undefined ? {} : { targetRoot: root as never }),
+        ...(draftRoute === undefined ? {} : { route: draftRoute }),
       })
     }
     case 'skill-backtest': {
@@ -249,7 +265,8 @@ async function skillAssistance(runtime: ScopedRuntime, lifecycle: MnemonLifecycl
       if (!['current', 'draft', 'version', 'none'].includes(String(target.kind))) throw new Error('target kind must be current, draft, version or none')
       const caseIds = input.caseIds === undefined ? undefined : input.caseIds
       if (caseIds !== undefined && (!Array.isArray(caseIds) || caseIds.some(id => typeof id !== 'string'))) throw new Error('caseIds must be a string array')
-      return skills.backtest(source, workspaceRoot, { skillName, target: target as never, ...(caseIds === undefined ? {} : { caseIds: caseIds as string[] }) })
+      const runRoute = modelRoute(input, 'a backtest model needs both provider and model')
+      return skills.backtest(source, workspaceRoot, { skillName, target: target as never, ...(caseIds === undefined ? {} : { caseIds: caseIds as string[] }), ...(runRoute === undefined ? {} : { route: runRoute }) })
     }
     case 'skill-derive-cases': {
       const trajectoryId = optionalString(input.trajectoryId, 'trajectoryId')

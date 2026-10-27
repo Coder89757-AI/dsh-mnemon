@@ -244,6 +244,33 @@ export interface RunTarget {
   versionId?: string
 }
 
+/** One Provider and model, as a user picked it; never carries a reasoning effort. */
+export interface ModelRoute {
+  provider: string
+  model: string
+}
+
+/**
+ * The models the user picked for skill work, kept beside the ledger. Every
+ * entry is optional: absent means "follow the task Agent's own route".
+ * `suggestionModels` is keyed by suggestion id, `skillRunModels` by skill name.
+ */
+export interface DraftPreferences {
+  version: 1
+  draftModel?: ModelRoute
+  runModel?: ModelRoute
+  suggestionModels: Record<string, ModelRoute>
+  skillRunModels: Record<string, ModelRoute>
+}
+
+/** What the pickers read: the stored picks, named the way the pages use them. */
+export interface DraftPreferencesView {
+  model?: ModelRoute
+  runModel?: ModelRoute
+  suggestionModels: Record<string, ModelRoute>
+  skillRunModels: Record<string, ModelRoute>
+}
+
 export interface CaseResult {
   caseId: string
   title: string
