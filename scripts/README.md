@@ -10,7 +10,7 @@ Most scripts run through a `package.json` script; run the rest with `node` from 
 |---|---|---|---|
 | `serve-release-acceptance.mjs` | `node` | Disposable official DSH WebUI with selected candidate tarballs beside real npm metadata; fresh Add plugin and previous-release Check versions acceptance, SIGUSR2 to restart | `--dsh <lib/bin.js> --artifacts <directory> --state <empty-directory> [--previous dsh-mnemon@version] [--port number]`; no real model credentials |
 | `verify-docs.mjs` | `pnpm run verify:docs` | Checks every local link and anchor in tracked Markdown, `blob/main` links included, a `docs/zh-CN` twin for each `docs/en` page, and that both READMEs name every official plugin | — |
-| `verify-deterministic-build.mjs` | `pnpm run verify:build` | Builds the root package twice and compares the SHA-256 of every file under `lib/` | Must run through the package manager (`npm_execpath`) |
+| `verify-deterministic-build.mjs` | `pnpm run verify:build` | Builds the root package twice and compares the SHA-256 of every file under `lib/` | Must run through the package manager (`npm_execpath`; a JavaScript entry runs through Node, a standalone executable runs directly) |
 | `link-bundle-declarations.mjs` | `pnpm build` | Points the root package's emitted `dsh-mnemon/*` self-references at its bundled declarations | `tsconfig.json` paths |
 | `package-locales.mjs` | Imported by the next two | Reads and validates a package's `locale/*.json` metadata | — |
 | `verify-package-contents.mjs` | `pnpm run verify:package` | Dry-run pack of the root package: required and unexpected files, Host code in `lib/client.js`, absolute README image URLs and the unpacked-size ceiling | — |
