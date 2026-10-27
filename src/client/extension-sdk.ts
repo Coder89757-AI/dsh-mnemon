@@ -9,7 +9,7 @@ export {
 export type { MnemonSourceManagementClient, MemorySourcePageInstance } from './source-contracts.ts'
 // The directory a page may offer as a per-run model choice, as its management
 // client answers it; the pages read it and nothing else here drives it.
-export type { TaskAgentModelCatalog, TaskAgentModelCatalogGroup, TaskAgentModelCatalogModel } from '../host/protocol.ts'
+export type { TaskAgentModelCatalog, TaskAgentModelCatalogGroup, TaskAgentModelCatalogModel } from 'dsh-mnemon/contracts'
 export {
   installMemoryComponentUI, MNEMON_COMPONENT_FALLBACK_PRIORITY, MNEMON_COMPONENT_SETTINGS_SLOT, MNEMON_COMPONENT_STATUS_SLOT,
   type MemoryComponentConfigurationSnapshot, type MemoryComponentHost,

@@ -1,5 +1,4 @@
-import type { MemoryJsonValue, MemorySourceManagementInstance, MemorySourceManagementResult } from 'dsh-mnemon/contracts'
-import type { TaskAgentModelCatalog } from '../host/protocol.ts'
+import type { MemoryJsonValue, MemorySourceManagementInstance, MemorySourceManagementResult, TaskAgentModelCatalog } from 'dsh-mnemon/contracts'
 
 /** Instance- and scope-bound capability; never the Host's raw transport. */
 export interface MnemonSourceManagementClient {
