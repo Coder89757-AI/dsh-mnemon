@@ -297,6 +297,25 @@ describe('evolution drafts and backtests', () => {
 })
 
 describe('model picks', () => {
+  it('keeps the current draft linked when an older draft is deleted', async () => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const suggestion = store.suggestions()[0]!
+    const input = { suggestionId: suggestion.id, skillName: 'release-notes', content: skill('release-notes', 'Grouped.'), notes: '', changes: [], guidance: [] }
+    const old = await store.recordDraft(workspace, input)
+    const current = await store.recordDraft(workspace, input)
+
+    await store.deleteDraft(old.id)
+    expect(store.suggestion(workspace, suggestion.id).suggestion).toMatchObject({ status: 'review', draftId: current.id })
+    expect(store.draft(workspace, current.id).draft.status).toBe('ready')
+
+    await store.deleteDraft(current.id)
+    const waiting = store.suggestion(workspace, suggestion.id).suggestion
+    expect(waiting.status).toBe('pending')
+    expect(waiting).not.toHaveProperty('draftId')
+  })
+
   it('stores a global draft pick, a per-suggestion pick and a per-skill backtest pick, and clears each', async () => {
     write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
     const store = service()

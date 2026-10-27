@@ -512,6 +512,56 @@ describe('model pickers', () => {
   /** The two pickers of a page, by the labels the toolbar shows. */
   const picker = (label: string) => screen.getByRole('button', { name: named(label) }) as HTMLButtonElement
 
+  it.each(['skill', 'global', 'default'] as const)('uses the %s backtest model for both sides of a draft comparison', async selection => {
+    await mutate('review-record', review())
+    const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
+    const global = { provider: 'buddy', model: 'deepseek-v4.1-flash' }
+    const override = { provider: 'trae', model: 'deepseek-v4.1-flash-1017' }
+    if (selection !== 'default') await mutate('draft-preference', { slot: 'run', model: global })
+    if (selection === 'skill') await mutate('draft-preference', { slot: 'run', skillName: 'release-notes', model: override })
+    await mutate('draft-record', { suggestionId: suggestion!.id, skillName: 'release-notes', content: SKILL, notes: 'Draft to compare', changes: [], guidance: [] })
+    const execute = vi.fn(async (_operation: string, input: unknown) => {
+      const { skillName, target } = input as { skillName: string; target: unknown }
+      const cases = (await management.read('cases', { skill: skillName })).value as Array<{ id: string }>
+      const run = await mutate('run-start', { skillName, target, caseIds: cases.map(entry => entry.id) }) as { id: string }
+      return { ...await management.read('revision', null), value: { runId: run.id } }
+    })
+    const assisted = Object.assign(withModels(management), { assistance: { operations: ['skill-backtest'], execute } })
+    render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={assisted} navigationInput={{ seed: `suggestion:${suggestion!.id}`, nonce: 1 }} />)
+    fireEvent.click(await screen.findByRole('button', { name: t('draft.runBacktest') }))
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2))
+    const route = selection === 'skill' ? override : selection === 'global' ? global : {}
+    expect(execute.mock.calls.map(([, input]) => input)).toEqual([
+      { skillName: 'release-notes', target: { kind: 'draft', draftId: expect.any(String) }, ...route },
+      { skillName: 'release-notes', target: { kind: 'current' }, ...route },
+    ])
+  })
+
+  it.each(['suggestion', 'global', 'default'] as const)('uses the %s model when redrafting a suggestion', async selection => {
+    await mutate('review-record', review())
+    const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>
+    const global = { provider: 'buddy', model: 'deepseek-v4.1-flash' }
+    const override = { provider: 'trae', model: 'deepseek-v4.1-flash-1017' }
+    if (selection !== 'default') await mutate('draft-preference', { model: global })
+    if (selection === 'suggestion') await mutate('draft-preference', { suggestionId: suggestion!.id, model: override })
+    await mutate('draft-record', { suggestionId: suggestion!.id, skillName: 'release-notes', content: SKILL, notes: 'Draft to revise', changes: [], guidance: [] })
+    const execute = vi.fn(async () => ({ ...await management.read('revision', null), value: { started: true } }))
+    const assisted = Object.assign(withModels(management), { assistance: { operations: ['skill-draft'], execute } })
+    render(<SkillsSourcePage sourceTypeId="skills" sourceInstanceKey="source:skills" sourceInstances={[]} locale="en" writable management={assisted} navigationInput={{ seed: `suggestion:${suggestion!.id}`, nonce: 1 }} />)
+    await screen.findByText('Draft to revise')
+    await waitFor(() => expect(picker(t('evolution.model')).disabled).toBe(false))
+    if (selection === 'suggestion') await waitFor(() => expect(picker(t('evolution.modelCard')).textContent).toContain('DeepSeek-V4.1-Flash-1017'))
+    if (selection === 'global') await waitFor(() => expect(picker(t('evolution.model')).textContent).toContain('DeepSeek-V4.1-Flash'))
+    fireEvent.click(screen.getByRole('button', { name: t('common.more') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('draft.redraft') }))
+    fireEvent.change(screen.getByRole('textbox', { name: t('draft.redraftNote') }), { target: { value: 'Keep the component headings' } })
+    fireEvent.click(screen.getByRole('button', { name: t('draft.redraftStart') }))
+    await waitFor(() => expect(execute).toHaveBeenCalledWith('skill-draft', {
+      suggestionId: suggestion!.id, guidance: 'Keep the component headings',
+      ...(selection === 'suggestion' ? override : selection === 'global' ? global : {}),
+    }, expect.objectContaining({ confirmed: true })))
+  })
+
   it('offers the global pick and this card\'s own on 进化, and stores each', async () => {
     await mutate('review-record', review())
     const [suggestion] = (await management.read('suggestions', null)).value as Array<{ id: string }>

@@ -1,7 +1,7 @@
 import type { MemoryJsonValue } from 'dsh-mnemon/contracts'
 import type { MnemonSourceManagementClient, TaskAgentModelCatalog } from 'dsh-mnemon/client'
 import type {
-  BacktestRun, CatalogView, DraftPreferences, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketSearchResult, MarketView, EvidencePack, ModelRoute, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
+  BacktestRun, CatalogView, DraftPreferencesView, DraftView, EvalCase, MarketPreview, MarketRegistry, MarketSearchResult, MarketView, EvidencePack, ModelRoute, ReviewLogEntry, ReviewRecordResult, RunTarget, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, SkillSummary,
   SkillVersion, SkillsOverview, SuggestionStatus, SuggestionView, Trajectory, TrajectorySummary, TrashEntry, TrashRestoreInput, TrashRestorePreview,
 } from '../contracts.ts'
 
@@ -51,7 +51,7 @@ export interface SkillsPageClient {
   /** Delete a waiting suggestion and any draft written for it. */
   deleteSuggestion(id: string): Promise<{ deleted: string }>
   /** Delete a draft; its suggestion goes back to waiting. */
-  deleteDraft(id: string): Promise<SkillDraft>
+  deleteDraft(id: string): Promise<{ deleted: string }>
   pinTrajectory(id: string, pinned: boolean): Promise<TrajectorySummary>
   deleteTrajectory(id: string): Promise<{ deleted: string }>
   saveCase(input: CaseDraft): Promise<EvalCase>
@@ -64,12 +64,12 @@ export interface SkillsPageClient {
   linkRun(draftId: string, runId: string): Promise<void>
 
   /** The model each piece of model work follows: the two global picks and their per-item overrides. */
-  draftPreferences(): Promise<DraftPreferences>
+  draftPreferences(): Promise<DraftPreferencesView>
   /** Pick the model for drafts, for backtests, or for one suggestion or skill; `null` follows the task Agent again. */
-  saveDraftModel(model: ModelRoute | null): Promise<DraftPreferences>
-  saveSuggestionModel(id: string, model: ModelRoute | null): Promise<DraftPreferences>
-  saveRunModel(model: ModelRoute | null): Promise<DraftPreferences>
-  saveSkillRunModel(skillName: string, model: ModelRoute | null): Promise<DraftPreferences>
+  saveDraftModel(model: ModelRoute | null): Promise<DraftPreferencesView>
+  saveSuggestionModel(id: string, model: ModelRoute | null): Promise<DraftPreferencesView>
+  saveRunModel(model: ModelRoute | null): Promise<DraftPreferencesView>
+  saveSkillRunModel(skillName: string, model: ModelRoute | null): Promise<DraftPreferencesView>
   /**
    * The routes and model directory a page may offer. Rejects when the Host
    * offers none, which is also when the page hides its pickers.
@@ -120,6 +120,15 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
   const assist = <T,>(operation: string, input: unknown) => {
     if (management.assistance?.operations.includes(operation) !== true) return Promise.reject<T>(new Error('a task Agent is not available for this action'))
     return retry<T>(revision => management.assistance!.execute(operation, json(input), { expectedRevision: revision, confirmed: true }))
+  }
+  // Detail cards have no pickers of their own. Resolve their saved choice here
+  // too, while leaving explicit (including invalid partial) routes to the Host.
+  const savedModel = async (slot: 'draft' | 'run', input: { provider?: string; model?: string; suggestionId?: string; skillName?: string }): Promise<ModelRoute | undefined> => {
+    if (input.provider !== undefined || input.model !== undefined) return undefined
+    const preferences = await read<DraftPreferencesView>('draft-preferences')
+    const overrides = slot === 'draft' ? preferences.suggestionModels : preferences.skillRunModels
+    const key = slot === 'draft' ? input.suggestionId : input.skillName
+    return key !== undefined && Object.hasOwn(overrides, key) ? overrides[key] : slot === 'draft' ? preferences.model : preferences.runModel
   }
   return {
     overview: () => read('overview'),
@@ -176,8 +185,8 @@ export function skillsPageClient(management: MnemonSourceManagementClient): Skil
     toggleRegistry: (id, enabled) => mutate('registry-toggle', { id, enabled }),
 
     canAssist: operation => management.assistance?.operations.includes(operation) === true,
-    generateDraft: input => assist('skill-draft', input),
-    backtest: input => assist('skill-backtest', input),
+    generateDraft: async input => assist('skill-draft', { ...await savedModel('draft', input), ...input }),
+    backtest: async input => assist('skill-backtest', { ...await savedModel('run', input), ...input }),
     deriveCases: input => assist('skill-derive-cases', input),
     reviewNow: () => assist('skill-review-now', {}),
   }

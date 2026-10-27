@@ -218,7 +218,7 @@ function SuggestionDetail(props: { context: SkillsPageContext; id: string; model
     {suggestion.action === 'update' && view.skill !== undefined && !view.hashCurrent && suggestion.status === 'pending' && <p className={css.skWarn}>{t('evolution.skillChanged')}</p>}
     {suggestion.status === 'drafting' && <Busy label={t('evolution.drafting')} />}
     {suggestion.lastError !== undefined && suggestion.status === 'pending' && <p className={css.inlineError}>{t('evolution.draftFailed', { error: suggestion.lastError })}</p>}
-    {suggestion.status === 'review' && suggestion.draftId !== undefined && <DraftReview context={context} draftId={suggestion.draftId} />}
+    {suggestion.status === 'review' && suggestion.draftId !== undefined && <DraftReview context={context} draftId={suggestion.draftId} model={props.model ?? null} />}
     {suggestion.status === 'adopted' && view.skill !== undefined && <p className={css.skSuccess}>{t('evolution.adopted')} <button type="button" className={css.skLink} onClick={() => context.navigate({ tab: 'skills', skillKey: view.skill!.key })}>{t('evolution.openSkill')} ›</button></p>}
     <div className={css.skFolds}>
       <Fold title={t('evolution.evidence')} meta={t('evolution.evidenceMeta', { conversations: references.length, steps: cited })}>

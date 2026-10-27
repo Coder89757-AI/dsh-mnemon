@@ -795,7 +795,7 @@ export class SkillsService {
       ledger.drafts.splice(index, 1)
       if (draft.suggestionId !== undefined) {
         const suggestion = ledger.suggestions.find(candidate => candidate.id === draft.suggestionId)
-        if (suggestion !== undefined) {
+        if (suggestion?.draftId === draft.id) {
           delete suggestion.draftId
           if (suggestion.status === 'review') suggestion.status = 'pending'
           suggestion.updatedAt = this.clock().toISOString()

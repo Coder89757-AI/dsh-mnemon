@@ -2972,6 +2972,19 @@ describe('Mnemon memory subagent coordinator', () => {
     expect(coordinator.snapshot().failures).toBe(1)
   })
 
+  it('uses an explicit skill model ahead of the fixed task model', async () => {
+    const host = subagents({ answer: 'done' }, 'completed', ['spawn'])
+    const resultTools = toolRegistry()
+    const coordinator = new MnemonSubagentCoordinator(host.value, runtimeSource(), resultTools.value, () => ({ provider: 'pinned-provider', model: 'pinned-model' }))
+    const route = { provider: 'chosen-provider', model: 'chosen-model' }
+    const schema = { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false }
+
+    await coordinator.skillTask(parent(), 'Skill draft', 'Write a draft', schema, 'Write skills.', new AbortController().signal, route)
+    expect(host.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
+      agentOptions: { ...route, maxTokens: 16_384 },
+    }))
+  })
+
   it('pins a fixed task Agent model onto the bounded idle review delegation', async () => {
     const host = subagents({ summary: 'No mutation needed.', action: 'skipped', memoryBodyIds: [] }, 'completed', ['spawn', 'fork'])
     const resultTools = toolRegistry()

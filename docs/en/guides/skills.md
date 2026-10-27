@@ -44,6 +44,8 @@ When the name is already taken, choose another name, explicitly confirm replacem
 
 The page follows drafts and backtests while they run, refreshes the cards again when they finish, and reloads when you return to the window or tab.
 
+**Global model** chooses the model that writes and redrafts skills; **Selected model** overrides it for one suggestion. Clearing an override follows the global choice, and clearing both follows the task Agent. Automatic backtests started by draft generation use the draft's selected model. Choices survive a restart in `skills/preferences.json`; older versions ignore that optional file.
+
 **Pending** lists what waits for you: suggestions, and drafts written for a skill directly. **Done** keeps what was adopted, dismissed, expired or invalidated. **Evidence** lists the conversations reviews read. The sparkle button, **Review this conversation**, reviews the current conversation now instead of waiting for it to pause.
 
 | A suggestion and its evidence | Its draft, backtested |
@@ -61,6 +63,8 @@ The page follows drafts and backtests while they run, refreshes the cards again 
 ![Evals: each skill with its cases and last score; release-notes with three cases and its backtest case by case](../../assets/skills-v0.5.34/en/skills-evals.jpg)
 
 Every skill's tests in one place. The list shows the skills with cases first, each with its last score against the version DSH loads, then the skills without cases, then the skills a suggestion proposes that do not exist yet (**Not created**), which link to their suggestion.
+
+Evals has its own **Global model** and a **Selected model** override per skill. Manual backtests, including a draft's comparison with its baseline, use the skill override, then the Evals global choice, then the task Agent. The executor and judge use the same selected model.
 
 - **Add case** takes a title, the task as the user would say it, optional context, and checks, each **Must** or **Should**. Cases also come from reviews and from evidence. Each case has a switch, and opens to its checks and the conversation it came from.
 - **Backtest** runs the enabled cases against the current version, or without the skill when it does not exist yet. The history keeps the newest runs, each opening to its per-case verdicts, the steps the run took and its answer.

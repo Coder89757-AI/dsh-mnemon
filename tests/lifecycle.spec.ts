@@ -16,7 +16,7 @@ import type {
   HostSessionEvent,
   HostUserMessage,
 } from "../src/host/dsh.ts"
-import { MnemonLifecycle } from "../src/host/lifecycle.ts"
+import { MnemonLifecycle, taskRoute } from "../src/host/lifecycle.ts"
 import { MemoryCompositionUnavailableError } from '../src/core/generation.ts'
 import type { MemoryStrategyWorkflow } from '../src/core/contracts/index.ts'
 import { IdleReviewError, type MnemonSubagentCoordinator } from "../src/host/subagent.ts"
@@ -653,6 +653,19 @@ describe('Mnemon DSH lifecycle integration', () => {
     await value.lifecycle.runRuntimeMaintenanceTask({ storage: 'global', sessionId: 'session-1' }, new AbortController().signal, async () => 'done')
     expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
       agentOptions: { provider: 'openai', model: 'gpt-5', reasoningEffort: 'low', maxTokens: undefined },
+    }))
+  })
+
+  it('runs a skill on its explicit model without the inherited reasoning effort', async () => {
+    const value = fixture(undefined, { conversationOptions: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' } })
+    value.defaultModel.currentSelection.mockReturnValue({ provider: 'openai', model: 'gpt-5', reasoningEffort: 'max' })
+    const route = { provider: 'chosen-provider', model: 'chosen-model' }
+
+    await value.lifecycle.runSkillTask(workspaceTwo, new AbortController().signal, async task => {
+      expect(taskRoute(task)).toEqual(route)
+    }, route)
+    expect(value.createTaskAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentOptions: { ...route, maxTokens: undefined },
     }))
   })
 
