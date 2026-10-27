@@ -355,7 +355,9 @@ export class SkillEvolution {
     }
     if (settings.autoBacktest && pack.cases.length > 0) {
       await this.backtest(source, workspace, { skillName: pack.skillName, target: { kind: 'draft', draftId: draft.id }, ...(input.route === undefined ? {} : { route: input.route }) })
-      const baselineKnown = pack.action === 'update' && pack.lastRun !== undefined && pack.lastRun.target.hash === pack.skill?.hash
+      // Older runs do not record their model, so they cannot be a baseline for
+      // an explicitly selected route even when the skill content is unchanged.
+      const baselineKnown = input.route === undefined && pack.action === 'update' && pack.lastRun !== undefined && pack.lastRun.target.hash === pack.skill?.hash
       if (baselineKnown) await source.mutate('run-link', { draftId: draft.id, runId: pack.lastRun!.id })
       else {
         const baseline = await this.backtest(source, workspace, { skillName: pack.skillName, target: { kind: pack.action === 'update' ? 'current' : 'none' }, ...(input.route === undefined ? {} : { route: input.route }) })
