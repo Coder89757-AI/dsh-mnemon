@@ -375,6 +375,34 @@ describe('skill evolution in the Host', () => {
     expect(readFileSync(join(directory, 'dsh', 'skills', 'release-notes', 'SKILL.md'), 'utf8')).toBe(next)
   })
 
+  it.each([false, true])('uses a fresh comparison baseline when a draft picks a model (picked=%s)', async picked => {
+    await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Grouped notes', prompt: 'Write v2 notes', checks: [{ text: 'Grouped by component', must: true }] } })
+    const { skills, host } = evolution([])
+    host.skillTask.mockImplementation(async (_parent: HostAgent, label: string) => {
+      if (label === 'Mnemon skill draft') return { structured: {
+        content: '---\nname: release-notes\ndescription: Group release notes.\n---\n\n1. Group by component\n', notes: '', changes: [],
+      } }
+      if (label.startsWith('Mnemon skill eval')) return { structured: { steps: ['read'], answer: 'notes' } }
+      return { structured: { checks: [{ index: 1, pass: true, note: 'ok' }], summary: 'ok' } }
+    })
+    const baseline = await skills.backtest(source, undefined, { skillName: 'release-notes', target: { kind: 'current' } })
+    await vi.runAllTimersAsync()
+    await vi.waitFor(async () => expect((await source.read<BacktestRun>('run', { id: baseline.runId })).status).toBe('completed'))
+    host.skillTask.mockClear()
+
+    await skills.draft(source, undefined, { skill: 'release-notes', ...(picked ? { route: { provider: 'other-provider', model: 'other-model' } } : {}) })
+    await vi.runAllTimersAsync()
+    await vi.waitFor(async () => {
+      const runs = await source.read<BacktestRun[]>('runs', { skill: 'release-notes' })
+      expect(runs).toHaveLength(picked ? 3 : 2)
+      expect(runs.every(run => run.status === 'completed')).toBe(true)
+    })
+    const [draft] = await source.read<SkillDraft[]>('drafts', { skill: 'release-notes' })
+    expect(draft!.runIds.includes(baseline.runId)).toBe(!picked)
+    expect(host.skillTask.mock.calls.filter(([, label]) => label.startsWith('Mnemon skill eval'))).toHaveLength(picked ? 2 : 1)
+    skills.dispose()
+  })
+
   it('retries a case whose run fails and leaves a case that never runs out of the score', async () => {
     await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Flaky', prompt: 'Write notes A', checks: [{ text: 'Has notes', must: true }] } })
     await source.mutate('case-save', { case: { skillName: 'release-notes', title: 'Broken', prompt: 'Write notes B', checks: [{ text: 'Has notes', must: true }] } })

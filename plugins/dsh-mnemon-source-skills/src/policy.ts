@@ -47,13 +47,35 @@ function clip(value: string, maximum: number): string {
   return text.length <= maximum ? text : text.slice(0, maximum - 1) + '…'
 }
 
-/** Move pending suggestions past their expiry to `expired`; true when anything changed. */
+/**
+ * `drafting` was set before this process started, so no live writer owns it any
+ * more. A draft write is cancelled only by the Host going away, and the catch
+ * that would put the suggestion back never runs then, so the row would sit in
+ * "drafting" forever and refuse both a retry and a delete.
+ */
+const PROCESS_STARTED_AT = Date.now() - Math.round(process.uptime() * 1_000)
+export const ORPHAN_DRAFT_ERROR = 'the host restarted while this draft was being written'
+
+function orphanedDraft(suggestion: SkillSuggestion): boolean {
+  const at = Date.parse(suggestion.updatedAt)
+  return !Number.isFinite(at) || at < PROCESS_STARTED_AT
+}
+
+/**
+ * Move pending suggestions past their expiry to `expired`, and suggestions whose
+ * draft was abandoned by a dead process back to `pending`; true when anything changed.
+ */
 export function expireSuggestions(ledger: LedgerFile, now: Date): boolean {
   let changed = false
   for (const suggestion of ledger.suggestions) {
     if (suggestion.status === 'pending' && Date.parse(suggestion.expiresAt) < now.getTime()) {
       suggestion.status = 'expired'
       suggestion.updatedAt = now.toISOString()
+      changed = true
+    } else if (suggestion.status === 'drafting' && orphanedDraft(suggestion)) {
+      suggestion.status = 'pending'
+      suggestion.updatedAt = now.toISOString()
+      suggestion.lastError = ORPHAN_DRAFT_ERROR
       changed = true
     }
   }

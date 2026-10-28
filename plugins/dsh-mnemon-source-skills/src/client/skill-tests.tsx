@@ -1,7 +1,7 @@
 import { useEffect, useState, type JSX } from 'react'
 import { Button, Checkbox, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SidebarModal } from 'dsh-mnemon/client'
-import type { BacktestRun, EvalCase } from '../contracts.ts'
+import type { BacktestRun, EvalCase, ModelRoute } from '../contracts.ts'
 import type { CaseDraft } from './api.ts'
 import { css, errorText, points, relative, useT, type SkillsTranslate } from './presentation.ts'
 import { Busy, Confirm, Field, MoreMenu, RunStatusDot } from './shared.tsx'
@@ -25,9 +25,12 @@ function completedRunSummary(run: BacktestRun, t: SkillsTranslate): string {
  * button that backtests the current version, and the runs, newest first, each
  * opening to its per-case verdicts. A draft is backtested from its review.
  */
-export function SkillTests(props: { context: SkillsPageContext; skillName: string }): JSX.Element {
+export function SkillTests(props: { context: SkillsPageContext; skillName: string; runModel?: ModelRoute | null }): JSX.Element {
   const t = useT()
   const { context, skillName } = props
+  // The pick the page holds for this skill; a run asks the task Agent's own
+  // route when it is null.
+  const runModel = props.runModel ?? null
   const [cases, setCases] = useState<EvalCase[] | null>(null)
   const [runs, setRuns] = useState<BacktestRun[]>([])
   const [hasFile, setHasFile] = useState(true)
@@ -51,7 +54,7 @@ export function SkillTests(props: { context: SkillsPageContext; skillName: strin
   const run = async () => {
     setBusy(true)
     try {
-      const started = await context.client.backtest({ skillName, target: { kind: hasFile ? 'current' : 'none' } })
+      const started = await context.client.backtest({ skillName, target: { kind: hasFile ? 'current' : 'none' }, ...(runModel === null ? {} : { provider: runModel.provider, model: runModel.model }) })
       setOpenRun(started.runId)
       context.refresh()
     } catch (error) { context.fail(error) } finally { setBusy(false) }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { Button, DiffBlock, IconSparkleRegular, SegmentedControl, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SelectField } from 'dsh-mnemon/client'
-import type { BacktestRun, DraftView, SkillDraft, SkillRootKind, SkillSuggestion, SuggestionStatus, SuggestionView, Trajectory } from '../contracts.ts'
+import type { BacktestRun, DraftView, ModelRoute, SkillDraft, SkillRootKind, SkillSuggestion, SuggestionStatus, SuggestionView, Trajectory } from '../contracts.ts'
+import { modelOptionPick, modelOptionValue, useModelChoice } from './model-choice.tsx'
 import { css, points, relative, stamp, useT } from './presentation.ts'
 import { ActionTag, Busy, Clamp, Confirm, diffLabels, Empty, Fold, MoreList, MoreMenu, StatusTag, StepTimeline, useLink } from './shared.tsx'
 import { EvidenceView } from './evidence-page.tsx'
@@ -24,6 +25,8 @@ export function EvolutionPage(props: { context: SkillsPageContext; location: Ski
   const [drafts, setDrafts] = useState<SkillDraft[]>([])
   const [selected, setSelected] = useState<string | undefined>(location.suggestionId ?? location.draftId)
   const [reviewing, setReviewing] = useState(false)
+  const [deleting, setDeleting] = useState<string | undefined>(undefined)
+  const choice = useModelChoice(context, 'evolution.modelAuto')
   useEffect(() => {
     let active = true
     void context.client.suggestions().then(list => { if (active) setSuggestions(list) }).catch(context.fail)
@@ -78,7 +81,34 @@ export function EvolutionPage(props: { context: SkillsPageContext; location: Ski
       aria-label={t('evolution.reviewNow')} title={t('evolution.reviewNow')} data-pulse={reviewing ? '' : undefined}><IconSparkleRegular size={16} /></button>}
   </header>
   if (filter === 'evidence') return <EvidenceView context={context} location={location} bar={bar} />
-  return <div className={css.skSplit}>
+  // The picks that apply right now: this card's own, else the global one. A
+  // draft row has no suggestion, so only the global pick governs it.
+  const currentId = current?.kind === 'suggestion' ? current.id : undefined
+  const canOverride = currentId !== undefined && current?.kind === 'suggestion' && PENDING.includes(current.suggestion.status)
+  const currentOverride = currentId === undefined ? null : Object.hasOwn(choice.preferences.suggestionModels, currentId) ? choice.preferences.suggestionModels[currentId]! : null
+  const currentModel = currentOverride ?? choice.preferences.model ?? null
+  const saveDraftModel = (value: string) => choice.saveDraftModel(modelOptionPick(value))
+  const saveSuggestionModel = (value: string) => { if (canOverride && currentId !== undefined) choice.saveSuggestionModel(currentId, modelOptionPick(value)) }
+  const removeItem = async (item: Item) => {
+    try {
+      if (item.kind === 'draft') await context.client.deleteDraft(item.id)
+      else await context.client.deleteSuggestion(item.id)
+      setDeleting(undefined)
+      if (selected === item.id) setSelected(undefined)
+      context.notice(t('evolution.deleted'))
+      context.refresh()
+    } catch (error) { context.fail(error) }
+  }
+  // The same two pickers on both pages: the global pick, and this card's own.
+  const modelBar = <div className={css.skListBar} style={{ borderBottom: 'none', padding: '0 0 10px' }}>
+    <div className={css.skSplit} style={{ minHeight: 0, alignItems: 'center', width: '100%' }}>
+      <SelectField<string> label={t('evolution.model')} triggerDetail inline size="sm" value={modelOptionValue(choice.preferences.model)} disabled={!context.writable || choice.models === null} onChange={saveDraftModel} options={choice.options} />
+      <SelectField<string> label={t('evolution.modelCard')} triggerDetail inline size="sm" value={modelOptionValue(currentOverride)} disabled={!context.writable || !canOverride || choice.models === null} onChange={saveSuggestionModel} options={choice.cardOptions} />
+    </div>
+  </div>
+  return <>
+    {modelBar}
+    <div className={css.skSplit}>
     <aside className={css.skList}>
       {bar}
       {items.map(item => <ListItem key={item.id} item={item} selected={current?.id === item.id} onSelect={() => setSelected(item.id)} />)}
@@ -92,11 +122,21 @@ export function EvolutionPage(props: { context: SkillsPageContext; location: Ski
             </>}>{t('evolution.offBody')}</Empty>
           : <Empty glyph="✧" title={t(`evolution.empty.${filter}`)}>{t(`evolution.emptyBody.${filter}`)}</Empty>
         : current.kind === 'suggestion'
-          ? <SuggestionDetail key={current.id} context={context} id={current.id} />
-          : <article className={css.skDetail}><header className={css.skDetailHead}><div><span className={css.skKicker}><ActionTag action="update" /></span><h3>{current.draft.skillName}</h3></div></header>
-              <DraftReview key={current.id} context={context} draftId={current.id} /></article>}
+          ? <SuggestionDetail key={current.id} context={context} id={current.id} model={currentModel} />
+          : <article className={css.skDetail}>
+              <header className={css.skDetailHead}>
+                <div><span className={css.skKicker}><ActionTag action="update" /></span><h3>{current.draft.skillName}</h3></div>
+                <div className={css.skDetailActions}>
+                  <Button variant="ghost" size="sm" disabled={!context.writable} onClick={() => setDeleting(current.id)}>{t('common.delete')}</Button>
+                </div>
+              </header>
+              <DraftReview key={current.id} context={context} draftId={current.id} model={currentModel} />
+              {deleting === current.id && <Confirm danger title={t('evolution.deleteTitle')} body={t('evolution.deleteBody')} confirmLabel={t('common.delete')}
+                onClose={() => setDeleting(undefined)} onConfirm={() => void removeItem(current)} />}
+            </article>}
     </div>
-  </div>
+    </div>
+  </>
 }
 
 function ListItem(props: { item: Item; selected: boolean; onSelect: () => void }): JSX.Element {
@@ -118,12 +158,16 @@ function ListItem(props: { item: Item; selected: boolean; onSelect: () => void }
   </button>
 }
 
-function SuggestionDetail(props: { context: SkillsPageContext; id: string }): JSX.Element {
+function SuggestionDetail(props: { context: SkillsPageContext; id: string; model?: ModelRoute | null }): JSX.Element {
   const t = useT()
   const { context } = props
+  // The pick the page holds for this card, as `provider`/`model` for the Host;
+  // none at all asks it to use the task Agent's own route.
+  const route = props.model === null || props.model === undefined ? {} : { provider: props.model.provider, model: props.model.model }
   const [view, setView] = useState<SuggestionView | null>(null)
   const [trajectories, setTrajectories] = useState<Map<string, Trajectory | null>>(new Map())
   const [busy, setBusy] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   useEffect(() => {
     let active = true
     void context.client.suggestion(props.id).then(async value => {
@@ -161,16 +205,20 @@ function SuggestionDetail(props: { context: SkillsPageContext; id: string }): JS
         <span className={css.skMeta}>{meta.map(part => <span key={part}>{part}</span>)}</span>
       </div>
       {suggestion.status === 'pending' && <div className={css.skDetailActions}>
-        <Button variant="primary" size="sm" disabled={!context.writable || busy || !canDraft} title={canDraft ? undefined : t('evolution.noAgent')} onClick={() => void act(() => context.client.generateDraft({ suggestionId: suggestion.id }))}>{t('evolution.draft')}</Button>
+        <Button variant="primary" size="sm" disabled={!context.writable || busy || !canDraft} title={canDraft ? undefined : t('evolution.noAgent')} onClick={() => void act(() => context.client.generateDraft({ suggestionId: suggestion.id, ...route }))}>{t('evolution.draft')}</Button>
         <Button variant="ghost" size="sm" disabled={!context.writable || busy} onClick={() => void act(async () => { await context.client.dismissSuggestion(suggestion.id); context.notice(t('evolution.dismissed')) })}>{t('evolution.dismiss')}</Button>
+        <Button variant="ghost" size="sm" disabled={!context.writable || busy} onClick={() => setDeleting(true)}>{t('common.delete')}</Button>
       </div>}
     </header>
+    {deleting && <Confirm danger title={t('evolution.deleteTitle')} body={t('evolution.deleteBody')} confirmLabel={t('common.delete')}
+      onClose={() => setDeleting(false)}
+      onConfirm={() => void act(async () => { await context.client.deleteSuggestion(suggestion.id); setDeleting(false); context.notice(t('evolution.deleted')) })} />}
     {suggestion.rationale !== undefined && <Clamp text={suggestion.rationale} />}
     {suggestion.action === 'update' && view.skill === undefined && <p className={css.skWarn}>{t('evolution.skillGone')}</p>}
     {suggestion.action === 'update' && view.skill !== undefined && !view.hashCurrent && suggestion.status === 'pending' && <p className={css.skWarn}>{t('evolution.skillChanged')}</p>}
     {suggestion.status === 'drafting' && <Busy label={t('evolution.drafting')} />}
     {suggestion.lastError !== undefined && suggestion.status === 'pending' && <p className={css.inlineError}>{t('evolution.draftFailed', { error: suggestion.lastError })}</p>}
-    {suggestion.status === 'review' && suggestion.draftId !== undefined && <DraftReview context={context} draftId={suggestion.draftId} />}
+    {suggestion.status === 'review' && suggestion.draftId !== undefined && <DraftReview context={context} draftId={suggestion.draftId} model={props.model ?? null} />}
     {suggestion.status === 'adopted' && view.skill !== undefined && <p className={css.skSuccess}>{t('evolution.adopted')} <button type="button" className={css.skLink} onClick={() => context.navigate({ tab: 'skills', skillKey: view.skill!.key })}>{t('evolution.openSkill')} ›</button></p>}
     <div className={css.skFolds}>
       <Fold title={t('evolution.evidence')} meta={t('evolution.evidenceMeta', { conversations: references.length, steps: cited })}>
@@ -215,9 +263,12 @@ const NEW_SKILL_ROOTS: readonly SkillRootKind[] = ['user-dsh', 'project-dsh']
  * opens to its cases, and the diff. Adopt and discard sit with its title;
  * editing and redrafting with a note wait behind its menu.
  */
-function DraftReview(props: { context: SkillsPageContext; draftId: string }): JSX.Element {
+function DraftReview(props: { context: SkillsPageContext; draftId: string; model?: ModelRoute | null }): JSX.Element {
   const t = useT()
   const { context } = props
+  // A redraft continues what the user picked for drafts; a pick of none follows
+  // the task Agent, as every run did before the pickers existed.
+  const route = props.model === null || props.model === undefined ? {} : { provider: props.model.provider, model: props.model.model }
   const [view, setView] = useState<DraftView | null>(null)
   const [cases, setCases] = useState<number | undefined>(undefined)
   const [editing, setEditing] = useState<string | null>(null)
@@ -261,7 +312,7 @@ function DraftReview(props: { context: SkillsPageContext; draftId: string }): JS
     const started = await context.client.backtest({ skillName: draft.skillName, target: { kind: draft.action === 'update' ? 'current' : 'none' } })
     await context.client.linkRun(draft.id, started.runId)
   })
-  const redraft = (note: string) => act(() => context.client.generateDraft({ ...(draft.suggestionId === undefined ? { skill: draft.skillName } : { suggestionId: draft.suggestionId }), guidance: note }), () => setRedrafting(null))
+  const redraft = (note: string) => act(() => context.client.generateDraft({ ...(draft.suggestionId === undefined ? { skill: draft.skillName } : { suggestionId: draft.suggestionId }), guidance: note, ...route }), () => setRedrafting(null))
   const ready = draft.status === 'ready'
   const progress = (run: BacktestRun | undefined) => run === undefined ? 0 : run.progress.done
   const total = (candidate?.progress.total ?? 0) + (baseline?.progress.total ?? 0)

@@ -1,5 +1,6 @@
 import type {
   BacktestRun, EvalCase, EvidencePack, ReviewLogEntry, ReviewRecordInput, ReviewRecordResult, RunTarget, SkillCatalog, SkillDocument, SkillDraft, SkillRootKind, SkillSuggestion, Trajectory,
+  ModelRoute,
 } from 'dsh-mnemon-source-skills/contracts'
 import type { HostAgent, HostPreStepDecision, HostSessionEvent } from './dsh.ts'
 import type { ResolvedSkillsConfig, SkillActivitySnapshot, TurnSkillReview } from './protocol.ts'
@@ -22,8 +23,8 @@ export interface SkillEvolutionHost {
   /** The Skills Source for a conversation's workspace; undefined when it is not installed or its layer is off. */
   source(agent: HostAgent): SkillsSourcePort | undefined
   /** Run model work under a fresh task Agent in a workspace, outside any conversation. */
-  runTask<T>(workspaceRoot: string | undefined, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>): Promise<T>
-  skillTask(parent: HostAgent, label: string, prompt: string, schema: Record<string, unknown>, persona: string, signal: AbortSignal): Promise<{ structured: unknown }>
+  runTask<T>(workspaceRoot: string | undefined, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>, route?: ModelRoute): Promise<T>
+  skillTask(parent: HostAgent, label: string, prompt: string, schema: Record<string, unknown>, persona: string, signal: AbortSignal, route?: ModelRoute): Promise<{ structured: unknown }>
   now?(): Date
   warn?(message: string, error?: unknown): void
 }
@@ -315,7 +316,7 @@ export class SkillEvolution {
    * Write a draft for a suggestion (or for a skill directly) in the
    * background; the suggestion shows `drafting` until it is recorded.
    */
-  async draft(port: SkillsSourcePort, workspace: string | undefined, input: { suggestionId?: string; skill?: string; guidance?: string; targetRoot?: SkillRootKind }): Promise<{ started: true; suggestionId?: string }> {
+  async draft(port: SkillsSourcePort, workspace: string | undefined, input: { suggestionId?: string; skill?: string; guidance?: string; targetRoot?: SkillRootKind; route?: ModelRoute }): Promise<{ started: true; suggestionId?: string }> {
     const source = retryingSource(port)
     if (input.suggestionId !== undefined) await source.mutate('suggestion-status', { id: input.suggestionId, status: 'drafting' })
     this.background('skill draft', async signal => {
@@ -329,7 +330,7 @@ export class SkillEvolution {
     return { started: true, ...(input.suggestionId === undefined ? {} : { suggestionId: input.suggestionId }) }
   }
 
-  private async writeDraft(source: SkillsSourcePort, workspace: string | undefined, input: { suggestionId?: string; skill?: string; guidance?: string; targetRoot?: SkillRootKind }, signal: AbortSignal): Promise<SkillDraft> {
+  private async writeDraft(source: SkillsSourcePort, workspace: string | undefined, input: { suggestionId?: string; skill?: string; guidance?: string; targetRoot?: SkillRootKind; route?: ModelRoute }, signal: AbortSignal): Promise<SkillDraft> {
     const pack = await source.read<EvidencePack>('evidence-pack', { ...(input.suggestionId === undefined ? {} : { suggestionId: input.suggestionId }), ...(input.skill === undefined ? {} : { skill: input.skill }) }, signal)
     const settings = this.host.settings()
     const previous = pack.drafts.find(draft => input.suggestionId === undefined ? draft.suggestionId === undefined : draft.suggestionId === input.suggestionId)
@@ -338,7 +339,7 @@ export class SkillEvolution {
     let prompt = skillDraftPrompt(pack, guidance, targetRoot)
     let draft: SkillDraft | undefined
     for (let attempt = 0; draft === undefined; attempt++) {
-      const answer = await this.host.runTask(workspace, signal, task => this.host.skillTask(task, 'Mnemon skill draft', prompt, SKILL_DRAFT_SCHEMA as unknown as Record<string, unknown>, SKILL_DRAFT_PERSONA, signal))
+      const answer = await this.host.runTask(workspace, signal, task => this.host.skillTask(task, 'Mnemon skill draft', prompt, SKILL_DRAFT_SCHEMA as unknown as Record<string, unknown>, SKILL_DRAFT_PERSONA, signal, input.route), input.route)
       const parsed = parseSkillDraft(answer.structured)
       try {
         draft = await source.mutate<SkillDraft>('draft-record', {
@@ -353,11 +354,13 @@ export class SkillEvolution {
       }
     }
     if (settings.autoBacktest && pack.cases.length > 0) {
-      await this.backtest(source, workspace, { skillName: pack.skillName, target: { kind: 'draft', draftId: draft.id } })
-      const baselineKnown = pack.action === 'update' && pack.lastRun !== undefined && pack.lastRun.target.hash === pack.skill?.hash
+      await this.backtest(source, workspace, { skillName: pack.skillName, target: { kind: 'draft', draftId: draft.id }, ...(input.route === undefined ? {} : { route: input.route }) })
+      // Older runs do not record their model, so they cannot be a baseline for
+      // an explicitly selected route even when the skill content is unchanged.
+      const baselineKnown = input.route === undefined && pack.action === 'update' && pack.lastRun !== undefined && pack.lastRun.target.hash === pack.skill?.hash
       if (baselineKnown) await source.mutate('run-link', { draftId: draft.id, runId: pack.lastRun!.id })
       else {
-        const baseline = await this.backtest(source, workspace, { skillName: pack.skillName, target: { kind: pack.action === 'update' ? 'current' : 'none' } })
+        const baseline = await this.backtest(source, workspace, { skillName: pack.skillName, target: { kind: pack.action === 'update' ? 'current' : 'none' }, ...(input.route === undefined ? {} : { route: input.route }) })
         await source.mutate('run-link', { draftId: draft.id, runId: baseline.runId })
       }
     }
@@ -365,7 +368,7 @@ export class SkillEvolution {
   }
 
   /** Start a backtest of one version of a skill against its enabled cases; it runs in the background. */
-  async backtest(port: SkillsSourcePort, workspace: string | undefined, input: { skillName: string; target: RunTarget; caseIds?: string[] }): Promise<{ runId: string }> {
+  async backtest(port: SkillsSourcePort, workspace: string | undefined, input: { skillName: string; target: RunTarget; caseIds?: string[]; route?: ModelRoute }): Promise<{ runId: string }> {
     const source = retryingSource(port)
     const settings = this.host.settings()
     const cases = (await source.read<EvalCase[]>('cases', { skill: input.skillName })).filter(entry => entry.enabled && (input.caseIds === undefined || input.caseIds.includes(entry.id))).slice(0, settings.casesPerRun)
@@ -393,7 +396,7 @@ export class SkillEvolution {
             }
           }
           await Promise.all(Array.from({ length: Math.min(BACKTEST_CONCURRENCY, queue.length) }, worker))
-        })
+        }, input.route)
         await source.mutate('run-finish', { id: run.id, status: 'completed' })
       } catch (error) {
         await source.mutate('run-finish', { id: run.id, status: 'failed', error: message(error) }).catch(() => undefined)

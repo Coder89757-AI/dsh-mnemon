@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { COMPOSABLE_MEMORY_API_VERSION, type MemoryJsonValue, type MemorySourceDefinition, type MemorySourceFacts } from 'dsh-mnemon/contracts'
 import { defineMemorySource, memoryInputRecord as record, memoryInputStringArray as stringArray, memoryInputText as text } from 'dsh-mnemon/extension-sdk'
-import { EVOLUTION_SIGNALS, SKILL_ROOT_KINDS, type CaseResult, type EvolutionSignal, type ReviewRecordInput, type RunTarget, type SkillRootKind, type SkillsPolicy, type TrajectoryStep } from './contracts.ts'
+import { EVOLUTION_SIGNALS, SKILL_ROOT_KINDS, type CaseResult, type EvolutionSignal, type ModelRoute, type ReviewRecordInput, type RunTarget, type SkillRootKind, type SkillsPolicy, type TrajectoryStep } from './contracts.ts'
 import { SkillsService, type CaseInput } from './service.ts'
 
 export const SKILLS_SOURCE_TYPE_ID = 'skills'
@@ -42,6 +42,14 @@ function rootKind(value: MemoryJsonValue | undefined): SkillRootKind | undefined
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'string' || !(SKILL_ROOT_KINDS as readonly string[]).includes(value)) throw new Error('root must be one of ' + SKILL_ROOT_KINDS.join(', '))
   return value as SkillRootKind
+}
+
+/** A picked model, or null to clear the pick and follow the task Agent again. */
+function draftModelInput(value: MemoryJsonValue | undefined): ModelRoute | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('model must be an object or null')
+  const picked = value as Record<string, MemoryJsonValue>
+  return { provider: text(picked.provider, 'model.provider', 100)!, model: text(picked.model, 'model.model', 200)! }
 }
 
 function caseInput(value: MemoryJsonValue, skillName?: string): CaseInput {
@@ -229,6 +237,9 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
         ...(effective.dshHome === undefined ? {} : { dshHome: effective.dshHome }),
         ...(effective.agentsHome === undefined ? {} : { agentsHome: effective.agentsHome }),
       })
+      // A Host that went away mid-write left its suggestion stuck in `drafting`
+      // and refuses both a retry and a delete; put those back before anything reads.
+      void service.reclaimOrphanDrafts().catch(() => void 0)
       const facts = (scope: { workspaceId?: string }, management: boolean): MemorySourceFacts => management ? {
         sourceInstanceKey: context.sourceInstanceKey, sourceTypeId: SKILLS_SOURCE_TYPE_ID, role: SKILLS_SOURCE_ROLE, availability: 'ready',
         revision: service.revision(workspace(scope)), capabilities: [...CAPABILITIES], routeIds: [], actionIds: [],
@@ -274,6 +285,7 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
                   ...(optionalText(fields.skill, 'skill', 64) === undefined ? {} : { skill: optionalText(fields.skill, 'skill', 64)! }),
                 })
                 case 'draft': return service.draft(root, text(fields.id, 'id', 100)!)
+                case 'draft-preferences': return service.draftPreferences()
                 case 'reviews': return service.reviews({ ...(typeof fields.sessionId === 'string' ? { sessionId: fields.sessionId } : {}), ...(typeof fields.limit === 'number' ? { limit: fields.limit } : {}) })
                 case 'evidence-pack': return service.evidencePack(root, {
                   ...(optionalText(fields.suggestionId, 'suggestionId', 100) === undefined ? {} : { suggestionId: optionalText(fields.suggestionId, 'suggestionId', 100)! }),
@@ -324,6 +336,7 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
             case 'trash-empty': value = await service.emptyTrash(); break
             case 'version-restore': value = await service.restoreVersion(root, { key: text(fields.key, 'key', 200)!, versionId: text(fields.versionId, 'versionId', 100)!, expectedHash: text(fields.expectedHash, 'expectedHash', 100)! }); break
             case 'suggestion-dismiss': value = await service.dismissSuggestion(text(fields.id, 'id', 100)!); break
+            case 'suggestion-delete': value = await service.deleteSuggestion(text(fields.id, 'id', 100)!); break
             case 'suggestion-status': {
               const status = fields.status
               if (status !== 'drafting' && status !== 'pending') throw new Error('status must be drafting or pending')
@@ -353,6 +366,20 @@ export function createSkillsMemorySource(config: Config = {}): MemorySourceDefin
             case 'draft-update': value = await service.updateDraft({ id: text(fields.id, 'id', 100)!, content: typeof fields.content === 'string' ? fields.content : '' }); break
             case 'draft-adopt': value = await service.adoptDraft(root, text(fields.id, 'id', 100)!, { ...(rootKind(fields.root) === undefined ? {} : { root: rootKind(fields.root)! }) }); break
             case 'draft-discard': value = await service.discardDraft(text(fields.id, 'id', 100)!); break
+            case 'draft-delete': value = await service.deleteDraft(text(fields.id, 'id', 100)!); break
+            case 'draft-preference': {
+              const slot = optionalText(fields.slot, 'slot', 10)
+              if (slot !== undefined && slot !== 'draft' && slot !== 'run') throw new Error('slot must be draft or run')
+              const suggestionId = optionalText(fields.suggestionId, 'suggestionId', 100)
+              if (suggestionId !== undefined && slot === 'run') throw new Error('a suggestion pick cannot be a backtest pick')
+              value = await service.setDraftPreference({
+                ...(slot === undefined ? {} : { slot }),
+                ...(suggestionId === undefined ? {} : { suggestionId }),
+                ...(optionalText(fields.skillName, 'skillName', 64) === undefined ? {} : { skillName: optionalText(fields.skillName, 'skillName', 64)! }),
+                model: draftModelInput(fields.model),
+              })
+              break
+            }
             case 'run-start': value = await service.startRun({ skillName: text(fields.skillName, 'skillName', 64)!, target: runTarget(fields.target!), caseIds: stringArray(fields.caseIds, 'caseIds', 20) ?? [] }); break
             case 'run-link': value = await service.linkRun(text(fields.draftId, 'draftId', 100)!, text(fields.runId, 'runId', 100)!); break
             case 'run-progress': value = await service.progressRun({ id: text(fields.id, 'id', 100)!, result: caseResult(fields.result!) }); break

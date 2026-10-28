@@ -1,4 +1,4 @@
-import type { MemoryJsonValue, MemorySourceManagementInstance, MemorySourceManagementResult } from 'dsh-mnemon/contracts'
+import type { MemoryJsonValue, MemorySourceManagementInstance, MemorySourceManagementResult, TaskAgentModelCatalog } from 'dsh-mnemon/contracts'
 
 /** Instance- and scope-bound capability; never the Host's raw transport. */
 export interface MnemonSourceManagementClient {
@@ -11,6 +11,11 @@ export interface MnemonSourceManagementClient {
   }
   read(operation: string, input?: MemoryJsonValue): Promise<MemorySourceManagementResult>
   mutate(operation: string, input: MemoryJsonValue, options: { expectedRevision?: string; confirmed: true }): Promise<MemorySourceManagementResult>
+  /**
+   * The routes and model directory a page may offer as a per-run choice. Absent
+   * on a Host that offers none, and the page then hides its pickers.
+   */
+  readonly models?: () => Promise<TaskAgentModelCatalog>
 }
 
 /** Browser metadata is display-only; the Host validates capability identifiers. */

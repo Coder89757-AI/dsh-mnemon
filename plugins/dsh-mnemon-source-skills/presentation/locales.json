@@ -335,7 +335,17 @@
     "trash.original": "原位置",
     "trash.chooseHint": "可选择恢复位置或改名。同名替换需要明确确认，现有技能会保留在回收站。",
     "trash.replace": "替换同名技能，并将现有版本保留在回收站",
-    "trash.confirmName": "输入 {name} 确认彻底删除"
+    "trash.confirmName": "输入 {name} 确认彻底删除",
+    "evolution.model": "全局模型",
+    "evolution.modelCard": "所选草案模型",
+    "evolution.modelAuto": "跟随默认",
+    "evolution.modelAutoHint": "使用当前任务 Agent 的模型",
+    "evolution.deleteTitle": "删除这条建议？",
+    "evolution.deleteBody": "它生成的草案和证据引用会一起删掉，无法恢复。",
+    "evolution.deleted": "已删除",
+    "tests.model": "全局模型",
+    "tests.modelCard": "所选回测模型",
+    "tests.modelAuto": "跟随默认"
   },
   "en": {
     "page.title": "Skills",
@@ -673,6 +683,16 @@
     "trash.original": "Original location",
     "trash.chooseHint": "Choose a location or a different name. Replacing a skill requires confirmation and keeps its current version in the Trash.",
     "trash.replace": "Replace the existing skill and keep its current version in the Trash",
-    "trash.confirmName": "Type {name} to confirm permanent deletion"
+    "trash.confirmName": "Type {name} to confirm permanent deletion",
+    "evolution.model": "Global model",
+    "evolution.modelCard": "Selected model",
+    "evolution.modelAuto": "Follow default",
+    "evolution.modelAutoHint": "Use the model of the current task Agent",
+    "evolution.deleteTitle": "Delete this suggestion?",
+    "evolution.deleteBody": "Its draft and the evidence references it cites go with it, and this cannot be undone.",
+    "evolution.deleted": "Deleted",
+    "tests.model": "Global model",
+    "tests.modelCard": "Selected model",
+    "tests.modelAuto": "Follow default"
   }
 }

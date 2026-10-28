@@ -607,6 +607,21 @@ interface WorkingDirectoryService {
   set(agent: HostAgent, path: string, signal?: AbortSignal): Promise<string>
 }
 
+/** A picked route, optionally with the effort the caller chose for it. */
+export type RoutedPick = { provider: string; model: string; reasoningEffort?: string }
+
+/** Explicit model route carried by the task Agent a skill run created. */
+export const TASK_ROUTE: unique symbol = Symbol.for('dsh-mnemon.taskRoute')
+
+/**
+ * The route a task Agent was created with, when its caller picked one. Skill
+ * work started under that Agent hands the same pick to its own children, so a
+ * run never falls back to the profile default halfway through.
+ */
+export function taskRoute(agent: HostAgent): RoutedPick | undefined {
+  return (agent as unknown as Record<symbol, RoutedPick | undefined>)[TASK_ROUTE]
+}
+
 /** DSH-native owner for per-agent Mnemon lifecycle hooks and UI-triggered LLM work. */
 export class MnemonLifecycle {
   private readonly owners = new Map<HostAgent, { lifecycle: MnemonAgentLifecycle; dispose: () => unknown }>()
@@ -636,8 +651,8 @@ export class MnemonLifecycle {
   }
 
   /** Model work for skill evolution under a fresh task Agent, outside any conversation. */
-  runSkillTask<T>(workspaceRoot: string | undefined, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>): Promise<T> {
-    return this.runTaskAgent('', workspaceRoot, signal, operation)
+  runSkillTask<T>(workspaceRoot: string | undefined, signal: AbortSignal, operation: (agent: HostAgent) => Promise<T>, route?: RoutedPick): Promise<T> {
+    return this.runTaskAgent('', workspaceRoot, signal, operation, route)
   }
 
   /**
@@ -996,18 +1011,24 @@ export class MnemonLifecycle {
     workspaceRoot: string | undefined,
     signal: AbortSignal,
     operation: (agent: HostAgent) => Promise<T>,
+    route?: RoutedPick,
   ): Promise<T> {
     const sessionId = randomUUID()
     this.taskAgentIds.add(sessionId)
     let handle: HostAgentHandle | undefined
     let failure: unknown
     try {
-      const creation = await this.taskAgentCreation(fallbackSessionId, workspaceRoot, signal)
+      const creation = await this.taskAgentCreation(fallbackSessionId, workspaceRoot, signal, route)
       handle = await this.ctx.agents.create({
         sessionId,
         ...creation,
         signal,
       })
+      // The Agent carries the route it was created with, so skill work it
+      // delegates passes the same pick down instead of asking the resolver again.
+      if (route !== undefined) {
+        try { (handle.agent as unknown as Record<symbol, RoutedPick>)[TASK_ROUTE] = route } catch { /* a frozen Agent keeps the resolver's route */ }
+      }
       return await operation(handle.agent)
     } catch (error) {
       failure = error
@@ -1035,8 +1056,19 @@ export class MnemonLifecycle {
     fallbackSessionId: string,
     workspaceRoot: string | undefined,
     signal: AbortSignal,
+    route?: RoutedPick,
   ): Promise<Pick<CreateHostAgentOptions, 'meta' | 'agentOptions' | 'setup'>> {
-    const agentOptions = this.taskAgentModelOptions(fallbackSessionId, workspaceRoot)
+    const baseOptions = this.taskAgentModelOptions(fallbackSessionId, workspaceRoot)
+    // A route the caller picked replaces the whole route, including its
+    // reasoning effort: the inherited one belongs to another Provider and its
+    // level names are not shared, so passing it on fails the run outright.
+    const { reasoningEffort: _inheritedEffort, ...baseRest } = baseOptions ?? {}
+    const agentOptions = route === undefined ? baseOptions : {
+      ...baseRest,
+      provider: route.provider,
+      model: route.model,
+      ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }),
+    }
     if (agentOptions === undefined) throw new Error('no default provider/model is available for a clean task Agent')
     const { cwd, workFrom } = await this.taskAgentDirectories(workspaceRoot)
     const presets = presetService(this.ctx.get('agentPresets'))

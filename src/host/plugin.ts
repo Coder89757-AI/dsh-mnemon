@@ -6,7 +6,7 @@ import type { HostContextShape, HostCredentialsService, HostWorkspaceRegistry } 
 import { githubGrantFromRecord, MNEMON_SYNC_GITHUB_CREDENTIAL_KEY, MnemonGitHubAuth, type MnemonGitHubCredentialPort } from './github-auth.ts'
 import { registerGuidance } from './guidance.ts'
 import { createRuntimeGraph, LiveMnemonRuntime } from './runtime.ts'
-import { MnemonLifecycle } from './lifecycle.ts'
+import { MnemonLifecycle, taskRoute } from './lifecycle.ts'
 import { SkillEvolution } from './skill-evolution.ts'
 import { DEFAULT_SKILLS_CONFIG, type ResolvedSkillsConfig } from './protocol.ts'
 import { skillsSourceFor } from './skill-source.ts'
@@ -163,8 +163,8 @@ export function apply(rawContext: unknown, rawConfig: MnemonConfig | LiveHostCon
   const skills = new SkillEvolution({
     settings: () => skillSettings.get(),
     source: agent => skillsSourceFor(runtime, agent),
-    runTask: (workspaceRoot, signal, operation) => lifecycle.runSkillTask(workspaceRoot, signal, operation),
-    skillTask: (parent, label, prompt, schema, persona, signal) => coordinator.skillTask(parent, label, prompt, schema, persona, signal),
+    runTask: (workspaceRoot, signal, operation, route) => lifecycle.runSkillTask(workspaceRoot, signal, operation, route),
+    skillTask: (parent, label, prompt, schema, persona, signal) => coordinator.skillTask(parent, label, prompt, schema, persona, signal, taskRoute(parent)),
   })
   lifecycle.useSkillEvolution(skills)
   // Registered before the lifecycle root so teardown runs the other way round:

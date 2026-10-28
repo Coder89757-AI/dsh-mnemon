@@ -65,9 +65,16 @@
 .field[data-inline] > .fieldLabel { color: var(--dsw-alias-label-tertiary); font-weight: 400; white-space: nowrap; }
 .field[data-size='sm'] .selector { height: 28px; gap: 8px; padding: 0 10px; border-radius: var(--dsw-radius-sm); font-size: 12px; line-height: 18px; }
 
-.menu { min-width: 200px; }
+/* The menu never grows past the room the selector measured; it scrolls instead. */
+.menu { min-width: 200px; max-height: var(--dsh-select-menu-max, calc(100vh - 220px)) !important; }
 .option { display: grid; min-width: 0; gap: 1px; white-space: normal; }
 .option > small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+
+/* A selector that repeats its detail needs room for a second line. */
+.field .selector[data-trigger-detail] { height: auto; min-height: 28px; padding: 3px 10px; white-space: normal; }
+.field .selector[data-trigger-detail] > span { display: grid; min-width: 0; gap: 1px; text-align: left; white-space: normal; }
+.field .selector[data-trigger-detail] > span > span { overflow: hidden; text-overflow: ellipsis; }
+.field .selector[data-trigger-detail] > span > small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 
 /* One receipt row: outcome tag, the task Agent's summary, and where to see it. */
 .receipt {

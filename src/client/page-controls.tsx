@@ -38,13 +38,25 @@ export function SelectField<T extends string>(props: {
   /** A fuller name for assistive technology than the visible label. */
   ariaLabel?: string | undefined
   className?: string | undefined
+  /**
+   * Repeat the chosen option's detail under its name in the selector itself, as
+   * the menu shows it. Off by default: most fields have no room for a second line.
+   */
+  triggerDetail?: boolean | undefined
   onChange: (value: T) => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
+  /**
+   * Which way the menu opens. A menu taller than the room below its anchor is
+   * pushed up by the portal until it covers the button, so the selector decides
+   * the side itself once it knows how much room is left and how much is above.
+   */
+  const [side, setSide] = useState<'bottom' | 'top'>('bottom')
   const labelId = useId()
   const nameId = useId()
   const valueId = useId()
   const current = props.options.find(option => option.value === props.value)
+  const detail = props.triggerDetail === true && current?.detail !== undefined
   return <span className={[css.field, props.className].filter(Boolean).join(' ')} data-inline={props.inline === true ? '' : undefined} data-size={props.size === 'sm' ? 'sm' : undefined}>
     <span id={labelId} data-part="label" className={props.hideLabel === true ? css.hiddenLabel : css.fieldLabel} aria-hidden={props.ariaLabel === undefined ? undefined : true}>{props.label}</span>
     {props.ariaLabel !== undefined && <span id={nameId} className={css.hiddenLabel}>{props.ariaLabel}</span>}
@@ -52,6 +64,7 @@ export function SelectField<T extends string>(props: {
       open={open}
       onClose={() => setOpen(false)}
       align="start"
+      side={side}
       portal
       selectedId={props.value}
       className={css.menuRoot}
@@ -62,8 +75,28 @@ export function SelectField<T extends string>(props: {
         ...(option.disabled === true ? { disabled: true } : {}),
       }))}
       onSelect={id => { setOpen(false); if (id !== props.value) props.onChange(id as T) }}
-      anchor={<button type="button" className={css.selector} aria-haspopup="menu" aria-expanded={open} aria-labelledby={`${props.ariaLabel === undefined ? labelId : nameId} ${valueId}`} disabled={props.disabled === true} onClick={() => setOpen(value => !value)}>
-        <span id={valueId}>{current?.label ?? props.value}</span>
+      anchor={<button
+        type="button"
+        className={css.selector}
+        data-trigger-detail={detail ? '' : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-labelledby={`${props.ariaLabel === undefined ? labelId : nameId} ${valueId}`}
+        disabled={props.disabled === true}
+        onClick={event => {
+          // 4px for the menu's gap and 12px for the portal's viewport margin.
+          const rect = event.currentTarget.getBoundingClientRect()
+          const below = Math.floor(window.innerHeight - rect.bottom - 4 - 12)
+          const above = Math.floor(rect.top - 4 - 12)
+          const flip = below < 220 && above > below
+          document.documentElement.style.setProperty('--dsh-select-menu-max', `${Math.max(160, flip ? above : below)}px`)
+          setSide(flip ? 'top' : 'bottom')
+          setOpen(value => !value)
+        }}
+      >
+        {detail
+          ? <span id={valueId} className={css.option}><span>{current!.label}</span><small>{current!.detail}</small></span>
+          : <span id={valueId}>{current?.label ?? props.value}</span>}
         <IconChevronDownOutlineRegular size={12} />
       </button>}
     />

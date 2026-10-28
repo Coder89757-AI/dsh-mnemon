@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { withMemoryStorageLock } from 'dsh-mnemon/extension-sdk'
 import {
   SKILL_ROOT_KINDS,
-  type BacktestRun, type CaseResult, type CatalogView, type DraftView, type EvalCase, type EvidencePack, type SuggestionView,
+  type BacktestRun, type CaseResult, type CatalogView, type DraftPreferencesView, type DraftView, type EvalCase, type EvidencePack, type ModelRoute, type SuggestionView,
   type MarketEntry, type MarketInstall, type MarketInstallState, type MarketItem, type MarketPreview, type MarketRegistry, type MarketRegistryFile, type MarketSearchResult,
   type MarketSourceKind, type MarketView, type ReviewRecordInput, type ReviewRecordResult, type RunTarget, type SkillCatalog, type SkillDocument,
   type SkillDraft, type SkillRootKind, type SkillSuggestion, type SkillSummary, type SkillVersion, type SkillVersionReason, type SkillsOverview, type Trajectory, type TrajectorySummary, type TrashEntry, type TrashRestoreInput, type TrashRestorePreview,
@@ -477,6 +477,41 @@ export class SkillsService {
     })
   }
 
+  /** The model the user picked for drafts and backtests, if any. */
+  draftPreferences(): DraftPreferencesView {
+    const stored = this.store.preferences()
+    return {
+      ...(stored.draftModel === undefined ? {} : { model: stored.draftModel }),
+      ...(stored.runModel === undefined ? {} : { runModel: stored.runModel }),
+      suggestionModels: stored.suggestionModels,
+      skillRunModels: stored.skillRunModels,
+    }
+  }
+
+  /**
+   * Record one picker change. `suggestionId` targets a single suggestion,
+   * `skillName` with `slot: 'run'` a single skill, and a null model clears the
+   * entry so the page falls back to following the task Agent again.
+   */
+  setDraftPreference(input: { slot?: string; suggestionId?: string; skillName?: string; model: ModelRoute | null }): Promise<DraftPreferencesView> {
+    return this.write(() => {
+      const preferences = this.store.preferences()
+      if (input.slot === 'run') {
+        if (input.skillName !== undefined) {
+          if (input.model === null) delete preferences.skillRunModels[input.skillName]
+          else preferences.skillRunModels[input.skillName] = input.model
+        } else if (input.model === null) delete preferences.runModel
+        else preferences.runModel = input.model
+      } else if (input.suggestionId !== undefined) {
+        if (input.model === null) delete preferences.suggestionModels[input.suggestionId]
+        else preferences.suggestionModels[input.suggestionId] = input.model
+      } else if (input.model === null) delete preferences.draftModel
+      else preferences.draftModel = input.model
+      this.store.savePreferences(preferences)
+      return this.draftPreferences()
+    })
+  }
+
   restoreVersion(workspace: string | undefined, input: { key: string; versionId: string; expectedHash: string }): Promise<SkillSummary> {
     return this.write(() => {
       const skill = findSkill(this.catalog(workspace), input.key)
@@ -513,6 +548,27 @@ export class SkillsService {
       suggestion.status = 'dismissed'
       for (const draft of ledger.drafts) if (draft.suggestionId === id && draft.status === 'ready') { draft.status = 'discarded'; draft.updatedAt = suggestion.updatedAt }
       return suggestion
+    })
+  }
+
+  /** Remove a suggestion for good, together with any draft it produced and its model pick. */
+  deleteSuggestion(id: string): Promise<{ deleted: string }> {
+    return this.write(() => {
+      const ledger = this.store.ledger()
+      expireSuggestions(ledger, this.clock())
+      const index = ledger.suggestions.findIndex(candidate => candidate.id === id)
+      if (index < 0) throw new Error('suggestion not found: ' + id)
+      const suggestion = ledger.suggestions[index]!
+      if (suggestion.status === 'drafting') throw new Error('a draft is being written for this suggestion; wait for it to finish')
+      ledger.suggestions.splice(index, 1)
+      ledger.drafts = ledger.drafts.filter(draft => draft.suggestionId !== id)
+      const preferences = this.store.preferences()
+      if (preferences.suggestionModels[id] !== undefined) {
+        delete preferences.suggestionModels[id]
+        this.store.savePreferences(preferences)
+      }
+      this.store.saveLedger(ledger)
+      return { deleted: id }
     })
   }
 
@@ -726,6 +782,42 @@ export class SkillsService {
       if (suggestion !== undefined && suggestion.status === 'review') { suggestion.status = 'pending'; delete suggestion.draftId; suggestion.updatedAt = now }
       this.store.saveLedger(ledger)
       return draft
+    })
+  }
+
+  /** Remove a draft for good; its suggestion goes back to `pending` so it can be drafted again. */
+  deleteDraft(id: string): Promise<{ deleted: string }> {
+    return this.write(() => {
+      const ledger = this.store.ledger()
+      const index = ledger.drafts.findIndex(candidate => candidate.id === id)
+      if (index < 0) throw new Error('draft not found: ' + id)
+      const draft = ledger.drafts[index]!
+      ledger.drafts.splice(index, 1)
+      if (draft.suggestionId !== undefined) {
+        const suggestion = ledger.suggestions.find(candidate => candidate.id === draft.suggestionId)
+        if (suggestion?.draftId === draft.id) {
+          delete suggestion.draftId
+          if (suggestion.status === 'review') suggestion.status = 'pending'
+          suggestion.updatedAt = this.clock().toISOString()
+        }
+      }
+      this.store.saveLedger(ledger)
+      return { deleted: id }
+    })
+  }
+
+  /**
+   * Put suggestions whose draft write died with the previous Host back to
+   * `pending`, so the page stops showing them as "drafting" forever.
+   */
+  reclaimOrphanDrafts(): Promise<{ reclaimed: number }> {
+    return this.write(() => {
+      const ledger = this.store.ledger()
+      const before = ledger.suggestions.filter(suggestion => suggestion.status === 'drafting').length
+      if (!expireSuggestions(ledger, this.clock())) return { reclaimed: 0 }
+      this.store.saveLedger(ledger)
+      const after = ledger.suggestions.filter(suggestion => suggestion.status === 'drafting').length
+      return { reclaimed: Math.max(0, before - after) }
     })
   }
 

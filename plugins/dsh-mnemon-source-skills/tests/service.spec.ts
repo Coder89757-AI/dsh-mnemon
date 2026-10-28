@@ -295,3 +295,82 @@ describe('evolution drafts and backtests', () => {
     expect(regressions()).toEqual(['75 → 50'])
   })
 })
+
+describe('model picks', () => {
+  it('keeps the current draft linked when an older draft is deleted', async () => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const suggestion = store.suggestions()[0]!
+    const input = { suggestionId: suggestion.id, skillName: 'release-notes', content: skill('release-notes', 'Grouped.'), notes: '', changes: [], guidance: [] }
+    const old = await store.recordDraft(workspace, input)
+    const current = await store.recordDraft(workspace, input)
+
+    await store.deleteDraft(old.id)
+    expect(store.suggestion(workspace, suggestion.id).suggestion).toMatchObject({ status: 'review', draftId: current.id })
+    expect(store.draft(workspace, current.id).draft.status).toBe('ready')
+
+    await store.deleteDraft(current.id)
+    const waiting = store.suggestion(workspace, suggestion.id).suggestion
+    expect(waiting.status).toBe('pending')
+    expect(waiting).not.toHaveProperty('draftId')
+  })
+
+  it('stores a global draft pick, a per-suggestion pick and a per-skill backtest pick, and clears each', async () => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const suggestion = store.suggestions()[0]!
+    expect(store.draftPreferences()).toEqual({ suggestionModels: {}, skillRunModels: {} })
+    const route = { provider: 'buddy', model: 'deepseek-v4.1-flash' }
+    expect(await store.setDraftPreference({ model: route })).toMatchObject({ model: route })
+    expect(await store.setDraftPreference({ suggestionId: suggestion.id, model: route })).toMatchObject({ suggestionModels: { [suggestion.id]: route } })
+    expect(await store.setDraftPreference({ slot: 'run', model: route })).toMatchObject({ runModel: route })
+    expect(await store.setDraftPreference({ slot: 'run', skillName: 'release-notes', model: route })).toMatchObject({ skillRunModels: { 'release-notes': route } })
+    // The picks survive a fresh service over the same directory: they are stored, not held in memory.
+    expect(service().draftPreferences()).toMatchObject({ model: route, runModel: route, suggestionModels: { [suggestion.id]: route }, skillRunModels: { 'release-notes': route } })
+    expect(await store.setDraftPreference({ model: null })).not.toHaveProperty('model')
+    expect(await store.setDraftPreference({ suggestionId: suggestion.id, model: null })).toMatchObject({ suggestionModels: {} })
+    expect(await store.setDraftPreference({ slot: 'run', model: null })).not.toHaveProperty('runModel')
+    expect(await store.setDraftPreference({ slot: 'run', skillName: 'release-notes', model: null })).toMatchObject({ skillRunModels: {} })
+    // A picker change is not ledger work: the revision an open page holds stays valid.
+    expect(store.draftPreferences()).toEqual({ suggestionModels: {}, skillRunModels: {} })
+  })
+
+  it('deletes a suggestion with its draft and its pick, and refuses one a write still holds', async () => {
+    // A write claimed now is not an orphan of the previous Host: the clock has to
+    // sit after this process started, as it does in a real run.
+    now = new Date()
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const suggestion = store.suggestions()[0]!
+    const route = { provider: 'trae', model: 'deepseek-v4.1-flash' }
+    await store.setDraftPreference({ suggestionId: suggestion.id, model: route })
+    await store.suggestionStatus({ id: suggestion.id, status: 'drafting' })
+    await expect(store.deleteSuggestion(suggestion.id)).rejects.toThrow(/a draft is being written/)
+    await store.suggestionStatus({ id: suggestion.id, status: 'pending' })
+    const draft = await store.recordDraft(workspace, { suggestionId: suggestion.id, skillName: 'release-notes', content: skill('release-notes', 'Grouped.'), notes: '', changes: [], guidance: [] })
+    expect(await store.deleteSuggestion(suggestion.id)).toEqual({ deleted: suggestion.id })
+    expect(store.suggestions().map(entry => entry.id)).toEqual([])
+    expect(() => store.draft(workspace, draft.id)).toThrow()
+    expect(store.draftPreferences().suggestionModels).toEqual({})
+  })
+
+  it('puts a suggestion whose draft write died with the previous Host back to pending', async () => {
+    write(join(home, 'skills', 'release-notes', 'SKILL.md'), skill('release-notes'))
+    const store = service()
+    await store.recordReview(workspace, review())
+    const suggestion = store.suggestions()[0]!
+    await store.suggestionStatus({ id: suggestion.id, status: 'drafting' })
+    // The write was claimed before this Host started, so nothing is writing it now.
+    const ledger = JSON.parse(readFileSync(join(data, 'skills', 'ledger.json'), 'utf8')) as { suggestions: Array<{ id: string; updatedAt: string }> }
+    ledger.suggestions.find(entry => entry.id === suggestion.id)!.updatedAt = '2001-01-01T00:00:00.000Z'
+    writeFileSync(join(data, 'skills', 'ledger.json'), JSON.stringify(ledger))
+    expect(store.suggestions(['drafting'])).toHaveLength(0)
+    expect(store.suggestion(workspace, suggestion.id).suggestion).toMatchObject({ status: 'pending', lastError: /the host restarted while this draft was being written/u })
+    // And it is a suggestion the page can act on again: dismiss works where it refused before.
+    await store.dismissSuggestion(suggestion.id)
+    expect(store.suggestion(workspace, suggestion.id).suggestion.status).toBe('dismissed')
+  })
+})
